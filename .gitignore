@@ -5,3 +5,7 @@ game/saves/
 
 
 emulation/emulation
+.venv/
+__pycache__/
+*.pyc
+.claude/sessions/
