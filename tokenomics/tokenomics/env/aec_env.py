@@ -20,7 +20,7 @@ from ..domain.config import Configuration
 from ..domain.producing_agent import ProducerInfo
 from ..domain.system import CycleResult
 from .decode import decode_ordering, decode_producing
-from .encode import encode_ordering, encode_producing
+from .encode import encode_global, encode_ordering, encode_producing
 from .spaces import build_spec
 
 # Action handed to step(): producing = Discrete int, ordering = logit vector,
@@ -129,6 +129,13 @@ class TokenomicsAECEnv(AECEnv):
             return encode_producing(self.spec_, view, infos, cp)
         incoming = self.system.ordering_agents[did].incoming
         return encode_ordering(self.spec_, incoming, infos, cp)
+
+    def global_state(self) -> np.ndarray:
+        """Centralized-critic input (ADR-0004): full system state, shared across
+        all agents. Independent of whose turn it is."""
+        cp = min(1.0, self.current_cycle / self.horizon)
+        views = {pid: p.view() for pid, p in self.system.producing_agents.items()}
+        return encode_global(self.spec_, views, self._producer_infos(), cp)
 
     def step(self, action: Action) -> None:
         agent = self.agent_selection

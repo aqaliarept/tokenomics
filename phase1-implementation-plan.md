@@ -12,13 +12,13 @@ The smoke PPO runs but a **random policy survives the full horizon**, so reward 
 |---|------|-----|
 | **0** | ✅ **DONE** — baselines + metrics harness + signal check; consumer-weighted reward | Gates everything |
 | **1** | ✅ **DONE** — per-iter training curves (ADR-0003): `train()` greedy-evals the policy through the `eval/` harness each iter → real task metrics (cycles, dead%, cons✓/✗, capmin, return), logged + optional `--out` CSV | Can't improve what you can't see |
-| 2 | Centralized-critic MAPPO (CTDE) — actor on local obs, critic on global state | Fixes shared-reward credit assignment; the "critic distributes reward properly" goal |
+| **2** | ✅ **DONE** — centralized-critic MAPPO (ADR-0004): two decentralized actors on local obs + one critic on `env.global_state()` (7·P+1 global state); GAE now bootstraps on truncation, kills backup on termination | Fixes shared-reward credit assignment; the "critic distributes reward properly" goal |
 | 3 | Vectorize (SuperSuit, many parallel envs) | Throughput, only after the loop is proven |
 | 4 | Curriculum per deep-research 6 phases | Scale toward the real game |
 
 **Reward objective fix (P0):** investment-order completion was rewarded equal to consumer-order completion (+10 each), but investment is *instrumental* (keep capacity alive) while consumer fulfillment is *terminal* (the actual goal). Reward is reweighted so consumer completion dominates; investment gets a small positive; the centralized critic learns investment's indirect value.
 
-**Known training-side bug (fix at P2):** smoke PPO's GAE treats truncation and termination identically. Once early death makes episode length vary, truncation must bootstrap the value (it is not a true terminal). Currently fine because episodes always hit the horizon.
+**Known training-side bug (fixed at P2):** smoke PPO's GAE treated truncation and termination identically. Now `gae(rew, val, term, boot)` bootstraps `V(s_final)` on truncation (horizon) and zeroes the backup on termination (system death). Guarded by `test_gae_truncation_bootstraps_termination_does_not`.
 
 ### P0 result (2026-06-13): signal is strong, no dynamics tuning needed
 

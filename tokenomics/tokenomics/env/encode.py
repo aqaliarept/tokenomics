@@ -48,6 +48,28 @@ def encode_producing(
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
 
 
+def encode_global(
+    spec: EnvSpec,
+    views: dict[str, ProducingAgentView],
+    producer_infos: dict[str, ProducerInfo],
+    cycle_progress: float,
+) -> np.ndarray:
+    """Centralized-critic global state (ADR-0004): every producer's full state +
+    cut-off price + cycle progress. In Phase 1 producers are the system state."""
+    feats: list[float] = []
+    for pid in spec.producer_ids:
+        v = views[pid]
+        feats.append(v.capacity / spec.cap_ref)
+        feats.append(v.max_capacity / spec.cap_ref)
+        feats.append(v.requested_capacity / spec.cap_ref)
+        feats.append(v.degradation / spec.cap_ref)
+        feats.append(1.0 if v.upgrade_running else 0.0)
+        feats.append(1.0 if v.restoration_running else 0.0)
+        feats.append(_price(spec, producer_infos[pid].cut_off_price))
+    feats.append(cycle_progress)
+    return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
+
+
 def encode_ordering(
     spec: EnvSpec,
     incoming: dict[str, OrderInfo],

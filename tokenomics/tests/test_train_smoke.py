@@ -26,6 +26,22 @@ def test_train_runs_two_iters():
     assert all(r.eval_cycles > 0 for r in history)
 
 
+def test_gae_truncation_bootstraps_termination_does_not():
+    """ADR-0004: the final transition bootstraps on truncation (boot value used)
+    but not on termination (term kills the value backup)."""
+    from tokenomics.train.smoke_ppo import gae
+
+    rew = [0.0, 0.0]
+    val = [0.0, 0.0]
+    # truncated last step with a positive bootstrap -> non-zero advantage flows back
+    adv_trunc, _ = gae(rew, val, term=[0.0, 0.0], boot=[0.0, 5.0], gamma=0.99, lam=0.95)
+    # terminated last step -> no bootstrap, all advantages zero
+    adv_term, _ = gae(rew, val, term=[0.0, 1.0], boot=[0.0, 5.0], gamma=0.99, lam=0.95)
+
+    assert adv_trunc[1] > 0.0
+    assert adv_term[1] == 0.0
+
+
 def test_curve_csv_written(tmp_path):
     from tokenomics.train.smoke_ppo import train
 

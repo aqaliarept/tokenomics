@@ -1,14 +1,18 @@
-"""Minimal parameter-shared PPO over the tokenomics AEC env.
+"""Minimal MAPPO (centralized-critic PPO) over the tokenomics AEC env.
 
-This is a *smoke* trainer (ADR-0002 / plan slice 5): proof the environment is
-learnable and a readable reference for the real MAPPO runs, not a tuned baseline.
-Two shared policies (CTDE):
-  - producing policy  : Categorical over Discrete(4)
-  - ordering policy   : diagonal Gaussian over the Box logit vector
+A *smoke* trainer (plan slice 5, Phase 1.5 P2): proof the environment is
+learnable and a readable reference for real MAPPO runs, not a tuned baseline.
 
-Cooperative shared reward, so both policies optimize the same return. Rewards are
-collected the AEC way: env.last() returns the reward earned since the agent last
-acted, which we attach to that agent's previous transition.
+CTDE (ADR-0004): two **decentralized actors** on local obs —
+  - producing actor : Categorical over Discrete(4)
+  - ordering actor  : diagonal Gaussian over the Box logit vector
+and **one centralized critic** on the global state, shared by both. The reward
+is cooperative and shared, so a single global value function is the correct
+baseline for every agent.
+
+Rewards are collected the AEC way: env.last() returns the reward earned since the
+agent last acted, attached to that agent's previous transition. GAE bootstraps on
+truncation (horizon) but not on termination (system death) — ADR-0004.
 
 Run:  python -m tokenomics.train.smoke_ppo --iters 50
 """
@@ -38,42 +42,46 @@ def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:
     )
 
 
-class CategoricalPolicy(nn.Module):
+# --- decentralized actors (act on local obs) ---
+class CategoricalActor(nn.Module):
     def __init__(self, obs_dim: int, n_actions: int) -> None:
         super().__init__()
         self.actor = mlp(obs_dim, n_actions)
-        self.critic = mlp(obs_dim, 1)
 
     def dist(self, obs: torch.Tensor) -> Categorical:
         return Categorical(logits=self.actor(obs))
 
-    def value(self, obs: torch.Tensor) -> torch.Tensor:
-        return self.critic(obs).squeeze(-1)
 
-
-class GaussianPolicy(nn.Module):
+class GaussianActor(nn.Module):
     def __init__(self, obs_dim: int, act_dim: int) -> None:
         super().__init__()
         self.actor = mlp(obs_dim, act_dim)
         self.log_std = nn.Parameter(torch.zeros(act_dim))
-        self.critic = mlp(obs_dim, 1)
 
     def dist(self, obs: torch.Tensor) -> Normal:
-        mean = self.actor(obs)
-        return Normal(mean, self.log_std.exp())
+        return Normal(self.actor(obs), self.log_std.exp())
 
-    def value(self, obs: torch.Tensor) -> torch.Tensor:
-        return self.critic(obs).squeeze(-1)
+
+# --- centralized critic (acts on global state, shared by all agents) ---
+class CentralCritic(nn.Module):
+    def __init__(self, global_dim: int) -> None:
+        super().__init__()
+        self.net = mlp(global_dim, 1)
+
+    def value(self, glob: torch.Tensor) -> torch.Tensor:
+        return self.net(glob).squeeze(-1)
 
 
 @dataclass
 class Buf:
-    obs: list = field(default_factory=list)
+    obs: list = field(default_factory=list)      # local obs (actor input)
+    glob: list = field(default_factory=list)     # global state (critic input)
     act: list = field(default_factory=list)
     logp: list = field(default_factory=list)
-    val: list = field(default_factory=list)
+    val: list = field(default_factory=list)      # central-critic value at decision time
     rew: list = field(default_factory=list)
-    done: list = field(default_factory=list)
+    term: list = field(default_factory=list)     # true terminal (death) -> no bootstrap
+    boot: list = field(default_factory=list)      # bootstrap value for the last step (truncation)
     # per-agent index of that agent's last open transition (reward pending)
     pending: dict = field(default_factory=dict)
 
@@ -81,15 +89,19 @@ class Buf:
 def gae(
     rew: list[float],
     val: list[float],
-    done: list[float],
+    term: list[float],
+    boot: list[float],
     gamma: float = 0.99,
     lam: float = 0.95,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """GAE with correct truncation handling (ADR-0004): `term[t]=1` kills the
+    value backup (death); the trajectory's final step bootstraps with `boot[t]`
+    (0 if terminated, V(s_final) if truncated)."""
     adv = np.zeros(len(rew), dtype=np.float32)
     last = 0.0
     for t in reversed(range(len(rew))):
-        nonterminal = 1.0 - done[t]
-        next_val = val[t + 1] if t + 1 < len(val) else 0.0
+        nonterminal = 1.0 - term[t]
+        next_val = val[t + 1] if t + 1 < len(val) else boot[t]
         delta = rew[t] + gamma * next_val * nonterminal - val[t]
         last = delta + gamma * lam * nonterminal * last
         adv[t] = last
@@ -99,14 +111,15 @@ def gae(
 
 def collect(
     env: TokenomicsAECEnv,
-    prod: CategoricalPolicy,
-    order: GaussianPolicy,
+    prod: CategoricalActor,
+    order: GaussianActor,
+    critic: CentralCritic,
     steps: int,
     bound: float,
     rng: np.random.Generator,
 ) -> tuple[Buf, Buf]:
     """Roll out ~`steps` env.step calls, bucketed into a producing buffer and an
-    ordering buffer."""
+    ordering buffer. The centralized critic values the shared global state."""
     pbuf, obuf = Buf(), Buf()
     env.reset(seed=int(rng.integers(0, 2**31)))
     n = 0
@@ -118,34 +131,41 @@ def collect(
         if agent in buf.pending:
             i = buf.pending.pop(agent)
             buf.rew[i] = reward
-            buf.done[i] = 1.0 if (term or trunc) else 0.0
+            buf.term[i] = 1.0 if term else 0.0
+            # truncation is not terminal: bootstrap the last step with V(s_final)
+            if trunc and not term:
+                with torch.no_grad():
+                    g = torch.as_tensor(env.global_state(), dtype=torch.float32)
+                    buf.boot[i] = float(critic.value(g))
 
         if term or trunc:
             env.step(None)
             continue
 
         o = torch.as_tensor(obs, dtype=torch.float32)
+        glob = env.global_state()
         with torch.no_grad():
+            v = critic.value(torch.as_tensor(glob, dtype=torch.float32))
             if role == "prod":
                 d = prod.dist(o)
                 a = d.sample()
                 logp = d.log_prob(a)
-                v = prod.value(o)
                 env_action = int(a.item())
                 stored = env_action
             else:
                 d = order.dist(o)
                 a = d.sample()
                 logp = d.log_prob(a).sum()
-                v = order.value(o)
                 env_action = np.clip(a.numpy(), -bound, bound).astype(np.float32)
                 stored = a.numpy()
         buf.obs.append(obs)
+        buf.glob.append(glob)
         buf.act.append(stored)
         buf.logp.append(float(logp))
         buf.val.append(float(v))
         buf.rew.append(0.0)
-        buf.done.append(0.0)
+        buf.term.append(0.0)
+        buf.boot.append(0.0)
         buf.pending[agent] = len(buf.obs) - 1
         env.step(env_action)
         n += 1
@@ -155,11 +175,11 @@ def collect(
 
 
 def greedy_eval_policies(
-    prod: CategoricalPolicy,
-    order: GaussianPolicy,
+    prod: CategoricalActor,
+    order: GaussianActor,
     bound: float,
 ) -> tuple[Policy, Policy]:
-    """Wrap the trained nets as deterministic eval `Policy` closures (ADR-0003).
+    """Wrap the trained actors as deterministic eval `Policy` closures (ADR-0003).
 
     Greedy = the *deployed* policy: argmax over the producing Discrete(4),
     distribution mean for the ordering Box. They read the obs via `env.observe`
@@ -182,13 +202,14 @@ def greedy_eval_policies(
 @dataclass
 class IterStats:
     """One per-iteration training-curve record (ADR-0003). Optimization signals
-    (rollout reward + losses) plus greedy-eval task metrics from the eval
-    harness. Eval fields are NaN on iters where eval was skipped."""
+    (rollout reward + actor/critic losses) plus greedy-eval task metrics from the
+    eval harness. Eval fields are NaN on iters where eval was skipped."""
 
     iter: int
     mean_step_reward: float
     ploss: float
     oloss: float
+    closs: float
     eval_cycles: float = float("nan")
     eval_dead_rate: float = float("nan")
     eval_consumer_completed: float = float("nan")
@@ -203,43 +224,63 @@ class IterStats:
 REW_SCALE = 0.05
 
 
-def ppo_update(
-    policy: nn.Module,
+def actor_update(
+    actor: nn.Module,
     buf: Buf,
+    adv: np.ndarray,
     opt: torch.optim.Optimizer,
     is_discrete: bool,
     epochs: int = 4,
     clip: float = 0.2,
 ) -> float:
+    """Clipped PPO policy-gradient step on a decentralized actor (ADR-0004). No
+    value loss here — the centralized critic is trained separately."""
     if not buf.obs:
         return 0.0
     obs = torch.as_tensor(np.array(buf.obs), dtype=torch.float32)
-    if is_discrete:
-        act = torch.as_tensor(np.array(buf.act), dtype=torch.long)
-    else:
-        act = torch.as_tensor(np.array(buf.act), dtype=torch.float32)
+    act = (
+        torch.as_tensor(np.array(buf.act), dtype=torch.long)
+        if is_discrete
+        else torch.as_tensor(np.array(buf.act), dtype=torch.float32)
+    )
     old_logp = torch.as_tensor(np.array(buf.logp), dtype=torch.float32)
-    scaled_rew = [r * REW_SCALE for r in buf.rew]
-    adv, ret = gae(scaled_rew, buf.val, buf.done)
     adv_t = torch.as_tensor(adv)
     adv_t = (adv_t - adv_t.mean()) / (adv_t.std() + 1e-8)
-    ret_t = torch.as_tensor(ret)
 
     last_loss = 0.0
     for _ in range(epochs):
-        d = policy.dist(obs)
-        if is_discrete:
-            logp = d.log_prob(act)
-        else:
-            logp = d.log_prob(act).sum(-1)
+        d = actor.dist(obs)
+        logp = d.log_prob(act) if is_discrete else d.log_prob(act).sum(-1)
         ratio = (logp - old_logp).exp()
         s1 = ratio * adv_t
         s2 = torch.clamp(ratio, 1 - clip, 1 + clip) * adv_t
         pg = -torch.min(s1, s2).mean()
-        v = policy.value(obs)
-        vloss = ((ret_t - v) ** 2).mean()
         ent = d.entropy().mean()
-        loss = pg + 0.5 * vloss - 0.01 * ent
+        loss = pg - 0.01 * ent
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        last_loss = loss.item()
+    return last_loss
+
+
+def critic_update(
+    critic: CentralCritic,
+    glob: list,
+    ret: np.ndarray,
+    opt: torch.optim.Optimizer,
+    epochs: int = 4,
+) -> float:
+    """Fit the centralized critic to returns pooled from both role buffers
+    (ADR-0004) — one global value function for the shared cooperative return."""
+    if not glob:
+        return 0.0
+    g = torch.as_tensor(np.array(glob), dtype=torch.float32)
+    ret_t = torch.as_tensor(ret, dtype=torch.float32)
+    last_loss = 0.0
+    for _ in range(epochs):
+        v = critic.value(g)
+        loss = ((ret_t - v) ** 2).mean()
         opt.zero_grad()
         loss.backward()
         opt.step()
@@ -274,18 +315,27 @@ def train(
     order_obs = env.observation_space(env._order_agents[0]).shape[0]
     bound = float(env.action_space(env._order_agents[0]).high[0])
 
-    prod = CategoricalPolicy(prod_obs, 4)
-    order = GaussianPolicy(order_obs, env.spec_.ordering_action_dim)
+    prod = CategoricalActor(prod_obs, 4)
+    order = GaussianActor(order_obs, env.spec_.ordering_action_dim)
+    critic = CentralCritic(env.spec_.global_state_dim)
     popt = torch.optim.Adam(prod.parameters(), lr=3e-4)
     oopt = torch.optim.Adam(order.parameters(), lr=3e-4)
+    copt = torch.optim.Adam(critic.parameters(), lr=1e-3)
 
     history: list[IterStats] = []
     for it in range(iters):
-        pbuf, obuf = collect(env, prod, order, steps, bound, rng)
+        pbuf, obuf = collect(env, prod, order, critic, steps, bound, rng)
         mean_rew = float(np.mean(pbuf.rew)) if pbuf.rew else 0.0
-        pl = ppo_update(prod, pbuf, popt, is_discrete=True)
-        ol = ppo_update(order, obuf, oopt, is_discrete=False)
-        rec = IterStats(iter=it, mean_step_reward=mean_rew, ploss=pl, oloss=ol)
+
+        p_adv, p_ret = gae([r * REW_SCALE for r in pbuf.rew], pbuf.val, pbuf.term, pbuf.boot)
+        o_adv, o_ret = gae([r * REW_SCALE for r in obuf.rew], obuf.val, obuf.term, obuf.boot)
+        pl = actor_update(prod, pbuf, p_adv, popt, is_discrete=True)
+        ol = actor_update(order, obuf, o_adv, oopt, is_discrete=False)
+        # critic trained on the pooled global-state -> return targets from both roles
+        cl = critic_update(
+            critic, pbuf.glob + obuf.glob, np.concatenate([p_ret, o_ret]), copt
+        )
+        rec = IterStats(iter=it, mean_step_reward=mean_rew, ploss=pl, oloss=ol, closs=cl)
 
         # Greedy-eval the deployed policy through the eval harness (ADR-0003):
         # the real task metrics, comparable to the baseline table.
@@ -301,7 +351,7 @@ def train(
 
         history.append(rec)
         log(
-            f"iter {it:3d}  step_rew {mean_rew:8.3f}  ploss {pl:7.3f}  oloss {ol:7.3f}"
+            f"iter {it:3d}  step_rew {mean_rew:8.3f}  ploss {pl:7.3f}  oloss {ol:7.3f}  closs {cl:7.3f}"
             f"  | eval cyc {rec.eval_cycles:6.1f}  dead {rec.eval_dead_rate:4.2f}"
             f"  cons✓ {rec.eval_consumer_completed:7.1f}  cons✗ {rec.eval_consumer_rejected:6.1f}"
             f"  capmin {rec.eval_cap_min:6.1f}  ret {rec.eval_return:8.1f}"

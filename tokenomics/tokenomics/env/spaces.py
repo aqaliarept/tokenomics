@@ -60,6 +60,12 @@ class EnvSpec:
     def ordering_action_dim(self) -> int:
         return self.k * self.num_types
 
+    @property
+    def global_state_dim(self) -> int:
+        # Centralized-critic input (ADR-0004): per-producer full state
+        # (6 own feats + cut-off price) + cycle progress.
+        return 7 * self.num_producers + 1
+
     def producing_obs_space(self) -> spaces.Box:
         return spaces.Box(0.0, OBS_CLIP, shape=(self.producing_obs_dim,), dtype=np.float32)
 
