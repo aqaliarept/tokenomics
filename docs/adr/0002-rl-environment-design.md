@@ -10,7 +10,9 @@ Two policy networks total: one shared across all producing agents, one shared ac
 
 **Producing agent (16 floats):** Own capacity state (capacity, max_capacity, requested_capacity, degradation, upgrade_running, restoration_running — all normalized) plus global producer summary (capacity and cut-off price for every producer, normalized) plus cycle_progress. We initially considered a purely local observation (7 floats, own state only) but the investment decision is nearly meaningless without knowing if upstream producers can fulfill the restoration/upgrade product.
 
-**Ordering agent (21 floats):** Up to K=2 order slots (each: active flag, normalized token budget, capacity needed per type) plus producer summary (capacity and cut-off price per producer) plus cycle_progress. K=2 covers the real worst case: a consumer ordering agent has at most 1 order, a producer ordering agent has at most 2 (restoration + upgrade). Ordering agents see producer state but not other ordering agents' orders — preserving the decentralized information design from DR001.
+**Ordering agent (K order slots):** Up to K order slots (each: active flag, normalized token budget, capacity needed per type) plus producer summary (capacity and cut-off price per producer) plus cycle_progress. Ordering agents see producer state but not other ordering agents' orders — preserving the decentralized information design from DR001.
+
+> **Correction (impl):** This ADR originally set K=2, reasoning a consumer agent has ≤1 order and a producer agent ≤2 (restoration + upgrade). That ignored **carry-over**: a still-processing order stays in the system and is re-placed next to a freshly placed order. With TTL=2 an order lives across cycles with counters {0,1,2} before timeout, so a consumer agent can hold up to **3** at once. K is now **3** (ordering obs = 3·(2+T)+2P+1 = 27 for this config). `decode` additionally even-splits any orders beyond K so the domain's "all orders addressed" invariant can never break.
 
 ## Action spaces
 

@@ -1,0 +1,24 @@
+[project]
+name = "tokenomics"
+version = "0.1.0"
+description = "Tokenomics cooperative multi-agent RL environment (Python port of the Go emulator)"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pettingzoo>=1.24",
+    "gymnasium>=0.29",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+train = ["supersuit>=3.9", "torch>=2.2"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["tokenomics*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

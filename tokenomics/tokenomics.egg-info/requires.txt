@@ -1,0 +1,10 @@
+numpy>=1.26
+pettingzoo>=1.24
+gymnasium>=0.29
+
+[dev]
+pytest>=8.0
+
+[train]
+supersuit>=3.9
+torch>=2.2

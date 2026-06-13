@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: tokenomics
+Version: 0.1.0
+Summary: Tokenomics cooperative multi-agent RL environment (Python port of the Go emulator)
+Requires-Python: >=3.11
+Requires-Dist: numpy>=1.26
+Requires-Dist: pettingzoo>=1.24
+Requires-Dist: gymnasium>=0.29
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Provides-Extra: train
+Requires-Dist: supersuit>=3.9; extra == "train"
+Requires-Dist: torch>=2.2; extra == "train"

@@ -1,0 +1,97 @@
+{
+  "cycleEmission": 1000,
+  "processSheets": [
+    {
+      "product": 1,
+      "require": {
+        "capacity-1": 15,
+        "capacity-3": 8
+      }
+    },
+    {
+      "product": 2,
+      "require": {
+        "capacity-2": 180,
+        "capacity-4": 20
+      }
+    },
+    {
+      "product": 3,
+      "require": {
+        "capacity-3": 45,
+        "capacity-1": 25
+      }
+    },
+    {
+      "product": 4,
+      "require": {
+        "capacity-4": 60,
+        "capacity-2": 40
+      }
+    }
+  ],
+  "consumers": [
+    { "id": "c1", "product": 1 },
+    { "id": "c2", "product": 2 },
+    { "id": "c3", "product": 3 },
+    { "id": "c4", "product": 4 }
+  ],
+  "producerConfigs": [
+    {
+      "id": "p1",
+      "type": "capacity-1",
+      "capacity": 120,
+      "degradation": 3,
+      "restoration": {
+        "product": 4,
+        "restores": 90
+      },
+      "upgrade": {
+        "product": 2,
+        "capacity": 80
+      }
+    },
+    {
+      "id": "p2",
+      "type": "capacity-2",
+      "capacity": 250,
+      "degradation": 8,
+      "restoration": {
+        "product": 1,
+        "restores": 160
+      },
+      "upgrade": {
+        "product": 3,
+        "capacity": 150
+      }
+    },
+    {
+      "id": "p3",
+      "type": "capacity-3",
+      "capacity": 180,
+      "degradation": 4,
+      "restoration": {
+        "product": 2,
+        "restores": 100
+      },
+      "upgrade": {
+        "product": 4,
+        "capacity": 120
+      }
+    },
+    {
+      "id": "p4",
+      "type": "capacity-4",
+      "capacity": 150,
+      "degradation": 5,
+      "restoration": {
+        "product": 3,
+        "restores": 75
+      },
+      "upgrade": {
+        "product": 1,
+        "capacity": 100
+      }
+    }
+  ]
+}
