@@ -16,7 +16,8 @@ Run:  python -m tokenomics.train.smoke_ppo --iters 50
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+import csv
+from dataclasses import asdict, dataclass, field
 from typing import Callable
 
 import numpy as np
@@ -25,6 +26,8 @@ import torch.nn as nn
 from torch.distributions import Categorical, Normal
 
 from ..env import TokenomicsAECEnv
+from ..eval.baselines import Policy
+from ..eval.runner import evaluate
 
 
 def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:
@@ -151,6 +154,49 @@ def collect(
     return pbuf, obuf
 
 
+def greedy_eval_policies(
+    prod: CategoricalPolicy,
+    order: GaussianPolicy,
+    bound: float,
+) -> tuple[Policy, Policy]:
+    """Wrap the trained nets as deterministic eval `Policy` closures (ADR-0003).
+
+    Greedy = the *deployed* policy: argmax over the producing Discrete(4),
+    distribution mean for the ordering Box. They read the obs via `env.observe`
+    so the eval harness measures them exactly like a baseline."""
+
+    def prod_policy(env: TokenomicsAECEnv, agent: str) -> int:
+        o = torch.as_tensor(env.observe(agent), dtype=torch.float32)
+        with torch.no_grad():
+            return int(torch.argmax(prod.actor(o)).item())
+
+    def order_policy(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        o = torch.as_tensor(env.observe(agent), dtype=torch.float32)
+        with torch.no_grad():
+            mean = order.actor(o).numpy()
+        return np.clip(mean, -bound, bound).astype(np.float32)
+
+    return prod_policy, order_policy
+
+
+@dataclass
+class IterStats:
+    """One per-iteration training-curve record (ADR-0003). Optimization signals
+    (rollout reward + losses) plus greedy-eval task metrics from the eval
+    harness. Eval fields are NaN on iters where eval was skipped."""
+
+    iter: int
+    mean_step_reward: float
+    ploss: float
+    oloss: float
+    eval_cycles: float = float("nan")
+    eval_dead_rate: float = float("nan")
+    eval_consumer_completed: float = float("nan")
+    eval_consumer_rejected: float = float("nan")
+    eval_cap_min: float = float("nan")
+    eval_return: float = float("nan")
+
+
 # Reward scale for optimization only (logging stays raw). Keeps critic targets
 # and advantages at O(1) so value loss doesn't dominate — the cycle reward is a
 # sum over many orders and is naturally large.
@@ -201,13 +247,26 @@ def ppo_update(
     return last_loss
 
 
+def write_curve(history: list[IterStats], path: str) -> None:
+    """Dump the per-iteration training curve as CSV for offline plotting (ADR-0003)."""
+    fields = list(asdict(history[0]).keys())
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        for s in history:
+            w.writerow(asdict(s))
+
+
 def train(
     iters: int = 50,
     steps: int = 1024,
     horizon: int = 100,
     seed: int = 0,
+    eval_every: int = 1,
+    eval_seeds: int = 3,
+    out: str | None = None,
     log: Callable[[str], None] = print,
-) -> list[float]:
+) -> list[IterStats]:
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     env = TokenomicsAECEnv(horizon=horizon)
@@ -220,14 +279,37 @@ def train(
     popt = torch.optim.Adam(prod.parameters(), lr=3e-4)
     oopt = torch.optim.Adam(order.parameters(), lr=3e-4)
 
-    history: list[float] = []
+    history: list[IterStats] = []
     for it in range(iters):
         pbuf, obuf = collect(env, prod, order, steps, bound, rng)
         mean_rew = float(np.mean(pbuf.rew)) if pbuf.rew else 0.0
         pl = ppo_update(prod, pbuf, popt, is_discrete=True)
         ol = ppo_update(order, obuf, oopt, is_discrete=False)
-        history.append(mean_rew)
-        log(f"iter {it:3d}  mean_step_reward {mean_rew:8.3f}  ploss {pl:7.3f}  oloss {ol:7.3f}")
+        rec = IterStats(iter=it, mean_step_reward=mean_rew, ploss=pl, oloss=ol)
+
+        # Greedy-eval the deployed policy through the eval harness (ADR-0003):
+        # the real task metrics, comparable to the baseline table.
+        if eval_every and (it % eval_every == 0 or it == iters - 1):
+            pp, op = greedy_eval_policies(prod, order, bound)
+            m = evaluate(pp, op, seeds=range(eval_seeds), horizon=horizon)
+            rec.eval_cycles = m["cycles"][0]
+            rec.eval_dead_rate = m["dead_rate"][0]
+            rec.eval_consumer_completed = m["consumer_completed"][0]
+            rec.eval_consumer_rejected = m["consumer_rejected"][0]
+            rec.eval_cap_min = m["cap_min"][0]
+            rec.eval_return = m["return"][0]
+
+        history.append(rec)
+        log(
+            f"iter {it:3d}  step_rew {mean_rew:8.3f}  ploss {pl:7.3f}  oloss {ol:7.3f}"
+            f"  | eval cyc {rec.eval_cycles:6.1f}  dead {rec.eval_dead_rate:4.2f}"
+            f"  cons✓ {rec.eval_consumer_completed:7.1f}  cons✗ {rec.eval_consumer_rejected:6.1f}"
+            f"  capmin {rec.eval_cap_min:6.1f}  ret {rec.eval_return:8.1f}"
+        )
+
+    if out:
+        write_curve(history, out)
+        log(f"curve -> {out}")
     return history
 
 
@@ -237,8 +319,14 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=1024)
     ap.add_argument("--horizon", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--eval-every", type=int, default=1, help="eval the greedy policy every N iters (0=off)")
+    ap.add_argument("--eval-seeds", type=int, default=3, help="seeds per greedy eval")
+    ap.add_argument("--out", type=str, default=None, help="write per-iter curve CSV to this path")
     args = ap.parse_args()
-    train(iters=args.iters, steps=args.steps, horizon=args.horizon, seed=args.seed)
+    train(
+        iters=args.iters, steps=args.steps, horizon=args.horizon, seed=args.seed,
+        eval_every=args.eval_every, eval_seeds=args.eval_seeds, out=args.out,
+    )
 
 
 if __name__ == "__main__":

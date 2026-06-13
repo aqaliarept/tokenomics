@@ -11,7 +11,7 @@ The smoke PPO runs but a **random policy survives the full horizon**, so reward 
 | P | Work | Why |
 |---|------|-----|
 | **0** | ✅ **DONE** — baselines + metrics harness + signal check; consumer-weighted reward | Gates everything |
-| 1 | Logging/eval (completion rate, rejection rate, survival length, capacity trajectories, deaths) — foundation built in `eval/`; add per-iter training curves next | Can't improve what you can't see |
+| **1** | ✅ **DONE** — per-iter training curves (ADR-0003): `train()` greedy-evals the policy through the `eval/` harness each iter → real task metrics (cycles, dead%, cons✓/✗, capmin, return), logged + optional `--out` CSV | Can't improve what you can't see |
 | 2 | Centralized-critic MAPPO (CTDE) — actor on local obs, critic on global state | Fixes shared-reward credit assignment; the "critic distributes reward properly" goal |
 | 3 | Vectorize (SuperSuit, many parallel envs) | Throughput, only after the loop is proven |
 | 4 | Curriculum per deep-research 6 phases | Scale toward the real game |
