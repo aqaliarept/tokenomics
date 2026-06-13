@@ -13,7 +13,7 @@ The smoke PPO runs but a **random policy survives the full horizon**, so reward 
 | **0** | ✅ **DONE** — baselines + metrics harness + signal check; consumer-weighted reward | Gates everything |
 | **1** | ✅ **DONE** — per-iter training curves (ADR-0003): `train()` greedy-evals the policy through the `eval/` harness each iter → real task metrics (cycles, dead%, cons✓/✗, capmin, return), logged + optional `--out` CSV | Can't improve what you can't see |
 | **2** | ✅ **DONE** — centralized-critic MAPPO (ADR-0004): two decentralized actors on local obs + one critic on `env.global_state()` (7·P+1 global state); GAE now bootstraps on truncation, kills backup on termination | Fixes shared-reward credit assignment; the "critic distributes reward properly" goal |
-| 3 | Vectorize (SuperSuit, many parallel envs) | Throughput, only after the loop is proven |
+| **3** | ✅ **DONE** — in-house sync vectorized rollout (ADR-0005): `collect()` drives `--num-envs` AEC envs in round-robin into shared role buffers, `(env,agent)`-keyed pending. SuperSuit rejected (pads heterogeneous obs, hides `global_state()`); subprocess/async deferred behind the same seam | Throughput, only after the loop is proven |
 | 4 | Curriculum per deep-research 6 phases | Scale toward the real game |
 
 **Reward objective fix (P0):** investment-order completion was rewarded equal to consumer-order completion (+10 each), but investment is *instrumental* (keep capacity alive) while consumer fulfillment is *terminal* (the actual goal). Reward is reweighted so consumer completion dominates; investment gets a small positive; the centralized critic learns investment's indirect value.
@@ -140,7 +140,7 @@ Integer rounding must hit the exact budget — last slot absorbs the rounding re
 
 ## Step 7 — Smoke train (optional, ends Phase 1)
 
-Wrap with SuperSuit (pad + parameter-sharing → vector env), run a short MAPPO / PPO run (CleanRL or RLlib) for a few hundred cycles on the M1 to confirm reward moves and the loop is learnable. Not full training — just proof the env trains. Hand to Sergey for real runs.
+Wrap with SuperSuit (pad + parameter-sharing → vector env), run a short MAPPO / PPO run (CleanRL or RLlib) for a few hundred cycles on the M1 to confirm reward moves and the loop is learnable. Not full training — just proof the env trains. Real runs follow once the loop is proven.
 
 ## Dependencies
 

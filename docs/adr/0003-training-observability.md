@@ -24,7 +24,7 @@ list of floats, and optionally writes them as a CSV curve for offline plotting.
 The collection rollout samples stochastically (exploration) and reports reward
 *during* learning. The thing we want to chart is the *deployed* policy: argmax
 over the producing `Discrete(4)`, distribution mean for the ordering `Box`. This
-matches how the trained policy is handed to Sergey for real runs and makes the
+matches how the trained policy is deployed for real runs and makes the
 RL curve directly comparable to the baseline table (target: beat
 `restore_when_low` + `even_split`).
 

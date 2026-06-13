@@ -110,7 +110,7 @@ def gae(
 
 
 def collect(
-    env: TokenomicsAECEnv,
+    envs: list[TokenomicsAECEnv],
     prod: CategoricalActor,
     order: GaussianActor,
     critic: CentralCritic,
@@ -118,59 +118,73 @@ def collect(
     bound: float,
     rng: np.random.Generator,
 ) -> tuple[Buf, Buf]:
-    """Roll out ~`steps` env.step calls, bucketed into a producing buffer and an
-    ordering buffer. The centralized critic values the shared global state."""
+    """Roll `steps` total live decisions across `envs` in round-robin (ADR-0005),
+    bucketed into a producing buffer and an ordering buffer. The centralized
+    critic values the shared global state.
+
+    Pending reward bookkeeping is keyed by `(env_index, agent)` so identical
+    agent names across envs do not collide. A finished env is reset and reused
+    until the decision budget is met."""
     pbuf, obuf = Buf(), Buf()
-    env.reset(seed=int(rng.integers(0, 2**31)))
+    for env in envs:
+        env.reset(seed=int(rng.integers(0, 2**31)))
     n = 0
-    for agent in env.agent_iter(max_iter=steps * 4):
-        obs, reward, term, trunc, info = env.last()
-        role = env._role[agent][0]
-        buf = pbuf if role == "prod" else obuf
-        # attach reward to this agent's previous (pending) transition
-        if agent in buf.pending:
-            i = buf.pending.pop(agent)
-            buf.rew[i] = reward
-            buf.term[i] = 1.0 if term else 0.0
-            # truncation is not terminal: bootstrap the last step with V(s_final)
-            if trunc and not term:
-                with torch.no_grad():
-                    g = torch.as_tensor(env.global_state(), dtype=torch.float32)
-                    buf.boot[i] = float(critic.value(g))
+    # cap outer rounds so a stuck env can never spin forever; dead-step flushing
+    # and resets make real progress well within this bound.
+    max_rounds = steps * 8 + len(envs) * 16
+    rounds = 0
+    while n < steps and rounds < max_rounds:
+        rounds += 1
+        for ei, env in enumerate(envs):
+            if not env.agents:
+                env.reset(seed=int(rng.integers(0, 2**31)))
+            agent = env.agent_selection
+            obs, reward, term, trunc, info = env.last()
+            role = env._role[agent][0]
+            buf = pbuf if role == "prod" else obuf
+            key = (ei, agent)
+            # attach reward to this agent's previous (pending) transition
+            if key in buf.pending:
+                i = buf.pending.pop(key)
+                buf.rew[i] = reward
+                buf.term[i] = 1.0 if term else 0.0
+                # truncation is not terminal: bootstrap the last step with V(s_final)
+                if trunc and not term:
+                    with torch.no_grad():
+                        g = torch.as_tensor(env.global_state(), dtype=torch.float32)
+                        buf.boot[i] = float(critic.value(g))
 
-        if term or trunc:
-            env.step(None)
-            continue
+            if term or trunc:
+                env.step(None)
+                continue
 
-        o = torch.as_tensor(obs, dtype=torch.float32)
-        glob = env.global_state()
-        with torch.no_grad():
-            v = critic.value(torch.as_tensor(glob, dtype=torch.float32))
-            if role == "prod":
-                d = prod.dist(o)
-                a = d.sample()
-                logp = d.log_prob(a)
-                env_action = int(a.item())
-                stored = env_action
-            else:
-                d = order.dist(o)
-                a = d.sample()
-                logp = d.log_prob(a).sum()
-                env_action = np.clip(a.numpy(), -bound, bound).astype(np.float32)
-                stored = a.numpy()
-        buf.obs.append(obs)
-        buf.glob.append(glob)
-        buf.act.append(stored)
-        buf.logp.append(float(logp))
-        buf.val.append(float(v))
-        buf.rew.append(0.0)
-        buf.term.append(0.0)
-        buf.boot.append(0.0)
-        buf.pending[agent] = len(buf.obs) - 1
-        env.step(env_action)
-        n += 1
-        if n >= steps and not env.agents:
-            break
+            o = torch.as_tensor(obs, dtype=torch.float32)
+            glob = env.global_state()
+            with torch.no_grad():
+                v = critic.value(torch.as_tensor(glob, dtype=torch.float32))
+                if role == "prod":
+                    d = prod.dist(o)
+                    a = d.sample()
+                    logp = d.log_prob(a)
+                    env_action = int(a.item())
+                    stored = env_action
+                else:
+                    d = order.dist(o)
+                    a = d.sample()
+                    logp = d.log_prob(a).sum()
+                    env_action = np.clip(a.numpy(), -bound, bound).astype(np.float32)
+                    stored = a.numpy()
+            buf.obs.append(obs)
+            buf.glob.append(glob)
+            buf.act.append(stored)
+            buf.logp.append(float(logp))
+            buf.val.append(float(v))
+            buf.rew.append(0.0)
+            buf.term.append(0.0)
+            buf.boot.append(0.0)
+            buf.pending[key] = len(buf.obs) - 1
+            env.step(env_action)
+            n += 1
     return pbuf, obuf
 
 
@@ -303,6 +317,7 @@ def train(
     steps: int = 1024,
     horizon: int = 100,
     seed: int = 0,
+    num_envs: int = 4,
     eval_every: int = 1,
     eval_seeds: int = 3,
     out: str | None = None,
@@ -310,7 +325,10 @@ def train(
 ) -> list[IterStats]:
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
-    env = TokenomicsAECEnv(horizon=horizon)
+    # Vectorized rollout (ADR-0005): N independent AEC envs collected in
+    # round-robin. `steps` is total decisions/iter spread across them.
+    envs = [TokenomicsAECEnv(horizon=horizon) for _ in range(num_envs)]
+    env = envs[0]
     prod_obs = env.observation_space(env._prod_agents[0]).shape[0]
     order_obs = env.observation_space(env._order_agents[0]).shape[0]
     bound = float(env.action_space(env._order_agents[0]).high[0])
@@ -324,7 +342,7 @@ def train(
 
     history: list[IterStats] = []
     for it in range(iters):
-        pbuf, obuf = collect(env, prod, order, critic, steps, bound, rng)
+        pbuf, obuf = collect(envs, prod, order, critic, steps, bound, rng)
         mean_rew = float(np.mean(pbuf.rew)) if pbuf.rew else 0.0
 
         p_adv, p_ret = gae([r * REW_SCALE for r in pbuf.rew], pbuf.val, pbuf.term, pbuf.boot)
@@ -369,13 +387,15 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=1024)
     ap.add_argument("--horizon", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--num-envs", type=int, default=4, help="parallel rollout envs (ADR-0005)")
     ap.add_argument("--eval-every", type=int, default=1, help="eval the greedy policy every N iters (0=off)")
     ap.add_argument("--eval-seeds", type=int, default=3, help="seeds per greedy eval")
     ap.add_argument("--out", type=str, default=None, help="write per-iter curve CSV to this path")
     args = ap.parse_args()
     train(
         iters=args.iters, steps=args.steps, horizon=args.horizon, seed=args.seed,
-        eval_every=args.eval_every, eval_seeds=args.eval_seeds, out=args.out,
+        num_envs=args.num_envs, eval_every=args.eval_every, eval_seeds=args.eval_seeds,
+        out=args.out,
     )
 
 

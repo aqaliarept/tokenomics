@@ -42,6 +42,38 @@ def test_gae_truncation_bootstraps_termination_does_not():
     assert adv_term[1] == 0.0
 
 
+def test_vectorized_collect_fills_both_buffers():
+    """ADR-0005: collect() drives a list of envs in round-robin and buckets
+    decisions into producing + ordering buffers. `(env_idx, agent)` keying must
+    not drop transitions when agent names repeat across envs."""
+    import numpy as np
+
+    from tokenomics.env import TokenomicsAECEnv
+    from tokenomics.train.smoke_ppo import (
+        CategoricalActor,
+        CentralCritic,
+        GaussianActor,
+        collect,
+    )
+
+    envs = [TokenomicsAECEnv(horizon=40) for _ in range(3)]
+    e = envs[0]
+    prod = CategoricalActor(e.observation_space(e._prod_agents[0]).shape[0], 4)
+    order = GaussianActor(
+        e.observation_space(e._order_agents[0]).shape[0], e.spec_.ordering_action_dim
+    )
+    critic = CentralCritic(e.spec_.global_state_dim)
+    bound = float(e.action_space(e._order_agents[0]).high[0])
+
+    pbuf, obuf = collect(envs, prod, order, critic, steps=200, bound=bound,
+                         rng=np.random.default_rng(0))
+
+    assert len(pbuf.obs) + len(obuf.obs) >= 200
+    assert pbuf.obs and obuf.obs
+    # global state width matches the centralized-critic input
+    assert len(pbuf.glob[0]) == e.spec_.global_state_dim
+
+
 def test_curve_csv_written(tmp_path):
     from tokenomics.train.smoke_ppo import train
 
