@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Callable
 
 import numpy as np
@@ -29,7 +29,10 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Normal
 
+from ..domain import load_config
+from ..domain.config import Configuration
 from ..env import TokenomicsAECEnv
+from ..env.aec_env import DEFAULT_CONFIG
 from ..eval.baselines import Policy
 from ..eval.runner import evaluate
 
@@ -224,6 +227,7 @@ class IterStats:
     ploss: float
     oloss: float
     closs: float
+    difficulty: float = 1.0
     eval_cycles: float = float("nan")
     eval_dead_rate: float = float("nan")
     eval_consumer_completed: float = float("nan")
@@ -302,6 +306,34 @@ def critic_update(
     return last_loss
 
 
+# --- difficulty curriculum (ADR-0006) ---
+@dataclass
+class Curriculum:
+    """Degradation-annealing schedule. `difficulty(it, iters)` ramps linearly
+    from `d_start` to 1.0 over the first `warmup_frac` of the run, then holds at
+    1.0 (full real difficulty)."""
+
+    d_start: float = 0.2
+    warmup_frac: float = 0.6
+
+    def difficulty(self, it: int, iters: int) -> float:
+        if self.warmup_frac <= 0.0:
+            return 1.0
+        span = max(1.0, (iters - 1) * self.warmup_frac)
+        return min(1.0, self.d_start + (1.0 - self.d_start) * (it / span))
+
+
+def scale_degradation(cfg: Configuration, d: float) -> Configuration:
+    """Copy `cfg` with every producer's degradation scaled by `d` (ADR-0006).
+    `d=1.0` is the real config; smaller `d` slows decay so survival is reachable.
+    No dimension changes, so the actor/critic shapes stay valid."""
+    producers = [
+        replace(p, degradation=max(0, round(p.degradation * d)))
+        for p in cfg.producer_configs
+    ]
+    return replace(cfg, producer_configs=producers)
+
+
 def write_curve(history: list[IterStats], path: str) -> None:
     """Dump the per-iteration training curve as CSV for offline plotting (ADR-0003)."""
     fields = list(asdict(history[0]).keys())
@@ -318,6 +350,7 @@ def train(
     horizon: int = 100,
     seed: int = 0,
     num_envs: int = 4,
+    curriculum: Curriculum | None = None,
     eval_every: int = 1,
     eval_seeds: int = 3,
     out: str | None = None,
@@ -325,10 +358,11 @@ def train(
 ) -> list[IterStats]:
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
-    # Vectorized rollout (ADR-0005): N independent AEC envs collected in
-    # round-robin. `steps` is total decisions/iter spread across them.
-    envs = [TokenomicsAECEnv(horizon=horizon) for _ in range(num_envs)]
-    env = envs[0]
+    # Base (real) config; the curriculum (ADR-0006) eases degradation off it.
+    base_cfg = load_config(DEFAULT_CONFIG)
+    # Network shapes come from the real spec — degradation scaling never changes
+    # obs/action dims (ADR-0006), so one build is valid for every difficulty.
+    env = TokenomicsAECEnv(config=base_cfg, horizon=horizon)
     prod_obs = env.observation_space(env._prod_agents[0]).shape[0]
     order_obs = env.observation_space(env._order_agents[0]).shape[0]
     bound = float(env.action_space(env._order_agents[0]).high[0])
@@ -342,6 +376,10 @@ def train(
 
     history: list[IterStats] = []
     for it in range(iters):
+        # Rebuild rollout envs at the current curriculum difficulty (ADR-0006).
+        d = curriculum.difficulty(it, iters) if curriculum else 1.0
+        cfg = scale_degradation(base_cfg, d) if curriculum else base_cfg
+        envs = [TokenomicsAECEnv(config=cfg, horizon=horizon) for _ in range(num_envs)]
         pbuf, obuf = collect(envs, prod, order, critic, steps, bound, rng)
         mean_rew = float(np.mean(pbuf.rew)) if pbuf.rew else 0.0
 
@@ -353,7 +391,8 @@ def train(
         cl = critic_update(
             critic, pbuf.glob + obuf.glob, np.concatenate([p_ret, o_ret]), copt
         )
-        rec = IterStats(iter=it, mean_step_reward=mean_rew, ploss=pl, oloss=ol, closs=cl)
+        rec = IterStats(iter=it, mean_step_reward=mean_rew, ploss=pl, oloss=ol, closs=cl,
+                        difficulty=d)
 
         # Greedy-eval the deployed policy through the eval harness (ADR-0003):
         # the real task metrics, comparable to the baseline table.
@@ -369,7 +408,7 @@ def train(
 
         history.append(rec)
         log(
-            f"iter {it:3d}  step_rew {mean_rew:8.3f}  ploss {pl:7.3f}  oloss {ol:7.3f}  closs {cl:7.3f}"
+            f"iter {it:3d}  diff {d:4.2f}  step_rew {mean_rew:8.3f}  ploss {pl:7.3f}  oloss {ol:7.3f}  closs {cl:7.3f}"
             f"  | eval cyc {rec.eval_cycles:6.1f}  dead {rec.eval_dead_rate:4.2f}"
             f"  cons✓ {rec.eval_consumer_completed:7.1f}  cons✗ {rec.eval_consumer_rejected:6.1f}"
             f"  capmin {rec.eval_cap_min:6.1f}  ret {rec.eval_return:8.1f}"
@@ -388,14 +427,18 @@ def main() -> None:
     ap.add_argument("--horizon", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--num-envs", type=int, default=4, help="parallel rollout envs (ADR-0005)")
+    ap.add_argument("--no-curriculum", action="store_true", help="train at full real difficulty (disable ADR-0006 curriculum)")
+    ap.add_argument("--d-start", type=float, default=0.2, help="curriculum start difficulty (fraction of real degradation)")
+    ap.add_argument("--warmup-frac", type=float, default=0.6, help="fraction of run to reach full difficulty")
     ap.add_argument("--eval-every", type=int, default=1, help="eval the greedy policy every N iters (0=off)")
     ap.add_argument("--eval-seeds", type=int, default=3, help="seeds per greedy eval")
     ap.add_argument("--out", type=str, default=None, help="write per-iter curve CSV to this path")
     args = ap.parse_args()
+    curriculum = None if args.no_curriculum else Curriculum(d_start=args.d_start, warmup_frac=args.warmup_frac)
     train(
         iters=args.iters, steps=args.steps, horizon=args.horizon, seed=args.seed,
-        num_envs=args.num_envs, eval_every=args.eval_every, eval_seeds=args.eval_seeds,
-        out=args.out,
+        num_envs=args.num_envs, curriculum=curriculum, eval_every=args.eval_every,
+        eval_seeds=args.eval_seeds, out=args.out,
     )
 
 

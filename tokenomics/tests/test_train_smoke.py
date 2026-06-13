@@ -74,6 +74,30 @@ def test_vectorized_collect_fills_both_buffers():
     assert len(pbuf.glob[0]) == e.spec_.global_state_dim
 
 
+def test_curriculum_ramps_and_scales_degradation():
+    """ADR-0006: difficulty ramps d_start -> 1.0 and scales degradation; eval
+    config stays real (untouched)."""
+    from tokenomics.domain import load_config
+    from tokenomics.env.aec_env import DEFAULT_CONFIG
+    from tokenomics.train.smoke_ppo import Curriculum, scale_degradation
+
+    cur = Curriculum(d_start=0.2, warmup_frac=0.6)
+    assert cur.difficulty(0, 10) == pytest.approx(0.2)
+    assert cur.difficulty(9, 10) == pytest.approx(1.0)
+    # monotone non-decreasing
+    ds = [cur.difficulty(i, 10) for i in range(10)]
+    assert ds == sorted(ds)
+
+    base = load_config(DEFAULT_CONFIG)
+    eased = scale_degradation(base, 0.2)
+    for b, e in zip(base.producer_configs, eased.producer_configs):
+        assert e.degradation == max(0, round(b.degradation * 0.2))
+        assert e.degradation <= b.degradation
+    # base untouched (frozen + replace -> new object)
+    assert scale_degradation(base, 1.0).producer_configs[0].degradation == \
+        base.producer_configs[0].degradation
+
+
 def test_curve_csv_written(tmp_path):
     from tokenomics.train.smoke_ppo import train
 
