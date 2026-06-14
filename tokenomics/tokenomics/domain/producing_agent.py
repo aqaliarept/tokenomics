@@ -1,146 +1,238 @@
-"""Producing agent: owns one capacity type, runs the greedy auction, handles
-investment. Port of emulation/domain/producing_agent.go.
+"""Producing agent: owns one or more capacity types, runs the atomic bundle
+auction, handles investment. Track B redesign (ADR-0025).
 
-Auction subtlety: `remaining_capacity` starts at the *current* capacity (signed
-int, may go negative) and degradation is applied only to the capacity stored for
-the next cycle. The in-progress booking carries an unfinished bid across cycles.
+The auction is **atomic and single-cycle**: a bundle bid clears only if every
+required capacity type fits *this* cycle. There is no multi-cycle carry-over (the
+old single-type `in_progress` booking is removed); a bundle that does not fit is
+rejected. Cut-off price stays a single scalar = the lowest accepted bid price.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .common import (
     Capacity,
     CapacityType,
     CapacityUnitPrice,
     OrderId,
+    Product,
     ProducerId,
     Tokens,
     UNDEFINED_PRICE,
     f32,
 )
 from .config import ProducingAgentConfig
-from .requests import InvestmentRequest, InvestmentType
+from .requests import InvestmentRequest, InvestmentType, ReplenishmentRequest
+
+# A composite reservation waits at most this many cycles for its inputs before
+# failing (rejected, −5). Mirrors the order TTL (ADR-0025).
+RESERVATION_TTL = 2
 
 
 @dataclass
 class Bid:
-    capacity_type: CapacityType
-    capacity: Capacity
+    """A whole-bundle bid: the capacity of every type the sub-order requires, the
+    tokens backing it, and the order it belongs to (ADR-0025). Composite bids also
+    carry the product and the total input-product units assembly consumes."""
+
+    capacities: dict[CapacityType, Capacity]
     tokens: Tokens
     order_id: OrderId
+    product: Product = 0
+    inputs: dict[Product, int] = field(default_factory=dict)
+    quantity: int = 1  # units of `product` this sub-order fulfils (ADR-0025)
+
+    def is_composite(self) -> bool:
+        return bool(self.inputs)
+
+    def total_capacity(self) -> Capacity:
+        return sum(self.capacities.values())
 
     def capacity_unit_price(self) -> CapacityUnitPrice:
-        return f32(f32(self.tokens) / f32(self.capacity))
+        return f32(f32(self.tokens) / f32(self.total_capacity()))
+
+
+@dataclass
+class _Reservation:
+    """A composite bid that cleared the auction and reserved its capacity, waiting
+    for its inputs to arrive in stock (ADR-0025)."""
+
+    bid: Bid
+    cycles_waited: int = 0
 
 
 @dataclass
 class ProducerInfo:
     id: ProducerId
-    capacity_type: CapacityType
-    max_capacity: Capacity
-    capacity: Capacity
+    capacities: dict[CapacityType, Capacity]  # current, per type
+    max_capacities: dict[CapacityType, Capacity]
     cut_off_price: CapacityUnitPrice
 
-
-@dataclass
-class _Booking:
-    order_id: OrderId
-    booked: Capacity
-    bid: Bid
+    def owns(self, t: CapacityType) -> bool:
+        return t in self.capacities
 
 
 @dataclass
 class ProducingAgentCommand:
     do_restoration: bool
     do_upgrade: bool
+    do_inventory_expansion: bool = False
+    # input product -> units to buy this cycle (ADR-0025). Zero/absent = no order.
+    replenishments: dict[Product, int] = field(default_factory=dict)
 
 
 @dataclass
 class ProductionResult:
-    processing: list[Bid]
-    completed: list[Bid]
-    rejected: list[Bid]
+    accepted: list[Bid]  # cleared the auction THIS cycle (tokens burnt now)
+    completed: list[Bid]  # delivered THIS cycle (same-cycle or reservation assembled)
+    failed: list[Bid]  # a prior acceptance whose reservation dropped/TTL'd this cycle
+    rejected: list[Bid]  # bid that never cleared the auction (tokens stay available)
 
 
 @dataclass
 class ProducingAgentView:
     id: ProducerId
-    max_capacity: Capacity
-    capacity: Capacity
+    capacities: dict[CapacityType, Capacity]
+    max_capacities: dict[CapacityType, Capacity]
     requested_capacity: Capacity
-    degradation: Capacity
+    degradation: dict[CapacityType, Capacity]  # per-type degradation this cycle
     upgrade: Capacity
     restoration: Capacity
     upgrade_running: bool
     restoration_running: bool
+    # inventory subsystem (ADR-0025): per-input stock + the joint headroom the env
+    # decode apportions a cycle's replenishment within.
+    inventory: dict[Product, int]
+    inventory_limit: int
+    inventory_units: int
+    headroom: int
+    inventory_expansion_running: bool
+    has_inventory_expansion: bool
 
 
 class ProducingAgent:
     def __init__(self, config: ProducingAgentConfig) -> None:
         self.id = config.id
-        self.capacity_type = config.type
+        self.capacities: dict[CapacityType, Capacity] = dict(config.capacities)
+        self.max_capacities: dict[CapacityType, Capacity] = dict(config.capacities)
         self.degradation = config.degradation
         self.restoration = config.restoration
         self.upgrade = config.upgrade
+        self.inventory_expansion = config.inventory_expansion
+        self.replenish_cost_per_unit = config.replenish_cost_per_unit
         # producer state
-        self.capacity: Capacity = config.capacity
-        self.max_capacity: Capacity = config.capacity
         self.bids: list[Bid] = []
-        self.in_progress: _Booking | None = None
         self.requested_capacity: Capacity = 0
         self.funds: Tokens = 0
         self.cut_off_price: CapacityUnitPrice = UNDEFINED_PRICE
-        # consumer state
+        # inventory subsystem (ADR-0025): input-product stock + unit-count limit,
+        # and capacity reserved by composites waiting for their inputs.
+        self.inventory: dict[Product, int] = {}
+        self.inventory_limit: int = config.inventory_limit
+        self.reservations: list[_Reservation] = []
+        # units ordered via replenishment but not yet delivered — claim inventory
+        # headroom so the env's joint headroom H stays accurate (ADR-0025).
+        self.outstanding_inbound: dict[Product, int] = {}
+        # consumer (investment) state
         self.upgrade_running: bool = False
         self.restoration_running: bool = False
+        self.inventory_expansion_running: bool = False
         self.cmd_handled: bool = False
 
-    def info(self) -> ProducerInfo:
-        return ProducerInfo(self.id, self.capacity_type, self.max_capacity, self.capacity, self.cut_off_price)
+    def owns(self, t: CapacityType) -> bool:
+        return t in self.capacities
 
-    def capacity_degradation(self) -> Capacity:
-        return int(math.ceil(self.degradation * self.max_capacity / 100))
+    def info(self) -> ProducerInfo:
+        return ProducerInfo(self.id, dict(self.capacities), dict(self.max_capacities), self.cut_off_price)
+
+    def degradation_for(self, t: CapacityType) -> Capacity:
+        return int(math.ceil(self.degradation * self.max_capacities[t] / 100))
 
     def view(self) -> ProducingAgentView:
         return ProducingAgentView(
             self.id,
-            self.max_capacity,
-            self.capacity,
+            dict(self.capacities),
+            dict(self.max_capacities),
             self.requested_capacity,
-            self.capacity_degradation(),
+            {t: self.degradation_for(t) for t in self.capacities},
             self.upgrade.increases,
             self.restoration.restores,
             self.upgrade_running,
             self.restoration_running,
+            dict(self.inventory),
+            self.inventory_limit,
+            self.inventory_units(),
+            self.headroom(),
+            self.inventory_expansion_running,
+            self.inventory_expansion is not None,
         )
 
     def place_bids(self, bids: list[Bid]) -> None:
         for b in bids:
-            if b.capacity_type != self.capacity_type:
-                raise RuntimeError("wrong capacity type")
+            for t in b.capacities:
+                if t not in self.capacities:
+                    raise RuntimeError(f"producer {self.id} does not own capacity type {t}")
         self.bids.extend(bids)
 
-    def handle_cmd(self, cmd: ProducingAgentCommand) -> list[InvestmentRequest]:
+    def inventory_units(self) -> int:
+        return sum(self.inventory.values())
+
+    def outstanding_inbound_units(self) -> int:
+        return sum(self.outstanding_inbound.values())
+
+    def headroom(self) -> int:
+        """Inventory units still orderable: limit − held − outstanding inbound
+        (ADR-0025). The env apportions a cycle's replenishment jointly within it."""
+        return self.inventory_limit - self.inventory_units() - self.outstanding_inbound_units()
+
+    def handle_cmd(
+        self, cmd: ProducingAgentCommand
+    ) -> list[InvestmentRequest | ReplenishmentRequest]:
         if self.cmd_handled:
             raise RuntimeError("command is handled already")
         if self.upgrade_running and cmd.do_upgrade:
             raise RuntimeError("upgrade is running")
         if self.restoration_running and cmd.do_restoration:
             raise RuntimeError("restorations is running")
-        requests: list[InvestmentRequest] = []
+        if self.inventory_expansion_running and cmd.do_inventory_expansion:
+            raise RuntimeError("expansion is running")
+        if cmd.do_inventory_expansion and self.inventory_expansion is None:
+            # validate before any state mutation: a mixed command must not leak
+            # outstanding-inbound headroom when a later toggle is invalid (ADR-0025).
+            raise RuntimeError("producer has no inventory expansion configured")
+        requests: list[InvestmentRequest | ReplenishmentRequest] = []
+        for product, qty in cmd.replenishments.items():
+            if qty <= 0:
+                continue
+            cost = None if self.replenish_cost_per_unit is None else self.replenish_cost_per_unit * qty
+            requests.append(ReplenishmentRequest(self.id, product, qty, self.cut_off_price, cost))
+            self.outstanding_inbound[product] = self.outstanding_inbound.get(product, 0) + qty
         if cmd.do_upgrade:
             requests.append(
-                InvestmentRequest(self.id, InvestmentType.UPGRADE, self.upgrade.require, self.cut_off_price)
+                InvestmentRequest(
+                    self.id, InvestmentType.UPGRADE, self.upgrade.require, self.cut_off_price, self.upgrade.cost
+                )
             )
             self.upgrade_running = True
         if cmd.do_restoration:
             requests.append(
-                InvestmentRequest(self.id, InvestmentType.RESTORATION, self.restoration.require, self.cut_off_price)
+                InvestmentRequest(
+                    self.id, InvestmentType.RESTORATION, self.restoration.require, self.cut_off_price,
+                    self.restoration.cost,
+                )
             )
             self.restoration_running = True
+        if cmd.do_inventory_expansion:
+            assert self.inventory_expansion is not None  # validated above
+            requests.append(
+                InvestmentRequest(
+                    self.id, InvestmentType.INVENTORY_EXPANSION, self.inventory_expansion.require,
+                    self.cut_off_price, self.inventory_expansion.cost,
+                )
+            )
+            self.inventory_expansion_running = True
         self.cmd_handled = True
         return requests
 
@@ -151,13 +243,21 @@ class ProducingAgent:
             if not self.restoration_running:
                 raise RuntimeError("no restoration running")
             self.restoration_running = False
-            self.capacity = min(self.max_capacity, self.capacity + self.restoration.restores)
+            t = self.restoration.type
+            self.capacities[t] = min(self.max_capacities[t], self.capacities[t] + self.restoration.restores)
         elif request.type == InvestmentType.UPGRADE:
             if not self.upgrade_running:
                 raise RuntimeError("no upgrades running")
             self.upgrade_running = False
-            self.max_capacity += self.upgrade.increases
-            self.capacity += self.upgrade.increases
+            t = self.upgrade.type
+            self.max_capacities[t] += self.upgrade.increases
+            self.capacities[t] += self.upgrade.increases
+        elif request.type == InvestmentType.INVENTORY_EXPANSION:
+            assert self.inventory_expansion is not None
+            if not self.inventory_expansion_running:
+                raise RuntimeError("no expansion running")
+            self.inventory_expansion_running = False
+            self.inventory_limit += self.inventory_expansion.increases
         else:
             raise RuntimeError("unsupported")
 
@@ -172,51 +272,137 @@ class ProducingAgent:
             if not self.upgrade_running:
                 raise RuntimeError("no upgrades running")
             self.upgrade_running = False
+        elif request.type == InvestmentType.INVENTORY_EXPANSION:
+            if not self.inventory_expansion_running:
+                raise RuntimeError("no expansion running")
+            self.inventory_expansion_running = False
         else:
             raise RuntimeError("unsupported")
 
-    def produce(self) -> ProductionResult:
-        # Sort bids by capacity unit price descending (most valuable first).
-        # Go's comparator returns 1 when a<b else -1 (a strict desc order).
-        self.bids.sort(key=lambda b: b.capacity_unit_price(), reverse=True)
-        requested_capacity = sum(b.capacity for b in self.bids)
-        remaining_capacity = int(self.capacity)
-        completed: list[Bid] = []
-        rejected: list[Bid] = []
-        processing: list[Bid] = []
-        capacity_next = max(0, self.capacity - self.capacity_degradation())
+    def replenishment_completed(self, request: ReplenishmentRequest) -> None:
+        if request.producer_id != self.id:
+            raise RuntimeError("not found")
+        self.inventory[request.product] = self.inventory.get(request.product, 0) + request.quantity
+        self._clear_inbound(request)
 
+    def replenishment_rejected(self, request: ReplenishmentRequest) -> None:
+        if request.producer_id != self.id:
+            raise RuntimeError("not found")
+        self._clear_inbound(request)
+
+    def _clear_inbound(self, request: ReplenishmentRequest) -> None:
+        remaining = self.outstanding_inbound.get(request.product, 0) - request.quantity
+        if remaining > 0:
+            self.outstanding_inbound[request.product] = remaining
+        else:
+            self.outstanding_inbound.pop(request.product, None)
+
+    # --- inventory / assembly helpers ---
+    def _has_inputs(self, bid: Bid) -> bool:
+        return all(self.inventory.get(p, 0) >= q for p, q in bid.inputs.items())
+
+    def _consume_inputs(self, bid: Bid) -> None:
+        for p, q in bid.inputs.items():
+            self.inventory[p] -= q
+
+    @staticmethod
+    def _fits(budget: dict[CapacityType, Capacity], caps: dict[CapacityType, Capacity]) -> bool:
+        return all(budget.get(t, 0) >= c for t, c in caps.items())
+
+    @staticmethod
+    def _subtract(budget: dict[CapacityType, Capacity], caps: dict[CapacityType, Capacity]) -> None:
+        for t, c in caps.items():
+            budget[t] -= c
+
+    def _revalidate_reservations(self) -> tuple[list[_Reservation], list[_Reservation]]:
+        """Re-run the atomic price-greedy auction over live reservations against
+        current (post-degradation) capacity. Pricey-first acceptance means a
+        reservation competing for a deficient type drops cheapest-first; one not
+        touching the deficient type always survives (ADR-0025)."""
+        ordered = sorted(self.reservations, key=lambda r: r.bid.capacity_unit_price(), reverse=True)
+        budget: dict[CapacityType, Capacity] = dict(self.capacities)
+        survivors: list[_Reservation] = []
+        dropped: list[_Reservation] = []
+        for r in ordered:
+            if self._fits(budget, r.bid.capacities):
+                self._subtract(budget, r.bid.capacities)
+                survivors.append(r)
+            else:
+                dropped.append(r)
+        return survivors, dropped
+
+    def produce(self) -> ProductionResult:
+        """One cycle of production (ADR-0025). Order: re-validate live reservations
+        against post-degradation capacity (drop → fail); reserved capacity blocks
+        the per-cycle budget; assemble reservations whose inputs arrived; fail
+        those that hit TTL; then run the atomic price-greedy auction over the
+        remaining budget — composites without inputs reserve and wait, everything
+        else completes."""
+        accepted: list[Bid] = []
+        completed: list[Bid] = []
+        failed: list[Bid] = []
+        rejected: list[Bid] = []
         cut_off_price = self.cut_off_price
         funds: Tokens = 0
-        in_progress = self.in_progress
-        if in_progress is not None:
-            remaining_capacity -= int(in_progress.booked)
-            if remaining_capacity >= 0:
-                completed.append(in_progress.bid)
-                in_progress = None
+        requested: Capacity = 0
+
+        # 1. re-validate carried reservations; dropped ones fail (already accepted
+        # in an earlier cycle — surfaced as failed, not accepted again).
+        survivors, dropped = self._revalidate_reservations()
+        for r in dropped:
+            failed.append(r.bid)
+
+        # 2. survivors hold the per-cycle budget (the intended blocking pressure)
+        available: dict[CapacityType, Capacity] = dict(self.capacities)
+        for r in survivors:
+            self._subtract(available, r.bid.capacities)
+
+        # 3. assemble survivors whose inputs are now in stock; else age / TTL-fail.
+        # Survivors were accepted in a prior cycle, so they never re-enter
+        # `accepted`; they only surface here when they resolve (completed/failed).
+        still: list[_Reservation] = []
+        for r in survivors:
+            if self._has_inputs(r.bid):
+                self._consume_inputs(r.bid)
+                completed.append(r.bid)
             else:
-                in_progress = _Booking(in_progress.order_id, in_progress.booked - self.capacity, in_progress.bid)
-
-        for bid in self.bids:
-            if remaining_capacity > 0:
-                cut_off_price = bid.capacity_unit_price()
-                funds += bid.tokens
-                remaining_capacity -= int(bid.capacity)
-                if remaining_capacity >= 0:
-                    completed.append(bid)
+                r.cycles_waited += 1
+                if r.cycles_waited >= RESERVATION_TTL:
+                    # TTL hit: the reservation fails and frees its held capacity
+                    # back to this cycle's budget for the new-bid auction below.
+                    for t, c in r.bid.capacities.items():
+                        available[t] += c
+                    failed.append(r.bid)
                 else:
-                    in_progress = _Booking(bid.order_id, -remaining_capacity, bid)
-                continue
-            rejected.append(bid)
+                    still.append(r)
 
-        # commit next state
-        self.capacity = capacity_next
+        # 4. atomic price-greedy auction over the remaining budget. A bid that
+        # clears is `accepted` (tokens burnt) this cycle, whether it completes now
+        # or reserves and waits.
+        self.bids.sort(key=lambda b: b.capacity_unit_price(), reverse=True)
+        for bid in self.bids:
+            requested += bid.total_capacity()
+            if not self._fits(available, bid.capacities):
+                rejected.append(bid)
+                continue
+            self._subtract(available, bid.capacities)
+            funds += bid.tokens
+            cut_off_price = bid.capacity_unit_price()
+            accepted.append(bid)
+            if bid.is_composite() and not self._has_inputs(bid):
+                still.append(_Reservation(bid))
+            else:
+                if bid.is_composite():
+                    self._consume_inputs(bid)
+                completed.append(bid)
+
+        # 5. commit next state: degrade each owned type toward next cycle
+        for t in self.capacities:
+            self.capacities[t] = max(0, self.capacities[t] - self.degradation_for(t))
         self.bids = []
-        self.in_progress = in_progress
-        self.requested_capacity = requested_capacity
+        self.reservations = still
+        self.requested_capacity = requested
         self.funds = funds
         self.cut_off_price = cut_off_price
-        if in_progress is not None:
-            processing.append(in_progress.bid)
         self.cmd_handled = False
-        return ProductionResult(processing, completed, rejected)
+        return ProductionResult(accepted, completed, failed, rejected)

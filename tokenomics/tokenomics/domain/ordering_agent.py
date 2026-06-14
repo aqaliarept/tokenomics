@@ -1,5 +1,11 @@
-"""Ordering agent: distributes an order's tokens across producing agents as
-bids. Port of emulation/domain/ordering_agent.go.
+"""Ordering agent: splits an order's *quantity* across eligible producers as
+whole-bundle sub-orders (ADR-0025).
+
+It never decomposes a product into recipe components — that is the producing
+agent's job. For each order it holds, it hands each chosen producer a sub-order
+(quantity + tokens) the producer must fulfil as a whole; the bundle's capacity and
+input-product requirements scale with the sub-order quantity. A producer is
+*eligible* only if it owns every capacity type the recipe requires.
 """
 
 from __future__ import annotations
@@ -7,7 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .common import (
-    Capacity,
     CapacityType,
     NotFoundError,
     OrderId,
@@ -20,14 +25,28 @@ from .producing_agent import Bid, ProducerInfo
 
 
 @dataclass
+class SubOrder:
+    """One slice of an order handed to a single producer (ADR-0025)."""
+
+    producer_id: ProducerId
+    quantity: int
+    tokens: Tokens
+
+
+@dataclass
 class OrderingAgentView:
-    incoming: dict[OrderId, dict[CapacityType, Capacity]]
-    producers: dict[CapacityType, dict[ProducerId, ProducerInfo]]
+    incoming: dict[OrderId, OrderInfo]
+    # eligible producers per order: those owning every required capacity type
+    eligible: dict[OrderId, dict[ProducerId, ProducerInfo]]
 
 
 @dataclass
 class OrderingAgentCommand:
-    orders: dict[OrderId, dict[ProducerId, Tokens]] = field(default_factory=dict)
+    orders: dict[OrderId, list[SubOrder]] = field(default_factory=dict)
+
+
+def _eligible(p: ProducerInfo, required: dict[CapacityType, int]) -> bool:
+    return all(p.owns(t) for t in required)
 
 
 class OrderingAgent:
@@ -37,29 +56,24 @@ class OrderingAgent:
         self.cmd_handled = False
 
     def place_order(self, order_info: OrderInfo) -> None:
-        if order_info.fulfilled():
+        # Nothing left to distribute once every unit has been accepted (delivered
+        # or reserved) — only the unresolved remainder is re-bid (ADR-0025).
+        if order_info.quantity == 0:
             return
         self.incoming[order_info.id] = order_info
 
     def view(self, producers: dict[ProducerId, ProducerInfo]) -> OrderingAgentView:
-        capacity_types: set[CapacityType] = set()
-        incoming: dict[OrderId, dict[CapacityType, Capacity]] = {}
+        eligible: dict[OrderId, dict[ProducerId, ProducerInfo]] = {}
         for oid, oi in self.incoming.items():
-            for ct in oi.required:
-                capacity_types.add(ct)
-            incoming[oid] = oi.required
-        result_producers: dict[CapacityType, dict[ProducerId, ProducerInfo]] = {}
-        for producer_id, p in producers.items():
-            if p.capacity_type not in capacity_types:
-                continue
-            result_producers.setdefault(p.capacity_type, {})[producer_id] = p
-        return OrderingAgentView(incoming, result_producers)
+            eligible[oid] = {
+                pid: p for pid, p in producers.items() if _eligible(p, oi.unit_capacity)
+            }
+        return OrderingAgentView(dict(self.incoming), eligible)
 
     def complete_cycle(self) -> None:
         # Divergence from Go: Go set cmdHandled=True here, which would make
-        # handle_cmd raise on every cycle after the first. That is a latent bug
-        # (HTTP runs were single-cycle). Reset to False so the agent can handle
-        # next cycle's command, matching ProducingAgent.produce semantics.
+        # handle_cmd raise on every cycle after the first (a latent bug — HTTP runs
+        # were single-cycle). Reset so the agent can handle next cycle's command.
         self.incoming = {}
         self.cmd_handled = False
 
@@ -74,25 +88,39 @@ class OrderingAgent:
             )
 
         result: dict[ProducerId, list[Bid]] = {}
-        for order_id, bids in cmd.orders.items():
+        for order_id, subs in cmd.orders.items():
             if order_id not in self.incoming:
                 raise NotFoundError(f"order id [{order_id}] not found for agent [{self.id}]")
             order = self.incoming[order_id]
-            if len(order.required) != len(bids):
-                raise RuntimeError(f"too few bids passed for order [{order_id}]")
-            agent_bids = sum(bids.values())
-            if order.tokens != agent_bids:
-                raise RuntimeError(
-                    f"order-id: [{order_id}] agent bids sum [{agent_bids}] not equal to order tokens [{order.tokens}] "
-                )
-            for producer_id, tokens in bids.items():
-                cap_type = producers[producer_id].capacity_type
-                if cap_type not in order.required:
+            self._check_conservation(order, subs)
+            for sub in subs:
+                p = producers.get(sub.producer_id)
+                if p is None or not _eligible(p, order.unit_capacity):
                     raise RuntimeError(
-                        f"order [{order_id}] doesn't contain capacity type for producer "
-                        f"[{producer_id}] with capacity type [{cap_type}]"
+                        f"order [{order_id}] sub-order to ineligible producer [{sub.producer_id}]"
                     )
-                required = order.required[cap_type]
-                result.setdefault(producer_id, []).append(Bid(cap_type, required, tokens, order_id))
+                bid = Bid(
+                    capacities={t: c * sub.quantity for t, c in order.unit_capacity.items()},
+                    tokens=sub.tokens,
+                    order_id=order_id,
+                    product=order.product,
+                    inputs={pp: q * sub.quantity for pp, q in order.unit_inputs.items()},
+                    quantity=sub.quantity,
+                )
+                result.setdefault(sub.producer_id, []).append(bid)
         self.cmd_handled = True
         return result
+
+    @staticmethod
+    def _check_conservation(order: OrderInfo, subs: list[SubOrder]) -> None:
+        for s in subs:
+            if s.quantity <= 0:
+                raise RuntimeError(f"order [{order.id}] has a zero-quantity sub-order")
+        if sum(s.quantity for s in subs) != order.quantity:
+            raise RuntimeError(
+                f"order [{order.id}] sub-quantities do not sum to {order.quantity}"
+            )
+        if sum(s.tokens for s in subs) != order.tokens:
+            raise RuntimeError(
+                f"order [{order.id}] sub-tokens do not sum to {order.tokens}"
+            )

@@ -26,11 +26,13 @@ class ConsumerRequest:
     consumer_id: ConsumerId
     product: Product
     tokens: Tokens
+    quantity: int = 1  # units of `product` demanded as a whole (ADR-0025)
 
 
 class InvestmentType(IntEnum):
     UPGRADE = 0
     RESTORATION = 1
+    INVENTORY_EXPANSION = 2
 
 
 @dataclass
@@ -39,6 +41,22 @@ class InvestmentRequest:
     type: InvestmentType
     product: Product
     cut_off_price: CapacityUnitPrice
+    # funding target: tokens the fund fills this order to before advancing to the
+    # next priority (ADR-0027). None = unbounded (take whole remaining budget).
+    cost: Tokens | None = None
+
+
+@dataclass
+class ReplenishmentRequest:
+    """A producer buying `quantity` units of an input `product` into its
+    inventory (ADR-0025). Funded by the central fund at priority 1 — distinct from
+    investment so the survival-first ordering holds. Not an investment."""
+
+    producer_id: ProducerId
+    product: Product
+    quantity: int
+    cut_off_price: CapacityUnitPrice
+    cost: Tokens | None = None  # total funding target (per-unit × quantity), ADR-0027
 
 
 @dataclass(frozen=True)
