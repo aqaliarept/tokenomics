@@ -75,25 +75,25 @@ An external entity that receives tokens via emission and places orders for produ
 _Avoid_: Customer, user, player
 
 **Producing Agent:**
-An agent that owns capacity of a specific type. Decides whether to invest in restoration or upgrade each cycle. Each producing agent provides exactly one capacity type.
+An agent that owns capacity of one or more types and assembles products to fulfil orders. To assemble a composite product it buys the required input products from other producing agents and applies its own capacity to the assembly. Decides each cycle what to produce, what inputs to buy, and whether to invest in new or expanded capacity. There is no designated producer for a product — the same product may be produced by multiple producing agents.
 _Avoid_: Factory, producer, manufacturer
 
 **Ordering Agent:**
-An agent that distributes tokens across producing agents to fulfill orders. Each consumer and each producing agent has a dedicated ordering agent.
+An agent that, for each order it holds, splits the order's quantity (and the tokens backing it) across one or more eligible producing agents, handing each a sub-order it must fulfil as a whole. It never splits a product into its recipe components — that decomposition is the producing agent's job. A producing agent is eligible for a product when it owns every capacity type the product's recipe requires. Each consumer and each producing agent has a dedicated ordering agent.
 _Avoid_: Distributor, allocator, broker
 
 ### Economy
 
 **Token:**
-The unit of exchange in the system. Tokens carry information about relative value of orders and regulate resource distribution among agents. Not currency — a signal mechanism.
-_Avoid_: Money, currency, coin, credit
+A demand-estimation signal. Tokens carry no intrinsic value; they encode the relative priority of orders and drive auction allocation and cut-off prices. Not currency, not money — never accumulated as profit, only propagated and distributed. Tokens backing an order are burnt when that order is accepted: they signal demand, then leave circulation. Fresh tokens are emitted each cycle.
+_Avoid_: Money, currency, coin, credit, value
 
 **Emission:**
-The system creates a fixed amount of tokens each cycle. Half goes equally to consumers, half goes to the investment fund for producing agent maintenance and upgrades.
+The system creates a fixed amount of tokens each cycle. Half goes equally to consumers (to back their orders as demand signal), half goes to the central investment fund.
 _Avoid_: Minting, printing, generation
 
 **Investment Fund:**
-The half of each cycle's emission reserved for producing agent restoration and upgrade orders. Distributed proportionally to producers' cut-off prices.
+The half of each cycle's emission that funds all producer purchasing — buying input products for assembly and means of production for investment. Distributed to producers proportionally to their cut-off prices. The sole source of producer-to-producer token flow; producers never spend tokens of their own.
 _Avoid_: Reserve, pool, treasury
 
 ### Production
@@ -106,17 +106,25 @@ _Avoid_: Power, resources, output
 A named category of capacity (e.g., "capacity-1"). Different types are not interchangeable — each produces different components needed by process sheets.
 _Avoid_: Resource type, skill
 
+**Inventory:**
+Stock of products a producing agent holds between cycles — inputs bought for future assembly and finished products awaiting delivery. Inventory enables pipelined production (assemble from stock while replenishing) and breaks circular recipe dependencies. Following the Theory of Constraints, carrying inventory is a liability: overproducing ahead of demand is discouraged — penalised as a negative training reward in the env layer (not via tokens, which carry no value). Total inventory is bounded by a limit on the number of product units held; that limit can be expanded by investment.
+_Avoid_: Stock, warehouse
+
 **Process Sheet:**
-A recipe that defines how much capacity of each type is required to produce a given product. Fixed and exogenous — does not change during simulation.
+A recipe that defines, per unit of a product, how much capacity of each type is consumed to produce it and which input products (and how many) it consumes. Primal products list only capacity; composite products also list input products. Fixed and exogenous — does not change during simulation.
 _Avoid_: Recipe, blueprint, technology card (технологическая карта)
 
 **Product:**
-The output of a completed order. Defined by its process sheet. Products are consumed by consumers (fulfilling demand) or by producing agents (for restoration/upgrade).
+The output of a completed order, delivered assembled as a whole. Defined by its process sheet. A **primal** product requires no input products (e.g. a natural resource) — only capacity to produce. A **composite** product requires other products as inputs, plus capacity to assemble them. Products are consumed by consumers (fulfilling demand) or by producing agents (as inputs, or for restoration/upgrade).
 _Avoid_: Good, item, output
 
 **Degradation:**
 The automatic reduction of a producing agent's capacity each cycle, calculated as a percentage of max capacity. Creates ongoing pressure to invest in restoration.
 _Avoid_: Decay, wear, depreciation
+
+**Investment:**
+A producing agent's purchase of a means-of-production product to improve its productive base, funded by the central investment fund. Three types: restoration (recover degraded capacity), upgrade (expand max capacity of an owned type), and inventory expansion (raise the inventory-unit limit). Creating a brand-new capacity type a producer did not own is out of scope for Phase 1.
+_Avoid_: Capital expenditure, capex
 
 **Restoration:**
 An investment that recovers a producing agent's capacity toward its max capacity. Requires a specific product (which itself requires capacity from other producers).
@@ -129,21 +137,21 @@ _Avoid_: Expansion, improvement, enhancement
 ### Exchange
 
 **Bid:**
-A token allocation from an ordering agent to a specific producing agent for a specific order. Contains the capacity requested and tokens offered.
+A token allocation from an ordering agent to a specific producing agent for a sub-order. Contains the whole capacity bundle the sub-order requires (units of every capacity type in the recipe) and the tokens backing it. Its price is `tokens / (total capacity units summed across all required types)`.
 _Avoid_: Offer, request, order line
 
 **Cut-off Price:**
-The lowest tokens-per-capacity-unit ratio among all bids accepted by a producing agent in a cycle. Used to prioritize investment fund distribution and signals market tightness.
+The lowest bid price (tokens per total-capacity-unit) among all bids accepted by a producing agent in a cycle. Used to prioritize investment fund distribution and signals market tightness.
 _Avoid_: Market price, clearing price, minimum price
 
 **Auction:**
-The mechanism by which a producing agent allocates its capacity to bids. Bids are sorted by tokens-per-capacity-unit descending; capacity is allocated greedily from highest bidder down.
+The mechanism by which a producing agent allocates its capacity to bids. Bids are sorted by price descending and accepted greedily from the highest down. Acceptance is atomic: a bid clears only if the producer has enough remaining capacity of every type the bundle requires.
 _Avoid_: Exchange, marketplace, market
 
 ### Orders
 
 **Order:**
-A demand for a product, backed by tokens. Has parts corresponding to each required capacity type. Can be a consumer order (from a consumer) or an investment order (from a producing agent).
+A demand for a quantity of a product as a whole, backed by tokens. Capacity and input-product requirements scale with the quantity. Can be a consumer order (from a consumer) or an investment order (from a producing agent).
 _Avoid_: Request, demand, task
 
 **TTL (Time to Live):**
@@ -157,13 +165,13 @@ One discrete time step of the simulation. Within a cycle: tokens are emitted, or
 _Avoid_: Turn, tick, round, step
 
 **Score:**
-The per-cycle reward signal. Composed of: +10 per completed order, -1 per order still in progress, -5 per rejected order. Higher is better.
+The per-cycle reward signal. Composed of: +10 per completed order, -1 per order still in progress, -5 per rejected order, minus a flat holding penalty per inventory unit held. The inventory penalty lives in the env layer (a training reward), not in the domain. Higher is better.
 _Avoid_: Points, penalty, fitness
 
 **Episode:**
-A complete simulation run from initialization to termination. Ends after a fixed number of cycles (default 100) or when all producers reach zero capacity.
+A complete simulation run from initialization to termination. Ends after a fixed number of cycles (default 100) or on system death (some capacity type reaches zero across all producers).
 _Avoid_: Game, session, run
 
 **System Death:**
-The irrecoverable state where all producing agents have zero capacity. Triggers early episode termination. Can cascade due to circular dependencies between producers.
+The irrecoverable state where some capacity type has reached zero across all producing agents — no producer can supply it, so a product becomes permanently unmakeable. Triggers immediate episode termination. Can cascade due to circular dependencies between producers.
 _Avoid_: Collapse, failure, game over
