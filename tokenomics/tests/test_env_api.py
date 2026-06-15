@@ -133,3 +133,104 @@ def test_holding_penalty_independent_of_completions():
     res = CycleResult(score=0, consumer_completed=2)
     delta = cycle_reward(res, held=3) - cycle_reward(res, held=0)
     assert delta == pytest.approx(-3 * R_HOLDING_PER_UNIT)
+
+
+# --- B9 step 2: seeded consumer demand (product + quantity) ---
+def _pool_consumer_env(seed: int, horizon: int = 20) -> TokenomicsAECEnv:
+    from tokenomics.domain.config import (
+        Configuration,
+        ConsumerConfig,
+        ProcessSheet,
+        ProducingAgentConfig,
+        Restoration,
+        Upgrade,
+    )
+
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(p, {f"capacity-{p}": 2}) for p in (1, 2, 3)],
+        producer_configs=[
+            ProducingAgentConfig(
+                f"p{p}", {f"capacity-{p}": 100}, 5,
+                Restoration(p, 50, f"capacity-{p}"), Upgrade(p, 40, f"capacity-{p}"),
+                produces=frozenset({p}),
+            )
+            for p in (1, 2, 3)
+        ],
+        consumers=[ConsumerConfig("c1", product=1, products=(1, 2, 3),
+                                  quantity_min=1, quantity_max=4)],
+    )
+    env = TokenomicsAECEnv(config=cfg, horizon=horizon)
+    env.reset(seed=seed)
+    return env
+
+
+def test_seeded_demand_replays_and_varies_by_seed():
+    # Same seed -> identical episode demand schedule (deterministic replay); a
+    # different seed -> different demand. The env owns the seeded RNG; the domain
+    # consumer just replays the injected schedule (CLAUDE.md domain purity).
+    sa = _pool_consumer_env(seed=7).system.consumers["c1"]._schedule
+    sb = _pool_consumer_env(seed=7).system.consumers["c1"]._schedule
+    sc = _pool_consumer_env(seed=8).system.consumers["c1"]._schedule
+    assert sa == sb
+    assert sa != sc
+    assert len(sa) == 20
+    assert all(p in {1, 2, 3} and 1 <= q <= 4 for p, q in sa)
+    assert len({p for p, _ in sa}) > 1  # product actually varies within the episode
+    assert len({q for _, q in sa}) > 1  # quantity actually varies within the episode
+
+
+def test_unrandomized_consumer_demand_stays_fixed():
+    # Absent randomization bounds, demand is the canonical fixed single product at
+    # quantity 1 regardless of seed (canonical phase1.json must stay deterministic).
+    from tokenomics.domain.consumer import ScriptedConsumer
+
+    env = TokenomicsAECEnv(horizon=10)
+    env.reset(seed=123)
+    c = env.system.consumers["c1"]
+    assert isinstance(c, ScriptedConsumer)
+
+
+def _fixed_consumer_env(consumer_kw: dict, seed: int = 0) -> TokenomicsAECEnv:
+    from tokenomics.domain.config import (
+        Configuration,
+        ConsumerConfig,
+        ProcessSheet,
+        ProducingAgentConfig,
+        Restoration,
+        Upgrade,
+    )
+
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(1, {"capacity-1": 2})],
+        producer_configs=[
+            ProducingAgentConfig("p1", {"capacity-1": 100}, 5,
+                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1})),
+        ],
+        consumers=[ConsumerConfig("c1", **consumer_kw)],
+    )
+    env = TokenomicsAECEnv(config=cfg, horizon=10)
+    env.reset(seed=seed)
+    return env
+
+
+def test_fixed_nondefault_quantity_is_honored():
+    # quantityMin == quantityMax == 2 is deterministic but NOT the legacy default;
+    # the consumer must demand quantity 2, never silently revert to 1.
+    from tokenomics.domain.consumer import ScheduledConsumer
+
+    c = _fixed_consumer_env(dict(product=1, quantity_min=2, quantity_max=2)).system.consumers["c1"]
+    assert isinstance(c, ScheduledConsumer)
+    assert c._schedule == [(1, 2)]
+
+
+def test_singleton_pool_ignores_unrelated_default_product():
+    # A singleton `products` pool is the source of truth; the (unvalidated) default
+    # `product` field must not leak in and must not crash reset on a missing sheet.
+    from tokenomics.domain.consumer import ScheduledConsumer
+
+    c = _fixed_consumer_env(dict(product=999, products=(1,))).system.consumers["c1"]
+    assert isinstance(c, ScheduledConsumer)
+    assert c._schedule == [(1, 1)]  # product 1 from the pool, not default 999

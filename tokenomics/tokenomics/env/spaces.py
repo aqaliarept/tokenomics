@@ -45,6 +45,11 @@ class EnvSpec:
     # global input-product vocabulary: sorted union over all composite recipes.
     input_products: list[Product]
     input_index: dict[Product, int]
+    # sorted vocabulary of every product that can be the subject of an order
+    # (= all process-sheet products). The ordering obs one-hots each slot's product
+    # over this so a seed-randomized demand product is observable (B9, not hidden).
+    order_products: list[Product]
+    order_product_index: dict[Product, int]
     # per producer: capacity types it owns, and the input products it can
     # replenish (inputs of composite products it declares it produces, ADR-0028).
     producer_owns: dict[ProducerId, set[CapacityType]]
@@ -70,14 +75,19 @@ class EnvSpec:
         return len(self.input_products)
 
     @property
+    def num_order_products(self) -> int:
+        return len(self.order_products)
+
+    @property
     def producing_obs_dim(self) -> int:
         return 2 * self.num_types + 1 + 3 + self.num_inputs + 3 + 2 * self.num_producers + 1
 
     @property
     def ordering_obs_dim(self) -> int:
-        # per slot: active, tokens, quantity (no capacity, ADR-0029); plus one
-        # cut-off price per producer and the cycle-progress scalar.
-        return self.k * 3 + self.num_producers + 1
+        # per slot: active, tokens, quantity (no capacity, ADR-0029) + a product
+        # one-hot (B9 observability); plus one cut-off price per producer and the
+        # cycle-progress scalar.
+        return self.k * (3 + self.num_order_products) + self.num_producers + 1
 
     @property
     def ordering_action_dim(self) -> int:
@@ -120,6 +130,10 @@ def build_spec(config: Configuration) -> EnvSpec:
     input_products = sorted({p for ps in config.process_sheets for p in ps.inputs})
     input_index = {p: i for i, p in enumerate(input_products)}
 
+    # every product that can be ordered = every product with a process sheet.
+    order_products = sorted(ps.product for ps in config.process_sheets)
+    order_product_index = {p: i for i, p in enumerate(order_products)}
+
     sheet_inputs = {ps.product: ps.inputs for ps in config.process_sheets}
 
     producer_owns: dict[ProducerId, set[CapacityType]] = {
@@ -159,6 +173,8 @@ def build_spec(config: Configuration) -> EnvSpec:
         type_index=type_index,
         input_products=input_products,
         input_index=input_index,
+        order_products=order_products,
+        order_product_index=order_product_index,
         producer_owns=producer_owns,
         producer_inputs=producer_inputs,
         max_replenish=max_replenish,

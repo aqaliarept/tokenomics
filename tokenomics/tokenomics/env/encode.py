@@ -76,8 +76,13 @@ def encode_ordering(
             feats.append(1.0)  # active
             feats.append(oi.tokens / spec.token_ref)
             feats.append(oi.quantity / spec.inv_ref)
+            # product one-hot (B9): make the slot's product observable so seeded
+            # demand-product randomization is not hidden state for a trained policy.
+            onehot = [0.0] * spec.num_order_products
+            onehot[spec.order_product_index[oi.product]] = 1.0
+            feats.extend(onehot)
         else:
-            feats.extend([0.0] * 3)
+            feats.extend([0.0] * (3 + spec.num_order_products))
     feats.extend(_producer_prices(spec, producer_infos))  # no capacity (ADR-0029)
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)

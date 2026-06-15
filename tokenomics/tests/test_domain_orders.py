@@ -341,3 +341,26 @@ def test_ordering_agent_enforces_quantity_and_token_conservation():
     zero = OrderingAgentCommand({"o1": [SubOrder("p1", 0, 0), SubOrder("p2", 4, 100)]})
     with pytest.raises(RuntimeError, match="zero-quantity"):
         agent.handle_cmd(zero, producers)
+
+
+# --- B9 step 2: seeded demand replays a fixed per-cycle (product, quantity) schedule ---
+def test_scheduled_consumer_replays_product_and_quantity_per_cycle():
+    # A ScheduledConsumer is pure data (no RNG — the env layer owns the seeded
+    # schedule, CLAUDE.md domain purity): each cycle it emits the scheduled
+    # product+quantity for its whole balance, then wraps when the schedule runs out.
+    from tokenomics.domain.consumer import ScheduledConsumer
+
+    c = ScheduledConsumer("c1", [(10, 2), (11, 3)])
+    c.emit(100)
+    r1 = c.order()
+    assert len(r1) == 1
+    assert (r1[0].product, r1[0].quantity, r1[0].tokens) == (10, 2, 100)
+    c.emit(50)
+    r2 = c.order()
+    assert (r2[0].product, r2[0].quantity, r2[0].tokens) == (11, 3, 50)
+    c.emit(10)  # wraps back to schedule[0]
+    r3 = c.order()
+    assert (r3[0].product, r3[0].quantity) == (10, 2)
+    # no balance -> no order, but the cycle still advances (schedule stays aligned)
+    r4 = c.order()
+    assert r4 == []

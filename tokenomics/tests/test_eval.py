@@ -168,3 +168,61 @@ def test_ordering_proportional_separates_zero_from_one_unit_throughput():
     assert action[0, pa] > action[0, pb]
     e = np.exp([action[0, pa], action[0, pb]])
     assert e[1] / e.sum() < 0.05  # the 0-unit producer gets a negligible share
+
+
+# --- B9 step 1: with >1 eligible producer, ordering routing changes outcomes ---
+from pathlib import Path
+
+import numpy as np
+
+from tokenomics.domain import load_config
+from tokenomics.env.spaces import ACTION_LOGIT_BOUND
+
+COMPETITION = Path(__file__).parent / "fixtures" / "competition.json"
+
+
+def _ordering_to(target_pid: str):
+    """All-to-one ordering policy: route every sub-order to `target_pid` by giving
+    it +BOUND and all others -BOUND. decode restricts each slot to its eligible
+    producers, so a slot where the target is ineligible (a singleton product) just
+    splits evenly among its lone eligible producer (a no-op)."""
+
+    def policy(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        sp = env.spec_
+        mat = np.full((sp.k, sp.num_producers), -ACTION_LOGIT_BOUND, dtype=np.float32)
+        mat[:, sp.producer_ids.index(target_pid)] = ACTION_LOGIT_BOUND
+        return mat.flatten()
+
+    return policy
+
+
+def test_routing_changes_consumer_fulfillment():
+    # competition.json duplicates the producer of intermediate product 10 into a
+    # strong (p1, capacity-1=120) and a weak (p5, capacity-1=1 < recipe's 2 -> makes
+    # 0 units) eligible pair. p3 replenishes input 10; routing that replenishment
+    # all-to-weak starves composite assembly, all-to-strong feeds it -> the ordering
+    # choice, behaviorless under singleton topology, now moves consumer fulfillment.
+    cfg = load_config(COMPETITION)
+    strong = evaluate(producing_stock_aware(0.6), _ordering_to("p1"),
+                      seeds=[1], horizon=30, config=cfg)
+    weak = evaluate(producing_stock_aware(0.6), _ordering_to("p5"),
+                    seeds=[1], horizon=30, config=cfg)
+    assert strong["consumer_completed"][0] > weak["consumer_completed"][0]
+
+
+def test_randomized_demand_episode_is_deterministic_per_seed():
+    # B9 step 2: an episode under seeded product+quantity demand replays exactly for
+    # a given seed (so baselines and trained policies face the same workload), and a
+    # different seed yields a different workload (hence generally a different return).
+    cfg = load_config(Path(__file__).parent / "fixtures" / "random_demand.json")
+    from tokenomics.eval.baselines import ordering_even_split, producing_stock_aware
+
+    a = evaluate(producing_stock_aware(0.6), ordering_even_split,
+                 seeds=[3], horizon=30, config=cfg)
+    b = evaluate(producing_stock_aware(0.6), ordering_even_split,
+                 seeds=[3], horizon=30, config=cfg)
+    c = evaluate(producing_stock_aware(0.6), ordering_even_split,
+                 seeds=[4], horizon=30, config=cfg)
+    assert a["return"] == b["return"]  # same seed -> identical replay
+    assert a["consumer_completed"] == b["consumer_completed"]
+    assert a["return"] != c["return"]  # different seed -> different demand workload

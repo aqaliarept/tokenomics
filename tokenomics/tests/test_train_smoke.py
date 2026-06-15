@@ -539,6 +539,53 @@ def test_ordering_action_mask_singleton_inert_multi_active():
     assert m[spec.producer_ids.index(pb)] == 1.0
 
 
+def test_competition_config_produces_live_multi_eligible_slot():
+    """B9 step 1 integration: competition.json must create a *real* >1-eligible
+    routing decision (the unit test above fakes `eligible`). Drive a few cycles so
+    p3 emits its input-10 replenishment; the live ordering view then holds a slot
+    whose order (product 10) has two eligible producers {p1, p5}, and the mask
+    activates exactly those two columns — proving the new topology wires an
+    actual ordering choice end-to-end, not just in a synthetic fake."""
+    from pathlib import Path
+
+    import numpy as np
+
+    from tokenomics.domain import load_config
+    from tokenomics.env import TokenomicsAECEnv
+    from tokenomics.eval.baselines import ordering_even_split, producing_stock_aware
+    from tokenomics.train.smoke_ppo import ordering_action_mask
+
+    cfg = load_config(Path(__file__).parent / "fixtures" / "competition.json")
+    env = TokenomicsAECEnv(config=cfg, horizon=10)
+    env.reset(seed=1)
+    prod, order = producing_stock_aware(0.6), ordering_even_split
+
+    found = None
+    for agent in env.agent_iter(max_iter=4000):
+        _, _, term, trunc, _ = env.last()
+        if term or trunc:
+            env.step(None)
+            continue
+        for oa in env.system.ordering_agents.values():
+            v = oa.view(env.system.producer_infos)
+            if any(len(v.eligible[oid]) >= 2 for oid in v.incoming):
+                found = v
+                break
+        if found is not None:
+            break
+        role = env._role[agent][0]
+        env.step(prod(env, agent) if role == "prod" else order(env, agent))
+
+    assert found is not None, "competition.json never created a multi-eligible slot"
+    m = ordering_action_mask(env.spec_, found).reshape(env.spec_.k, env.spec_.num_producers)
+    i1, i5 = env.spec_.producer_ids.index("p1"), env.spec_.producer_ids.index("p5")
+    active = (m[:, i1] == 1.0) & (m[:, i5] == 1.0)
+    assert active.any()  # some slot routes product 10 over both eligible producers
+    # and that slot activates only the two eligible columns, nothing else
+    k = int(np.argmax(active))
+    assert m[k].sum() == 2.0
+
+
 def test_producing_mask_drops_replen_dims_without_headroom():
     """P2 review 2026-06-15: replenishment dims are active only with inventory
     headroom and a positive replenish ceiling; toggle dims are independent of it."""

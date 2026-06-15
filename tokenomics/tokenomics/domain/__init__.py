@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from .common import ConsumerId, ProducerId
 from .config import Configuration, ConsumerConfig, load_config
-from .consumer import Consumer, ScriptedConsumer
+from .consumer import Consumer, ScheduledConsumer, ScriptedConsumer
 from .ordering_agent import OrderingAgentCommand
 from .producing_agent import ProducingAgentCommand
 from .system import (
@@ -33,6 +33,7 @@ __all__ = [
     "ConsumerId",
     "ProducerId",
     "ScriptedConsumer",
+    "ScheduledConsumer",
     "OrderingAgentCommand",
     "ProducingAgentCommand",
     "System",

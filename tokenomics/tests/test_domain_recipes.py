@@ -209,3 +209,45 @@ def test_recipe_closure_terminates_on_cycle():
         producer_configs=[],
     )
     assert cfg.recipe_inputs_closure(1) == {1, 2}
+
+
+# --- B9 step 2: consumer demand-randomization bounds validate ---
+def _base_consumer_cfg(**consumer_kw):
+    from tokenomics.domain.config import ConsumerConfig
+
+    return Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5})],
+        producer_configs=[
+            ProducingAgentConfig("p1", {"capacity-1": 100}, 5,
+                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1})),
+        ],
+        consumers=[ConsumerConfig("c1", product=1, **consumer_kw)],
+    )
+
+
+def test_validate_rejects_demand_pool_product_without_sheet():
+    cfg = _base_consumer_cfg(products=(1, 99))
+    with pytest.raises(ValueError, match="product 99 with no process sheet"):
+        cfg.validate()
+
+
+def test_validate_rejects_inverted_quantity_range():
+    cfg = _base_consumer_cfg(quantity_min=4, quantity_max=2)
+    with pytest.raises(ValueError, match="quantity_max"):
+        cfg.validate()
+
+
+def test_validate_rejects_zero_quantity_min():
+    cfg = _base_consumer_cfg(quantity_min=0, quantity_max=3)
+    with pytest.raises(ValueError, match="quantity_min"):
+        cfg.validate()
+
+
+def test_loader_parses_demand_randomization_fields():
+    cfg = load_config(Path(__file__).resolve().parent / "fixtures" / "random_demand.json")
+    c = cfg.consumers[0]
+    assert c.product_pool == (20, 30)
+    assert (c.quantity_min, c.quantity_max) == (1, 3)
+    assert c.is_randomized

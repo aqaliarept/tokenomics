@@ -62,6 +62,36 @@ def test_spec_action_dims():
     assert sp.producing_action_dim == sp.num_inputs + 3
 
 
+def test_spec_order_product_vocabulary_and_obs_dim():
+    # B9: the ordering obs now identifies each slot's product (one-hot) so a
+    # seed-randomized demand product is observable, not hidden state.
+    sp = spec()
+    assert sp.order_products == [10, 11, 20, 30]  # sorted process-sheet products
+    assert sp.order_product_index[20] == 2
+    # per slot: active, tokens, quantity, + product one-hot (Q); plus prices + progress
+    assert sp.ordering_obs_dim == sp.k * (3 + len(sp.order_products)) + sp.num_producers + 1
+
+
+def test_encode_ordering_one_hots_each_slot_product():
+    from math import nan
+
+    from tokenomics.domain.producing_agent import ProducerInfo
+    from tokenomics.env.encode import encode_ordering
+
+    sp = spec()
+    infos = {pid: ProducerInfo(pid, {}, {}, nan, frozenset()) for pid in sp.producer_ids}
+    obs = encode_ordering(sp, {"o1": OrderInfo("o1", 100, 20, 3)}, infos, 0.5)
+    assert obs.shape == (sp.ordering_obs_dim,)
+    stride = 3 + sp.num_order_products
+    slot0 = obs[:stride]
+    assert slot0[0] == 1.0  # active
+    onehot = slot0[3:stride]
+    assert onehot.sum() == 1.0 and onehot[sp.order_product_index[20]] == 1.0  # product 20
+    # an empty slot carries an inactive flag and an all-zero product one-hot
+    slot1 = obs[stride : 2 * stride]
+    assert slot1[0] == 0.0 and slot1[3:].sum() == 0.0
+
+
 # --- decode_ordering: quantity split over eligible producers ---
 def test_allocate_int_sums_to_budget():
     rng = np.random.default_rng(0)
@@ -148,6 +178,7 @@ def _pspec(input_products, producer_inputs, max_replenish):
     return EnvSpec(
         producer_ids=pids, capacity_types=["c"], type_index={"c": 0},
         input_products=input_products, input_index=idx,
+        order_products=input_products, order_product_index=idx,
         producer_owns={p: {"c"} for p in pids}, producer_inputs=producer_inputs,
         max_replenish=max_replenish, cap_ref=100.0, token_ref=1000.0, price_ref=1.0, inv_ref=50.0,
     )

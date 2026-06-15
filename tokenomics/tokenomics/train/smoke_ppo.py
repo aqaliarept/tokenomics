@@ -59,7 +59,9 @@ DEFAULT_ORDER_LOG_STD = -2.0
 DEFAULT_TARGET_KL = 0.008
 # Checkpoint schema version (ADR-0026). Bumped for the continuous-producing /
 # producer-simplex-ordering redesign; the loader rejects older/missing versions.
-CHECKPOINT_VERSION = 2
+# v3 (B9): ordering obs gained a per-slot product one-hot -> ordering_obs_dim grew,
+# so a v2 ordering actor's input layer no longer matches.
+CHECKPOINT_VERSION = 3
 
 
 def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:

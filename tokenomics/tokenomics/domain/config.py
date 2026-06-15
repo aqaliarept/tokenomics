@@ -79,12 +79,33 @@ class ProducingAgentConfig:
 class ConsumerConfig:
     """Phase 1 scripted demand. Not present in the Go config — added here.
 
-    Each consumer places one fixed order for `product` every cycle, funded by
-    its share of the emission (cycleEmission/2/num_consumers).
+    Each consumer places one order every cycle, funded by its share of the emission
+    (cycleEmission/2/num_consumers). By default the order is the fixed `product` at
+    quantity 1. B9 seeded randomization: when `products` lists >1 product or
+    `quantity_max > quantity_min`, the env samples a per-episode (product, quantity)
+    schedule from its seeded RNG (the domain itself stays RNG-free, CLAUDE.md).
     """
 
     id: str
     product: Product
+    # demand-randomization bounds (B9). Empty `products` -> fixed `product`; default
+    # quantity range [1, 1] -> fixed quantity 1 (canonical, deterministic).
+    products: tuple[Product, ...] = ()
+    quantity_min: int = 1
+    quantity_max: int = 1
+
+    @property
+    def product_pool(self) -> tuple[Product, ...]:
+        """Products the consumer may demand: the explicit `products` list, else the
+        single fixed `product`."""
+        return self.products if self.products else (self.product,)
+
+    @property
+    def is_randomized(self) -> bool:
+        """True iff the demand needs the seeded RNG — a multi-product pool or a
+        non-degenerate quantity range. A fixed single product at fixed quantity is
+        deterministic and keeps the canonical ScriptedConsumer path."""
+        return len(self.product_pool) > 1 or self.quantity_max > self.quantity_min
 
 
 @dataclass(frozen=True)
@@ -189,8 +210,17 @@ class Configuration:
         # duplicate PettingZoo agents that double-step a single ordering agent.
         consumer_ids: set[str] = set()
         for c in self.consumers:
-            if c.product not in process_products:
-                raise ValueError(f"consumer {c.id} demands product {c.product} with no process sheet")
+            # Every product the consumer may demand (fixed or randomized pool, B9)
+            # must have a process sheet, else it can never be produced.
+            for prod in c.product_pool:
+                if prod not in process_products:
+                    raise ValueError(f"consumer {c.id} demands product {prod} with no process sheet")
+            if c.quantity_min < 1:
+                raise ValueError(f"consumer {c.id} quantity_min must be >= 1, got {c.quantity_min}")
+            if c.quantity_max < c.quantity_min:
+                raise ValueError(
+                    f"consumer {c.id} quantity_max {c.quantity_max} < quantity_min {c.quantity_min}"
+                )
             if c.id in consumer_ids:
                 raise ValueError(f"duplicate consumer id {c.id}")
             consumer_ids.add(c.id)
@@ -271,7 +301,16 @@ def load_config(path: str | Path) -> Configuration:
         for ps in data["processSheets"]
     ]
     producers = [_load_producer(p) for p in data["producerConfigs"]]
-    consumers = [ConsumerConfig(id=c["id"], product=c["product"]) for c in data.get("consumers", [])]
+    consumers = [
+        ConsumerConfig(
+            id=c["id"],
+            product=c["product"],
+            products=tuple(c.get("products", ())),
+            quantity_min=c.get("quantityMin", 1),
+            quantity_max=c.get("quantityMax", 1),
+        )
+        for c in data.get("consumers", [])
+    ]
     cfg = Configuration(
         cycle_emission=data["cycleEmission"],
         process_sheets=sheets,

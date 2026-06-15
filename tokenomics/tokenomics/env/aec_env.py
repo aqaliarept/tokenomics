@@ -15,8 +15,9 @@ from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import AgentSelector
 
-from ..domain import build_system, load_config
+from ..domain import ScheduledConsumer, ScriptedConsumer, build_system, load_config
 from ..domain.config import Configuration
+from ..domain.consumer import Consumer, ScheduleEntry
 from ..domain.producing_agent import ProducerInfo
 from ..domain.system import CycleResult
 from .decode import decode_ordering, decode_producing
@@ -100,8 +101,37 @@ class TokenomicsAECEnv(AECEnv):
         return self._prod_act_space if self._role[agent][0] == "prod" else self._order_act_space
 
     # --- lifecycle ---
+    def _build_consumers(self, seed: int | None) -> dict[str, Consumer]:
+        """Build this episode's consumers. Randomized consumers (B9) get a seeded
+        per-cycle (product, quantity) schedule drawn here in the env layer so the
+        domain stays RNG-free (CLAUDE.md); same seed -> identical schedule, so the
+        episode demand replays deterministically. Non-randomized consumers keep the
+        canonical fixed-product ScriptedConsumer path untouched."""
+        rng = np.random.default_rng(seed)
+        consumers: dict[str, Consumer] = {}
+        for c in self.config.consumers:
+            # Exact legacy default (no pool, fixed quantity 1) keeps the canonical
+            # ScriptedConsumer path bit-identical.
+            if not c.products and c.quantity_min == 1 and c.quantity_max == 1:
+                consumers[c.id] = ScriptedConsumer(c.id, c.product)
+                continue
+            pool = c.product_pool
+            if c.is_randomized:
+                schedule: list[ScheduleEntry] = [
+                    (pool[int(rng.integers(len(pool)))],
+                     int(rng.integers(c.quantity_min, c.quantity_max + 1)))
+                    for _ in range(self.horizon)
+                ]
+            else:
+                # Deterministic but non-default: a singleton pool and/or a fixed
+                # quantity > 1. Honor exactly what was configured (read from the
+                # validated `product_pool`, never the unvalidated `product` field).
+                schedule = [(pool[0], c.quantity_min)]
+            consumers[c.id] = ScheduledConsumer(c.id, schedule)
+        return consumers
+
     def reset(self, seed: int | None = None, options: dict | None = None) -> None:
-        self.system = build_system(self.config)
+        self.system = build_system(self.config, self._build_consumers(seed))
         self.current_cycle = 0
         self.agents = self.possible_agents[:]
         self.rewards = {a: 0.0 for a in self.agents}
