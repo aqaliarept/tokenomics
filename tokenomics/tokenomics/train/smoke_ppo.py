@@ -3,9 +3,10 @@
 A *smoke* trainer (plan slice 5, Phase 1.5 P2): proof the environment is
 learnable and a readable reference for real MAPPO runs, not a tuned baseline.
 
-CTDE (ADR-0004): two **decentralized actors** on local obs —
-  - producing actor : Categorical over Discrete(4)
-  - ordering actor  : diagonal Gaussian over the Box logit vector
+CTDE (ADR-0004): two **decentralized actors** on local obs — both now diagonal
+Gaussian over a Box (ADR-0026):
+  - producing actor : Box(G+3) — G replenish quantities + 3 investment toggles
+  - ordering actor  : Box(K*P) logit vector
 and **one centralized critic** on the global state, shared by both. The reward
 is cooperative and shared, so a single global value function is the correct
 baseline for every agent.
@@ -28,19 +29,28 @@ from typing import Callable
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical, Normal
+from torch.distributions import Normal
 
 from ..domain import load_config
 from ..domain.config import Configuration
+from ..domain.producing_agent import ProducingAgentCommand
 from ..env import TokenomicsAECEnv
 from ..env.aec_env import DEFAULT_CONFIG
+from ..env.decode import decode_producing
 from ..eval.baselines import Policy
 from ..eval.runner import evaluate
 
 
-DEFAULT_PROD_TEMPERATURE = 0.25
+# ADR-0020 reinterpreted for the continuous producing actor (ADR-0026):
+# exploration is the Gaussian log_std, not a softmax temperature. Track A's 0.25
+# temperature has no mapping; this is a fresh hyperparameter, symmetric with the
+# ordering actor by default.
+DEFAULT_PROD_LOG_STD = -2.0
 DEFAULT_ORDER_LOG_STD = -2.0
 DEFAULT_TARGET_KL = 0.008
+# Checkpoint schema version (ADR-0026). Bumped for the continuous-producing /
+# producer-simplex-ordering redesign; the loader rejects older/missing versions.
+CHECKPOINT_VERSION = 2
 
 
 def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:
@@ -52,35 +62,8 @@ def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:
 
 
 # --- decentralized actors (act on local obs) ---
-class CategoricalActor(nn.Module):
-    def __init__(
-        self, obs_dim: int, n_actions: int, temperature: float = 1.0
-    ) -> None:
-        super().__init__()
-        if temperature <= 0.0:
-            raise ValueError("categorical temperature must be positive")
-        self.actor = mlp(obs_dim, n_actions)
-        self.temperature = float(temperature)
-
-    def dist(self, obs: torch.Tensor) -> Categorical:
-        logits = self.actor(obs) / self.temperature
-        # Producing obs indices 4/5 are upgrade_running/restoration_running
-        # (env.encode_producing). The environment strips a requested bit when
-        # that investment is already running. Mask those aliases here so PPO
-        # scores the command that is actually executed (ADR-0021).
-        upgrade_running = obs[..., 4] > 0.5
-        restoration_running = obs[..., 5] > 0.5
-        action = torch.arange(logits.shape[-1], device=logits.device)
-        requests_restoration = (action & 1).bool()
-        requests_upgrade = (action & 2).bool()
-        invalid = (
-            restoration_running.unsqueeze(-1) & requests_restoration
-        ) | (
-            upgrade_running.unsqueeze(-1) & requests_upgrade
-        )
-        return Categorical(logits=logits.masked_fill(invalid, -torch.inf))
-
-
+# Both policies are diagonal-Gaussian over a Box (ADR-0026): the producing actor
+# emits raw reals and decode owns all gating, so no action mask survives here.
 class GaussianActor(nn.Module):
     def __init__(self, obs_dim: int, act_dim: int, log_std_init: float = 0.0) -> None:
         super().__init__()
@@ -216,22 +199,36 @@ def gae(
 
 
 def capacity_health(env: TokenomicsAECEnv) -> float:
-    """Mean capacity/max over producers ∈ [0,1] — the potential for the
-    capacity-floor shaping term (ADR-0010). 0 at system death."""
+    """Mean total-capacity/total-max over producers ∈ [0,1] — the potential for
+    the capacity-floor shaping term (ADR-0010). 0 at system death. Producers now
+    own a capacity *bundle* (ADR-0025), so health is summed over types per
+    producer; a producer with no max contributes 0."""
     prods = env.system.producing_agents.values()
     if not prods:
         return 0.0
-    return sum(p.capacity / p.max_capacity for p in prods if p.max_capacity) / len(prods)
+    total = 0.0
+    for p in prods:
+        max_cap = sum(p.max_capacities.values())
+        if max_cap:
+            total += sum(p.capacities.values()) / max_cap
+    return total / len(prods)
 
 
-def investment_request_cost(action: int, coef: float) -> float:
-    """Training-only cost per restoration/upgrade request (ADR-0022).
+def investment_request_cost(cmd: ProducingAgentCommand, coef: float) -> float:
+    """Training-only cost per investment toggle *executed* (ADR-0022, generalized
+    for the continuous action — ADR-0026).
 
-    Producing action bits are independent requests. `coef=1` cancels the direct
-    +1 reward for a completed investment, so investment must earn its return
-    through later consumer fulfillment instead of request churn.
+    Charged off the gated command decode produced, not the raw action: a toggle
+    whose raw real is > 0 but which decode ignores (the investment is already
+    running, or unconfigured) opens no request, earns no +1, and so is not
+    charged. Count the executed toggles (≤3: restoration, upgrade, inventory
+    expansion). Replenishment is excluded — its counter-pressure is the inventory
+    holding penalty (ADR-0025), not this cost. `coef=1` cancels the +1 reward for
+    a completed investment, so investment must earn its return through later
+    consumer fulfillment instead of request churn.
     """
-    return coef * (int(bool(action & 1)) + int(bool(action & 2)))
+    fired = int(cmd.do_restoration) + int(cmd.do_upgrade) + int(cmd.do_inventory_expansion)
+    return coef * fired
 
 
 def critic_input_dim(env: TokenomicsAECEnv) -> int:
@@ -262,7 +259,7 @@ def critic_input(
 
 def collect(
     envs: list[TokenomicsAECEnv],
-    prod: CategoricalActor,
+    prod: GaussianActor,
     order: GaussianActor,
     critic: CentralCritic | None,
     steps: int,
@@ -372,28 +369,28 @@ def collect(
                 # Monte-Carlo return-to-go (REINFORCE). actor_update normalizes
                 # advantages, so the constant-0 baseline is the batch mean.
                 v = critic.value(torch.as_tensor(glob, dtype=torch.float32)) if critic is not None else 0.0
-                if role == "prod":
-                    d = prod.dist(o)
-                    a = d.sample()
-                    logp = d.log_prob(a)
-                    env_action = int(a.item())
-                    stored = env_action
-                else:
-                    d = order.dist(o)
-                    a = d.sample()
-                    logp = d.log_prob(a).sum()
-                    env_action = np.clip(a.numpy(), -bound, bound).astype(np.float32)
-                    stored = a.numpy()
+                # Both actors are Gaussian over a Box now (ADR-0026): sample a
+                # float vector, clip to the action bound for the env, store raw.
+                d = (prod if role == "prod" else order).dist(o)
+                a = d.sample()
+                logp = d.log_prob(a).sum()
+                env_action = np.clip(a.numpy(), -bound, bound).astype(np.float32)
+                stored = a.numpy()
             buf.obs.append(obs)
             buf.glob.append(glob)
             buf.act.append(stored)
             buf.logp.append(float(logp))
             buf.val.append(float(v))
-            action_cost = (
-                investment_request_cost(stored, investment_cost)
-                if role == "prod"
-                else 0.0
-            )
+            # Cost only the investment toggles decode will actually execute
+            # (ADR-0022/0026): decode the gated command from the same clipped
+            # action the env will step. Default coef 0 -> skip the extra decode.
+            action_cost = 0.0
+            if role == "prod" and investment_cost:
+                did = env._role[agent][1]
+                cmd = decode_producing(
+                    env.spec_, env_action, env.system.producing_agents[did].view()
+                )
+                action_cost = investment_request_cost(cmd, investment_cost)
             buf.rew.append(-action_cost)
             buf.term.append(0.0)
             buf.boot.append(0.0)
@@ -440,40 +437,42 @@ def drop_pending(buf: Buf) -> int:
 
 
 def greedy_eval_policies(
-    prod: CategoricalActor,
+    prod: GaussianActor,
     order: GaussianActor,
     bound: float,
 ) -> tuple[Policy, Policy]:
     """Wrap the trained actors as deterministic eval `Policy` closures (ADR-0003).
 
-    Greedy = the *deployed* policy: argmax over the producing Discrete(4),
-    distribution mean for the ordering Box. They read the obs via `env.observe`
+    Greedy = the *deployed* policy: the Gaussian mean (clipped to the action
+    bound) for both actors now (ADR-0026). They read the obs via `env.observe`
     so the eval harness measures them exactly like a baseline."""
 
-    def prod_policy(env: TokenomicsAECEnv, agent: str) -> int:
+    def greedy(actor: GaussianActor, env: TokenomicsAECEnv, agent: str) -> np.ndarray:
         o = torch.as_tensor(env.observe(agent), dtype=torch.float32)
         with torch.no_grad():
-            return int(torch.argmax(prod.dist(o).probs).item())
+            mean = actor.actor(o).numpy()
+        return np.clip(mean, -bound, bound).astype(np.float32)
+
+    def prod_policy(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        return greedy(prod, env, agent)
 
     def order_policy(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
-        o = torch.as_tensor(env.observe(agent), dtype=torch.float32)
-        with torch.no_grad():
-            mean = order.actor(o).numpy()
-        return np.clip(mean, -bound, bound).astype(np.float32)
+        return greedy(order, env, agent)
 
     return prod_policy, order_policy
 
 
 def save_policies(
-    prod: CategoricalActor, order: GaussianActor, bound: float, path: str
+    prod: GaussianActor, order: GaussianActor, bound: float, path: str
 ) -> None:
     """Checkpoint the deployed actors + the dims needed to rebuild them, so the
     eval harness (signal_check) can score the trained policy against the baseline
-    table without re-training."""
+    table without re-training. Stamped with `CHECKPOINT_VERSION` (ADR-0026)."""
     torch.save(
         {
+            "version": CHECKPOINT_VERSION,
             "prod_obs": prod.actor[0].in_features,
-            "prod_temperature": prod.temperature,
+            "prod_act": prod.log_std.numel(),
             "order_obs": order.actor[0].in_features,
             "order_act": order.log_std.numel(),
             "bound": bound,
@@ -486,11 +485,19 @@ def save_policies(
 
 def load_policies(path: str) -> tuple[Policy, Policy]:
     """Rebuild the greedy eval `Policy` closures from a `save_policies`
-    checkpoint — the trained policy as the eval harness sees a baseline."""
+    checkpoint — the trained policy as the eval harness sees a baseline.
+
+    Rejects a checkpoint with a missing or older schema version loudly (ADR-0026):
+    the producing action, ordering action meaning, and critic state all changed in
+    the redesign, so a stale checkpoint holds semantically wrong tensors."""
     ckpt = torch.load(path, weights_only=True)
-    prod = CategoricalActor(
-        ckpt["prod_obs"], 4, temperature=ckpt.get("prod_temperature", 1.0)
-    )
+    version = ckpt.get("version")
+    if version != CHECKPOINT_VERSION:
+        raise ValueError(
+            f"checkpoint schema version {version!r} != {CHECKPOINT_VERSION} "
+            "(ADR-0026 redesign); retrain — old checkpoints are not loadable"
+        )
+    prod = GaussianActor(ckpt["prod_obs"], ckpt["prod_act"])
     order = GaussianActor(ckpt["order_obs"], ckpt["order_act"])
     prod.load_state_dict(ckpt["prod"])
     order.load_state_dict(ckpt["order"])
@@ -690,7 +697,7 @@ def train(
     low_cap_coef: float = 0.0,
     low_cap_thresh: float = 0.3,
     investment_cost: float = 0.0,
-    prod_temperature: float = DEFAULT_PROD_TEMPERATURE,
+    prod_log_std: float = DEFAULT_PROD_LOG_STD,
     log_std_init: float = DEFAULT_ORDER_LOG_STD,
     critic_warmup: int = 0,
     no_critic: bool = False,
@@ -711,7 +718,7 @@ def train(
     order_obs = env.observation_space(env._order_agents[0]).shape[0]
     bound = float(env.action_space(env._order_agents[0]).high[0])
 
-    prod = CategoricalActor(prod_obs, 4, temperature=prod_temperature)
+    prod = GaussianActor(prod_obs, env.spec_.producing_action_dim, log_std_init=prod_log_std)
     order = GaussianActor(order_obs, env.spec_.ordering_action_dim, log_std_init=log_std_init)
     # ADR-0014: --no-critic drops the learned baseline entirely (REINFORCE with
     # whitened MC returns), testing whether the critic↔actor coupling — not a
@@ -768,7 +775,7 @@ def train(
         # Optional historical ablation (ADR-0013): fit the critic while delaying
         # actor updates. Its original motivation predated the trajectory fix.
         warming = it < critic_warmup
-        pl = 0.0 if warming else actor_update(prod, pbuf, p_adv, popt, is_discrete=True, ent_coef=cur_ent, target_kl=target_kl)
+        pl = 0.0 if warming else actor_update(prod, pbuf, p_adv, popt, is_discrete=False, ent_coef=cur_ent, target_kl=target_kl)
         ol = 0.0 if warming else actor_update(order, obuf, o_adv, oopt, is_discrete=False, ent_coef=cur_ent, target_kl=target_kl)
         # critic trained on the pooled global-state -> return targets from both roles
         cl = 0.0 if critic is None else critic_update(
@@ -861,7 +868,7 @@ def main() -> None:
     ap.add_argument("--low-cap-coef", type=float, default=0.0, help="graded penalty coef as capacity health falls below --low-cap-thresh (ADR-0016)")
     ap.add_argument("--low-cap-thresh", type=float, default=0.3, help="capacity-health threshold below which the graded penalty ramps (ADR-0016)")
     ap.add_argument("--investment-cost", type=float, default=0.0, help="experimental training cost per restoration/upgrade request (ADR-0022)")
-    ap.add_argument("--prod-temperature", type=float, default=DEFAULT_PROD_TEMPERATURE, help="producing Categorical sampling temperature (ADR-0020)")
+    ap.add_argument("--prod-log-std", type=float, default=DEFAULT_PROD_LOG_STD, help="initial producing-actor log std; lower = less exploration noise (ADR-0020/0026)")
     ap.add_argument("--log-std-init", type=float, default=DEFAULT_ORDER_LOG_STD, help="initial ordering-actor log std; lower = less exploration noise (ADR-0012/0024)")
     ap.add_argument("--critic-warmup", type=int, default=0, help="freeze actors for the first K iters so policy grads use a warm critic (ADR-0013)")
     ap.add_argument("--no-critic", action="store_true", help="drop the learned critic: REINFORCE with whitened MC returns (ADR-0014)")
@@ -884,7 +891,7 @@ def main() -> None:
         surv_coef=args.surv_coef, death_penalty=args.death_penalty,
         low_cap_coef=args.low_cap_coef, low_cap_thresh=args.low_cap_thresh,
         investment_cost=args.investment_cost,
-        prod_temperature=args.prod_temperature,
+        prod_log_std=args.prod_log_std,
         log_std_init=args.log_std_init,
         critic_warmup=args.critic_warmup, no_critic=args.no_critic,
         target_kl=args.target_kl,

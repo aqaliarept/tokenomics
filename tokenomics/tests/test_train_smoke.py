@@ -95,7 +95,6 @@ def test_vectorized_collect_fills_both_buffers():
 
     from tokenomics.env import TokenomicsAECEnv
     from tokenomics.train.smoke_ppo import (
-        CategoricalActor,
         CentralCritic,
         GaussianActor,
         collect,
@@ -104,7 +103,9 @@ def test_vectorized_collect_fills_both_buffers():
 
     envs = [TokenomicsAECEnv(horizon=40) for _ in range(3)]
     e = envs[0]
-    prod = CategoricalActor(e.observation_space(e._prod_agents[0]).shape[0], 4)
+    prod = GaussianActor(
+        e.observation_space(e._prod_agents[0]).shape[0], e.spec_.producing_action_dim
+    )
     order = GaussianActor(
         e.observation_space(e._order_agents[0]).shape[0], e.spec_.ordering_action_dim
     )
@@ -138,7 +139,6 @@ def test_collect_preserves_live_episode_state_across_batches():
 
     from tokenomics.env import TokenomicsAECEnv
     from tokenomics.train.smoke_ppo import (
-        CategoricalActor,
         CentralCritic,
         GaussianActor,
         collect,
@@ -147,7 +147,9 @@ def test_collect_preserves_live_episode_state_across_batches():
 
     envs = [TokenomicsAECEnv(horizon=100) for _ in range(2)]
     e = envs[0]
-    prod = CategoricalActor(e.observation_space(e._prod_agents[0]).shape[0], 4)
+    prod = GaussianActor(
+        e.observation_space(e._prod_agents[0]).shape[0], e.spec_.producing_action_dim
+    )
     order = GaussianActor(
         e.observation_space(e._order_agents[0]).shape[0], e.spec_.ordering_action_dim
     )
@@ -205,36 +207,62 @@ def test_gaussian_actor_accepts_integer_log_std_init():
     assert actor.log_std.is_floating_point()
 
 
-def test_producing_temperature_reduces_sampling_entropy_not_greedy_action():
+def test_producing_greedy_policy_emits_box_action_within_bound():
+    """ADR-0026: the producing policy is now Gaussian over the Box(G+3) action;
+    the deployed (greedy) policy emits the distribution mean clipped to the action
+    bound, read through env.observe like a baseline."""
+    import numpy as np
+
+    from tokenomics.env import TokenomicsAECEnv
+    from tokenomics.train.smoke_ppo import GaussianActor, greedy_eval_policies
+
+    env = TokenomicsAECEnv(horizon=40)
+    env.reset(seed=0)
+    prod = GaussianActor(
+        env.observation_space(env._prod_agents[0]).shape[0], env.spec_.producing_action_dim
+    )
+    order = GaussianActor(
+        env.observation_space(env._order_agents[0]).shape[0], env.spec_.ordering_action_dim
+    )
+    bound = float(env.action_space(env._prod_agents[0]).high[0])
+
+    prod_policy, _ = greedy_eval_policies(prod, order, bound)
+    action = prod_policy(env, env._prod_agents[0])
+
+    assert action.shape == (env.spec_.producing_action_dim,)
+    assert np.all(np.abs(action) <= bound)
+    # deterministic: greedy == the mean, so two calls match
+    assert np.array_equal(action, prod_policy(env, env._prod_agents[0]))
+
+
+def test_checkpoint_roundtrips_and_rejects_stale_version(tmp_path):
+    """ADR-0026: a checkpoint carries a schema version; the loader rebuilds both
+    Gaussian actors on a current version and rejects a missing/older one loudly,
+    since the producing/ordering actions and critic state all changed."""
     import torch
 
-    from tokenomics.train.smoke_ppo import CategoricalActor
+    from tokenomics.train.smoke_ppo import (
+        CHECKPOINT_VERSION,
+        GaussianActor,
+        load_policies,
+        save_policies,
+    )
 
-    base = CategoricalActor(obs_dim=7, n_actions=4, temperature=1.0)
-    cold = CategoricalActor(obs_dim=7, n_actions=4, temperature=0.25)
-    cold.load_state_dict(base.state_dict())
-    obs = torch.tensor([0.2, 0.7, 0.0, 0.0, 0.0, 0.0, 0.0])
+    prod = GaussianActor(obs_dim=8, act_dim=5)
+    order = GaussianActor(obs_dim=6, act_dim=12)
+    path = tmp_path / "policy.pt"
+    save_policies(prod, order, bound=10.0, path=str(path))
 
-    base_logits = base.actor(obs)
-    cold_logits = cold.actor(obs)
-    assert torch.argmax(base_logits) == torch.argmax(cold_logits)
-    assert cold.dist(obs).entropy() < base.dist(obs).entropy()
+    # current version loads
+    prod_policy, order_policy = load_policies(str(path))
+    assert callable(prod_policy) and callable(order_policy)
 
-
-def test_producing_actor_masks_in_flight_investments():
-    import torch
-
-    from tokenomics.train.smoke_ppo import CategoricalActor
-
-    actor = CategoricalActor(obs_dim=7, n_actions=4)
-    # obs[4] = upgrade running, obs[5] = restoration running
-    upgrade_running = torch.tensor([0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
-    restoration_running = torch.tensor([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-    both_running = torch.tensor([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0])
-
-    assert actor.dist(upgrade_running).probs[2:].sum() == 0.0
-    assert actor.dist(restoration_running).probs[[1, 3]].sum() == 0.0
-    assert actor.dist(both_running).probs.tolist() == [1.0, 0.0, 0.0, 0.0]
+    # stale (older / missing) version is rejected loudly
+    ckpt = torch.load(str(path), weights_only=True)
+    ckpt["version"] = CHECKPOINT_VERSION - 1
+    torch.save(ckpt, str(path))
+    with pytest.raises(ValueError, match="version"):
+        load_policies(str(path))
 
 
 def test_validated_stability_controls_are_training_defaults():
@@ -242,13 +270,15 @@ def test_validated_stability_controls_are_training_defaults():
 
     from tokenomics.train.smoke_ppo import (
         DEFAULT_ORDER_LOG_STD,
-        DEFAULT_PROD_TEMPERATURE,
+        DEFAULT_PROD_LOG_STD,
         DEFAULT_TARGET_KL,
         train,
     )
 
+    # ADR-0026: both actors are Gaussian; producing exploration is a log_std, not
+    # a softmax temperature. Carried-forward target-KL stays 0.008 (ADR-0024).
     defaults = signature(train).parameters
-    assert defaults["prod_temperature"].default == DEFAULT_PROD_TEMPERATURE == 0.25
+    assert defaults["prod_log_std"].default == DEFAULT_PROD_LOG_STD == -2.0
     assert defaults["log_std_init"].default == DEFAULT_ORDER_LOG_STD == -2.0
     assert defaults["target_kl"].default == DEFAULT_TARGET_KL == 0.008
 
@@ -259,17 +289,17 @@ def test_target_kl_stops_before_an_out_of_region_actor_step():
 
     from tokenomics.train.smoke_ppo import (
         Buf,
-        CategoricalActor,
+        GaussianActor,
         actor_update,
     )
 
-    actor = CategoricalActor(obs_dim=7, n_actions=4, temperature=0.25)
+    actor = GaussianActor(obs_dim=7, act_dim=3, log_std_init=-2.0)
     obs = np.zeros((4, 7), dtype=np.float32)
-    actions = np.arange(4)
+    actions = np.zeros((4, 3), dtype=np.float32)
     with torch.no_grad():
         current_logp = actor.dist(torch.as_tensor(obs)).log_prob(
             torch.as_tensor(actions)
-        )
+        ).sum(-1)
 
     # Pretend the rollout policy assigned each sampled action much less
     # probability. The first KL check must reject this update before optimizer
@@ -287,7 +317,7 @@ def test_target_kl_stops_before_an_out_of_region_actor_step():
         buf,
         np.array([-1.0, -0.5, 0.5, 1.0], dtype=np.float32),
         opt,
-        is_discrete=True,
+        is_discrete=False,
         target_kl=0.008,
     )
 
@@ -295,14 +325,73 @@ def test_target_kl_stops_before_an_out_of_region_actor_step():
     assert all(torch.equal(old, new) for old, new in zip(before, actor.parameters()))
 
 
-def test_investment_request_cost_counts_action_bits():
+def test_investment_request_cost_counts_executed_toggles():
+    """ADR-0022/0026: cost is charged off the gated command decode produced (the
+    three do_* flags), not the raw action — a toggle decode ignores (already
+    running / unconfigured) opens no request and is not charged. Replenishment is
+    excluded."""
+    from tokenomics.domain.producing_agent import ProducingAgentCommand
     from tokenomics.train.smoke_ppo import investment_request_cost
 
-    assert investment_request_cost(0, 1.0) == 0.0
-    assert investment_request_cost(1, 1.0) == 1.0
-    assert investment_request_cost(2, 1.0) == 1.0
-    assert investment_request_cost(3, 1.0) == 2.0
-    assert investment_request_cost(3, 0.5) == 1.0
+    none = ProducingAgentCommand(do_restoration=False, do_upgrade=False)
+    one = ProducingAgentCommand(do_restoration=True, do_upgrade=False)
+    two = ProducingAgentCommand(
+        do_restoration=True, do_upgrade=False, do_inventory_expansion=True
+    )
+    three = ProducingAgentCommand(
+        do_restoration=True, do_upgrade=True, do_inventory_expansion=True,
+        replenishments={"x": 9},  # replenishment never adds to the cost
+    )
+
+    assert investment_request_cost(none, 1.0) == 0.0
+    assert investment_request_cost(one, 1.0) == 1.0
+    assert investment_request_cost(two, 1.0) == 2.0
+    assert investment_request_cost(three, 1.0) == 3.0
+    assert investment_request_cost(three, 0.5) == 1.5
+
+
+def test_investment_cost_skips_toggles_decode_does_not_execute():
+    """Regression (ADR-0026): a positive raw toggle decode ignores — investment
+    already running or unconfigured — opens no request, so it must not be charged.
+    Cost is read off the gated command, not the raw action."""
+    import numpy as np
+
+    from tokenomics.domain.producing_agent import ProducingAgentView
+    from tokenomics.env.decode import decode_producing
+    from tokenomics.env.spaces import build_spec
+    from tokenomics.domain import load_config
+    from tokenomics.env.aec_env import DEFAULT_CONFIG
+    from tokenomics.train.smoke_ppo import investment_request_cost
+
+    spec = build_spec(load_config(DEFAULT_CONFIG))
+    pid = spec.producer_ids[0]
+    # restoration is already running and inventory expansion is unconfigured;
+    # only an upgrade can actually fire this cycle.
+    view = ProducingAgentView(
+        id=pid,
+        capacities={t: 0 for t in spec.producer_owns[pid]},
+        max_capacities={t: 0 for t in spec.producer_owns[pid]},
+        requested_capacity=0,
+        degradation={t: 0 for t in spec.producer_owns[pid]},
+        upgrade=0,
+        restoration=0,
+        upgrade_running=False,
+        restoration_running=True,
+        inventory={},
+        inventory_limit=0,
+        inventory_units=0,
+        headroom=0,
+        inventory_expansion_running=False,
+        has_inventory_expansion=False,
+    )
+    # all three toggle dims positive
+    action = np.zeros(spec.producing_action_dim, dtype=np.float32)
+    action[-3:] = 1.0
+    cmd = decode_producing(spec, action, view)
+
+    # decode executes only the upgrade; restoration (running) + inventory
+    # expansion (unconfigured) are dropped -> charged once, not three times.
+    assert investment_request_cost(cmd, 1.0) == 1.0
 
 
 def test_curriculum_gate_holds_until_survival():
@@ -348,6 +437,33 @@ def test_curriculum_ramps_and_scales_degradation():
     # base untouched (frozen + replace -> new object)
     assert scale_degradation(base, 1.0).producer_configs[0].degradation == \
         base.producer_configs[0].degradation
+
+
+def test_capacity_health_from_capacity_bundle():
+    """ADR-0010/0025: health = mean total-capacity/total-max over producers,
+    summed across the capacity bundle. Fresh build is fully restored -> 1.0."""
+    from tokenomics.env import TokenomicsAECEnv
+    from tokenomics.train.smoke_ppo import capacity_health
+
+    env = TokenomicsAECEnv(horizon=40)
+    env.reset(seed=0)
+    h = capacity_health(env)
+    assert h == pytest.approx(1.0)
+    assert 0.0 <= h <= 1.0
+
+
+@pytest.mark.parametrize("kwargs", [{"surv_coef": 0.5}, {"low_cap_coef": 0.5}])
+def test_capacity_shaping_flags_run(kwargs):
+    """Regression: --surv-coef and --low-cap-coef feed capacity_health, which used
+    removed scalar capacity fields. Both must drive a training iter without
+    crashing on the capacity-bundle model (ADR-0025)."""
+    from tokenomics.train.smoke_ppo import train
+
+    history = train(
+        iters=1, steps=128, horizon=40, seed=0, eval_seeds=2,
+        log=lambda *a, **k: None, **kwargs,
+    )
+    assert len(history) == 1
 
 
 def test_curve_csv_written(tmp_path):
