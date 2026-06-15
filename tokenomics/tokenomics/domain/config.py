@@ -63,6 +63,10 @@ class ProducingAgentConfig:
     degradation: int  # DegradationRate, percent of max capacity per cycle
     restoration: Restoration
     upgrade: Upgrade
+    # products this producer is eligible to make (ADR-0028). Authoritative: the
+    # ordering side reads this set, not capacity ownership. validate() guarantees a
+    # producer only lists products whose required capacity types it owns.
+    produces: frozenset[Product] = frozenset()
     inventory_limit: int = 0  # max input-product units held (ADR-0025); 0 = none
     inventory_expansion: InventoryExpansion | None = None
     # fund target per replenished unit (ADR-0027); None = unbounded
@@ -133,22 +137,50 @@ class Configuration:
             for inv_type in (cfg.restoration.type, cfg.upgrade.type):
                 if inv_type not in cfg.capacities:
                     raise ValueError(f"producer {cfg.id} invests in unowned capacity type {inv_type}")
+            # Funding targets / ceilings, when set, must be positive (ADR-0027/0030):
+            # a zero/negative target funds nothing or corrupts apportionment.
+            costs = [("restoration", cfg.restoration.cost), ("upgrade", cfg.upgrade.cost)]
+            if cfg.inventory_expansion is not None:
+                costs.append(("inventory expansion", cfg.inventory_expansion.cost))
+            for label, c in costs:
+                if c is not None and c <= 0:
+                    raise ValueError(f"producer {cfg.id} {label} cost must be positive, got {c}")
+            if cfg.replenish_cost_per_unit is not None and cfg.replenish_cost_per_unit <= 0:
+                raise ValueError(
+                    f"producer {cfg.id} replenish_cost_per_unit must be positive, "
+                    f"got {cfg.replenish_cost_per_unit}"
+                )
+            if cfg.max_replenish is not None and cfg.max_replenish <= 0:
+                raise ValueError(
+                    f"producer {cfg.id} max_replenish must be positive, got {cfg.max_replenish}"
+                )
 
         for cap_type in process_capacities:
             if cap_type not in producer_cap_types:
                 raise ValueError(f"capacity type {cap_type} required by process sheets but no producer provides it")
 
-        # Eligibility (ADR-0025): a producer is eligible for a product only if it
-        # owns *every* capacity type the recipe requires. A product whose required
-        # bundle is split across producers has no eligible producer and can never
-        # be ordered — reject here rather than crash later in env decode on an
-        # empty eligible set.
+        # Eligibility is authoritative (ADR-0028): each producer *declares* the
+        # products it makes via `produces`. A producer may only list a product whose
+        # recipe it can satisfy — it must own every capacity type the recipe
+        # requires — and every process-sheet product must be produced by at least
+        # one producer, else it can never be ordered (and env decode would later
+        # crash on an empty eligible set).
+        produced: set[Product] = set()
+        for cfg in self.producer_configs:
+            for prod in cfg.produces:
+                if prod not in process_products:
+                    raise ValueError(f"producer {cfg.id} produces product {prod} with no process sheet")
+                missing = set(self.process_sheet(prod).require) - cfg.capacities.keys()
+                if missing:
+                    raise ValueError(
+                        f"producer {cfg.id} produces product {prod} but does not own required "
+                        f"capacity type(s) {sorted(missing)}"
+                    )
+                produced.add(prod)
         for sheet in self.process_sheets:
-            required = set(sheet.require)
-            if not any(required <= cfg.capacities.keys() for cfg in self.producer_configs):
+            if sheet.product not in produced:
                 raise ValueError(
-                    f"product {sheet.product} has no eligible producer: no single producer "
-                    f"owns every required capacity type {sorted(required)}"
+                    f"product {sheet.product} has no producer: no producer produces it"
                 )
 
         # Consumers (Phase 1 extension): products must have a process sheet, and
@@ -213,6 +245,8 @@ def _load_producer(p: dict) -> ProducingAgentConfig:
         upgrade=Upgrade(
             require=u["product"], increases=u["capacity"], type=u.get("type", default_type), cost=u.get("cost")
         ),
+        # JSON `produces` is an array of int product ids; absent -> makes nothing.
+        produces=frozenset(p.get("produces", [])),
         inventory_limit=p.get("inventoryLimit", 0),
         inventory_expansion=(
             InventoryExpansion(require=exp["product"], increases=exp["increases"], cost=exp.get("cost"))

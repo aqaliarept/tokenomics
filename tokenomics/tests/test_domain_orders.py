@@ -28,7 +28,12 @@ from tokenomics.domain.order import (
     OrderStillProcessing,
 )
 from tokenomics.domain.ordering_agent import OrderingAgent, OrderingAgentCommand, SubOrder
-from tokenomics.domain.producing_agent import ProducerInfo, ProducingAgentCommand
+from tokenomics.domain.producing_agent import (
+    ProducerInfo,
+    ProducingAgent,
+    ProducingAgentCommand,
+    SubOrder as RoutedSubOrder,
+)
 from tokenomics.domain.requests import ConsumerRequest
 
 
@@ -54,6 +59,7 @@ def test_full_cycle_consumer_order_completes():
                 degradation=0,
                 restoration=Restoration(require=1, restores=10, type="capacity-1"),
                 upgrade=Upgrade(require=1, increases=10, type="capacity-1"),
+                produces=frozenset({10}),
             )
         ],
         consumers=[ConsumerConfig(id="c1", product=10)],
@@ -85,6 +91,7 @@ def test_reservation_cleared_when_parent_order_closes():
                 degradation=0,
                 restoration=Restoration(require=1, restores=5, type="capacity-1"),
                 upgrade=Upgrade(require=1, increases=5, type="capacity-1"),
+                produces=frozenset({30}),
             )
         ],
         consumers=[ConsumerConfig(id="c1", product=30), ConsumerConfig(id="c2", product=30)],
@@ -109,6 +116,7 @@ def _simple_config(degradation):
                 degradation=degradation,
                 restoration=Restoration(require=10, restores=30, type="capacity-1"),
                 upgrade=Upgrade(require=10, increases=20, type="capacity-1"),
+                produces=frozenset({10}),
             )
         ],
         consumers=[ConsumerConfig(id="c1", product=10)],
@@ -138,6 +146,32 @@ def test_degradation_without_restoration_kills_system():
         _run_cycle(system)
     assert system.is_dead()
     assert system.producing_agents["p1"].capacities["capacity-1"] == 0
+
+
+def test_is_dead_when_sole_declaring_producer_exhausted_despite_type_alive_elsewhere():
+    # capacity-1 is owned by both pa and pb, but only pa declares product 10. Once
+    # pa is exhausted, product 10 is permanently unmakeable even though pb keeps
+    # capacity-1 alive — death must be judged per declared product (ADR-0028/0030),
+    # not by treating a capacity type as interchangeable across all owners.
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[
+            ProcessSheet(product=10, require={"capacity-1": 5}),
+            ProcessSheet(product=11, require={"capacity-1": 5}),
+        ],
+        producer_configs=[
+            ProducingAgentConfig("pa", {"capacity-1": 100}, 0,
+                Restoration(10, 10, "capacity-1"), Upgrade(10, 10, "capacity-1"),
+                produces=frozenset({10})),
+            ProducingAgentConfig("pb", {"capacity-1": 100}, 0,
+                Restoration(11, 10, "capacity-1"), Upgrade(11, 10, "capacity-1"),
+                produces=frozenset({11})),
+        ],
+    )
+    system = build_system(cfg)
+    assert not system.is_dead()
+    system.producing_agents["pa"].capacities["capacity-1"] = 0
+    assert system.is_dead()  # product 10 unmakeable though capacity-1 alive via pb
 
 
 def test_restoration_recovers_capacity():
@@ -203,52 +237,82 @@ def test_failed_reservation_tokens_are_not_refunded():
     assert event.remaining == 0  # burnt tokens are not refunded
 
 
-def _producer(pid, types):
+def _producer(pid, types, produces=()):
     caps = {t: 999 for t in types}
-    return ProducerInfo(pid, caps, dict(caps), nan)
+    return ProducerInfo(pid, caps, dict(caps), nan, frozenset(produces))
 
 
-def test_ordering_agent_splits_quantity_into_bundle_bids():
+def test_ordering_agent_splits_quantity_into_capacity_free_sub_orders():
+    # ADR-0029: the ordering agent routes product+quantity+tokens only; it never
+    # builds a capacity bundle (it has no recipe).
     ps = ProcessSheet(product=30, require={"capacity-1": 2, "capacity-2": 3}, inputs={20: 1})
-    req = ConsumerRequest("c1", product=30, tokens=100, quantity=4)
-    order = Order.new_consumer_order("o1", ps, req)
-
+    order = Order.new_consumer_order("o1", ps, ConsumerRequest("c1", 30, 100, quantity=4))
     agent = OrderingAgent("c1")
     agent.place_order(order.info())
     producers = {
-        "p1": _producer("p1", ["capacity-1", "capacity-2"]),
-        "p2": _producer("p2", ["capacity-1", "capacity-2"]),
+        "p1": _producer("p1", ["capacity-1", "capacity-2"], produces=[30]),
+        "p2": _producer("p2", ["capacity-1", "capacity-2"], produces=[30]),
     }
-    cmd = OrderingAgentCommand({"o1": [SubOrder("p1", 1, 25), SubOrder("p2", 3, 75)]})
-    bids = agent.handle_cmd(cmd, producers)
+    routed = agent.handle_cmd(OrderingAgentCommand({"o1": [SubOrder("p1", 1, 25), SubOrder("p2", 3, 75)]}), producers)
 
-    [b1] = bids["p1"]
-    assert b1.capacities == {"capacity-1": 2, "capacity-2": 3}
-    assert b1.inputs == {20: 1}
-    assert b1.quantity == 1
-    assert b1.tokens == 25
-    assert b1.product == 30
+    [s1] = routed["p1"]
+    assert (s1.order_id, s1.product, s1.quantity, s1.tokens) == ("o1", 30, 1, 25)
+    assert not hasattr(s1, "capacities")  # capacity-free
+    [s2] = routed["p2"]
+    assert (s2.product, s2.quantity, s2.tokens) == (30, 3, 75)
 
-    [b2] = bids["p2"]
-    assert b2.capacities == {"capacity-1": 6, "capacity-2": 9}
-    assert b2.inputs == {20: 3}
-    assert b2.quantity == 3
-    assert b2.tokens == 75
+
+def test_producer_expands_sub_order_into_bundle_via_its_own_sheet():
+    # ADR-0029: the producer owns the recipe and expands the routed sub-order into
+    # a capacity bundle + input requirements, scaled by quantity.
+    ps = ProcessSheet(product=30, require={"capacity-1": 2, "capacity-2": 3}, inputs={20: 1})
+    cfg = ProducingAgentConfig(
+        id="p1", capacities={"capacity-1": 999, "capacity-2": 999}, degradation=0,
+        restoration=Restoration(30, 10, "capacity-1"), upgrade=Upgrade(30, 10, "capacity-1"),
+        produces=frozenset({30}),
+    )
+    prod = ProducingAgent(cfg, sheets={30: ps})
+    prod.place_sub_orders([RoutedSubOrder("o1", 30, 3, 75)])
+    [b] = prod.bids
+    assert b.capacities == {"capacity-1": 6, "capacity-2": 9}  # scaled by quantity 3
+    assert b.inputs == {20: 3}
+    assert b.quantity == 3
+    assert b.tokens == 75
+    assert b.product == 30
 
 
 def test_ordering_agent_rejects_ineligible_producer():
-    # product needs both capacity types; p2 owns only capacity-1 -> ineligible
+    # Eligibility is authoritative (ADR-0028): p2 owns every required capacity type
+    # but does NOT declare product 30 in `produces`, so it is ineligible. Owning the
+    # capacity is no longer sufficient.
     ps = ProcessSheet(product=30, require={"capacity-1": 2, "capacity-2": 3})
     order = Order.new_consumer_order("o1", ps, ConsumerRequest("c1", 30, 50, quantity=2))
     agent = OrderingAgent("c1")
     agent.place_order(order.info())
     producers = {
-        "p1": _producer("p1", ["capacity-1", "capacity-2"]),
-        "p2": _producer("p2", ["capacity-1"]),
+        "p1": _producer("p1", ["capacity-1", "capacity-2"], produces=[30]),
+        "p2": _producer("p2", ["capacity-1", "capacity-2"]),  # capable but does not declare 30
     }
     cmd = OrderingAgentCommand({"o1": [SubOrder("p1", 1, 25), SubOrder("p2", 1, 25)]})
     with pytest.raises(RuntimeError, match="ineligible"):
         agent.handle_cmd(cmd, producers)
+
+
+def test_ordering_view_eligibility_follows_produces_not_capacity():
+    # both producers own the required type; only p1 declares product 10 -> only p1
+    # is eligible in the ordering view (ADR-0028).
+    order = Order.new_consumer_order(
+        "o1", ProcessSheet(product=10, require={"capacity-1": 2}),
+        ConsumerRequest("c1", 10, 50, quantity=2),
+    )
+    agent = OrderingAgent("c1")
+    agent.place_order(order.info())
+    producers = {
+        "p1": _producer("p1", ["capacity-1"], produces=[10]),
+        "p2": _producer("p2", ["capacity-1"]),  # owns the type, declares nothing
+    }
+    view = agent.view(producers)
+    assert set(view.eligible["o1"]) == {"p1"}
 
 
 def test_ordering_agent_enforces_quantity_and_token_conservation():
@@ -256,7 +320,10 @@ def test_ordering_agent_enforces_quantity_and_token_conservation():
     order = Order.new_consumer_order("o1", ps, ConsumerRequest("c1", 10, 100, quantity=4))
     agent = OrderingAgent("c1")
     agent.place_order(order.info())
-    producers = {"p1": _producer("p1", ["capacity-1"]), "p2": _producer("p2", ["capacity-1"])}
+    producers = {
+        "p1": _producer("p1", ["capacity-1"], produces=[10]),
+        "p2": _producer("p2", ["capacity-1"], produces=[10]),
+    }
 
     # sub-quantities 1+1 != 4
     bad_qty = OrderingAgentCommand({"o1": [SubOrder("p1", 1, 50), SubOrder("p2", 1, 50)]})

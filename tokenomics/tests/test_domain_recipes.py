@@ -47,32 +47,66 @@ def test_validate_rejects_input_without_sheet():
         cfg.validate()
 
 
-def test_validate_rejects_product_with_no_eligible_producer():
-    # product 1 needs BOTH capacity-1 and capacity-2, but no single producer owns
-    # the whole bundle -> no eligible producer (ADR-0025). Must be rejected here,
-    # not crash later in env decode on an empty eligible set.
+def test_validate_rejects_producing_product_without_required_capacity():
+    # Eligibility is authoritative (ADR-0028): p1 *declares* it produces product 1,
+    # but product 1 needs both capacity-1 and capacity-2 and p1 owns only
+    # capacity-1 -> it cannot satisfy the recipe it claims. Rejected at config time.
     cfg = Configuration(
         cycle_emission=1000,
         process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5, "capacity-2": 5})],
         producer_configs=[
+            # p1 declares product 1 but owns only capacity-1; p2 supplies capacity-2
+            # so the "type unprovided" check passes and we reach the produces check.
             ProducingAgentConfig("p1", {"capacity-1": 100}, 5,
-                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
+                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                                 produces=frozenset({1})),
             ProducingAgentConfig("p2", {"capacity-2": 100}, 5,
                                  Restoration(1, 50, "capacity-2"), Upgrade(1, 40, "capacity-2")),
         ],
     )
-    with pytest.raises(ValueError, match="no eligible producer"):
+    with pytest.raises(ValueError, match="does not own required capacity"):
         cfg.validate()
 
 
-def test_validate_accepts_product_with_single_owner_of_bundle():
-    # one producer owning both required types makes the product eligible -> ok
+def test_validate_rejects_product_produced_by_no_one():
+    # product 1 has a process sheet but no producer lists it in `produces`, so it
+    # can never be ordered -> rejected (ADR-0028), replacing the old derived check.
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5})],
+        producer_configs=[
+            ProducingAgentConfig("p1", {"capacity-1": 100}, 5,
+                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                                 produces=frozenset()),
+        ],
+    )
+    with pytest.raises(ValueError, match="no producer produces"):
+        cfg.validate()
+
+
+def test_validate_rejects_producing_product_with_no_sheet():
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5})],
+        producer_configs=[
+            ProducingAgentConfig("p1", {"capacity-1": 100}, 5,
+                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                                 produces=frozenset({1, 99})),
+        ],
+    )
+    with pytest.raises(ValueError, match="produces product 99 with no process sheet"):
+        cfg.validate()
+
+
+def test_validate_accepts_producer_that_declares_owned_recipe():
+    # p1 owns both required types AND declares it produces product 1 -> ok
     cfg = Configuration(
         cycle_emission=1000,
         process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5, "capacity-2": 5})],
         producer_configs=[
             ProducingAgentConfig("p1", {"capacity-1": 100, "capacity-2": 100}, 5,
-                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
+                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                                 produces=frozenset({1})),
         ],
     )
     cfg.validate()  # no raise
@@ -84,7 +118,8 @@ def _single_producer_cfg(consumers):
         process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5})],
         producer_configs=[
             ProducingAgentConfig("p1", {"capacity-1": 100}, 5,
-                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
+                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                                 produces=frozenset({1})),
         ],
         consumers=consumers,
     )
@@ -105,6 +140,54 @@ def test_validate_rejects_consumer_producer_id_collision():
 
     cfg = _single_producer_cfg([ConsumerConfig("p1", 1)])
     with pytest.raises(ValueError, match="collides with producer id"):
+        cfg.validate()
+
+
+def _cost_cfg(**producer_kwargs):
+    from tokenomics.domain.config import ConsumerConfig
+
+    return Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5})],
+        producer_configs=[
+            ProducingAgentConfig(
+                "p1", {"capacity-1": 100}, 5,
+                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1}), **producer_kwargs,
+            ),
+        ],
+        consumers=[ConsumerConfig("c1", 1)],
+    )
+
+
+def test_validate_rejects_non_positive_restoration_cost():
+    from tokenomics.domain.config import ConsumerConfig
+
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5})],
+        producer_configs=[
+            ProducingAgentConfig(
+                "p1", {"capacity-1": 100}, 5,
+                Restoration(1, 50, "capacity-1", cost=0), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1}),
+            ),
+        ],
+        consumers=[ConsumerConfig("c1", 1)],
+    )
+    with pytest.raises(ValueError, match="cost must be positive"):
+        cfg.validate()
+
+
+def test_validate_rejects_non_positive_replenish_cost_per_unit():
+    cfg = _cost_cfg(replenish_cost_per_unit=-3)
+    with pytest.raises(ValueError, match="replenish_cost_per_unit must be positive"):
+        cfg.validate()
+
+
+def test_validate_rejects_non_positive_max_replenish():
+    cfg = _cost_cfg(max_replenish=0)
+    with pytest.raises(ValueError, match="max_replenish must be positive"):
         cfg.validate()
 
 

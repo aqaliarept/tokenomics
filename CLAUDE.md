@@ -75,11 +75,11 @@ An external entity that receives tokens via emission and places orders for produ
 _Avoid_: Customer, user, player
 
 **Producing Agent:**
-An agent that owns capacity of one or more types and assembles products to fulfil orders. To assemble a composite product it buys the required input products from other producing agents and applies its own capacity to the assembly. Decides each cycle what to produce, what inputs to buy, and whether to invest in new or expanded capacity. There is no designated producer for a product — the same product may be produced by multiple producing agents.
+An agent that owns capacity of one or more types and assembles products to fulfil orders. It declares the products it makes via an authoritative **`produces`** set (ADR-0028) — it must own every capacity type each listed product's recipe requires, but owning the capacity does not by itself make it eligible. To assemble a composite product it buys the required input products from other producing agents and applies its own capacity to the assembly. Decides each cycle what to produce, what inputs to buy, and whether to invest in new or expanded capacity. There is no designated producer for a product — the same product may be produced by multiple producing agents.
 _Avoid_: Factory, producer, manufacturer
 
 **Ordering Agent:**
-An agent that, for each order it holds, splits the order's quantity (and the tokens backing it) across one or more eligible producing agents, handing each a sub-order it must fulfil as a whole. It never splits a product into its recipe components — that decomposition is the producing agent's job. A producing agent is eligible for a product when it owns every capacity type the product's recipe requires. Each consumer and each producing agent has a dedicated ordering agent.
+An agent that, for each order it holds, splits the order's quantity (and the tokens backing it) across one or more eligible producing agents, handing each a sub-order it must fulfil as a whole. It never splits a product into its recipe components — that decomposition is the producing agent's job. A producing agent is eligible for a product when the product is in its **`produces`** set — an authored, authoritative list (ADR-0028), not derived from capacity ownership. Config validation guarantees a producer only lists products whose required capacity types it owns. Each consumer and each producing agent has a dedicated ordering agent.
 _Avoid_: Distributor, allocator, broker
 
 ### Economy
@@ -137,7 +137,7 @@ _Avoid_: Expansion, improvement, enhancement
 ### Exchange
 
 **Bid:**
-A token allocation from an ordering agent to a specific producing agent for a sub-order. Contains the whole capacity bundle the sub-order requires (units of every capacity type in the recipe) and the tokens backing it. Its price is `tokens / (total capacity units summed across all required types)`.
+A producing agent's **internal** auction unit for a sub-order: the whole capacity bundle the sub-order requires (units of every capacity type in the recipe) and the tokens backing it. Its price is `tokens / (total capacity units summed across all required types)`. The ordering agent does **not** build bids — it routes a capacity-free sub-order (product + quantity + tokens, ADR-0029) and the producing agent expands it into a bid from its own process sheet.
 _Avoid_: Offer, request, order line
 
 **Cut-off Price:**
@@ -173,5 +173,5 @@ A complete simulation run from initialization to termination. Ends after a fixed
 _Avoid_: Game, session, run
 
 **System Death:**
-The irrecoverable state where some capacity type has reached zero across all producing agents — no producer can supply it, so a product becomes permanently unmakeable. Triggers immediate episode termination. Can cascade due to circular dependencies between producers.
+The irrecoverable state where some product becomes permanently unmakeable — no producer that **declares** it (`produces`) still holds every capacity type its recipe requires (ADR-0030). Because `produces` is authoritative, capacity is not interchangeable across owners: a type held by a producer that does not declare the product cannot supply it. Triggers immediate episode termination. Can cascade due to circular dependencies between producers.
 _Avoid_: Collapse, failure, game over

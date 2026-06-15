@@ -23,7 +23,7 @@ from .common import (
     UNDEFINED_PRICE,
     f32,
 )
-from .config import ProducingAgentConfig
+from .config import ProcessSheet, ProducingAgentConfig
 from .requests import InvestmentRequest, InvestmentType, ReplenishmentRequest
 
 # A composite reservation waits at most this many cycles for its inputs before
@@ -55,6 +55,19 @@ class Bid:
 
 
 @dataclass
+class SubOrder:
+    """A routed slice of an order handed to one producer (ADR-0029): the product,
+    how many units, the tokens backing it, and the order it belongs to. It carries
+    **no capacity** — the producer expands it into an internal `Bid` using its own
+    process sheet (`place_sub_orders`). The ordering side never sees capacity."""
+
+    order_id: OrderId
+    product: Product
+    quantity: int
+    tokens: Tokens
+
+
+@dataclass
 class _Reservation:
     """A composite bid that cleared the auction and reserved its capacity, waiting
     for its inputs to arrive in stock (ADR-0025)."""
@@ -69,6 +82,9 @@ class ProducerInfo:
     capacities: dict[CapacityType, Capacity]  # current, per type
     max_capacities: dict[CapacityType, Capacity]
     cut_off_price: CapacityUnitPrice
+    # products this producer is eligible to make (ADR-0028) — the ordering side's
+    # authoritative eligibility signal, no longer derived from capacity ownership.
+    produces: frozenset[Product] = frozenset()
 
     def owns(self, t: CapacityType) -> bool:
         return t in self.capacities
@@ -113,10 +129,16 @@ class ProducingAgentView:
 
 
 class ProducingAgent:
-    def __init__(self, config: ProducingAgentConfig) -> None:
+    def __init__(
+        self, config: ProducingAgentConfig, sheets: dict[Product, ProcessSheet] | None = None
+    ) -> None:
         self.id = config.id
         self.capacities: dict[CapacityType, Capacity] = dict(config.capacities)
         self.max_capacities: dict[CapacityType, Capacity] = dict(config.capacities)
+        self.produces: frozenset[Product] = config.produces  # ADR-0028
+        # process sheets for the products this producer makes (ADR-0029) — the
+        # producer owns recipe knowledge and expands sub-orders into bids itself.
+        self.sheets: dict[Product, ProcessSheet] = sheets or {}
         self.degradation = config.degradation
         self.restoration = config.restoration
         self.upgrade = config.upgrade
@@ -145,7 +167,9 @@ class ProducingAgent:
         return t in self.capacities
 
     def info(self) -> ProducerInfo:
-        return ProducerInfo(self.id, dict(self.capacities), dict(self.max_capacities), self.cut_off_price)
+        return ProducerInfo(
+            self.id, dict(self.capacities), dict(self.max_capacities), self.cut_off_price, self.produces
+        )
 
     def degradation_for(self, t: CapacityType) -> Capacity:
         return int(math.ceil(self.degradation * self.max_capacities[t] / 100))
@@ -175,6 +199,25 @@ class ProducingAgent:
                 if t not in self.capacities:
                     raise RuntimeError(f"producer {self.id} does not own capacity type {t}")
         self.bids.extend(bids)
+
+    def place_sub_orders(self, subs: list[SubOrder]) -> None:
+        """Accept routed sub-orders and expand each into an internal bid using this
+        producer's own process sheet (ADR-0029). Capacity and input requirements
+        scale with the sub-order quantity — recipe knowledge stays producer-side."""
+        self.place_bids([self._to_bid(s) for s in subs])
+
+    def _to_bid(self, sub: SubOrder) -> Bid:
+        if sub.product not in self.sheets:
+            raise RuntimeError(f"producer {self.id} has no process sheet for product {sub.product}")
+        ps = self.sheets[sub.product]
+        return Bid(
+            capacities={t: c * sub.quantity for t, c in ps.require.items()},
+            tokens=sub.tokens,
+            order_id=sub.order_id,
+            product=sub.product,
+            inputs={p: n * sub.quantity for p, n in ps.inputs.items()},
+            quantity=sub.quantity,
+        )
 
     def inventory_units(self) -> int:
         return sum(self.inventory.values())

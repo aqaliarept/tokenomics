@@ -6,8 +6,8 @@ derived from the config so they scale with the economy:
 
   producing obs = 2T (per-type cap+max) + 1 (requested) + 3 (invest-running flags)
                   + G (per-input stock) + 3 (inv units/limit/headroom) + 2P + 1
-  ordering  obs = K*(3+T) (order slots: active, tokens, quantity, per-type cap)
-                  + 2P (producer summary) + 1 (cycle progress)
+  ordering  obs = K*3 (order slots: active, tokens, quantity — NO capacity, ADR-0029)
+                  + P (producer cut-off prices) + 1 (cycle progress)
   producing action = Box(G + 3)  -> G replenish quantities + 3 investment toggles
                      (restoration, upgrade, inventory expansion), raw reals
   ordering  action = Box(K*P)    -> per slot, raw logits over *all* producers;
@@ -46,7 +46,7 @@ class EnvSpec:
     input_products: list[Product]
     input_index: dict[Product, int]
     # per producer: capacity types it owns, and the input products it can
-    # replenish (inputs of composite products it is eligible to assemble).
+    # replenish (inputs of composite products it declares it produces, ADR-0028).
     producer_owns: dict[ProducerId, set[CapacityType]]
     producer_inputs: dict[ProducerId, list[Product]]
     # per producer replenishment ceiling (config max_replenish, default limit).
@@ -75,7 +75,9 @@ class EnvSpec:
 
     @property
     def ordering_obs_dim(self) -> int:
-        return self.k * (3 + self.num_types) + 2 * self.num_producers + 1
+        # per slot: active, tokens, quantity (no capacity, ADR-0029); plus one
+        # cut-off price per producer and the cycle-progress scalar.
+        return self.k * 3 + self.num_producers + 1
 
     @property
     def ordering_action_dim(self) -> int:
@@ -118,20 +120,18 @@ def build_spec(config: Configuration) -> EnvSpec:
     input_products = sorted({p for ps in config.process_sheets for p in ps.inputs})
     input_index = {p: i for i, p in enumerate(input_products)}
 
-    sheet_require = {ps.product: ps.require for ps in config.process_sheets}
     sheet_inputs = {ps.product: ps.inputs for ps in config.process_sheets}
 
     producer_owns: dict[ProducerId, set[CapacityType]] = {
         p.id: set(p.capacities) for p in config.producer_configs
     }
     # a producer can replenish an input g iff g is an input of some composite
-    # product the producer is *eligible* to assemble (owns every required type).
+    # product it declares it produces (ADR-0028).
     producer_inputs: dict[ProducerId, list[Product]] = {}
     for p in config.producer_configs:
-        owned = producer_owns[p.id]
         relevant: set[Product] = set()
-        for product, require in sheet_require.items():
-            if sheet_inputs[product] and all(t in owned for t in require):
+        for product in p.produces:
+            if sheet_inputs.get(product):
                 relevant.update(sheet_inputs[product])
         producer_inputs[p.id] = sorted(relevant)
 

@@ -56,11 +56,13 @@ def _two_eligible_env():
         producer_configs=[
             # pa: lots of the REQUIRED type -> high throughput for product 1
             ProducingAgentConfig("pa", {"capacity-1": 100}, 5,
-                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
-            # pb: tiny required type but a HUGE irrelevant type -> high TOTAL capacity,
-            #     zero throughput for product 1
+                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1})),
+            # pb: tiny required type but a HUGE irrelevant type -> declares product 1
+            #     too (owns capacity-1) but its throughput for it is zero (5 < 10).
             ProducingAgentConfig("pb", {"capacity-1": 5, "capacity-2": 100000}, 5,
-                Restoration(2, 50, "capacity-2"), Upgrade(2, 40, "capacity-2")),
+                Restoration(2, 50, "capacity-2"), Upgrade(2, 40, "capacity-2"),
+                produces=frozenset({1, 2})),
         ],
         consumers=[ConsumerConfig("c1", 1)],
     )
@@ -103,9 +105,11 @@ def test_ordering_proportional_discounts_reserved_capacity():
         process_sheets=[ProcessSheet(product=1, require={"capacity-1": 10})],
         producer_configs=[
             ProducingAgentConfig("pa", {"capacity-1": 100}, 5,
-                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
+                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1})),
             ProducingAgentConfig("pb", {"capacity-1": 100}, 5,
-                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
+                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1})),
         ],
         consumers=[ConsumerConfig("c1", 1)],
     )
@@ -122,3 +126,45 @@ def test_ordering_proportional_discounts_reserved_capacity():
     action = ordering_proportional(env, "order_c1").reshape(sp.k, sp.num_producers)
     pa, pb = sp.producer_ids.index("pa"), sp.producer_ids.index("pb")
     assert action[0, pa] > action[0, pb]
+
+
+def test_ordering_proportional_separates_zero_from_one_unit_throughput():
+    # log(max(throughput,1)) mapped throughput 0 and 1 to the SAME logit, so a
+    # fully-reserved (0-unit) producer split the order evenly with a 1-unit one.
+    # A producer that can make a unit must clearly outrank one that can make none.
+    import numpy as np
+    from tokenomics.domain.config import (Configuration, ProcessSheet,
+        ProducingAgentConfig, Restoration, Upgrade, ConsumerConfig)
+    from tokenomics.domain.producing_agent import Bid, _Reservation
+    from tokenomics.eval.baselines import ordering_proportional
+
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 10})],
+        producer_configs=[
+            ProducingAgentConfig("pa", {"capacity-1": 100}, 5,
+                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1})),
+            ProducingAgentConfig("pb", {"capacity-1": 100}, 5,
+                Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1"),
+                produces=frozenset({1})),
+        ],
+        consumers=[ConsumerConfig("c1", 1)],
+    )
+    env = TokenomicsAECEnv(config=cfg, horizon=10)
+    env.reset(seed=0)
+    while env._role[env.agent_selection][0] == "prod":
+        env.step(np.zeros(env.spec_.producing_action_dim, dtype=np.float32))
+    # pa: reserve 90 -> 10 avail -> throughput 1; pb: reserve 100 -> 0 avail -> throughput 0
+    env.system.producing_agents["pa"].reservations.append(
+        _Reservation(Bid({"capacity-1": 90}, 1, "ra", product=1, inputs={2: 1}))
+    )
+    env.system.producing_agents["pb"].reservations.append(
+        _Reservation(Bid({"capacity-1": 100}, 1, "rb", product=1, inputs={2: 1}))
+    )
+    sp = env.spec_
+    action = ordering_proportional(env, "order_c1").reshape(sp.k, sp.num_producers)
+    pa, pb = sp.producer_ids.index("pa"), sp.producer_ids.index("pb")
+    assert action[0, pa] > action[0, pb]
+    e = np.exp([action[0, pa], action[0, pb]])
+    assert e[1] / e.sum() < 0.05  # the 0-unit producer gets a negligible share

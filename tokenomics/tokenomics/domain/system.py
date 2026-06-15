@@ -168,8 +168,11 @@ class System:
         self.cycle_emission: Tokens = config.cycle_emission
         self.investment_fund: Tokens = 0
         self.process_sheets = {ps.product: ps for ps in config.process_sheets}
+        # each producer owns the recipes for the products it makes (ADR-0029), so it
+        # can expand routed sub-orders into capacity bundles itself.
         self.producing_agents: dict[ProducerId, ProducingAgent] = {
-            p.id: ProducingAgent(p) for p in config.producer_configs
+            p.id: ProducingAgent(p, {prod: self.process_sheets[prod] for prod in p.produces})
+            for p in config.producer_configs
         }
         self.ordering_agents: dict[OrderingAgentId, OrderingAgent] = {}
         self.orders: dict[OrderId, Order] = {}
@@ -217,9 +220,9 @@ class System:
         if self.state != SystemState.ORDERING:
             raise WrongStateError()
         agent = must_get(self.ordering_agents, aid)
-        bids = agent.handle_cmd(cmd, self.producer_infos)
-        for prod_id, prod_bids in bids.items():
-            must_get(self.producing_agents, prod_id).place_bids(prod_bids)
+        routed = agent.handle_cmd(cmd, self.producer_infos)
+        for prod_id, subs in routed.items():
+            must_get(self.producing_agents, prod_id).place_sub_orders(subs)
 
     # --- cycle lifecycle ---
     def _emit(self) -> None:
@@ -329,14 +332,21 @@ class System:
         )
 
     def is_dead(self) -> bool:
-        """System death (ADR-0025): some capacity type has reached zero across
-        *all* producers that own it — that product becomes permanently unmakeable,
-        so the episode terminates."""
-        type_alive: dict[str, bool] = {}
-        for p in self.producing_agents.values():
-            for t, cap in p.capacities.items():
-                type_alive[t] = type_alive.get(t, False) or cap > 0
-        return not all(type_alive.values())
+        """System death (ADR-0025/0028/0030): a product is permanently unmakeable
+        when no producer that *declares* it (`produces`) still holds every capacity
+        type its recipe requires. Since `produces` is authoritative, capacity is not
+        interchangeable across owners — a type held by a producer that does not
+        declare the product cannot supply it. The episode terminates the moment any
+        process-sheet product becomes unmakeable."""
+        for product, ps in self.process_sheets.items():
+            makeable = any(
+                all(p.capacities.get(t, 0) > 0 for t in ps.require)
+                for p in self.producing_agents.values()
+                if product in p.produces
+            )
+            if not makeable:
+                return True
+        return False
 
     # --- introspection ---
     def get_producer_infos(self) -> dict[ProducerId, ProducerInfo]:

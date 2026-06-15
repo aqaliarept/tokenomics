@@ -118,13 +118,21 @@ def ordering_proportional(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
         if k >= sp.k:
             break
         oi = view.incoming[oid]
+        # OrderInfo no longer carries capacity (ADR-0029); a white-box baseline
+        # reads the recipe straight from the process sheet to gauge throughput.
+        require = env.system.process_sheets[oi.product].require
         for pid in view.eligible[oid]:
             p = env.system.producing_agents[pid]  # white-box: capacity net of reservations
             reserved = p.reserved_capacity()
-            avail = {t: p.capacities[t] - reserved.get(t, 0) for t in oi.unit_capacity}
-            throughput = min(avail[t] // c for t, c in oi.unit_capacity.items())
-            logit = float(np.log(max(throughput, 1)))
-            mat[k, sp.producer_ids.index(pid)] = min(logit, ACTION_LOGIT_BOUND)
+            avail = {t: p.capacities[t] - reserved.get(t, 0) for t in require}
+            throughput = min(avail[t] // c for t, c in require.items())
+            # A producer that can make 0 units must rank well below one that can make
+            # 1 (log(max(.,1)) collapsed both to 0): floor it at -BOUND -> ~0 share.
+            if throughput <= 0:
+                logit = -ACTION_LOGIT_BOUND
+            else:
+                logit = min(float(np.log(throughput)), ACTION_LOGIT_BOUND)
+            mat[k, sp.producer_ids.index(pid)] = logit
     return mat.flatten()
 
 

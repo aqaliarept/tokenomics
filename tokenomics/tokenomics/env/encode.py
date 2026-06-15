@@ -21,13 +21,20 @@ def _price(spec: EnvSpec, p: float) -> float:
 
 
 def _producer_summary(spec: EnvSpec, producer_infos: dict[str, ProducerInfo]) -> list[float]:
-    """Per producer: total current capacity + cut-off price."""
+    """Per producer: total current capacity + cut-off price. Producing obs only —
+    the ordering obs gets prices alone (ADR-0029)."""
     out: list[float] = []
     for pid in spec.producer_ids:
         info = producer_infos[pid]
         out.append(sum(info.capacities.values()) / spec.cap_ref)
         out.append(_price(spec, info.cut_off_price))
     return out
+
+
+def _producer_prices(spec: EnvSpec, producer_infos: dict[str, ProducerInfo]) -> list[float]:
+    """Per producer: cut-off price only. The ordering side is blind to capacity
+    (ADR-0029) — it competes on price, not on producers' capacity."""
+    return [_price(spec, producer_infos[pid].cut_off_price) for pid in spec.producer_ids]
 
 
 def encode_producing(
@@ -69,11 +76,9 @@ def encode_ordering(
             feats.append(1.0)  # active
             feats.append(oi.tokens / spec.token_ref)
             feats.append(oi.quantity / spec.inv_ref)
-            for t in spec.capacity_types:
-                feats.append(oi.unit_capacity.get(t, 0) / spec.cap_ref)
         else:
-            feats.extend([0.0] * (3 + spec.num_types))
-    feats.extend(_producer_summary(spec, producer_infos))
+            feats.extend([0.0] * 3)
+    feats.extend(_producer_prices(spec, producer_infos))  # no capacity (ADR-0029)
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
 

@@ -96,7 +96,6 @@ def test_replenishment_order_is_producer_funded_and_routes_to_producer():
     assert o.requires_funding()  # needs the central fund, no consumer tokens
     assert o.product == 10
     assert o.quantity == 3
-    assert o.unit_capacity == {"capacity-1": 4}
     o.fund(120)
     assert o.agent_id() == "p"  # the requesting producer's ordering agent
 
@@ -204,6 +203,7 @@ def test_expired_unfunded_order_is_rejected_without_crashing_the_cycle():
                 id="p1", capacities={"capacity-1": 100}, degradation=0,
                 restoration=Restoration(require=10, restores=10, type="capacity-1"),
                 upgrade=Upgrade(require=10, increases=10, type="capacity-1"),
+                produces=frozenset({10}),
                 inventory_limit=20,
                 inventory_expansion=InventoryExpansion(require=10, increases=5),
             )
@@ -234,11 +234,13 @@ def _two_producer_config():
                 id="p1", capacities={"capacity-1": 100}, degradation=0,
                 restoration=Restoration(require=10, restores=10, type="capacity-1"),
                 upgrade=Upgrade(require=10, increases=10, type="capacity-1"),
+                produces=frozenset({10}),
             ),
             ProducingAgentConfig(
                 id="p2", capacities={"capacity-2": 100}, degradation=0,
                 restoration=Restoration(require=20, restores=10, type="capacity-2"),
                 upgrade=Upgrade(require=20, increases=10, type="capacity-2"),
+                produces=frozenset({20}),
                 inventory_limit=50,
             ),
         ],

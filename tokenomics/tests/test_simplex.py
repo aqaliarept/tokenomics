@@ -75,8 +75,10 @@ def test_allocate_int_sums_to_budget():
         assert all(x >= 0 for x in out)
 
 
-def _oinfo(oid, tokens, product, quantity, unit_capacity):
-    return OrderInfo(oid, tokens, product, quantity, unit_capacity, {})
+def _oinfo(oid, tokens, product, quantity, unit_capacity=None):
+    # unit_capacity kept as an ignored arg: OrderInfo no longer carries capacity
+    # (ADR-0029); decode_ordering reasons about quantity/tokens/eligibility only.
+    return OrderInfo(oid, tokens, product, quantity)
 
 
 def test_decode_conservation_quantity_and_tokens():

@@ -15,8 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .common import (
-    Capacity,
-    CapacityType,
     CapacityUnitPrice,
     OrderId,
     OrderingAgentId,
@@ -73,17 +71,17 @@ OrderEvent = object
 
 @dataclass
 class OrderInfo:
-    """What an ordering agent sees for an order it must distribute (ADR-0025):
-    the whole product, its quantity, the per-unit capacity bundle + input
-    products, and the backing tokens. Eligibility (a producer owns every required
-    capacity type) is decided against `unit_capacity`."""
+    """What an ordering agent sees for an order it must distribute: the whole
+    product, its quantity, and the backing tokens — no capacity (ADR-0029). The
+    ordering side reasons about products and quantities only; the per-unit capacity
+    bundle and input requirements are private to the producer, which expands them
+    from its own process sheet at bid time. Eligibility is decided against
+    `product` — a producer is eligible iff it declares it in `produces` (ADR-0028)."""
 
     id: OrderId
     tokens: Tokens
     product: Product
     quantity: int
-    unit_capacity: dict[CapacityType, Capacity]
-    unit_inputs: dict[Product, int]
 
 
 class Order:
@@ -93,8 +91,6 @@ class Order:
         tokens: Tokens,
         product: Product,
         quantity: int,
-        unit_capacity: dict[CapacityType, Capacity],
-        unit_inputs: dict[Product, int],
         consumer_request: ConsumerRequest | None,
         investment_request: InvestmentRequest | None,
         funded: bool,
@@ -104,8 +100,6 @@ class Order:
         self.tokens = tokens
         self.product = product
         self.quantity = quantity
-        self.unit_capacity = unit_capacity
-        self.unit_inputs = unit_inputs
         self.consumer_request = consumer_request
         self.investment_request = investment_request
         self.replenishment_request = replenishment_request
@@ -123,23 +117,20 @@ class Order:
     @classmethod
     def new_investment_order(cls, id: OrderId, ps: ProcessSheet, request: InvestmentRequest) -> "Order":
         # Investment orders are for a single means-of-production unit.
-        return cls(id, 0, ps.product, 1, dict(ps.require), dict(ps.inputs), None, request, False)
+        return cls(id, 0, ps.product, 1, None, request, False)
 
     @classmethod
     def new_replenishment_order(cls, id: OrderId, ps: ProcessSheet, request: ReplenishmentRequest) -> "Order":
         # A producer buying `quantity` units of an input product; unfunded until
         # the central fund backs it (priority 1), like an investment order.
         return cls(
-            id, 0, ps.product, request.quantity, dict(ps.require), dict(ps.inputs),
-            None, None, False, replenishment_request=request,
+            id, 0, ps.product, request.quantity, None, None, False,
+            replenishment_request=request,
         )
 
     @classmethod
     def new_consumer_order(cls, id: OrderId, ps: ProcessSheet, request: ConsumerRequest) -> "Order":
-        return cls(
-            id, request.tokens, ps.product, request.quantity,
-            dict(ps.require), dict(ps.inputs), request, None, True,
-        )
+        return cls(id, request.tokens, ps.product, request.quantity, request, None, True)
 
     # --- funding (unchanged contract; used by distribute_investment_fund) ---
     def _must_be_funded(self) -> None:
@@ -194,8 +185,7 @@ class Order:
     def info(self) -> OrderInfo:
         self._must_be_funded()
         return OrderInfo(
-            self.id, self.available_tokens(), self.product, self.unresolved_quantity(),
-            dict(self.unit_capacity), dict(self.unit_inputs),
+            self.id, self.available_tokens(), self.product, self.unresolved_quantity()
         )
 
     def agent_id(self) -> OrderingAgentId:
