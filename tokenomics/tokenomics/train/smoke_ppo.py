@@ -33,7 +33,8 @@ from torch.distributions import Normal
 
 from ..domain import load_config
 from ..domain.config import Configuration
-from ..domain.producing_agent import ProducingAgentCommand
+from ..domain.ordering_agent import OrderingAgentView
+from ..domain.producing_agent import ProducingAgentCommand, ProducingAgentView
 from ..env import TokenomicsAECEnv
 from ..env.aec_env import DEFAULT_CONFIG
 from ..env.decode import decode_producing
@@ -46,6 +47,14 @@ from ..eval.runner import evaluate
 # temperature has no mapping; this is a fresh hyperparameter, symmetric with the
 # ordering actor by default.
 DEFAULT_PROD_LOG_STD = -2.0
+# P1a (review 2026-06-15): replenishment quantity dims need wide exploration and a
+# positive mean init — at prod_log_std=-2 (σ=0.135) and a ~0 mean they round to
+# zero ~99.99% of samples, so the consumer-reward path is never explored. σ=exp(0)=1
+# and a +3 raw bias center replenishment where decode fires it (raw>~0.5).
+DEFAULT_PROD_REPLEN_LOG_STD = 0.0
+# 2.0 clears the B7 bar (seed 1: return 1330 > stock_aware 1267, 100/100 consumer,
+# 0% death); 3.0 over-stocks (holding penalty drags return to 1248, just under).
+DEFAULT_PROD_REPLEN_BIAS = 2.0
 DEFAULT_ORDER_LOG_STD = -2.0
 DEFAULT_TARGET_KL = 0.008
 # Checkpoint schema version (ADR-0026). Bumped for the continuous-producing /
@@ -65,12 +74,30 @@ def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:
 # Both policies are diagonal-Gaussian over a Box (ADR-0026): the producing actor
 # emits raw reals and decode owns all gating, so no action mask survives here.
 class GaussianActor(nn.Module):
-    def __init__(self, obs_dim: int, act_dim: int, log_std_init: float = 0.0) -> None:
+    def __init__(
+        self,
+        obs_dim: int,
+        act_dim: int,
+        log_std_init: float | np.ndarray = 0.0,
+        mean_bias: np.ndarray | None = None,
+    ) -> None:
         super().__init__()
         self.actor = mlp(obs_dim, act_dim)
-        # Ordering exploration is independent of producing-policy temperature.
-        # Lower values keep stochastic rollouts closer to mean-action deployment.
-        self.log_std = nn.Parameter(torch.full((act_dim,), float(log_std_init)))
+        # P1a (review 2026-06-15): the replenishment dims round to zero unless the
+        # raw action clears ~0.5, so a near-zero mean + std exp(-2)=0.135 explores
+        # the multi-hop replenishment path ~0.01% of samples — no consumer-reward
+        # gradient. Allow a per-dim log_std (wider exploration on quantity dims)
+        # and a positive output-bias init (mean starts where replenishment fires),
+        # so the path is sampled and greedy eval emits non-zero replenishment from
+        # iter 0. Both are pure init — load_state_dict overwrites them, so trained
+        # checkpoints are unaffected.
+        if mean_bias is not None:
+            with torch.no_grad():
+                self.actor[-1].bias.add_(torch.as_tensor(mean_bias, dtype=torch.float32))
+        init = torch.as_tensor(log_std_init, dtype=torch.float32)
+        if init.ndim == 0:
+            init = init.expand(act_dim).clone()
+        self.log_std = nn.Parameter(init)
 
     def dist(self, obs: torch.Tensor) -> Normal:
         return Normal(self.actor(obs), self.log_std.exp())
@@ -156,6 +183,8 @@ class Buf:
     obs: list = field(default_factory=list)      # local obs (actor input)
     glob: list = field(default_factory=list)     # agent-conditioned central critic input
     act: list = field(default_factory=list)
+    # P1b: per-dim active mask — log-prob/entropy/KL cover only dims decode exercises
+    mask: list = field(default_factory=list)
     logp: list = field(default_factory=list)
     val: list = field(default_factory=list)      # central-critic value at decision time
     rew: list = field(default_factory=list)
@@ -199,19 +228,83 @@ def gae(
 
 
 def capacity_health(env: TokenomicsAECEnv) -> float:
-    """Mean total-capacity/total-max over producers ∈ [0,1] — the potential for
-    the capacity-floor shaping term (ADR-0010). 0 at system death. Producers now
-    own a capacity *bundle* (ADR-0025), so health is summed over types per
-    producer; a producer with no max contributes 0."""
-    prods = env.system.producing_agents.values()
-    if not prods:
+    """Bottleneck product makeability ∈ [0,1] — the potential for the capacity-floor
+    shaping term (ADR-0010). 0 at system death (ADR-0030).
+
+    P2 (review 2026-06-15): `is_dead()` is *per declared product* — a product dies
+    when no declarer still holds every required capacity type. A mean over total
+    capacity stays high near that boundary (one dead producer of four → 0.75), so
+    `low_cap_thresh=0.3` never activates near the actual death cliff. Instead track
+    the bottleneck: a product's health is its best declarer's weakest required-type
+    ratio (cap/max); system health is the worst product. When the about-to-die
+    product's sole declarer loses a required type, this → 0, mirroring `is_dead`."""
+    system = env.system
+    if not system.producing_agents:
         return 0.0
-    total = 0.0
-    for p in prods:
-        max_cap = sum(p.max_capacities.values())
-        if max_cap:
-            total += sum(p.capacities.values()) / max_cap
-    return total / len(prods)
+    worst = 1.0
+    for product, ps in system.process_sheets.items():
+        best = 0.0  # best declarer's makeability of this product
+        for p in system.producing_agents.values():
+            if product not in p.produces:
+                continue
+            ratios = [
+                (p.capacities.get(t, 0) / p.max_capacities[t])
+                if p.max_capacities.get(t, 0) else 0.0
+                for t in ps.require
+            ]
+            best = max(best, min(ratios) if ratios else 0.0)
+        worst = min(worst, best)
+    return worst
+
+
+def producing_action_mask(spec, view: ProducingAgentView) -> np.ndarray:
+    """Active producing-action dims for one transition (P1b, review 2026-06-15).
+
+    `decode_producing` no-ops every dim that cannot change this producer's command:
+    inputs it does not assemble, and a toggle for an unavailable / already-running
+    investment. Summing log-prob / entropy / KL over those dims injects gradient
+    noise and spends the target-KL budget without altering behavior. The mask keeps
+    the likelihood over only the dims the action actually exercises this step."""
+    g = spec.num_inputs
+    mask = np.zeros(g + 3, dtype=np.float32)
+    # P2 (review 2026-06-15): replenishment dims are behavioral only when there is
+    # shared inventory headroom and a positive replenish ceiling — decode emits no
+    # replenishment otherwise (joint scaling to headroom 0 / max_replenish 0 yields
+    # all-zero quantities). Masking them at zero headroom keeps the likelihood off
+    # dims that cannot change the command this step.
+    if view.headroom > 0 and spec.max_replenish[view.id] > 0:
+        for prod in spec.producer_inputs[view.id]:
+            mask[spec.input_index[prod]] = 1.0
+    mask[g] = 0.0 if view.restoration_running else 1.0
+    mask[g + 1] = 0.0 if view.upgrade_running else 1.0
+    mask[g + 2] = (
+        1.0 if (view.has_inventory_expansion and not view.inventory_expansion_running) else 0.0
+    )
+    return mask
+
+
+def ordering_action_mask(spec, view: OrderingAgentView) -> np.ndarray:
+    """Active ordering-action dims for one transition (P1, review 2026-06-15).
+
+    The ordering Box is K*P raw logits (slot k × producer). `decode_ordering`
+    softmaxes slot k over only the *eligible* producers of the k-th held order, so
+    two dim classes are behavioral no-ops: (a) every dim of a slot whose order has
+    ≤1 eligible producer — softmax over one is always 1, there is no allocation
+    choice; (b) the non-eligible producer dims of a multi-eligible slot. In the
+    canonical Phase 1 config every product has a single declarer (ADR-0028), so the
+    whole ordering actor is inert — without the mask it still spends gradient and
+    the target-KL budget with zero effect on the env. Slots past `spec.k` (decode
+    falls back to an even split, no action effect) stay masked too."""
+    mask = np.zeros(spec.k * spec.num_producers, dtype=np.float32)
+    for k, oid in enumerate(sorted(view.incoming)):
+        if k >= spec.k:
+            break
+        eligible = sorted(view.eligible[oid].keys())
+        if len(eligible) <= 1:
+            continue
+        for pid in eligible:
+            mask[k * spec.num_producers + spec.producer_ids.index(pid)] = 1.0
+    return mask
 
 
 def investment_request_cost(cmd: ProducingAgentCommand, coef: float) -> float:
@@ -364,6 +457,19 @@ def collect(
 
             o = torch.as_tensor(obs, dtype=torch.float32)
             glob = critic_input(env, agent, obs)
+            # Active-dim mask for this transition: each actor's likelihood/entropy/KL
+            # covers only the dims decode actually exercises (P1b producing, P1
+            # ordering). Producing gates on the producer view; ordering gates on the
+            # held orders' eligible-producer counts.
+            if role == "prod":
+                pview = env.system.producing_agents[env._role[agent][1]].view()
+                mask_np = producing_action_mask(env.spec_, pview)
+            else:
+                oview = env.system.ordering_agents[env._role[agent][1]].view(
+                    env.system.producer_infos
+                )
+                mask_np = ordering_action_mask(env.spec_, oview)
+            mask_t = torch.as_tensor(mask_np)
             with torch.no_grad():
                 # no-critic mode (ADR-0014): v=0 → GAE collapses to a whitened
                 # Monte-Carlo return-to-go (REINFORCE). actor_update normalizes
@@ -371,14 +477,16 @@ def collect(
                 v = critic.value(torch.as_tensor(glob, dtype=torch.float32)) if critic is not None else 0.0
                 # Both actors are Gaussian over a Box now (ADR-0026): sample a
                 # float vector, clip to the action bound for the env, store raw.
+                # Likelihood covers only active dims (P1b).
                 d = (prod if role == "prod" else order).dist(o)
                 a = d.sample()
-                logp = d.log_prob(a).sum()
+                logp = (d.log_prob(a) * mask_t).sum()
                 env_action = np.clip(a.numpy(), -bound, bound).astype(np.float32)
                 stored = a.numpy()
             buf.obs.append(obs)
             buf.glob.append(glob)
             buf.act.append(stored)
+            buf.mask.append(mask_np)
             buf.logp.append(float(logp))
             buf.val.append(float(v))
             # Cost only the investment toggles decode will actually execute
@@ -428,7 +536,7 @@ def drop_pending(buf: Buf) -> int:
     keep = [i for i in range(len(buf.obs)) if i not in drop]
     remap = {old: new for new, old in enumerate(keep)}
     old_next = buf.next_idx
-    for name in ("obs", "glob", "act", "logp", "val", "rew", "term", "boot"):
+    for name in ("obs", "glob", "act", "mask", "logp", "val", "rew", "term", "boot"):
         lst = getattr(buf, name)
         setattr(buf, name, [lst[i] for i in keep])
     # a link survives only if its target survived; else the predecessor ends here
@@ -561,13 +669,45 @@ def actor_update(
         else torch.as_tensor(np.array(buf.act), dtype=torch.float32)
     )
     old_logp = torch.as_tensor(np.array(buf.logp), dtype=torch.float32)
+    # P1b: active-dim mask — likelihood/entropy/KL skip dims decode no-ops.
+    mask = torch.as_tensor(np.array(buf.mask), dtype=torch.float32)
     adv_t = torch.as_tensor(adv)
     adv_t = (adv_t - adv_t.mean()) / (adv_t.std() + 1e-8)
+
+    # Review 2026-06-15 (P2, rounds 2–3): a dim masked in *every* row of the batch
+    # gets zero gradient, but Adam still applies its stored momentum during
+    # opt.step(), so an inactive dim drifts. Masking logp/entropy is not enough.
+    #   (a) ALL dims frozen (e.g. the ordering actor when every order is singleton-
+    #       eligible — canonical config): the masked loss is constant in the params,
+    #       so the gradient is zero everywhere, yet opt.step() would still push the
+    #       SHARED TRUNK on stored momentum and drift a behaviorless actor. Skip the
+    #       step entirely — no parameter or optimizer-state change.
+    #   (b) SOME dims frozen (e.g. zero-headroom replenishment while other dims act):
+    #       the trunk legitimately updates from the active dims, but the per-dim
+    #       output heads of the frozen dims must not move. Pin both their parameters
+    #       (final-layer row+bias, log_std) AND their Adam moment slices across the
+    #       step, so neither the param nor its optimizer state advances on zero grad.
+    if not is_discrete and float(mask.sum()) == 0.0:
+        return 0.0
+    frozen = (mask.sum(0) <= 0) if not is_discrete else None
+    pin = frozen is not None and bool(frozen.any())
+    pin_params = (
+        [actor.log_std, actor.actor[-1].weight, actor.actor[-1].bias] if pin else []
+    )
+    _MOMENTS = ("exp_avg", "exp_avg_sq", "max_exp_avg_sq")
 
     last_loss = 0.0
     for _ in range(epochs):
         d = actor.dist(obs)
-        logp = d.log_prob(act) if is_discrete else d.log_prob(act).sum(-1)
+        if is_discrete:
+            logp = d.log_prob(act)
+            ent = d.entropy().mean()
+        else:
+            logp = (d.log_prob(act) * mask).sum(-1)
+            # mean entropy over active dims (denom clamped for an all-inactive row),
+            # so the entropy bonus scale matches the pre-mask `.mean()` when all
+            # dims are active (e.g. ordering).
+            ent = ((d.entropy() * mask).sum(-1) / mask.sum(-1).clamp_min(1.0)).mean()
         logratio = logp - old_logp
         ratio = logratio.exp()
         # Schulman approx-KL (non-negative, low variance). Stop before stepping
@@ -579,11 +719,28 @@ def actor_update(
         s1 = ratio * adv_t
         s2 = torch.clamp(ratio, 1 - clip, 1 + clip) * adv_t
         pg = -torch.min(s1, s2).mean()
-        ent = d.entropy().mean()
         loss = pg - ent_coef * ent
         opt.zero_grad()
         loss.backward()
+        if pin:
+            # snapshot frozen-dim param data + Adam moments (state may be absent on
+            # the first-ever step; then there is no prior momentum to drift anyway).
+            snaps = []
+            for p in pin_params:
+                st = opt.state.get(p, {})
+                snaps.append((
+                    p,
+                    p.detach().clone(),
+                    {k: st[k].detach().clone() for k in _MOMENTS if k in st},
+                ))
         opt.step()
+        if pin:
+            with torch.no_grad():
+                for p, data_snap, st_snap in snaps:
+                    p.data[frozen] = data_snap[frozen]
+                    st = opt.state.get(p, {})
+                    for k, m_snap in st_snap.items():
+                        st[k][frozen] = m_snap[frozen]
         last_loss = loss.item()
     return last_loss
 
@@ -698,6 +855,8 @@ def train(
     low_cap_thresh: float = 0.3,
     investment_cost: float = 0.0,
     prod_log_std: float = DEFAULT_PROD_LOG_STD,
+    prod_replen_log_std: float = DEFAULT_PROD_REPLEN_LOG_STD,
+    prod_replen_bias: float = DEFAULT_PROD_REPLEN_BIAS,
     log_std_init: float = DEFAULT_ORDER_LOG_STD,
     critic_warmup: int = 0,
     no_critic: bool = False,
@@ -718,7 +877,19 @@ def train(
     order_obs = env.observation_space(env._order_agents[0]).shape[0]
     bound = float(env.action_space(env._order_agents[0]).high[0])
 
-    prod = GaussianActor(prod_obs, env.spec_.producing_action_dim, log_std_init=prod_log_std)
+    # P1a: widen exploration + bias the mean on the replenishment dims (the first
+    # G of the producing Box) so the multi-hop replenishment→assembly path is
+    # sampled and greedy eval emits non-zero replenishment from iter 0; toggle dims
+    # keep the tight `prod_log_std`. Pure init — overwritten on checkpoint load.
+    g = env.spec_.num_inputs
+    pdim = env.spec_.producing_action_dim
+    prod_logstd = np.full(pdim, prod_log_std, dtype=np.float32)
+    prod_logstd[:g] = prod_replen_log_std
+    prod_bias = np.zeros(pdim, dtype=np.float32)
+    prod_bias[:g] = prod_replen_bias
+    prod = GaussianActor(
+        prod_obs, pdim, log_std_init=prod_logstd, mean_bias=prod_bias
+    )
     order = GaussianActor(order_obs, env.spec_.ordering_action_dim, log_std_init=log_std_init)
     # ADR-0014: --no-critic drops the learned baseline entirely (REINFORCE with
     # whitened MC returns), testing whether the critic↔actor coupling — not a
@@ -782,15 +953,19 @@ def train(
             critic, pbuf.glob + obuf.glob, np.concatenate([p_ret, o_ret]), copt
         )
         with torch.no_grad():
-            prod_entropy = (
-                float(
-                    prod.dist(
-                        torch.as_tensor(np.array(pbuf.obs), dtype=torch.float32)
-                    ).entropy().mean()
+            # P2 (review 2026-06-15): log entropy over the same per-transition active
+            # dims `actor_update` uses. A flat `.mean()` lets the wide replenishment
+            # dims inflate the diagnostic on transitions where they are inert.
+            if pbuf.obs:
+                pmask = torch.as_tensor(np.array(pbuf.mask), dtype=torch.float32)
+                pent = prod.dist(
+                    torch.as_tensor(np.array(pbuf.obs), dtype=torch.float32)
+                ).entropy()
+                prod_entropy = float(
+                    ((pent * pmask).sum(-1) / pmask.sum(-1).clamp_min(1.0)).mean()
                 )
-                if pbuf.obs
-                else float("nan")
-            )
+            else:
+                prod_entropy = float("nan")
         rec = IterStats(
             iter=it,
             mean_step_reward=mean_rew,
@@ -868,7 +1043,9 @@ def main() -> None:
     ap.add_argument("--low-cap-coef", type=float, default=0.0, help="graded penalty coef as capacity health falls below --low-cap-thresh (ADR-0016)")
     ap.add_argument("--low-cap-thresh", type=float, default=0.3, help="capacity-health threshold below which the graded penalty ramps (ADR-0016)")
     ap.add_argument("--investment-cost", type=float, default=0.0, help="experimental training cost per restoration/upgrade request (ADR-0022)")
-    ap.add_argument("--prod-log-std", type=float, default=DEFAULT_PROD_LOG_STD, help="initial producing-actor log std; lower = less exploration noise (ADR-0020/0026)")
+    ap.add_argument("--prod-log-std", type=float, default=DEFAULT_PROD_LOG_STD, help="initial producing-actor log std (toggle dims); lower = less exploration noise (ADR-0020/0026)")
+    ap.add_argument("--prod-replen-log-std", type=float, default=DEFAULT_PROD_REPLEN_LOG_STD, help="initial log std on replenishment quantity dims; wide so the replenishment path is explored (P1a)")
+    ap.add_argument("--prod-replen-bias", type=float, default=DEFAULT_PROD_REPLEN_BIAS, help="positive output-bias init on replenishment dims so greedy mean fires replenishment (P1a)")
     ap.add_argument("--log-std-init", type=float, default=DEFAULT_ORDER_LOG_STD, help="initial ordering-actor log std; lower = less exploration noise (ADR-0012/0024)")
     ap.add_argument("--critic-warmup", type=int, default=0, help="freeze actors for the first K iters so policy grads use a warm critic (ADR-0013)")
     ap.add_argument("--no-critic", action="store_true", help="drop the learned critic: REINFORCE with whitened MC returns (ADR-0014)")
@@ -892,6 +1069,8 @@ def main() -> None:
         low_cap_coef=args.low_cap_coef, low_cap_thresh=args.low_cap_thresh,
         investment_cost=args.investment_cost,
         prod_log_std=args.prod_log_std,
+        prod_replen_log_std=args.prod_replen_log_std,
+        prod_replen_bias=args.prod_replen_bias,
         log_std_init=args.log_std_init,
         critic_warmup=args.critic_warmup, no_critic=args.no_critic,
         target_kl=args.target_kl,

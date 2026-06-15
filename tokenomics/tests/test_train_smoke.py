@@ -72,7 +72,7 @@ def test_drop_pending_removes_open_rows_and_remaps_links():
     # row 0 = completed predecessor (reward attached, boot recorded), row 1 = open
     for r, nx, bt in ((5.0, 1, 9.0), (0.0, -1, 0.0)):
         buf.obs.append([0.0]); buf.glob.append([0.0]); buf.act.append(0)
-        buf.logp.append(0.0); buf.val.append(0.0); buf.rew.append(r)
+        buf.mask.append([1.0]); buf.logp.append(0.0); buf.val.append(0.0); buf.rew.append(r)
         buf.term.append(0.0); buf.boot.append(bt); buf.next_idx.append(nx)
     buf.pending[("e", "a")] = 1   # row 1 never got its reward
 
@@ -82,7 +82,7 @@ def test_drop_pending_removes_open_rows_and_remaps_links():
     assert not buf.pending
     assert len(buf.obs) == 1
     assert all(len(getattr(buf, f)) == 1 for f in
-               ("obs", "glob", "act", "logp", "val", "rew", "term", "boot", "next_idx"))
+               ("obs", "glob", "act", "mask", "logp", "val", "rew", "term", "boot", "next_idx"))
     assert buf.next_idx[0] == -1   # link to dropped row -> trajectory ends here
     assert buf.boot[0] == 9.0      # predecessor keeps its bootstrap
 
@@ -296,10 +296,11 @@ def test_target_kl_stops_before_an_out_of_region_actor_step():
     actor = GaussianActor(obs_dim=7, act_dim=3, log_std_init=-2.0)
     obs = np.zeros((4, 7), dtype=np.float32)
     actions = np.zeros((4, 3), dtype=np.float32)
+    mask = np.ones((4, 3), dtype=np.float32)  # P1b: all dims active here
     with torch.no_grad():
-        current_logp = actor.dist(torch.as_tensor(obs)).log_prob(
+        current_logp = (actor.dist(torch.as_tensor(obs)).log_prob(
             torch.as_tensor(actions)
-        ).sum(-1)
+        ) * torch.as_tensor(mask)).sum(-1)
 
     # Pretend the rollout policy assigned each sampled action much less
     # probability. The first KL check must reject this update before optimizer
@@ -307,6 +308,7 @@ def test_target_kl_stops_before_an_out_of_region_actor_step():
     buf = Buf(
         obs=list(obs),
         act=list(actions),
+        mask=list(mask),
         logp=list((current_logp - 5.0).numpy()),
     )
     before = [p.detach().clone() for p in actor.parameters()]
@@ -439,9 +441,10 @@ def test_curriculum_ramps_and_scales_degradation():
         base.producer_configs[0].degradation
 
 
-def test_capacity_health_from_capacity_bundle():
-    """ADR-0010/0025: health = mean total-capacity/total-max over producers,
-    summed across the capacity bundle. Fresh build is fully restored -> 1.0."""
+def test_capacity_health_fresh_build_is_one():
+    """ADR-0010/0030 (P2 review 2026-06-15): health is the *product bottleneck*, not
+    a producer average — the worst product's best declarer's weakest required-type
+    ratio. A fresh build is fully restored, so every product is makeable -> 1.0."""
     from tokenomics.env import TokenomicsAECEnv
     from tokenomics.train.smoke_ppo import capacity_health
 
@@ -450,6 +453,291 @@ def test_capacity_health_from_capacity_bundle():
     h = capacity_health(env)
     assert h == pytest.approx(1.0)
     assert 0.0 <= h <= 1.0
+
+
+# --- product-bottleneck capacity_health (P2 review 2026-06-15) ---
+# capacity_health reads only env.system.{producing_agents, process_sheets}; tiny
+# fakes pin the per-product death semantics (ADR-0030) without a full config.
+class _FakeAgent:
+    def __init__(self, produces, capacities, max_capacities):
+        self.produces = produces
+        self.capacities = capacities
+        self.max_capacities = max_capacities
+
+
+class _FakePS:
+    def __init__(self, require):
+        self.require = require
+
+
+class _FakeSystem:
+    def __init__(self, agents, sheets):
+        self.producing_agents = agents
+        self.process_sheets = sheets
+
+
+class _FakeEnv:
+    def __init__(self, system):
+        self.system = system
+
+
+def test_capacity_health_zeroes_when_sole_declarer_loses_a_required_type():
+    """ADR-0030: a product dies when no declarer holds every required type. With a
+    single declarer of A at zero capacity, A is unmakeable -> health 0, even though
+    an unrelated product B has a fully healthy declarer."""
+    from tokenomics.train.smoke_ppo import capacity_health
+
+    sys = _FakeSystem(
+        agents={
+            "pa": _FakeAgent({"A"}, {"t1": 0}, {"t1": 10}),   # sole A declarer, dead
+            "pb": _FakeAgent({"B"}, {"t2": 10}, {"t2": 10}),  # B fully healthy
+        },
+        sheets={"A": _FakePS(["t1"]), "B": _FakePS(["t2"])},
+    )
+    assert capacity_health(_FakeEnv(sys)) == pytest.approx(0.0)
+
+
+def test_capacity_health_uses_healthiest_declarer_per_product():
+    """A product's makeability is its *best* declarer's weakest-required-type ratio.
+    Two A declarers (1.0 and 0.2) -> A = 1.0; B's lone declarer at 0.4 is the
+    bottleneck -> system health 0.4."""
+    from tokenomics.train.smoke_ppo import capacity_health
+
+    sys = _FakeSystem(
+        agents={
+            "pa": _FakeAgent({"A"}, {"t1": 10}, {"t1": 10}),  # A at 1.0
+            "pb": _FakeAgent({"A"}, {"t1": 2}, {"t1": 10}),   # A at 0.2 (ignored, worse)
+            "pc": _FakeAgent({"B"}, {"t2": 4}, {"t2": 10}),   # B at 0.4 (bottleneck)
+        },
+        sheets={"A": _FakePS(["t1"]), "B": _FakePS(["t2"])},
+    )
+    assert capacity_health(_FakeEnv(sys)) == pytest.approx(0.4)
+
+
+def test_ordering_action_mask_singleton_inert_multi_active():
+    """P1 review 2026-06-15: a slot whose order has one eligible producer is
+    behaviorless (softmax over one = 1) and fully masked; a multi-eligible slot
+    activates exactly its eligible producer dims. The mask reads only
+    view.incoming / view.eligible, so SimpleNamespace fakes suffice."""
+    from types import SimpleNamespace
+
+    from tokenomics.domain import load_config
+    from tokenomics.env.aec_env import DEFAULT_CONFIG
+    from tokenomics.env.spaces import build_spec
+    from tokenomics.train.smoke_ppo import ordering_action_mask
+
+    spec = build_spec(load_config(DEFAULT_CONFIG))
+    pa, pb = spec.producer_ids[:2]
+
+    single = SimpleNamespace(incoming={"o": 0}, eligible={"o": {pa: None}})
+    assert ordering_action_mask(spec, single).sum() == 0.0
+
+    multi = SimpleNamespace(incoming={"o": 0}, eligible={"o": {pa: None, pb: None}})
+    m = ordering_action_mask(spec, multi)
+    assert m.sum() == 2.0  # slot 0, only the two eligible producer dims
+    assert m[spec.producer_ids.index(pa)] == 1.0
+    assert m[spec.producer_ids.index(pb)] == 1.0
+
+
+def test_producing_mask_drops_replen_dims_without_headroom():
+    """P2 review 2026-06-15: replenishment dims are active only with inventory
+    headroom and a positive replenish ceiling; toggle dims are independent of it."""
+    from tokenomics.domain import load_config
+    from tokenomics.domain.producing_agent import ProducingAgentView
+    from tokenomics.env.aec_env import DEFAULT_CONFIG
+    from tokenomics.env.spaces import build_spec
+    from tokenomics.train.smoke_ppo import producing_action_mask
+
+    spec = build_spec(load_config(DEFAULT_CONFIG))
+    pid = next(
+        p for p in spec.producer_ids
+        if spec.producer_inputs[p] and spec.max_replenish[p] > 0
+    )
+    g = spec.num_inputs
+
+    def mk(headroom):
+        return ProducingAgentView(
+            id=pid,
+            capacities={t: 0 for t in spec.producer_owns[pid]},
+            max_capacities={t: 0 for t in spec.producer_owns[pid]},
+            requested_capacity=0,
+            degradation={t: 0 for t in spec.producer_owns[pid]},
+            upgrade=0,
+            restoration=0,
+            upgrade_running=False,
+            restoration_running=False,
+            inventory={},
+            inventory_limit=0,
+            inventory_units=0,
+            headroom=headroom,
+            inventory_expansion_running=False,
+            has_inventory_expansion=False,
+        )
+
+    with_room = producing_action_mask(spec, mk(5))
+    no_room = producing_action_mask(spec, mk(0))
+
+    assert with_room[:g].sum() == len(spec.producer_inputs[pid])
+    assert no_room[:g].sum() == 0.0
+    assert list(with_room[g:]) == list(no_room[g:])  # toggles unaffected
+
+
+def test_per_dim_log_std_and_mean_bias_init():
+    """P1a review 2026-06-15: GaussianActor takes a per-dim log_std vector and a
+    per-dim output-bias init. Same torch seed isolates the bias delta from the
+    random MLP init."""
+    import numpy as np
+    import torch
+
+    from tokenomics.train.smoke_ppo import GaussianActor
+
+    ls = np.array([0.0, -1.0, -2.0], dtype=np.float32)
+    bias = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    torch.manual_seed(0)
+    base = GaussianActor(obs_dim=4, act_dim=3)
+    torch.manual_seed(0)
+    biased = GaussianActor(obs_dim=4, act_dim=3, log_std_init=ls, mean_bias=bias)
+
+    assert torch.allclose(biased.log_std, torch.as_tensor(ls))
+    assert torch.allclose(
+        biased.actor[-1].bias - base.actor[-1].bias, torch.as_tensor(bias)
+    )
+
+
+def test_masked_update_leaves_inactive_dims_unchanged():
+    """P1b review 2026-06-15: a masked-out action dim contributes to neither the
+    policy-gradient nor the entropy term, so its log_std and output bias receive no
+    update; an active dim does move."""
+    import numpy as np
+    import torch
+
+    from tokenomics.train.smoke_ppo import Buf, GaussianActor, actor_update
+
+    actor = GaussianActor(obs_dim=4, act_dim=3, log_std_init=-1.0)
+    n = 8
+    obs = np.zeros((n, 4), dtype=np.float32)
+    act = np.zeros((n, 3), dtype=np.float32)
+    mask = np.tile(np.array([1.0, 1.0, 0.0], dtype=np.float32), (n, 1))  # dim 2 inert
+    with torch.no_grad():
+        logp = (
+            actor.dist(torch.as_tensor(obs)).log_prob(torch.as_tensor(act))
+            * torch.as_tensor(mask)
+        ).sum(-1)
+    buf = Buf(obs=list(obs), act=list(act), mask=list(mask), logp=list(logp.numpy()))
+
+    ls_before = actor.log_std.detach().clone()
+    bias_before = actor.actor[-1].bias.detach().clone()
+    opt = torch.optim.Adam(actor.parameters(), lr=1e-2)
+    # non-constant advantage -> the pg term survives advantage whitening
+    actor_update(
+        actor, buf, np.linspace(-1.0, 1.0, n).astype(np.float32), opt,
+        is_discrete=False, ent_coef=0.01, target_kl=None, epochs=1,
+    )
+    ls_after = actor.log_std.detach()
+    bias_after = actor.actor[-1].bias.detach()
+
+    assert ls_after[2] == ls_before[2]      # inactive dim untouched
+    assert bias_after[2] == bias_before[2]
+    assert not torch.equal(ls_after[:2], ls_before[:2]) or not torch.equal(
+        bias_after[:2], bias_before[:2]
+    )
+
+
+def test_masked_update_resists_adam_momentum_on_frozen_dim():
+    """Review 2026-06-15 (P2): a dim active in an earlier batch leaves Adam momentum
+    (m, v) behind; when the next batch masks that dim in every row its gradient is
+    zero, yet opt.step() would still apply the stored momentum. The per-dim head pin
+    must hold the frozen dim fixed despite a warmed optimizer."""
+    import numpy as np
+    import torch
+
+    from tokenomics.train.smoke_ppo import Buf, GaussianActor, actor_update
+
+    actor = GaussianActor(obs_dim=4, act_dim=3, log_std_init=-1.0)
+    n = 8
+    obs = np.zeros((n, 4), dtype=np.float32)
+    act = np.zeros((n, 3), dtype=np.float32)
+    adv = np.linspace(-1.0, 1.0, n).astype(np.float32)
+    opt = torch.optim.Adam(actor.parameters(), lr=1e-2)
+
+    def _buf(mask: np.ndarray) -> Buf:
+        with torch.no_grad():
+            logp = (
+                actor.dist(torch.as_tensor(obs)).log_prob(torch.as_tensor(act))
+                * torch.as_tensor(mask)
+            ).sum(-1)
+        return Buf(obs=list(obs), act=list(act), mask=list(mask), logp=list(logp.numpy()))
+
+    # warm-up: dim 2 ACTIVE -> Adam accumulates momentum on its head + log_std
+    warm = np.ones((n, 3), dtype=np.float32)
+    for _ in range(3):
+        actor_update(actor, _buf(warm), adv, opt, is_discrete=False, epochs=1)
+    assert opt.state[actor.log_std]["exp_avg"][2].abs().item() > 0.0  # momentum present
+
+    ls_before = actor.log_std.detach().clone()
+    bias_before = actor.actor[-1].bias.detach().clone()
+    w_before = actor.actor[-1].weight.detach().clone()
+    m_before = opt.state[actor.log_std]["exp_avg"][2].clone()
+    v_before = opt.state[actor.log_std]["exp_avg_sq"][2].clone()
+
+    # next batch: dim 2 masked in EVERY row -> must not move despite stored momentum
+    masked = np.tile(np.array([1.0, 1.0, 0.0], dtype=np.float32), (n, 1))
+    actor_update(actor, _buf(masked), adv, opt, is_discrete=False, epochs=2)
+
+    assert actor.log_std.detach()[2] == ls_before[2]
+    assert actor.actor[-1].bias.detach()[2] == bias_before[2]
+    assert torch.equal(actor.actor[-1].weight.detach()[2], w_before[2])
+    # P2 round 3: the frozen dim's Adam moments must not decay either
+    assert opt.state[actor.log_std]["exp_avg"][2] == m_before
+    assert opt.state[actor.log_std]["exp_avg_sq"][2] == v_before
+    # an active dim still moved
+    assert not torch.equal(actor.log_std.detach()[:2], ls_before[:2]) or not torch.equal(
+        actor.actor[-1].bias.detach()[:2], bias_before[:2]
+    )
+
+
+def test_all_zero_mask_skips_update_entirely():
+    """Review 2026-06-15 (P2 round 3): when no dim is active in the whole batch (the
+    ordering actor in canonical config — every order singleton-eligible), the masked
+    loss is constant in the params, so opt.step() would move the SHARED TRUNK on
+    stored momentum and drift a behaviorless actor. The update must be skipped: no
+    parameter and no optimizer-state change at all."""
+    import numpy as np
+    import torch
+
+    from tokenomics.train.smoke_ppo import Buf, GaussianActor, actor_update
+
+    actor = GaussianActor(obs_dim=4, act_dim=3, log_std_init=-1.0)
+    n = 8
+    obs = np.zeros((n, 4), dtype=np.float32)
+    act = np.zeros((n, 3), dtype=np.float32)
+    adv = np.linspace(-1.0, 1.0, n).astype(np.float32)
+    opt = torch.optim.Adam(actor.parameters(), lr=1e-2)
+
+    def _buf(mask: np.ndarray) -> Buf:
+        with torch.no_grad():
+            logp = (
+                actor.dist(torch.as_tensor(obs)).log_prob(torch.as_tensor(act))
+                * torch.as_tensor(mask)
+            ).sum(-1)
+        return Buf(obs=list(obs), act=list(act), mask=list(mask), logp=list(logp.numpy()))
+
+    # warm the optimizer so the trunk carries momentum that would otherwise drift
+    for _ in range(3):
+        actor_update(actor, _buf(np.ones((n, 3), dtype=np.float32)), adv, opt,
+                     is_discrete=False, epochs=1)
+    trunk = actor.actor[0].weight  # shared first layer (not per-dim)
+    trunk_before = trunk.detach().clone()
+    out_before = actor.actor(torch.as_tensor(obs)).detach().clone()
+    step_before = opt.state[actor.log_std]["step"].clone()
+
+    zero = np.zeros((n, 3), dtype=np.float32)
+    loss = actor_update(actor, _buf(zero), adv, opt, is_discrete=False, epochs=4)
+
+    assert loss == 0.0
+    assert torch.equal(trunk.detach(), trunk_before)          # trunk did not drift
+    assert torch.equal(actor.actor(torch.as_tensor(obs)).detach(), out_before)  # output fixed
+    assert opt.state[actor.log_std]["step"] == step_before     # Adam step not advanced
 
 
 @pytest.mark.parametrize("kwargs", [{"surv_coef": 0.5}, {"low_cap_coef": 0.5}])
