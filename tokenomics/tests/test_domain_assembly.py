@@ -90,6 +90,14 @@ def test_capacity_freed_when_reservation_expires_same_cycle():
     assert [b.order_id for b in r3.accepted] == ["fresh"]
 
 
+def test_reserved_capacity_reports_held_units_per_type():
+    p = make_producer({"capacity-1": 10, "capacity-2": 10})
+    assert p.reserved_capacity() == {}  # nothing reserved yet
+    p.place_bids([composite({"capacity-1": 6}, 60, "o", {10: 1})])  # no stock -> reserves
+    p.produce()
+    assert p.reserved_capacity() == {"capacity-1": 6}
+
+
 def test_degradation_drops_cheapest_reservation_and_spares_disjoint_type():
     p = make_producer({"capacity-1": 10, "capacity-2": 10}, degradation=20)
     pricey = composite({"capacity-1": 5}, 100, "pricey", {10: 1})  # price 20, c1

@@ -1,23 +1,24 @@
-"""Raw policy actions -> domain commands.
+"""Raw policy actions -> domain commands (ADR-0025/0026).
 
-Ordering action uses simplex normalization (ADR-0002): per active order, softmax
-the logits of the capacity types that order requires, scale by the order's token
-budget, and round to integers that sum exactly to the budget. Producing action
-is a 2-bit discrete (restoration, upgrade).
+Ordering action: per order, a raw logit per producer. Decode restricts to the
+order's *eligible* producers, softmaxes, apportions the order's **quantity** by
+the largest-remainder rule, then apportions tokens following the realized integer
+quantities (one allocation, not two — ADR-0025). Zero-quantity sub-orders are
+dropped. Σ sub-quantities = order quantity, Σ sub-tokens = order tokens.
+
+Producing action: a Box of raw reals — G replenishment quantities then 3
+investment toggles (restoration, upgrade, inventory expansion). Decode owns all
+gating: joint replenishment over shared inventory headroom, irrelevant dims are
+no-ops, and a toggle for an already-running / unconfigured investment is ignored.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from ..domain.order import OrderInfo
-from ..domain.ordering_agent import OrderingAgentCommand
-from ..domain.producing_agent import ProducingAgentCommand
-from .spaces import EnvSpec
-
-
-def decode_producing(action: int) -> ProducingAgentCommand:
-    return ProducingAgentCommand(do_restoration=bool(action & 1), do_upgrade=bool(action & 2))
+from ..domain.ordering_agent import OrderingAgentCommand, OrderingAgentView, SubOrder
+from ..domain.producing_agent import ProducingAgentCommand, ProducingAgentView
+from .spaces import ACTION_LOGIT_BOUND, EnvSpec
 
 
 def _softmax(x: np.ndarray) -> np.ndarray:
@@ -43,24 +44,69 @@ def _allocate_int(proportions: np.ndarray, budget: int) -> list[int]:
 
 
 def decode_ordering(
-    spec: EnvSpec, action: np.ndarray, incoming: dict[str, OrderInfo]
+    spec: EnvSpec, action: np.ndarray, view: OrderingAgentView
 ) -> OrderingAgentCommand:
-    action = np.asarray(action, dtype=np.float64).reshape(spec.k, spec.num_types)
-    ordered = [incoming[oid] for oid in sorted(incoming.keys())]
-    orders: dict[str, dict[str, int]] = {}
-    for k, oi in enumerate(ordered):
-        req_types = list(oi.required.keys())
+    action = np.asarray(action, dtype=np.float64).reshape(spec.k, spec.num_producers)
+    orders: dict[str, list[SubOrder]] = {}
+    for k, oid in enumerate(sorted(view.incoming)):
+        oi = view.incoming[oid]
+        eligible = sorted(view.eligible[oid].keys())
+        idx = [spec.producer_ids.index(pid) for pid in eligible]
         if k < spec.k:
-            idx = [spec.type_index[t] for t in req_types]
             props = _softmax(action[k, idx])
         else:
-            # More orders than slots (K should cover the worst case): fall back to
-            # an even split so every incoming order is still addressed — the
-            # domain rejects a command that leaves any order unaddressed.
-            props = np.full(len(req_types), 1.0 / len(req_types))
-        tokens = _allocate_int(props, oi.tokens)
-        alloc: dict[str, int] = {}
-        for t, tok in zip(req_types, tokens):
-            alloc[spec.type_to_producer[t]] = tok
-        orders[oi.id] = alloc
+            # More orders than slots: even split so every order is still addressed.
+            props = np.full(len(idx), 1.0 / len(idx))
+        quantities = _allocate_int(props, oi.quantity)
+        # tokens follow the realized integer quantities (zero-quantity -> zero tokens)
+        q_props = np.asarray(quantities, dtype=np.float64) / oi.quantity
+        tokens = _allocate_int(q_props, oi.tokens)
+        subs = [
+            SubOrder(pid, q, tok)
+            for pid, q, tok in zip(eligible, quantities, tokens)
+            if q > 0
+        ]
+        orders[oid] = subs
     return OrderingAgentCommand(orders)
+
+
+def decode_producing(
+    spec: EnvSpec, action: np.ndarray, view: ProducingAgentView
+) -> ProducingAgentCommand:
+    action = np.asarray(action, dtype=np.float64)
+    g = spec.num_inputs
+    replen_raw = action[:g]
+    toggles = action[g : g + 3]  # [restoration, upgrade, inventory_expansion]
+
+    relevant = spec.producer_inputs[view.id]
+    max_r = spec.max_replenish[view.id]
+    headroom = max(0, view.headroom)
+
+    # per-relevant-input desired quantity from the raw action (raw <= 0 -> 0).
+    desired: list[int] = []
+    for prod in relevant:
+        raw = replen_raw[spec.input_index[prod]]
+        d = 0 if raw <= 0 else int(round(min(raw, ACTION_LOGIT_BOUND) / ACTION_LOGIT_BOUND * max_r))
+        desired.append(d)
+
+    # joint over shared headroom: use as-is when the sum fits, else scale to
+    # exactly H by the largest-remainder rule (ADR-0025).
+    total = sum(desired)
+    if total > headroom:
+        props = np.asarray(desired, dtype=np.float64) / total
+        desired = _allocate_int(props, headroom)
+    replenishments = {prod: q for prod, q in zip(relevant, desired) if q > 0}
+
+    # toggles: raw > 0 fires, gated on already-running / unconfigured (decode owns
+    # all gating per ADR-0026 — the actor emits raw reals only).
+    do_restoration = bool(toggles[0] > 0) and not view.restoration_running
+    do_upgrade = bool(toggles[1] > 0) and not view.upgrade_running
+    do_inventory_expansion = (
+        bool(toggles[2] > 0) and view.has_inventory_expansion and not view.inventory_expansion_running
+    )
+    return ProducingAgentCommand(
+        do_restoration=do_restoration,
+        do_upgrade=do_upgrade,
+        do_inventory_expansion=do_inventory_expansion,
+        replenishments=replenishments,
+    )

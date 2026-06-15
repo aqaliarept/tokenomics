@@ -182,6 +182,16 @@ class ProducingAgent:
     def outstanding_inbound_units(self) -> int:
         return sum(self.outstanding_inbound.values())
 
+    def reserved_capacity(self) -> dict[CapacityType, Capacity]:
+        """Capacity held by live composite reservations, per type — the amount
+        unavailable to new bids this cycle (ADR-0025). Available-for-bids capacity
+        is `capacities[t] − reserved_capacity()[t]`."""
+        out: dict[CapacityType, Capacity] = {}
+        for r in self.reservations:
+            for t, c in r.bid.capacities.items():
+                out[t] = out.get(t, 0) + c
+        return out
+
     def headroom(self) -> int:
         """Inventory units still orderable: limit − held − outstanding inbound
         (ADR-0025). The env apportions a cycle's replenishment jointly within it."""

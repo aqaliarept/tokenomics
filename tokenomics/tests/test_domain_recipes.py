@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from tokenomics.domain.config import Configuration, ProcessSheet, load_config
+from tokenomics.domain.config import (
+    Configuration,
+    ProcessSheet,
+    ProducingAgentConfig,
+    Restoration,
+    Upgrade,
+    load_config,
+)
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "composite.json"
 
@@ -37,6 +44,67 @@ def test_validate_rejects_input_without_sheet():
         producer_configs=load_config(FIXTURE).producer_configs,
     )
     with pytest.raises(ValueError, match="input product 99"):
+        cfg.validate()
+
+
+def test_validate_rejects_product_with_no_eligible_producer():
+    # product 1 needs BOTH capacity-1 and capacity-2, but no single producer owns
+    # the whole bundle -> no eligible producer (ADR-0025). Must be rejected here,
+    # not crash later in env decode on an empty eligible set.
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5, "capacity-2": 5})],
+        producer_configs=[
+            ProducingAgentConfig("p1", {"capacity-1": 100}, 5,
+                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
+            ProducingAgentConfig("p2", {"capacity-2": 100}, 5,
+                                 Restoration(1, 50, "capacity-2"), Upgrade(1, 40, "capacity-2")),
+        ],
+    )
+    with pytest.raises(ValueError, match="no eligible producer"):
+        cfg.validate()
+
+
+def test_validate_accepts_product_with_single_owner_of_bundle():
+    # one producer owning both required types makes the product eligible -> ok
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5, "capacity-2": 5})],
+        producer_configs=[
+            ProducingAgentConfig("p1", {"capacity-1": 100, "capacity-2": 100}, 5,
+                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
+        ],
+    )
+    cfg.validate()  # no raise
+
+
+def _single_producer_cfg(consumers):
+    return Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"capacity-1": 5})],
+        producer_configs=[
+            ProducingAgentConfig("p1", {"capacity-1": 100}, 5,
+                                 Restoration(1, 50, "capacity-1"), Upgrade(1, 40, "capacity-1")),
+        ],
+        consumers=consumers,
+    )
+
+
+def test_validate_rejects_duplicate_consumer_id():
+    from tokenomics.domain.config import ConsumerConfig
+
+    cfg = _single_producer_cfg([ConsumerConfig("c1", 1), ConsumerConfig("c1", 1)])
+    with pytest.raises(ValueError, match="duplicate consumer id"):
+        cfg.validate()
+
+
+def test_validate_rejects_consumer_producer_id_collision():
+    # consumer and producer share the ordering-agent / env-agent namespace; a
+    # collision creates duplicate PettingZoo agents that double-step one agent.
+    from tokenomics.domain.config import ConsumerConfig
+
+    cfg = _single_producer_cfg([ConsumerConfig("p1", 1)])
+    with pytest.raises(ValueError, match="collides with producer id"):
         cfg.validate()
 
 

@@ -23,9 +23,9 @@ from .decode import decode_ordering, decode_producing
 from .encode import encode_global, encode_ordering, encode_producing
 from .spaces import build_spec
 
-# Action handed to step(): producing = Discrete int, ordering = logit vector,
-# None = a dead-agent step.
-Action = int | np.ndarray | None
+# Action handed to step(): both roles emit a raw float vector (Box); None = a
+# dead-agent step. ADR-0026 made the producing action continuous too.
+Action = np.ndarray | None
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "phase1.json"
 
@@ -34,9 +34,27 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "phase1.json"
 # (keep capacity alive) so it earns only a small positive — the critic learns
 # its indirect value. Rejections are penalized; in-progress is a mild drag.
 R_CONSUMER_COMPLETED = 10.0
-R_INVESTMENT_COMPLETED = 1.0
+R_INVESTMENT_COMPLETED = 1.0  # instrumental: restoration/upgrade/replenishment
 R_IN_PROGRESS = -1.0
 R_REJECTED = -5.0
+# Inventory holding penalty (ADR-0025 B6): a flat per-unit-per-cycle training cost
+# applied in the env (not the domain) — the over-stocking counter-pressure to the
+# under-stocking that blocks capacity. Tokens carry no value, so this lives here.
+R_HOLDING_PER_UNIT = 0.1
+
+
+def cycle_reward(result: CycleResult, held: int) -> float:
+    """Shared per-cycle training reward (ADR-0002/0025). Consumer fulfilment is
+    the objective (+10); restoration/upgrade/replenishment are instrumental (+1);
+    in-progress is a mild drag (−1); rejections are penalised (−5); and a flat
+    per-unit inventory holding penalty discourages over-stocking (B6)."""
+    return (
+        R_CONSUMER_COMPLETED * result.consumer_completed
+        + R_INVESTMENT_COMPLETED * (result.investment_completed + result.replenishment_completed)
+        + R_IN_PROGRESS * result.in_progress
+        + R_REJECTED * result.rejected
+        - R_HOLDING_PER_UNIT * held
+    )
 
 
 class TokenomicsAECEnv(AECEnv):
@@ -98,23 +116,30 @@ class TokenomicsAECEnv(AECEnv):
             "dead": False,
             "consumer_completed": 0,
             "investment_completed": 0,
+            "replenishment_completed": 0,
             "consumer_rejected": 0,
             "investment_rejected": 0,
+            "replenishment_rejected": 0,
             "in_progress": 0,
+            "holding_units": 0,
             "return": 0.0,
         }
         # capacity trajectory: mean current capacity per producer at each cycle end
         self.capacity_trace: list[float] = []
 
-    def _accumulate_episode_stats(self, result: CycleResult, reward: float) -> None:
+    def _accumulate_episode_stats(self, result: CycleResult, reward: float, held: int) -> None:
         s = self.episode_stats
         s["consumer_completed"] += result.consumer_completed
         s["investment_completed"] += result.investment_completed
+        s["replenishment_completed"] += result.replenishment_completed
         s["consumer_rejected"] += result.consumer_rejected
         s["investment_rejected"] += result.investment_rejected
+        s["replenishment_rejected"] += result.replenishment_rejected
         s["in_progress"] += result.in_progress
+        s["holding_units"] += held
         s["return"] += reward
-        caps = [p.capacity for p in self.system.producing_agents.values()]
+        # mean total current capacity per producer (collapse warning trace)
+        caps = [sum(p.capacities.values()) for p in self.system.producing_agents.values()]
         self.capacity_trace.append(sum(caps) / len(caps))
 
     def _producer_infos(self) -> dict[str, ProducerInfo]:
@@ -147,32 +172,26 @@ class TokenomicsAECEnv(AECEnv):
         role, did = self._role[agent]
 
         if role == "prod":
+            # decode owns all gating now (ADR-0026): already-running investments
+            # and joint replenishment headroom are handled in decode_producing.
             view = self.system.producing_agents[did].view()
-            cmd = decode_producing(int(action))
-            # mask investments already in flight (domain would otherwise reject)
-            if view.restoration_running:
-                cmd.do_restoration = False
-            if view.upgrade_running:
-                cmd.do_upgrade = False
+            cmd = decode_producing(self.spec_, np.asarray(action), view)
             self.system.producing_agent_action(did, cmd)
             if agent == self._last_prod_agent:
                 self.system.start_ordering()
         else:
-            incoming = self.system.ordering_agents[did].incoming
-            cmd = decode_ordering(self.spec_, np.asarray(action), incoming)
+            view = self.system.ordering_agents[did].view(self.system.producer_infos)
+            cmd = decode_ordering(self.spec_, np.asarray(action), view)
             self.system.ordering_agent_action(did, cmd)
 
         if self._agent_selector.is_last():
             result = self.system.complete_cycle()
-            reward = (
-                R_CONSUMER_COMPLETED * result.consumer_completed
-                + R_INVESTMENT_COMPLETED * result.investment_completed
-                + R_IN_PROGRESS * result.in_progress
-                + R_REJECTED * result.rejected
-            )
+            # inventory held into the next cycle = the holding liability (ADR-0025).
+            held = sum(p.inventory_units() for p in self.system.producing_agents.values())
+            reward = cycle_reward(result, held)
             self.current_cycle += 1
             self.rewards = {a: reward for a in self.agents}
-            self._accumulate_episode_stats(result, reward)
+            self._accumulate_episode_stats(result, reward, held)
 
             dead = self.system.is_dead()
             truncate = self.current_cycle >= self.horizon
@@ -193,7 +212,7 @@ class TokenomicsAECEnv(AECEnv):
         if self.render_mode is None:
             return
         s = self.system
-        caps = {pid: p.capacity for pid, p in s.producing_agents.items()}
+        caps = {pid: dict(p.capacities) for pid, p in s.producing_agents.items()}
         print(f"cycle={self.current_cycle} caps={caps} open_orders={len(s.orders)}")
 
     def close(self) -> None:

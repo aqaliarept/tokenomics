@@ -19,8 +19,9 @@ COMBOS = [
     ("noop", "even_split"),
     ("always_restore", "even_split"),
     ("restore_when_low", "even_split"),
+    ("stock_aware", "even_split"),
+    ("stock_aware", "proportional"),
     ("always_both", "even_split"),
-    ("restore_when_low", "proportional"),
     ("random", "random"),
 ]
 

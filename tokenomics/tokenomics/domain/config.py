@@ -138,10 +138,32 @@ class Configuration:
             if cap_type not in producer_cap_types:
                 raise ValueError(f"capacity type {cap_type} required by process sheets but no producer provides it")
 
-        # Consumers (Phase 1 extension): products must have a process sheet.
+        # Eligibility (ADR-0025): a producer is eligible for a product only if it
+        # owns *every* capacity type the recipe requires. A product whose required
+        # bundle is split across producers has no eligible producer and can never
+        # be ordered — reject here rather than crash later in env decode on an
+        # empty eligible set.
+        for sheet in self.process_sheets:
+            required = set(sheet.require)
+            if not any(required <= cfg.capacities.keys() for cfg in self.producer_configs):
+                raise ValueError(
+                    f"product {sheet.product} has no eligible producer: no single producer "
+                    f"owns every required capacity type {sorted(required)}"
+                )
+
+        # Consumers (Phase 1 extension): products must have a process sheet, and
+        # consumer ids must be unique and disjoint from producer ids — both share
+        # the ordering-agent / env-agent namespace, so a collision would create
+        # duplicate PettingZoo agents that double-step a single ordering agent.
+        consumer_ids: set[str] = set()
         for c in self.consumers:
             if c.product not in process_products:
                 raise ValueError(f"consumer {c.id} demands product {c.product} with no process sheet")
+            if c.id in consumer_ids:
+                raise ValueError(f"duplicate consumer id {c.id}")
+            consumer_ids.add(c.id)
+            if c.id in producer_ids:
+                raise ValueError(f"consumer id {c.id} collides with producer id {c.id}")
 
     def process_sheet(self, product: Product) -> ProcessSheet:
         for ps in self.process_sheets:

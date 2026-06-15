@@ -1,7 +1,7 @@
-"""Domain state -> fixed-size normalized float32 observation vectors.
+"""Domain state -> fixed-size normalized float32 observation vectors (ADR-0025).
 
 All features are non-negative and clipped to [0, OBS_CLIP]. A NaN cut-off price
-(UNDEFINED_PRICE, no production yet) maps to 0.0.
+(UNDEFINED_PRICE, no production yet) maps to 0.0. Layouts match spaces.EnvSpec.
 """
 
 from __future__ import annotations
@@ -21,10 +21,11 @@ def _price(spec: EnvSpec, p: float) -> float:
 
 
 def _producer_summary(spec: EnvSpec, producer_infos: dict[str, ProducerInfo]) -> list[float]:
+    """Per producer: total current capacity + cut-off price."""
     out: list[float] = []
     for pid in spec.producer_ids:
         info = producer_infos[pid]
-        out.append(info.capacity / spec.cap_ref)
+        out.append(sum(info.capacities.values()) / spec.cap_ref)
         out.append(_price(spec, info.cut_off_price))
     return out
 
@@ -35,37 +36,21 @@ def encode_producing(
     producer_infos: dict[str, ProducerInfo],
     cycle_progress: float,
 ) -> np.ndarray:
-    feats: list[float] = [
-        view.capacity / spec.cap_ref,
-        view.max_capacity / spec.cap_ref,
-        view.requested_capacity / spec.cap_ref,
-        view.degradation / spec.cap_ref,
-        1.0 if view.upgrade_running else 0.0,
-        1.0 if view.restoration_running else 0.0,
-    ]
-    feats.extend(_producer_summary(spec, producer_infos))
-    feats.append(cycle_progress)
-    return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
-
-
-def encode_global(
-    spec: EnvSpec,
-    views: dict[str, ProducingAgentView],
-    producer_infos: dict[str, ProducerInfo],
-    cycle_progress: float,
-) -> np.ndarray:
-    """Centralized-critic global state (ADR-0004): every producer's full state +
-    cut-off price + cycle progress. In Phase 1 producers are the system state."""
     feats: list[float] = []
-    for pid in spec.producer_ids:
-        v = views[pid]
-        feats.append(v.capacity / spec.cap_ref)
-        feats.append(v.max_capacity / spec.cap_ref)
-        feats.append(v.requested_capacity / spec.cap_ref)
-        feats.append(v.degradation / spec.cap_ref)
-        feats.append(1.0 if v.upgrade_running else 0.0)
-        feats.append(1.0 if v.restoration_running else 0.0)
-        feats.append(_price(spec, producer_infos[pid].cut_off_price))
+    for t in spec.capacity_types:
+        feats.append(view.capacities.get(t, 0) / spec.cap_ref)
+    for t in spec.capacity_types:
+        feats.append(view.max_capacities.get(t, 0) / spec.cap_ref)
+    feats.append(view.requested_capacity / spec.cap_ref)
+    feats.append(1.0 if view.restoration_running else 0.0)
+    feats.append(1.0 if view.upgrade_running else 0.0)
+    feats.append(1.0 if view.inventory_expansion_running else 0.0)
+    for g in spec.input_products:
+        feats.append(view.inventory.get(g, 0) / spec.inv_ref)
+    feats.append(view.inventory_units / spec.inv_ref)
+    feats.append(view.inventory_limit / spec.inv_ref)
+    feats.append(max(0, view.headroom) / spec.inv_ref)
+    feats.extend(_producer_summary(spec, producer_infos))
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
 
@@ -77,17 +62,37 @@ def encode_ordering(
     cycle_progress: float,
 ) -> np.ndarray:
     feats: list[float] = []
-    # K order slots, filled in sorted order-id order; pad the rest with zeros.
     ordered = [incoming[oid] for oid in sorted(incoming.keys())]
     for k in range(spec.k):
         if k < len(ordered):
             oi = ordered[k]
             feats.append(1.0)  # active
-            feats.append(oi.tokens / spec.token_ref)  # budget
-            for ct in spec.capacity_types:
-                feats.append(oi.required.get(ct, 0) / spec.cap_ref)
+            feats.append(oi.tokens / spec.token_ref)
+            feats.append(oi.quantity / spec.inv_ref)
+            for t in spec.capacity_types:
+                feats.append(oi.unit_capacity.get(t, 0) / spec.cap_ref)
         else:
-            feats.extend([0.0] * (2 + spec.num_types))
+            feats.extend([0.0] * (3 + spec.num_types))
     feats.extend(_producer_summary(spec, producer_infos))
+    feats.append(cycle_progress)
+    return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
+
+
+def encode_global(
+    spec: EnvSpec,
+    views: dict[str, ProducingAgentView],
+    producer_infos: dict[str, ProducerInfo],
+    cycle_progress: float,
+) -> np.ndarray:
+    """Centralized-critic global state (ADR-0004): every producer's rolled-up
+    state + cut-off price + cycle progress. Producers are the system state."""
+    feats: list[float] = []
+    for pid in spec.producer_ids:
+        v = views[pid]
+        feats.append(sum(v.capacities.values()) / spec.cap_ref)
+        feats.append(sum(v.max_capacities.values()) / spec.cap_ref)
+        feats.append(v.requested_capacity / spec.cap_ref)
+        feats.append(v.inventory_units / spec.inv_ref)
+        feats.append(_price(spec, producer_infos[pid].cut_off_price))
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
