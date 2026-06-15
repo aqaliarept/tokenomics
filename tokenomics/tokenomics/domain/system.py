@@ -75,6 +75,11 @@ class CycleResult:
     investment_rejected: int = 0  # investment orders rejected or timed out
     replenishment_completed: int = 0  # input-purchase orders delivered (instrumental)
     replenishment_rejected: int = 0  # input-purchase orders rejected or timed out
+    # Quantity-weighted consumer accounting (#3): a whole order completes/rejects as
+    # a unit (ADR-0025), but a qty-3 order represents 3x the demand of a qty-1 one.
+    # The env weights its training reward + metrics by these, not by order counts.
+    consumer_completed_units: int = 0  # consumer units delivered
+    consumer_rejected_units: int = 0  # consumer units demanded but not delivered
 
     @property
     def completed(self) -> int:
@@ -282,6 +287,7 @@ class System:
         completed_ids: list[OrderId] = []
         n_cons_done = n_inv_done = n_in_progress = n_cons_rej = n_inv_rej = 0
         n_repl_done = n_repl_rej = 0
+        units_cons_done = units_cons_rej = 0
         for oid, order in self.orders.items():
             # an unfunded producer order expired this cycle (budget exhausted by
             # higher-priority orders) — reject it without an auction (ADR-0025).
@@ -290,6 +296,7 @@ class System:
             keep = False
             if isinstance(event, ConsumerRequestCompleted):
                 n_cons_done += 1
+                units_cons_done += order.quantity  # whole order delivered (ADR-0025)
             elif isinstance(event, InvestmentRequestCompleted):
                 n_inv_done += 1
                 self.producing_agents[event.request.producer_id].investment_completed(event.request)
@@ -298,6 +305,7 @@ class System:
                 self.producing_agents[event.request.producer_id].replenishment_completed(event.request)
             elif isinstance(event, ConsumerRequestRejected):
                 n_cons_rej += 1
+                units_cons_rej += order.quantity  # whole order's demand went unmet
                 self.consumers[event.request.consumer_id].emit(event.remaining)
             elif isinstance(event, InvestmentRequestRejected):
                 n_inv_rej += 1
@@ -329,6 +337,8 @@ class System:
         return CycleResult(
             cycle_score, n_cons_done, n_inv_done, n_in_progress, n_cons_rej, n_inv_rej,
             n_repl_done, n_repl_rej,
+            consumer_completed_units=units_cons_done,
+            consumer_rejected_units=units_cons_rej,
         )
 
     def is_dead(self) -> bool:

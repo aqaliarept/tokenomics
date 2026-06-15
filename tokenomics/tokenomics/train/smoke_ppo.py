@@ -38,6 +38,7 @@ from ..domain.producing_agent import ProducingAgentCommand, ProducingAgentView
 from ..env import TokenomicsAECEnv
 from ..env.aec_env import DEFAULT_CONFIG
 from ..env.decode import decode_producing
+from ..env.spaces import config_fingerprint
 from ..eval.baselines import Policy
 from ..eval.runner import evaluate
 
@@ -61,7 +62,9 @@ DEFAULT_TARGET_KL = 0.008
 # producer-simplex-ordering redesign; the loader rejects older/missing versions.
 # v3 (B9): ordering obs gained a per-slot product one-hot -> ordering_obs_dim grew,
 # so a v2 ordering actor's input layer no longer matches.
-CHECKPOINT_VERSION = 3
+# v4 (#2): producing obs + critic global_state gained a 2P open-consumer-demand
+# block (quantity + tokens per product), so v3 producing/critic layers no longer match.
+CHECKPOINT_VERSION = 4
 
 
 def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:
@@ -352,6 +355,41 @@ def critic_input(
     )
 
 
+@dataclass
+class RolloutStats:
+    """Raw survival + fulfillment counts of the rollout episodes at the current
+    (training) difficulty — the evidence the gated curriculum advances on (review
+    2026-06-15). Raw counts (not rates) so the curriculum can *accumulate* them
+    across iterations: at eased difficulty episodes run long and a single rollout
+    often completes 0–1 of them, far below the evidence floor."""
+
+    episodes: int  # completed episodes this rollout
+    deaths: int  # of which ended in system death
+    completed: int  # consumer orders completed across them
+    rejected: int  # consumer orders rejected across them
+    # consumer UNITS (#3, review 2026-06-15): the gate basis. Order counts can clear
+    # advance_fulfil while most demanded units go unmet under variable quantity, so
+    # fulfillment is unit-weighted. Default None = the qty=1 identity (units==orders)
+    # for callers that only carry order counts.
+    completed_units: int | None = None
+    rejected_units: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.completed_units is None:
+            self.completed_units = self.completed
+        if self.rejected_units is None:
+            self.rejected_units = self.rejected
+
+    @property
+    def death_rate(self) -> float:
+        return self.deaths / self.episodes if self.episodes else float("nan")
+
+    @property
+    def fulfillment(self) -> float:
+        demand = self.completed_units + self.rejected_units
+        return self.completed_units / demand if demand else float("nan")
+
+
 def collect(
     envs: list[TokenomicsAECEnv],
     prod: GaussianActor,
@@ -365,7 +403,7 @@ def collect(
     low_cap_coef: float = 0.0,
     low_cap_thresh: float = 0.3,
     investment_cost: float = 0.0,
-) -> tuple[Buf, Buf, float]:
+) -> tuple[Buf, Buf, RolloutStats]:
     """Roll `steps` total live decisions across `envs` in round-robin (ADR-0005),
     bucketed into a producing buffer and an ordering buffer. The centralized
     critic values the shared global state.
@@ -374,10 +412,12 @@ def collect(
     agent names across envs do not collide. A finished env is reset and reused
     until the decision budget is met.
 
-    Also returns the **rollout death rate** at the current (training) difficulty:
-    fraction of completed episodes that ended in system death. This is the
-    eval-gated curriculum's advance signal (ADR-0009) — survival measured at the
-    difficulty being trained, not at real difficulty (which is the eval/goal).
+    Also returns `RolloutStats` (survival + fulfillment) at the current (training)
+    difficulty — the eval-gated curriculum's advance signal (ADR-0009, review
+    2026-06-15): both measured at the difficulty being trained, not at real
+    difficulty (which is the eval/goal). Fulfillment was added because gating on
+    survival alone let the policy learn to stay alive while fulfilling nothing,
+    then collapse when demand variance rose on the B9 combined suite.
 
     `surv_coef` (ADR-0010) adds a capacity-floor shaping term to the *training*
     reward only: `surv_coef · (health − 1)` per cycle, where `health` ∈ [0,1] is
@@ -395,6 +435,12 @@ def collect(
     n = 0
     episodes = 0
     deaths = 0
+    # pooled consumer fulfillment across completed episodes (review 2026-06-15).
+    # Both order counts (display) and UNITS (the #3 gate basis) are tallied.
+    completed = 0
+    rejected = 0
+    completed_units = 0
+    rejected_units = 0
     # cap outer rounds so a stuck env can never spin forever; dead-step flushing
     # and resets make real progress well within this bound.
     max_rounds = steps * 8 + len(envs) * 16
@@ -407,6 +453,10 @@ def collect(
                 # episode_stats (ADR-0009 gate signal).
                 episodes += 1
                 deaths += 1 if env.episode_stats.get("dead") else 0
+                completed += env.episode_stats.get("consumer_completed", 0)
+                rejected += env.episode_stats.get("consumer_rejected", 0)
+                completed_units += env.episode_stats.get("consumer_completed_units", 0)
+                rejected_units += env.episode_stats.get("consumer_rejected_units", 0)
                 env.reset(seed=int(rng.integers(0, 2**31)))
             agent = env.agent_selection
             obs, reward, term, trunc, info = env.last()
@@ -519,10 +569,12 @@ def collect(
     # leaves valid r + γV(s_next) targets.
     drop_pending(pbuf)
     drop_pending(obuf)
-    # No completed episode is "no observation", not 100% death. Curriculum
-    # gating must hold until a real terminal/truncation result arrives.
-    death_rate = deaths / episodes if episodes else float("nan")
-    return pbuf, obuf, death_rate
+    # No completed episode is "no observation", not 100% death — RolloutStats
+    # surfaces raw counts (its rate properties are NaN at zero episodes) so the
+    # curriculum holds until enough real terminal/truncation results accumulate.
+    return pbuf, obuf, RolloutStats(
+        episodes, deaths, completed, rejected, completed_units, rejected_units
+    )
 
 
 def drop_pending(buf: Buf) -> int:
@@ -573,14 +625,21 @@ def greedy_eval_policies(
 
 
 def save_policies(
-    prod: GaussianActor, order: GaussianActor, bound: float, path: str
+    prod: GaussianActor,
+    order: GaussianActor,
+    bound: float,
+    path: str,
+    config: Configuration | None = None,
 ) -> None:
     """Checkpoint the deployed actors + the dims needed to rebuild them, so the
     eval harness (signal_check) can score the trained policy against the baseline
-    table without re-training. Stamped with `CHECKPOINT_VERSION` (ADR-0026)."""
+    table without re-training. Stamped with `CHECKPOINT_VERSION` (ADR-0026) and, when
+    `config` is given, the training config's fingerprint (#7) so an eval can detect a
+    wrong-config mismatch before the actor crashes on a dim error."""
     torch.save(
         {
             "version": CHECKPOINT_VERSION,
+            "config_fingerprint": config_fingerprint(config) if config is not None else None,
             "prod_obs": prod.actor[0].in_features,
             "prod_act": prod.log_std.numel(),
             "order_obs": order.actor[0].in_features,
@@ -591,6 +650,23 @@ def save_policies(
         },
         path,
     )
+
+
+def checkpoint_fingerprint(path: str) -> str | None:
+    """Read the training-config fingerprint stamped in a checkpoint (#7), or None if
+    the checkpoint predates fingerprinting. Lets `signal_check` warn when a policy is
+    scored on a config it was not trained on."""
+    ckpt = torch.load(path, weights_only=True)
+    return ckpt.get("config_fingerprint")
+
+
+def checkpoint_obs_dims(path: str) -> dict[str, int]:
+    """Read the actor input/output dims a checkpoint's tensors were built for
+    (`prod_obs`/`prod_act`/`order_obs`/`order_act`). `signal_check` (review P2)
+    compares these to the eval spec and SKIPS the trained row when they differ,
+    instead of crashing the actor on a matrix-shape mismatch."""
+    ckpt = torch.load(path, weights_only=True)
+    return {k: ckpt[k] for k in ("prod_obs", "prod_act", "order_obs", "order_act")}
 
 
 def load_policies(path: str) -> tuple[Policy, Policy]:
@@ -626,9 +702,16 @@ class IterStats:
     oloss: float
     closs: float
     rollout_dead_rate: float = float("nan")
+    rollout_fulfillment: float = float("nan")
     prod_entropy: float = float("nan")
     order_std: float = float("nan")
     difficulty: float = 1.0
+    # per-role PPO diagnostics (#6)
+    prod_kl: float = float("nan")
+    prod_clipfrac: float = float("nan")
+    order_kl: float = float("nan")
+    order_clipfrac: float = float("nan")
+    critic_explained_var: float = float("nan")
     eval_cycles: float = float("nan")
     eval_dead_rate: float = float("nan")
     eval_consumer_completed: float = float("nan")
@@ -637,10 +720,26 @@ class IterStats:
     eval_return: float = float("nan")
 
 
+# Held-out reporting seeds start here (#7) — disjoint from validation seeds
+# range(eval_seeds) and from signal_check's default 0..N, so the held-out report is
+# on episodes that never influenced checkpoint selection.
+HELD_OUT_SEED_OFFSET = 10_000
+
 # Reward scale for optimization only (logging stays raw). Keeps critic targets
 # and advantages at O(1) so value loss doesn't dominate — the cycle reward is a
 # sum over many orders and is naturally large.
 REW_SCALE = 0.05
+
+
+@dataclass
+class ActorStats:
+    """Per-role PPO update diagnostics (#6): final-epoch loss, Schulman approx-KL
+    (trust-region drift), and clip fraction (share of samples whose ratio left
+    [1±clip] — high = the policy is straining against the clip)."""
+
+    loss: float = 0.0
+    approx_kl: float = float("nan")
+    clip_frac: float = float("nan")
 
 
 def actor_update(
@@ -653,7 +752,7 @@ def actor_update(
     clip: float = 0.2,
     ent_coef: float = 0.01,
     target_kl: float | None = None,
-) -> float:
+) -> ActorStats:
     """Clipped PPO policy-gradient step on a decentralized actor (ADR-0004). No
     value loss here — the centralized critic is trained separately. `ent_coef`
     is decayed across the run by the caller (ADR-0008).
@@ -663,7 +762,7 @@ def actor_update(
     `1.5·target_kl`. Earlier causal claims about collapse were confounded by
     ADR-0017 and ADR-0018."""
     if not buf.obs:
-        return 0.0
+        return ActorStats()
     obs = torch.as_tensor(np.array(buf.obs), dtype=torch.float32)
     act = (
         torch.as_tensor(np.array(buf.act), dtype=torch.long)
@@ -690,7 +789,7 @@ def actor_update(
     #       (final-layer row+bias, log_std) AND their Adam moment slices across the
     #       step, so neither the param nor its optimizer state advances on zero grad.
     if not is_discrete and float(mask.sum()) == 0.0:
-        return 0.0
+        return ActorStats()
     frozen = (mask.sum(0) <= 0) if not is_discrete else None
     pin = frozen is not None and bool(frozen.any())
     pin_params = (
@@ -699,6 +798,8 @@ def actor_update(
     _MOMENTS = ("exp_avg", "exp_avg_sq", "max_exp_avg_sq")
 
     last_loss = 0.0
+    last_kl = float("nan")
+    last_clipfrac = float("nan")
     for _ in range(epochs):
         d = actor.dist(obs)
         if is_discrete:
@@ -712,12 +813,16 @@ def actor_update(
             ent = ((d.entropy() * mask).sum(-1) / mask.sum(-1).clamp_min(1.0)).mean()
         logratio = logp - old_logp
         ratio = logratio.exp()
-        # Schulman approx-KL (non-negative, low variance). Stop before stepping
-        # if this update would leave the trust region (ADR-0015).
-        if target_kl is not None:
-            approx_kl = ((ratio - 1.0) - logratio).mean().item()
-            if approx_kl > 1.5 * target_kl:
-                break
+        # Schulman approx-KL (non-negative, low variance) + clip fraction — logged
+        # per role (#6). Stop before stepping if this update would leave the trust
+        # region (ADR-0015). KL is recorded even on an early stop so the diagnostic
+        # reflects the update that tripped it.
+        approx_kl = ((ratio - 1.0) - logratio).mean().item()
+        last_kl = approx_kl
+        if target_kl is not None and approx_kl > 1.5 * target_kl:
+            break
+        with torch.no_grad():
+            last_clipfrac = ((ratio - 1.0).abs() > clip).float().mean().item()
         s1 = ratio * adv_t
         s2 = torch.clamp(ratio, 1 - clip, 1 + clip) * adv_t
         pg = -torch.min(s1, s2).mean()
@@ -744,7 +849,19 @@ def actor_update(
                     for k, m_snap in st_snap.items():
                         st[k][frozen] = m_snap[frozen]
         last_loss = loss.item()
-    return last_loss
+    return ActorStats(last_loss, last_kl, last_clipfrac)
+
+
+def explained_variance(y: np.ndarray, pred: np.ndarray) -> float:
+    """Critic fit diagnostic (#6): `1 - Var(y - pred) / Var(y)`. 1.0 = perfect, 0.0
+    = no better than predicting the mean, <0 = worse. Zero-variance returns -> 0.0
+    (the metric is undefined; report the no-information value, not a div-by-zero)."""
+    y = np.asarray(y, dtype=np.float64)
+    pred = np.asarray(pred, dtype=np.float64)
+    var_y = float(y.var())
+    if var_y == 0.0:
+        return 0.0
+    return 1.0 - float((y - pred).var()) / var_y
 
 
 def critic_update(
@@ -786,16 +903,36 @@ class Curriculum:
     1.0 (full real difficulty) — the iter-based schedule.
 
     ADR-0009 adds a **rollout-gated** mode (`gate=True`): difficulty advances by
-    `d_step` only after a completed episode at the current difficulty reaches
-    `advance_below`. There is no iteration floor in gated mode; such a floor
-    increases difficulty without evidence and defeats the gate."""
+    `d_step` only on *evidence* at the current difficulty (review 2026-06-15) —
+    at least `min_episodes` completed rollouts AND both survival (death rate
+    <= `advance_below`) and fulfillment (>= `advance_fulfil`). There is no
+    iteration floor in gated mode; such a floor increases difficulty without
+    evidence and defeats the gate. The earlier gate advanced on a *single*
+    surviving episode and on survival *alone* — difficulty then outran the policy
+    on the B9 combined suite (it stayed alive fulfilling nothing, then collapsed
+    when demand variance rose).
 
-    d_start: float = 0.2
+    The scalar `level()` returns is fed to `staged_config`, which ramps the axes
+    *sequentially* (#1-proper): qty -> mixture -> competition -> degradation. So a
+    gated run should start at `d_start=0.0` (stage 1, fixed qty1) and advance one
+    axis at a time — not the old simultaneous two-axis anneal."""
+
+    d_start: float = 0.0
     warmup_frac: float = 0.6
     gate: bool = False
     advance_below: float = 0.2
+    advance_fulfil: float = 0.8  # min rollout consumer fulfillment to advance (0 = survival-only)
+    min_episodes: int = 4  # evidence floor: never advance on fewer accumulated episodes
     d_step: float = 0.1
     _gated_d: float = field(default=0.0, init=False)
+    # accumulated evidence at the current level (review 2026-06-15): at eased
+    # difficulty episodes run long, so one rollout rarely completes min_episodes —
+    # accumulate raw counts across iterations and reset the window on each decision.
+    _eps: int = field(default=0, init=False)
+    _deaths: int = field(default=0, init=False)
+    # unit-weighted fulfillment evidence (#3, review 2026-06-15) — see observe()
+    _completed_units: int = field(default=0, init=False)
+    _rejected_units: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         self._gated_d = self.d_start
@@ -812,11 +949,33 @@ class Curriculum:
             return self.difficulty(it, iters)
         return self._gated_d
 
-    def observe(self, death_rate: float) -> None:
-        """Advance the gated difficulty one `d_step` when the rollout survives
-        the current difficulty (ADR-0009). No-op unless gating."""
-        if self.gate and np.isfinite(death_rate) and death_rate <= self.advance_below:
+    def observe(self, stats: RolloutStats) -> None:
+        """Accumulate rollout evidence at the current difficulty and advance one
+        `d_step` only when it is decisive (ADR-0009, review 2026-06-15): at least
+        `min_episodes` accumulated rollouts AND both survival (death rate
+        <= `advance_below`) and fulfillment (>= `advance_fulfil`). Counts pile up
+        across iterations (one eased-difficulty rollout rarely completes the floor)
+        and the window resets on every decision so each judgment reflects the most
+        recent policy. A single surviving episode, survival with zero fulfillment,
+        or no resolved episode all hold — the gate must not let difficulty outrun
+        the policy. No-op unless gating."""
+        if not self.gate:
+            return
+        self._eps += stats.episodes
+        self._deaths += stats.deaths
+        # gate on UNITS not order counts (#3): under variable quantity, order-count
+        # fulfillment can clear the bar while most demanded units go unmet.
+        self._completed_units += stats.completed_units
+        self._rejected_units += stats.rejected_units
+        if self._eps < self.min_episodes:
+            return
+        death_rate = self._deaths / self._eps
+        demand = self._completed_units + self._rejected_units
+        fulfillment = self._completed_units / demand if demand else 0.0
+        if death_rate <= self.advance_below and fulfillment >= self.advance_fulfil:
             self._gated_d = min(1.0, self._gated_d + self.d_step)
+        # reset the evidence window either way — next judgment uses fresh episodes
+        self._eps = self._deaths = self._completed_units = self._rejected_units = 0
 
 
 def scale_degradation(cfg: Configuration, d: float) -> Configuration:
@@ -827,6 +986,94 @@ def scale_degradation(cfg: Configuration, d: float) -> Configuration:
         replace(p, degradation=max(0, round(p.degradation * d)))
         for p in cfg.producer_configs
     ]
+    return replace(cfg, producer_configs=producers)
+
+
+# Demand-variance curriculum axis (review 2026-06-15): below this difficulty a
+# multi-product consumer demands only its single primary product; at/above it the
+# full product mixture is enabled. The quantity range anneals continuously and
+# independently. One gated scalar drives both this and degradation together.
+MIXTURE_AT = 0.5
+
+
+def scale_demand(cfg: Configuration, qty_d: float, mixture_on: bool | None = None) -> Configuration:
+    """Copy `cfg` easing consumer demand *variance* — a curriculum axis alongside
+    `scale_degradation` (review 2026-06-15).
+
+    `qty_d` (0..1) sets the per-cycle quantity range: `0` collapses it to
+    `quantity_min`, `1` restores the real `quantity_max`. `mixture_on` controls the
+    multi-product pool: `True` keeps the real pool, `False` collapses it to the
+    single primary `product`. When `mixture_on` is None it falls back to the legacy
+    single-scalar coupling (`qty_d >= MIXTURE_AT`); `staged_config` passes it
+    explicitly so quantity and mixture ramp in *separate* stages. Dims are unchanged
+    — the ordering one-hot spans process-sheet products, not the consumer pool — so
+    actor/critic shapes stay valid (cf. `scale_degradation`)."""
+    consumers = [
+        replace(
+            c,
+            products=c.products
+            if (len(c.product_pool) > 1 and (qty_d >= MIXTURE_AT if mixture_on is None else mixture_on))
+            else (),
+            quantity_max=c.quantity_min + int(round((c.quantity_max - c.quantity_min) * qty_d)),
+        )
+        for c in cfg.consumers
+    ]
+    return replace(cfg, consumers=consumers)
+
+
+# Sequential 5-stage ladder (#1-proper, review 2026-06-15). The gated difficulty
+# scalar p in [0,1] ramps ONE axis at a time instead of all axes at once, so a stall
+# is attributable to a single axis. Stage 1 (fixed qty1) is the p=0 baseline; each
+# quarter ramps the next axis to full while earlier axes stay maxed and later axes
+# stay fully eased: qty (variable quantity) -> mixture (product pool) -> competition
+# (viable->weak) -> degradation (decay). p=1 is the real config.
+_QTY_STAGE = (0.00, 0.25)
+_MIX_AT = 0.25  # product mixture switches on once the quantity ramp completes
+_COMP_STAGE = (0.50, 0.75)
+_DEGR_STAGE = (0.75, 1.00)
+
+
+def _sub(p: float, lo: float, hi: float) -> float:
+    """Local 0..1 progress of `p` within sub-interval [lo, hi] (clamped)."""
+    return min(1.0, max(0.0, (p - lo) / (hi - lo)))
+
+
+def staged_config(base_cfg: Configuration, p: float) -> Configuration:
+    """Map the gated difficulty scalar `p` (0..1) to a config that ramps the
+    curriculum axes *sequentially* (#1-proper). See the stage constants above. At
+    `p=0` the config is the easiest (fixed qty1, single product, viable producers,
+    no degradation); at `p=1` it is `base_cfg` (the real task). Dims are preserved
+    by every axis, so the actor/critic built on `base_cfg` stays valid."""
+    cfg = scale_demand(base_cfg, _sub(p, *_QTY_STAGE), mixture_on=p >= _MIX_AT)
+    cfg = scale_competition(cfg, _sub(p, *_COMP_STAGE))
+    cfg = scale_degradation(cfg, _sub(p, *_DEGR_STAGE))
+    return cfg
+
+
+def scale_competition(cfg: Configuration, d: float) -> Configuration:
+    """Copy `cfg` easing *competition* by difficulty `d` (#1-proper, review item #5).
+
+    Some configs pit a strong producer against a near-dead one (e.g. complex.json
+    `p5` owns capacity-1=1 while its product needs 2 -> zero throughput). Routing
+    against a competitor that cannot produce is the hard case; the policy should
+    first learn to route among *viable* producers. At `d=0` every producer's owned
+    capacity is raised to at least its declared products' recipe requirement (made
+    viable); at `d=1` the real (possibly weak) capacity is restored. Only deficient
+    types are touched; capacity *types* are unchanged, so actor/critic shapes stay
+    valid (cf. `scale_degradation`/`scale_demand`)."""
+    require = {ps.product: ps.require for ps in cfg.process_sheets}
+    producers = []
+    for p in cfg.producer_configs:
+        needed: dict[str, int] = {}
+        for product in p.produces:
+            for t, req in require.get(product, {}).items():
+                needed[t] = max(needed.get(t, 0), req)
+        caps = dict(p.capacities)
+        for t, req in needed.items():
+            real = caps.get(t, 0)
+            if real < req:  # deficient -> interpolate real..req as difficulty eases
+                caps[t] = round(real + (req - real) * (1.0 - d))
+        producers.append(replace(p, capacities=caps))
     return replace(cfg, producer_configs=producers)
 
 
@@ -846,9 +1093,11 @@ def train(
     horizon: int = 100,
     seed: int = 0,
     num_envs: int = 4,
+    config: Configuration | None = None,
     curriculum: Curriculum | None = None,
     eval_every: int = 1,
     eval_seeds: int = 3,
+    held_out_seeds: int = 0,
     actor_lr: float = 3e-4,
     ent_coef: float = 0.01,
     surv_coef: float = 0.0,
@@ -871,7 +1120,11 @@ def train(
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     # Base (real) config; the curriculum (ADR-0006) eases degradation off it.
-    base_cfg = load_config(DEFAULT_CONFIG)
+    # `config` overrides the canonical phase1 default so the trainer can run any
+    # suite (B9 competition / randomized-demand fixtures); the network shapes,
+    # rollout envs, AND the internal greedy-eval all derive from this one config,
+    # so a non-phase1 spec no longer dimension-mismatches the eval env.
+    base_cfg = config if config is not None else load_config(DEFAULT_CONFIG)
     # Network shapes come from the real spec — degradation scaling never changes
     # obs/action dims (ADR-0006), so one build is valid for every difficulty.
     env = TokenomicsAECEnv(config=base_cfg, horizon=horizon)
@@ -926,21 +1179,27 @@ def train(
         # Curriculum config changes still require fresh envs because degradation
         # cannot be changed coherently in the middle of an episode.
         d = curriculum.level(it, iters) if curriculum else 1.0
-        cfg = scale_degradation(base_cfg, d) if curriculum else base_cfg
+        # Sequential 5-stage ladder (#1-proper, review 2026-06-15): the gated scalar
+        # `d` ramps one axis at a time (qty -> mixture -> competition -> degradation)
+        # via staged_config, so a stall is attributable to a single axis. Eval stays
+        # on the real base_cfg.
+        cfg = staged_config(base_cfg, d) if curriculum else base_cfg
         if rollout_envs is None or cfg != rollout_cfg:
             rollout_envs = [
                 TokenomicsAECEnv(config=cfg, horizon=horizon) for _ in range(num_envs)
             ]
             rollout_cfg = cfg
-        pbuf, obuf, roll_dead = collect(
+        pbuf, obuf, roll = collect(
             rollout_envs, prod, order, critic, steps, bound, rng,
             surv_coef, death_penalty, low_cap_coef, low_cap_thresh,
             investment_cost,
         )
-        # Advance the gated curriculum only if the policy survived this difficulty
-        # (ADR-0009): difficulty for the next iter never outruns the policy.
+        roll_dead = roll.death_rate
+        # Advance the gated curriculum only on evidence the policy survives AND
+        # fulfils this difficulty (ADR-0009, review 2026-06-15): difficulty for
+        # the next iter never outruns the policy on either axis.
         if curriculum:
-            curriculum.observe(roll_dead)
+            curriculum.observe(roll)
         mean_rew = float(np.mean(pbuf.rew)) if pbuf.rew else 0.0
 
         p_adv, p_ret = gae([r * REW_SCALE for r in pbuf.rew], pbuf.val, pbuf.term, pbuf.boot, pbuf.next_idx)
@@ -948,12 +1207,20 @@ def train(
         # Optional historical ablation (ADR-0013): fit the critic while delaying
         # actor updates. Its original motivation predated the trajectory fix.
         warming = it < critic_warmup
-        pl = 0.0 if warming else actor_update(prod, pbuf, p_adv, popt, is_discrete=False, ent_coef=cur_ent, target_kl=target_kl)
-        ol = 0.0 if warming else actor_update(order, obuf, o_adv, oopt, is_discrete=False, ent_coef=cur_ent, target_kl=target_kl)
+        pstats = ActorStats() if warming else actor_update(prod, pbuf, p_adv, popt, is_discrete=False, ent_coef=cur_ent, target_kl=target_kl)
+        ostats = ActorStats() if warming else actor_update(order, obuf, o_adv, oopt, is_discrete=False, ent_coef=cur_ent, target_kl=target_kl)
+        pl, ol = pstats.loss, ostats.loss
         # critic trained on the pooled global-state -> return targets from both roles
-        cl = 0.0 if critic is None else critic_update(
-            critic, pbuf.glob + obuf.glob, np.concatenate([p_ret, o_ret]), copt
-        )
+        glob_all = pbuf.glob + obuf.glob
+        ret_all = np.concatenate([p_ret, o_ret])
+        cl = 0.0 if critic is None else critic_update(critic, glob_all, ret_all, copt)
+        critic_ev = float("nan")
+        if critic is not None and glob_all:
+            with torch.no_grad():
+                preds = critic.value(
+                    torch.as_tensor(np.array(glob_all), dtype=torch.float32)
+                ).cpu().numpy()
+            critic_ev = explained_variance(ret_all, preds)
         with torch.no_grad():
             # P2 (review 2026-06-15): log entropy over the same per-transition active
             # dims `actor_update` uses. A flat `.mean()` lets the wide replenishment
@@ -975,16 +1242,26 @@ def train(
             oloss=ol,
             closs=cl,
             rollout_dead_rate=roll_dead,
+            rollout_fulfillment=roll.fulfillment,
             prod_entropy=prod_entropy,
             order_std=float(order.log_std.exp().mean().detach()),
             difficulty=d,
+            prod_kl=pstats.approx_kl,
+            prod_clipfrac=pstats.clip_frac,
+            order_kl=ostats.approx_kl,
+            order_clipfrac=ostats.clip_frac,
+            critic_explained_var=critic_ev,
         )
 
         # Greedy-eval the deployed policy through the eval harness (ADR-0003):
         # the real task metrics, comparable to the baseline table.
         if eval_every and (it % eval_every == 0 or it == iters - 1):
             pp, op = greedy_eval_policies(prod, order, bound)
-            m = evaluate(pp, op, seeds=range(eval_seeds), horizon=horizon)
+            # Eval on the SAME config the policy was built for (not the phase1
+            # default): the actor input layer matches base_cfg's spec, so a
+            # non-default suite would otherwise crash the greedy eval on a shape
+            # mismatch. Curriculum eases degradation only — eval stays real.
+            m = evaluate(pp, op, seeds=range(eval_seeds), horizon=horizon, config=base_cfg)
             rec.eval_cycles = m["cycles"][0]
             rec.eval_dead_rate = m["dead_rate"][0]
             rec.eval_consumer_completed = m["consumer_completed"][0]
@@ -1003,7 +1280,8 @@ def train(
         history.append(rec)
         log(
             f"iter {it:3d}  diff {d:4.2f}  step_rew {mean_rew:8.3f}  ploss {pl:7.3f}  oloss {ol:7.3f}  closs {cl:7.3f}"
-            f"  roll_dead {roll_dead:4.2f}  pent {rec.prod_entropy:4.2f}  ostd {rec.order_std:4.2f}"
+            f"  cev {rec.critic_explained_var:5.2f}  pkl {rec.prod_kl:5.3f}  pcf {rec.prod_clipfrac:4.2f}  okl {rec.order_kl:5.3f}  ocf {rec.order_clipfrac:4.2f}"
+            f"  roll_dead {roll_dead:4.2f}  rfill {roll.fulfillment:4.2f}  pent {rec.prod_entropy:4.2f}  ostd {rec.order_std:4.2f}"
             f"  | eval cyc {rec.eval_cycles:6.1f}  dead {rec.eval_dead_rate:4.2f}"
             f"  cons✓ {rec.eval_consumer_completed:7.1f}  cons✗ {rec.eval_consumer_rejected:6.1f}"
             f"  capmin {rec.eval_cap_min:6.1f}  ret {rec.eval_return:8.1f}"
@@ -1012,13 +1290,30 @@ def train(
     if out:
         write_curve(history, out)
         log(f"curve -> {out}")
+    # Restore the best-on-validation weights once, then both the held-out report and
+    # the checkpoint use them (ADR-0011).
+    if best_state is not None:
+        prod.load_state_dict(best_state[0])
+        order.load_state_dict(best_state[1])
+        log(f"best eval: dead {best_key[0]:.2f}  ret {-best_key[1]:.1f}")
+    # #7: report the selected checkpoint on a DISJOINT held-out seed range. Checkpoint
+    # selection used validation seeds range(eval_seeds); held-out seeds start at
+    # HELD_OUT_SEED_OFFSET so the reported number is on episodes never seen by model
+    # selection — an unbiased estimate, not the figure the checkpoint was picked on.
+    if held_out_seeds > 0:
+        pp, op = greedy_eval_policies(prod, order, bound)
+        ho = evaluate(
+            pp, op,
+            seeds=range(HELD_OUT_SEED_OFFSET, HELD_OUT_SEED_OFFSET + held_out_seeds),
+            horizon=horizon, config=base_cfg,
+        )
+        log(
+            f"held-out ({held_out_seeds} seeds)  cyc {ho['cycles'][0]:6.1f}  "
+            f"dead {ho['dead_rate'][0]:4.2f}  cons✓ {ho['consumer_completed'][0]:7.1f}  "
+            f"cu✓ {ho['consumer_completed_units'][0]:7.1f}  ret {ho['return'][0]:8.1f}"
+        )
     if save:
-        # Restore the best-on-eval weights before checkpointing (ADR-0011).
-        if best_state is not None:
-            prod.load_state_dict(best_state[0])
-            order.load_state_dict(best_state[1])
-            log(f"best eval: dead {best_key[0]:.2f}  ret {-best_key[1]:.1f}")
-        save_policies(prod, order, bound, save)
+        save_policies(prod, order, bound, save, config=base_cfg)
         log(f"policy -> {save}")
     return history
 
@@ -1030,14 +1325,18 @@ def main() -> None:
     ap.add_argument("--horizon", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--num-envs", type=int, default=4, help="parallel rollout envs (ADR-0005)")
+    ap.add_argument("--config", type=str, default=None, help="env config JSON to train on (default: phase1.json); spec, rollout, and eval all use it")
     ap.add_argument("--no-curriculum", action="store_true", help="train at full real difficulty (disable ADR-0006 curriculum)")
-    ap.add_argument("--d-start", type=float, default=0.2, help="curriculum start difficulty (fraction of real degradation)")
+    ap.add_argument("--d-start", type=float, default=0.0, help="curriculum start progress on the staged ladder (0=stage 1 fixed-qty1; #1-proper)")
     ap.add_argument("--warmup-frac", type=float, default=0.6, help="fraction of run to reach full difficulty (iter floor)")
     ap.add_argument("--gate", action="store_true", help="eval-gated curriculum: advance difficulty on rollout survival (ADR-0009)")
-    ap.add_argument("--advance-below", type=float, default=0.2, help="rollout death-rate to advance the gated curriculum (ADR-0009)")
+    ap.add_argument("--advance-below", type=float, default=0.2, help="max rollout death-rate to advance the gated curriculum (ADR-0009)")
+    ap.add_argument("--advance-fulfil", type=float, default=0.8, help="min rollout consumer fulfillment to advance the gated curriculum (review 2026-06-15)")
+    ap.add_argument("--min-episodes", type=int, default=4, help="min completed rollout episodes before the gated curriculum may advance (evidence floor)")
     ap.add_argument("--d-step", type=float, default=0.1, help="gated curriculum difficulty increment (ADR-0009)")
     ap.add_argument("--eval-every", type=int, default=1, help="eval the greedy policy every N iters (0=off)")
-    ap.add_argument("--eval-seeds", type=int, default=3, help="seeds per greedy eval")
+    ap.add_argument("--eval-seeds", type=int, default=3, help="validation seeds per greedy eval (checkpoint selection)")
+    ap.add_argument("--held-out-seeds", type=int, default=0, help="report the selected checkpoint on this many DISJOINT held-out seeds (#7; 0=off)")
     ap.add_argument("--actor-lr", type=float, default=3e-4, help="initial actor LR (ADR-0008)")
     ap.add_argument("--ent-coef", type=float, default=0.01, help="initial entropy coef (ADR-0008)")
     ap.add_argument("--surv-coef", type=float, default=0.0, help="capacity-floor shaping coef on training reward (ADR-0010)")
@@ -1061,12 +1360,16 @@ def main() -> None:
     args = ap.parse_args()
     curriculum = None if args.no_curriculum else Curriculum(
         d_start=args.d_start, warmup_frac=args.warmup_frac,
-        gate=args.gate, advance_below=args.advance_below, d_step=args.d_step,
+        gate=args.gate, advance_below=args.advance_below,
+        advance_fulfil=args.advance_fulfil, min_episodes=args.min_episodes,
+        d_step=args.d_step,
     )
     train(
         iters=args.iters, steps=args.steps, horizon=args.horizon, seed=args.seed,
-        num_envs=args.num_envs, curriculum=curriculum, eval_every=args.eval_every,
-        eval_seeds=args.eval_seeds, actor_lr=args.actor_lr, ent_coef=args.ent_coef,
+        num_envs=args.num_envs, config=load_config(args.config) if args.config else None,
+        curriculum=curriculum, eval_every=args.eval_every,
+        eval_seeds=args.eval_seeds, held_out_seeds=args.held_out_seeds,
+        actor_lr=args.actor_lr, ent_coef=args.ent_coef,
         surv_coef=args.surv_coef, death_penalty=args.death_penalty,
         low_cap_coef=args.low_cap_coef, low_cap_thresh=args.low_cap_thresh,
         investment_cost=args.investment_cost,

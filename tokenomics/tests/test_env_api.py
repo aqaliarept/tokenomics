@@ -84,11 +84,109 @@ def test_k_slots_cover_worst_case_producer_orders():
         assert n <= sp.k, (aid, n, sp.k)
 
 
+def test_config_fingerprint_is_stable_and_shape_sensitive():
+    # #7: a checkpoint stamps the fingerprint of the config it was trained on, so
+    # evaluating it on a shape-incompatible config can be caught instead of crashing
+    # deep in the actor (the B9 wrong-config gotcha). Same config -> same fingerprint;
+    # a config with different spec dims -> different fingerprint.
+    from tokenomics.domain.config import load_config
+    from tokenomics.env.spaces import config_fingerprint
+
+    cfg = load_config(PHASE1)
+    fp = config_fingerprint(cfg)
+    assert isinstance(fp, str) and fp
+    assert config_fingerprint(load_config(PHASE1)) == fp  # deterministic across loads
+
+    # add a producer -> producer count (and thus obs/global dims) changes -> new fp
+    from dataclasses import replace
+    extra = replace(cfg.producer_configs[0], id="p_extra")
+    wider = replace(cfg, producer_configs=[*cfg.producer_configs, extra])
+    assert config_fingerprint(wider) != fp
+
+
+def test_config_fingerprint_separates_same_shape_different_economy():
+    # [P1 review 2026-06-15]: a shape-only fingerprint collides for configs with
+    # identical IDs/dims but different DYNAMICS, so signal_check reports a valid match
+    # for an off-config comparison. The fingerprint must capture the economy too:
+    #  - competition.json vs complex.json: same topology, different demand distribution
+    #  - random_demand.json vs composite.json: different recipes + capacities
+    from tokenomics.env.spaces import build_spec, config_fingerprint
+
+    fx = Path(__file__).resolve().parent / "fixtures"
+    for a, b in [("competition.json", "complex.json"),
+                 ("random_demand.json", "composite.json")]:
+        ca, cb = load_config(fx / a), load_config(fx / b)
+        sa, sb = build_spec(ca), build_spec(cb)
+        # same tensor shape -> P2's dim check alone would wave these through as "compatible"
+        assert sa.producing_obs_dim == sb.producing_obs_dim
+        assert sa.ordering_obs_dim == sb.ordering_obs_dim
+        # ...but different economy -> fingerprints must differ
+        assert config_fingerprint(ca) != config_fingerprint(cb), f"{a} vs {b} collide"
+    # stability preserved: same economy -> same fingerprint across loads
+    assert config_fingerprint(load_config(fx / "complex.json")) == config_fingerprint(
+        load_config(fx / "complex.json")
+    )
+
+
 def test_global_state_shape():
     e = _env(horizon=10)
     e.reset()
     gs = e.global_state()
     assert gs.shape == (e.spec_.global_state_dim,)
+
+
+def test_producing_obs_exposes_open_consumer_demand():
+    # #2: consumer orders exist before producers act, but the producing obs used to
+    # carry no demand. Producers now see aggregate open consumer demand per product
+    # (quantity then tokens, indexed by order_product_index) just before the
+    # cycle-progress scalar, normalized by inv_ref / token_ref.
+    import pytest
+    from collections import defaultdict
+
+    e = _env(horizon=10)
+    e.reset()
+    sp = e.spec_
+    open_qty: dict[int, float] = defaultdict(float)
+    open_tok: dict[int, float] = defaultdict(float)
+    for o in e.system.orders.values():
+        if o.consumer_request is not None:
+            open_qty[o.product] += o.unresolved_quantity()
+            open_tok[o.product] += o.available_tokens()
+    assert open_qty  # phase1 places a consumer order each cycle
+
+    prod_agent = next(a for a in e.possible_agents if a.startswith("prod_"))
+    obs = e.observe(prod_agent)
+    p = sp.num_order_products
+    qty_block = obs[-(2 * p + 1):-(p + 1)]  # first P of the demand block = quantities
+    tok_block = obs[-(p + 1):-1]            # next P = backing tokens
+    for product, q in open_qty.items():
+        idx = sp.order_product_index[product]
+        assert qty_block[idx] == pytest.approx(q / sp.inv_ref)
+        assert tok_block[idx] == pytest.approx(open_tok[product] / sp.token_ref)
+
+
+def test_global_state_exposes_open_consumer_demand():
+    # #2: the centralized critic (ADR-0004) also needs demand. global_state appends
+    # the same 2P open-consumer-demand block (quantity then tokens) before the
+    # cycle-progress scalar.
+    import pytest
+    from collections import defaultdict
+
+    e = _env(horizon=10)
+    e.reset()
+    sp = e.spec_
+    open_qty: dict[int, float] = defaultdict(float)
+    for o in e.system.orders.values():
+        if o.consumer_request is not None:
+            open_qty[o.product] += o.unresolved_quantity()
+    assert open_qty
+
+    gs = e.global_state()
+    p = sp.num_order_products
+    qty_block = gs[-(2 * p + 1):-(p + 1)]
+    for product, q in open_qty.items():
+        idx = sp.order_product_index[product]
+        assert qty_block[idx] == pytest.approx(q / sp.inv_ref)
 
 
 def test_reward_shape():
@@ -122,6 +220,30 @@ def test_holding_penalty_scales_with_units_held():
     assert r5 == -5 * R_HOLDING_PER_UNIT
     # penalty is linear in units held
     assert (r0 - r5) == (r5 - r10)
+
+
+def test_consumer_reward_scales_with_fulfilled_units():
+    # #3: a qty-3 order consumes ~3x the capacity of a qty-1 order, so it must earn
+    # ~3x the reward. Reward weights consumer UNITS, not order counts. One completed
+    # order of 3 units beats one completed order of 1 unit by 2 per-unit rewards.
+    import pytest
+    from tokenomics.domain.system import CycleResult
+    from tokenomics.env.aec_env import R_CONSUMER_PER_UNIT, cycle_reward
+
+    one = CycleResult(score=0, consumer_completed=1, consumer_completed_units=1)
+    three = CycleResult(score=0, consumer_completed=1, consumer_completed_units=3)
+    assert cycle_reward(three, 0) - cycle_reward(one, 0) == pytest.approx(2 * R_CONSUMER_PER_UNIT)
+
+
+def test_consumer_rejection_penalty_scales_with_units():
+    # #3: rejecting a qty-3 order wastes ~3x the demand of a qty-1 rejection.
+    import pytest
+    from tokenomics.domain.system import CycleResult
+    from tokenomics.env.aec_env import R_CONSUMER_REJECTED_PER_UNIT, cycle_reward
+
+    one = CycleResult(score=0, consumer_rejected=1, consumer_rejected_units=1)
+    three = CycleResult(score=0, consumer_rejected=1, consumer_rejected_units=3)
+    assert cycle_reward(three, 0) - cycle_reward(one, 0) == pytest.approx(2 * R_CONSUMER_REJECTED_PER_UNIT)
 
 
 def test_holding_penalty_independent_of_completions():
@@ -224,6 +346,19 @@ def test_fixed_nondefault_quantity_is_honored():
     c = _fixed_consumer_env(dict(product=1, quantity_min=2, quantity_max=2)).system.consumers["c1"]
     assert isinstance(c, ScheduledConsumer)
     assert c._schedule == [(1, 2)]
+
+
+def test_episode_tracks_consumer_units_distinct_from_orders():
+    # #3: metrics must record consumer UNITS, not just order counts. With every
+    # consumer order at quantity 2, delivered units = 2x completed orders — so a
+    # randomized-demand suite can no longer hide large orders behind an order count.
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.runner import run_episode
+
+    env = _fixed_consumer_env(dict(product=1, quantity_min=2, quantity_max=2))
+    s = run_episode(env, PRODUCING_BASELINES["always_restore"], ORDERING_BASELINES["proportional"], seed=0)
+    assert s["consumer_completed"] > 0
+    assert s["consumer_completed_units"] == 2 * s["consumer_completed"]
 
 
 def test_singleton_pool_ignores_unrelated_default_product():

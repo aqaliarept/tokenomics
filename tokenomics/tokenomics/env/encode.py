@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..domain.common import is_nan
+from ..domain.common import Product, Tokens, is_nan
 from ..domain.order import OrderInfo
 from ..domain.producing_agent import ProducerInfo, ProducingAgentView
 from .spaces import OBS_CLIP, EnvSpec
@@ -37,10 +37,27 @@ def _producer_prices(spec: EnvSpec, producer_infos: dict[str, ProducerInfo]) -> 
     return [_price(spec, producer_infos[pid].cut_off_price) for pid in spec.producer_ids]
 
 
+def _open_demand_features(
+    spec: EnvSpec, open_demand: dict[Product, tuple[int, Tokens]]
+) -> list[float]:
+    """Aggregate open consumer demand per orderable product (#2). First P features
+    = normalized unresolved quantity, next P = normalized backing tokens, indexed by
+    spec.order_product_index. Consumer orders exist before producers act, so this
+    lets a producer anticipate what to make instead of inferring it from prices."""
+    qty = [0.0] * spec.num_order_products
+    tok = [0.0] * spec.num_order_products
+    for product, (q, t) in open_demand.items():
+        i = spec.order_product_index[product]
+        qty[i] = q / spec.inv_ref
+        tok[i] = t / spec.token_ref
+    return qty + tok
+
+
 def encode_producing(
     spec: EnvSpec,
     view: ProducingAgentView,
     producer_infos: dict[str, ProducerInfo],
+    open_demand: dict[Product, tuple[int, Tokens]],
     cycle_progress: float,
 ) -> np.ndarray:
     feats: list[float] = []
@@ -58,6 +75,7 @@ def encode_producing(
     feats.append(view.inventory_limit / spec.inv_ref)
     feats.append(max(0, view.headroom) / spec.inv_ref)
     feats.extend(_producer_summary(spec, producer_infos))
+    feats.extend(_open_demand_features(spec, open_demand))
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
 
@@ -92,6 +110,7 @@ def encode_global(
     spec: EnvSpec,
     views: dict[str, ProducingAgentView],
     producer_infos: dict[str, ProducerInfo],
+    open_demand: dict[Product, tuple[int, Tokens]],
     cycle_progress: float,
 ) -> np.ndarray:
     """Centralized-critic global state (ADR-0004): every producer's rolled-up
@@ -104,5 +123,6 @@ def encode_global(
         feats.append(v.requested_capacity / spec.cap_ref)
         feats.append(v.inventory_units / spec.inv_ref)
         feats.append(_price(spec, producer_infos[pid].cut_off_price))
+    feats.extend(_open_demand_features(spec, open_demand))
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)

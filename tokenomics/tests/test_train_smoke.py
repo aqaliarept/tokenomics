@@ -11,6 +11,21 @@ import pytest
 pytest.importorskip("torch")
 
 
+def test_explained_variance_diagnostic():
+    """#6 diagnostic: explained variance = 1 - Var(y-pred)/Var(y). A perfect critic
+    scores 1.0; predicting the mean scores 0.0; an anti-correlated critic goes
+    negative. Degenerate (zero-variance returns) is defined as 0.0, not a div-by-zero."""
+    import numpy as np
+
+    from tokenomics.train.smoke_ppo import explained_variance
+
+    y = np.array([1.0, 2.0, 3.0, 4.0])
+    assert explained_variance(y, y) == pytest.approx(1.0)              # perfect fit
+    assert explained_variance(y, np.full_like(y, y.mean())) == pytest.approx(0.0)  # mean baseline
+    assert explained_variance(y, -y) < 0.0                            # worse than the mean
+    assert explained_variance(np.ones(4), np.ones(4)) == pytest.approx(0.0)  # zero-variance target
+
+
 def test_train_runs_two_iters():
     from tokenomics.train.smoke_ppo import IterStats, train
 
@@ -22,6 +37,29 @@ def test_train_runs_two_iters():
     # optimization signals always present
     assert all(isinstance(r.mean_step_reward, float) for r in history)
     # greedy-eval task metrics populated (not the skipped-iter NaN)
+    assert all(not math.isnan(r.eval_cycles) for r in history)
+    assert all(r.eval_cycles > 0 for r in history)
+
+
+def test_train_accepts_config_and_evals_on_it():
+    """B9 plumbing: train(config=...) runs on a non-phase1 suite end-to-end.
+    competition.json has 5 producers vs phase1's 4, so the actor input layer is
+    wider than the phase1 spec. The internal greedy-eval must score on the SAME
+    config (not the phase1 default), else it crashes on a shape mismatch — this
+    pins that the spec, rollout, and eval all derive from the passed config."""
+    from pathlib import Path
+
+    from tokenomics.domain import load_config
+    from tokenomics.train.smoke_ppo import IterStats, train
+
+    cfg = load_config(Path(__file__).parent / "fixtures" / "competition.json")
+    history = train(
+        iters=2, steps=128, horizon=40, seed=0, eval_seeds=2, config=cfg,
+        log=lambda *a, **k: None,
+    )
+    assert len(history) == 2
+    assert all(isinstance(r, IterStats) for r in history)
+    # greedy-eval ran on the competition spec (would have raised on a dim mismatch)
     assert all(not math.isnan(r.eval_cycles) for r in history)
     assert all(r.eval_cycles > 0 for r in history)
 
@@ -112,8 +150,8 @@ def test_vectorized_collect_fills_both_buffers():
     critic = CentralCritic(critic_input_dim(e))
     bound = float(e.action_space(e._order_agents[0]).high[0])
 
-    pbuf, obuf, death_rate = collect(envs, prod, order, critic, steps=200, bound=bound,
-                                     rng=np.random.default_rng(0))
+    pbuf, obuf, roll = collect(envs, prod, order, critic, steps=200, bound=bound,
+                               rng=np.random.default_rng(0))
 
     # ~200 decisions collected; drop_pending removes the open frontier (<=12 envs*
     # role agents), so the kept count is a bit under the budget (ADR-0017).
@@ -121,8 +159,11 @@ def test_vectorized_collect_fills_both_buffers():
     assert pbuf.obs and obuf.obs
     # global state width matches the centralized-critic input
     assert len(pbuf.glob[0]) == critic_input_dim(e)
-    # rollout survival signal for the gated curriculum (ADR-0009) is a rate
-    assert math.isnan(death_rate) or 0.0 <= death_rate <= 1.0
+    # rollout survival + fulfillment signals for the gated curriculum (ADR-0009,
+    # review 2026-06-15) are rates; episodes is a non-negative evidence count
+    assert math.isnan(roll.death_rate) or 0.0 <= roll.death_rate <= 1.0
+    assert math.isnan(roll.fulfillment) or 0.0 <= roll.fulfillment <= 1.0
+    assert roll.episodes >= 0
     # ADR-0017 invariants: no open transitions survive, fields stay aligned,
     # every link points forward to a valid in-buffer row (or -1).
     for buf in (pbuf, obuf):
@@ -265,6 +306,71 @@ def test_checkpoint_roundtrips_and_rejects_stale_version(tmp_path):
         load_policies(str(path))
 
 
+def test_checkpoint_stamps_and_reads_config_fingerprint(tmp_path):
+    """#7: a checkpoint saved with a config carries that config's fingerprint, and
+    `checkpoint_fingerprint` reads it back — so an eval can detect a wrong-config
+    policy. A checkpoint saved without a config reports None (back-compat)."""
+    from tokenomics.domain import load_config
+    from tokenomics.env.aec_env import DEFAULT_CONFIG
+    from tokenomics.env.spaces import config_fingerprint
+    from tokenomics.train.smoke_ppo import (
+        GaussianActor,
+        checkpoint_fingerprint,
+        save_policies,
+    )
+
+    cfg = load_config(DEFAULT_CONFIG)
+    prod = GaussianActor(obs_dim=8, act_dim=5)
+    order = GaussianActor(obs_dim=6, act_dim=12)
+
+    stamped = tmp_path / "stamped.pt"
+    save_policies(prod, order, bound=10.0, path=str(stamped), config=cfg)
+    assert checkpoint_fingerprint(str(stamped)) == config_fingerprint(cfg)
+
+    plain = tmp_path / "plain.pt"
+    save_policies(prod, order, bound=10.0, path=str(plain))
+    assert checkpoint_fingerprint(str(plain)) is None
+
+
+def test_signal_check_skips_shape_incompatible_trained_row(tmp_path, capsys, monkeypatch):
+    """[P2 review 2026-06-15]: scoring a checkpoint on a config whose observation dims
+    differ must NOT crash the actor on a matrix-shape RuntimeError. signal_check
+    compares the checkpoint's stored actor dims against the eval spec and SKIPS the
+    trained row (with a message) when they are incompatible — only same-shape transfer
+    tests proceed."""
+    import sys
+    from pathlib import Path
+
+    from tokenomics.domain import load_config
+    from tokenomics.env.aec_env import DEFAULT_CONFIG
+    from tokenomics.env.spaces import build_spec
+    from tokenomics.eval import signal_check
+    from tokenomics.train.smoke_ppo import GaussianActor, save_policies
+
+    # actors sized to phase1's real spec -> a same-config eval would run fine.
+    cfg = load_config(DEFAULT_CONFIG)
+    sp = build_spec(cfg)
+    prod = GaussianActor(obs_dim=sp.producing_obs_dim, act_dim=sp.producing_action_dim)
+    order = GaussianActor(obs_dim=sp.ordering_obs_dim, act_dim=sp.ordering_action_dim)
+    ckpt = tmp_path / "phase1.pt"
+    save_policies(prod, order, bound=10.0, path=str(ckpt), config=cfg)
+
+    # complex.json has 5 producers (vs phase1's 4) -> different producing obs dim.
+    complex_cfg = Path(__file__).parent / "fixtures" / "complex.json"
+    monkeypatch.setattr(sys, "argv", [
+        "signal_check", "--config", str(complex_cfg),
+        "--policy", str(ckpt), "--seeds", "1", "--horizon", "5",
+    ])
+    signal_check.main()  # must not raise (was: matrix-shape RuntimeError)
+    out = capsys.readouterr().out.lower()
+    assert "skip trained(mappo)" in out  # row skipped with a message
+    assert "incompatible" in out
+    # the trained *data* row never ran: no trained metrics line (would end in capmin)
+    assert not any(
+        line.strip().startswith("trained(mappo)") for line in out.splitlines()
+    )
+
+
 def test_validated_stability_controls_are_training_defaults():
     from inspect import signature
 
@@ -314,7 +420,7 @@ def test_target_kl_stops_before_an_out_of_region_actor_step():
     before = [p.detach().clone() for p in actor.parameters()]
     opt = torch.optim.Adam(actor.parameters(), lr=3e-4)
 
-    loss = actor_update(
+    stats = actor_update(
         actor,
         buf,
         np.array([-1.0, -0.5, 0.5, 1.0], dtype=np.float32),
@@ -323,7 +429,7 @@ def test_target_kl_stops_before_an_out_of_region_actor_step():
         target_kl=0.008,
     )
 
-    assert loss == 0.0
+    assert stats.loss == 0.0  # early-stopped before any optimizer step
     assert all(torch.equal(old, new) for old, new in zip(before, actor.parameters()))
 
 
@@ -396,25 +502,182 @@ def test_investment_cost_skips_toggles_decode_does_not_execute():
     assert investment_request_cost(cmd, 1.0) == 1.0
 
 
-def test_curriculum_gate_holds_until_survival():
-    """ADR-0009: gated curriculum holds difficulty until the rollout survives
-    (death_rate <= advance_below), then steps up; ungated ignores observe()."""
-    from tokenomics.train.smoke_ppo import Curriculum
+def test_curriculum_gate_advances_only_on_evidence():
+    """ADR-0009 + review 2026-06-15: the gated curriculum advances one step only on
+    *accumulated* evidence — >= min_episodes rollouts AND both survival
+    (death <= advance_below) and fulfillment (>= advance_fulfil). Evidence piles up
+    across iterations (one eased rollout rarely completes the floor); survival with
+    no fulfillment, or too-high death, hold (the old survival-only/one-episode gate
+    let difficulty outrun the policy)."""
+    from tokenomics.train.smoke_ppo import Curriculum, RolloutStats
 
-    cur = Curriculum(d_start=0.2, gate=True, advance_below=0.2, d_step=0.1)
+    # accumulation + advance: two sub-floor rollouts cross min_episodes together
+    cur = Curriculum(
+        d_start=0.2, gate=True, advance_below=0.2, advance_fulfil=0.8,
+        min_episodes=4, d_step=0.1,
+    )
     assert cur.level(0, 100) == pytest.approx(0.2)
-    assert cur.level(99, 100) == pytest.approx(0.2)
-    cur.observe(1.0)  # all died -> hold
+    cur.observe(RolloutStats(episodes=2, deaths=0, completed=10, rejected=0))  # 2 < 4 -> hold
     assert cur.level(0, 100) == pytest.approx(0.2)
-    cur.observe(float("nan"))  # no completed episode -> hold
-    assert cur.level(0, 100) == pytest.approx(0.2)
-    cur.observe(0.0)  # survived -> advance one step
+    cur.observe(RolloutStats(episodes=2, deaths=0, completed=10, rejected=0))  # 4 total, clean -> advance
     assert cur.level(0, 100) == pytest.approx(0.3)
+
+    # enough episodes but all died -> hold
+    died = Curriculum(d_start=0.2, gate=True, advance_below=0.2, advance_fulfil=0.8, min_episodes=4)
+    died.observe(RolloutStats(episodes=8, deaths=8, completed=10, rejected=0))
+    assert died.level(0, 100) == pytest.approx(0.2)
+
+    # enough episodes, survived, but fulfillment below the bar -> hold
+    unfilled = Curriculum(d_start=0.2, gate=True, advance_below=0.2, advance_fulfil=0.8, min_episodes=4)
+    unfilled.observe(RolloutStats(episodes=8, deaths=0, completed=3, rejected=7))
+    assert unfilled.level(0, 100) == pytest.approx(0.2)
 
     # ungated curriculum: observe() is a no-op, level == iter schedule
     plain = Curriculum(d_start=0.2, warmup_frac=0.6)
-    plain.observe(0.0)
+    plain.observe(RolloutStats(episodes=8, deaths=0, completed=10, rejected=0))
     assert plain.level(0, 10) == pytest.approx(0.2)
+
+
+def test_curriculum_gate_reads_consumer_units_not_order_counts():
+    """#3 follow-up (review 2026-06-15): under variable quantity the order-count
+    fulfillment can clear `advance_fulfil` while most demanded UNITS go unmet, so the
+    gate would advance difficulty against the quantity-weighted objective. The gate
+    must read consumer *units*. Example: 4 completed qty-1 orders + 1 rejected qty-3
+    order = 4/5 = 80% orders (would pass) but 4/7 = 57% units (must hold)."""
+    from tokenomics.train.smoke_ppo import Curriculum, RolloutStats
+
+    cur = Curriculum(
+        d_start=0.2, gate=True, advance_below=0.2, advance_fulfil=0.8, min_episodes=4,
+    )
+    cur.observe(RolloutStats(
+        episodes=5, deaths=0, completed=4, rejected=1,
+        completed_units=4, rejected_units=3,
+    ))
+    assert cur.level(0, 100) == pytest.approx(0.2)  # 57% units < 80% -> hold
+
+    # same order counts, but the rejected order was qty-1 too: 4/7? no — units 4/5=80% -> advance
+    ok = Curriculum(
+        d_start=0.2, gate=True, advance_below=0.2, advance_fulfil=0.8, min_episodes=4,
+    )
+    ok.observe(RolloutStats(
+        episodes=5, deaths=0, completed=4, rejected=1,
+        completed_units=8, rejected_units=2,
+    ))
+    assert ok.level(0, 100) == pytest.approx(0.3)  # 80% units -> advance
+
+
+def test_curriculum_scales_demand_variance():
+    """Review 2026-06-15: the demand axis eases consumer variance by difficulty —
+    quantity range shrinks to quantity_min and a multi-product pool collapses to
+    the single primary product below MIXTURE_AT; d=1.0 restores the real demand.
+    Dims are unchanged, so it composes with scale_degradation under one scalar."""
+    from tokenomics.domain.config import Configuration, ConsumerConfig
+    from tokenomics.train.smoke_ppo import scale_demand
+
+    c = ConsumerConfig(id="c1", product=30, products=(20, 30), quantity_min=1, quantity_max=3)
+    cfg = Configuration(cycle_emission=1000, process_sheets=[], producer_configs=[], consumers=[c])
+
+    easy = scale_demand(cfg, 0.0).consumers[0]
+    assert easy.quantity_max == 1                 # range collapses to quantity_min
+    assert easy.product_pool == (30,)             # mixture off -> single primary product
+    mid = scale_demand(cfg, 0.5).consumers[0]
+    assert mid.quantity_max == 2                   # 1 + round(2*0.5)
+    assert mid.product_pool == (20, 30)            # mixture on at MIXTURE_AT
+    real = scale_demand(cfg, 1.0).consumers[0]
+    assert real.quantity_max == 3 and real.products == (20, 30)
+    # base untouched (frozen + replace -> new object)
+    assert cfg.consumers[0].quantity_max == 3
+
+
+def test_competition_axis_boosts_weak_producer_to_viable_then_restores():
+    """#1-proper: the competition axis trains routing among *viable* producers first.
+    At d=0 a producer whose owned capacity is below its declared product's recipe
+    requirement is boosted up to that requirement (made viable); at d=1 the real
+    (weak) capacity is restored, so routing must cope with a near-dead competitor."""
+    from tokenomics.domain.config import (
+        Configuration,
+        ProcessSheet,
+        ProducingAgentConfig,
+        Restoration,
+        Upgrade,
+    )
+    from tokenomics.train.smoke_ppo import scale_competition
+
+    ps = ProcessSheet(10, {"capacity-1": 2})  # 2 units of capacity-1 per product unit
+    mk = lambda pid, cap: ProducingAgentConfig(  # noqa: E731
+        pid, {"capacity-1": cap}, 1,
+        Restoration(99, 4, "capacity-1"), Upgrade(99, 4, "capacity-1"),
+        produces=frozenset({10}),
+    )
+    cfg = Configuration(
+        cycle_emission=1000, process_sheets=[ps],
+        producer_configs=[mk("p_strong", 8), mk("p_weak", 1)], consumers=[],
+    )
+
+    eased = {p.id: p for p in scale_competition(cfg, 0.0).producer_configs}
+    assert eased["p_weak"].capacities["capacity-1"] == 2   # 1 -> 2 (recipe requirement): viable
+    assert eased["p_strong"].capacities["capacity-1"] == 8  # already viable, untouched
+    mid = {p.id: p for p in scale_competition(cfg, 0.5).producer_configs}
+    assert mid["p_weak"].capacities["capacity-1"] == 2      # 1 + round((2-1)*0.5)=2 (rounds up)
+    real = {p.id: p for p in scale_competition(cfg, 1.0).producer_configs}
+    assert real["p_weak"].capacities["capacity-1"] == 1     # real weak capacity restored
+    assert cfg.producer_configs[1].capacities["capacity-1"] == 1  # base untouched
+
+
+def test_staged_config_ramps_axes_sequentially():
+    """#1-proper: the curriculum ramps ONE axis at a time (fixed qty1 -> variable
+    qty -> product mixture -> competition -> full degradation), not all together.
+    A given progress p activates only the axes up to its stage; later axes stay
+    fully eased until their stage. p=0 is the easiest config, p=1 is the real one."""
+    from tokenomics.domain.config import (
+        Configuration,
+        ConsumerConfig,
+        ProcessSheet,
+        ProducingAgentConfig,
+        Restoration,
+        Upgrade,
+    )
+    from tokenomics.train.smoke_ppo import staged_config
+
+    ps = ProcessSheet(20, {"capacity-3": 2})
+    weak = ProducingAgentConfig(
+        "p_weak", {"capacity-3": 1}, 10,
+        Restoration(99, 4, "capacity-3"), Upgrade(99, 4, "capacity-3"),
+        produces=frozenset({20}),
+    )
+    con = ConsumerConfig(id="c1", product=30, products=(20, 30), quantity_min=1, quantity_max=3)
+    base = Configuration(
+        cycle_emission=1000, process_sheets=[ps], producer_configs=[weak], consumers=[con]
+    )
+
+    def at(p: float):
+        cfg = staged_config(base, p)
+        return cfg.consumers[0], cfg.producer_configs[0]
+
+    # stage 1 (p=0): everything eased — fixed qty1, single product, viable, no decay
+    c0, p0 = at(0.0)
+    assert c0.quantity_max == 1 and c0.product_pool == (30,)
+    assert p0.capacities["capacity-3"] == 2 and p0.degradation == 0
+
+    # stage 2 (qty ramp): quantity grows; mixture/competition/degradation still off
+    c1, p1 = at(0.1)
+    assert c1.quantity_max > 1 and c1.product_pool == (30,)
+    assert p1.capacities["capacity-3"] == 2 and p1.degradation == 0
+
+    # stage 4 (competition): qty full + mixture on, competition tightening, no decay yet
+    c3, p3 = at(0.6)
+    assert c3.quantity_max == 3 and c3.product_pool == (20, 30)
+    assert p3.degradation == 0
+    assert 1 <= p3.capacities["capacity-3"] <= 2
+
+    # stage 5 (degradation): the last axis finally ramps
+    _, p4 = at(0.9)
+    assert p4.degradation > 0
+
+    # p=1 is the real config
+    c5, p5 = at(1.0)
+    assert c5.quantity_max == 3 and c5.product_pool == (20, 30)
+    assert p5.capacities["capacity-3"] == 1 and p5.degradation == 10
 
 
 def test_curriculum_ramps_and_scales_degradation():
@@ -779,9 +1042,9 @@ def test_all_zero_mask_skips_update_entirely():
     step_before = opt.state[actor.log_std]["step"].clone()
 
     zero = np.zeros((n, 3), dtype=np.float32)
-    loss = actor_update(actor, _buf(zero), adv, opt, is_discrete=False, epochs=4)
+    stats = actor_update(actor, _buf(zero), adv, opt, is_discrete=False, epochs=4)
 
-    assert loss == 0.0
+    assert stats.loss == 0.0  # all-masked rows -> no update at all
     assert torch.equal(trunk.detach(), trunk_before)          # trunk did not drift
     assert torch.equal(actor.actor(torch.as_tensor(obs)).detach(), out_before)  # output fixed
     assert opt.state[actor.log_std]["step"] == step_before     # Adam step not advanced

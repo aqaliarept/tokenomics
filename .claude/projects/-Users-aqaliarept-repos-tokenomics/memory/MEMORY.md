@@ -1,1 +1,1 @@
-- [User profile](user_profile.md) — new to RL, deep economic domain knowledge, collaborator Sergey does RL training
+- [User profile](user_profile.md) — new to RL, deep economic domain knowledge

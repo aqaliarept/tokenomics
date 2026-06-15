@@ -5,7 +5,8 @@ own the same type, so the old one-producer-per-type assumption is gone. Spaces a
 derived from the config so they scale with the economy:
 
   producing obs = 2T (per-type cap+max) + 1 (requested) + 3 (invest-running flags)
-                  + G (per-input stock) + 3 (inv units/limit/headroom) + 2P + 1
+                  + G (per-input stock) + 3 (inv units/limit/headroom) + 2P
+                  + 2*Q (open consumer demand: quantity + tokens per product, #2) + 1
   ordering  obs = K*3 (order slots: active, tokens, quantity — NO capacity, ADR-0029)
                   + P (producer cut-off prices) + 1 (cycle progress)
   producing action = Box(G + 3)  -> G replenish quantities + 3 investment toggles
@@ -19,7 +20,9 @@ product vocabulary (sorted union over all composite recipes).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import asdict, dataclass
 
 import numpy as np
 from gymnasium import spaces
@@ -80,7 +83,12 @@ class EnvSpec:
 
     @property
     def producing_obs_dim(self) -> int:
-        return 2 * self.num_types + 1 + 3 + self.num_inputs + 3 + 2 * self.num_producers + 1
+        # ... + 2P (per-producer summary) + 2*num_order_products (open consumer
+        # demand: quantity + tokens per product, #2) + 1 (cycle progress).
+        return (
+            2 * self.num_types + 1 + 3 + self.num_inputs + 3
+            + 2 * self.num_producers + 2 * self.num_order_products + 1
+        )
 
     @property
     def ordering_obs_dim(self) -> int:
@@ -100,8 +108,9 @@ class EnvSpec:
     @property
     def global_state_dim(self) -> int:
         # Centralized-critic input (ADR-0004): per-producer rolled-up state
-        # (total cap, max total, requested, inventory units, cut-off) + progress.
-        return 5 * self.num_producers + 1
+        # (total cap, max total, requested, inventory units, cut-off) + open
+        # consumer demand (quantity + tokens per product, #2) + progress.
+        return 5 * self.num_producers + 2 * self.num_order_products + 1
 
     def producing_obs_space(self) -> spaces.Box:
         return spaces.Box(0.0, OBS_CLIP, shape=(self.producing_obs_dim,), dtype=np.float32)
@@ -118,6 +127,48 @@ class EnvSpec:
         return spaces.Box(
             -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND, shape=(self.ordering_action_dim,), dtype=np.float32
         )
+
+
+def _canonical_economy(config: Configuration) -> str:
+    """Deterministic JSON of every *economy-determining* field of a config — recipes,
+    capacities, degradation, investment/replenish costs, emission, and consumer demand
+    distribution. `dataclasses.asdict` recurses the frozen config; `sort_keys` + a
+    frozenset->sorted-list default make it order-independent and stable across loads."""
+    return json.dumps(
+        asdict(config),
+        sort_keys=True,
+        default=lambda o: sorted(o) if isinstance(o, (set, frozenset)) else repr(o),
+    )
+
+
+def config_fingerprint(config: Configuration) -> str:
+    """Stable short hash identifying a config's *economy* (review P1, #7).
+
+    Stamped into a checkpoint at save time so an eval can detect it is scoring a policy
+    on a different economy. Covers two things: (1) the shape-determining structure
+    (producer ids, capacity types, product vocabularies, derived dims) so a dim change
+    is caught, AND (2) the full economic content (recipes, capacities, degradation,
+    costs, emission, consumer demand distribution) so configs that share *shape* but
+    differ in *dynamics* — e.g. competition.json vs complex.json (fixed vs randomized
+    demand), random_demand.json vs composite.json (different recipes) — no longer
+    collide and get silently reported as a valid match (the P1 review defect).
+    Two configs with identical fingerprints are interchangeable as a trained-policy
+    comparison; a mismatch is at best a transfer test, at worst an off-config eval."""
+    sp = build_spec(config)
+    canonical = repr((
+        sorted(sp.producer_ids),
+        sorted(sp.capacity_types),
+        sorted(sp.order_products),
+        sorted(sp.input_products),
+        sp.producing_obs_dim,
+        sp.ordering_obs_dim,
+        sp.global_state_dim,
+        sp.producing_action_dim,
+        sp.ordering_action_dim,
+        sp.k,
+        _canonical_economy(config),  # P1: same shape, different economy -> different fp
+    ))
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
 def build_spec(config: Configuration) -> EnvSpec:

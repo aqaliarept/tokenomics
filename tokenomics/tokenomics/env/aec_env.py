@@ -34,10 +34,14 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "phase1.json"
 # Consumer fulfilment is the terminal objective; investment is instrumental
 # (keep capacity alive) so it earns only a small positive — the critic learns
 # its indirect value. Rejections are penalized; in-progress is a mild drag.
-R_CONSUMER_COMPLETED = 10.0
+# Consumer terms are weighted by fulfilled/unmet UNITS, not order counts (#3): a
+# qty-3 order consumes ~3x the capacity of a qty-1 order, so it earns ~3x. At qty=1
+# (phase1) this is identical to the old per-order weights.
+R_CONSUMER_PER_UNIT = 10.0
+R_CONSUMER_REJECTED_PER_UNIT = -5.0
 R_INVESTMENT_COMPLETED = 1.0  # instrumental: restoration/upgrade/replenishment
 R_IN_PROGRESS = -1.0
-R_REJECTED = -5.0
+R_REJECTED = -5.0  # per producer-order (investment/replenishment) rejection
 # Inventory holding penalty (ADR-0025 B6): a flat per-unit-per-cycle training cost
 # applied in the env (not the domain) — the over-stocking counter-pressure to the
 # under-stocking that blocks capacity. Tokens carry no value, so this lives here.
@@ -45,15 +49,19 @@ R_HOLDING_PER_UNIT = 0.1
 
 
 def cycle_reward(result: CycleResult, held: int) -> float:
-    """Shared per-cycle training reward (ADR-0002/0025). Consumer fulfilment is
-    the objective (+10); restoration/upgrade/replenishment are instrumental (+1);
-    in-progress is a mild drag (−1); rejections are penalised (−5); and a flat
-    per-unit inventory holding penalty discourages over-stocking (B6)."""
+    """Shared per-cycle training reward (ADR-0002/0025, #3). Consumer fulfilment is
+    the objective, weighted by delivered UNITS (+10/unit); restoration/upgrade/
+    replenishment are instrumental (+1/order); in-progress is a mild drag (−1/order);
+    consumer rejections are penalised by unmet units (−5/unit), producer-order
+    rejections per order (−5); and a flat per-unit inventory holding penalty
+    discourages over-stocking (B6)."""
+    producer_rejected = result.investment_rejected + result.replenishment_rejected
     return (
-        R_CONSUMER_COMPLETED * result.consumer_completed
+        R_CONSUMER_PER_UNIT * result.consumer_completed_units
         + R_INVESTMENT_COMPLETED * (result.investment_completed + result.replenishment_completed)
         + R_IN_PROGRESS * result.in_progress
-        + R_REJECTED * result.rejected
+        + R_CONSUMER_REJECTED_PER_UNIT * result.consumer_rejected_units
+        + R_REJECTED * producer_rejected
         - R_HOLDING_PER_UNIT * held
     )
 
@@ -145,9 +153,11 @@ class TokenomicsAECEnv(AECEnv):
             "cycles": 0,
             "dead": False,
             "consumer_completed": 0,
+            "consumer_completed_units": 0,  # #3: delivered consumer units
             "investment_completed": 0,
             "replenishment_completed": 0,
             "consumer_rejected": 0,
+            "consumer_rejected_units": 0,  # #3: unmet consumer units
             "investment_rejected": 0,
             "replenishment_rejected": 0,
             "in_progress": 0,
@@ -160,9 +170,11 @@ class TokenomicsAECEnv(AECEnv):
     def _accumulate_episode_stats(self, result: CycleResult, reward: float, held: int) -> None:
         s = self.episode_stats
         s["consumer_completed"] += result.consumer_completed
+        s["consumer_completed_units"] += result.consumer_completed_units
         s["investment_completed"] += result.investment_completed
         s["replenishment_completed"] += result.replenishment_completed
         s["consumer_rejected"] += result.consumer_rejected
+        s["consumer_rejected_units"] += result.consumer_rejected_units
         s["investment_rejected"] += result.investment_rejected
         s["replenishment_rejected"] += result.replenishment_rejected
         s["in_progress"] += result.in_progress
@@ -175,13 +187,25 @@ class TokenomicsAECEnv(AECEnv):
     def _producer_infos(self) -> dict[str, ProducerInfo]:
         return {pid: p.info() for pid, p in self.system.producing_agents.items()}
 
+    def _open_consumer_demand(self) -> dict[int, tuple[int, int]]:
+        """Aggregate open consumer orders by product -> (unresolved qty, available
+        tokens) (#2). Consumer orders are placed before producers act, so this is a
+        real demand signal at observation time, not hidden state."""
+        demand: dict[int, tuple[int, int]] = {}
+        for o in self.system.orders.values():
+            if o.consumer_request is None:
+                continue
+            q, t = demand.get(o.product, (0, 0))
+            demand[o.product] = (q + o.unresolved_quantity(), t + o.available_tokens())
+        return demand
+
     def observe(self, agent: str) -> np.ndarray:
         role, did = self._role[agent]
         cp = min(1.0, self.current_cycle / self.horizon)
         infos = self._producer_infos()
         if role == "prod":
             view = self.system.producing_agents[did].view()
-            return encode_producing(self.spec_, view, infos, cp)
+            return encode_producing(self.spec_, view, infos, self._open_consumer_demand(), cp)
         incoming = self.system.ordering_agents[did].incoming
         return encode_ordering(self.spec_, incoming, infos, cp)
 
@@ -190,7 +214,7 @@ class TokenomicsAECEnv(AECEnv):
         all agents. Independent of whose turn it is."""
         cp = min(1.0, self.current_cycle / self.horizon)
         views = {pid: p.view() for pid, p in self.system.producing_agents.items()}
-        return encode_global(self.spec_, views, self._producer_infos(), cp)
+        return encode_global(self.spec_, views, self._producer_infos(), self._open_consumer_demand(), cp)
 
     def step(self, action: Action) -> None:
         agent = self.agent_selection
