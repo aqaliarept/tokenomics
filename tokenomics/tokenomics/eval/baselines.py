@@ -57,10 +57,14 @@ def decide_producing_obs(
     # inventory section of the obs (denormalized by inv_ref) and mapping the wanted
     # quantity back to its raw value (raw/BOUND*max_r -> qty, mirrors decode).
     inv_start = 2 * t + 4  # after caps(2T), requested(1), 3 invest-running flags
+    inbound_start = inv_start + spec.num_inputs  # in-flight replenishment (ADR-0041)
     max_r = max(1, spec.max_replenish[pid])
     for prod in spec.producer_inputs[pid]:
         gi = spec.input_index[prod]
-        have = obs[inv_start + gi] * spec.inv_ref
+        # count in-flight inbound so we do not re-order stock already on the way —
+        # mirrors the white-box `producing_stock_aware`; without it a deep pipeline
+        # never primes (Finding A).
+        have = (obs[inv_start + gi] + obs[inbound_start + gi]) * spec.inv_ref
         want = stock_target - have
         if want > 0:
             act[gi] = min(1.0, want / max_r) * ACTION_LOGIT_BOUND

@@ -132,3 +132,30 @@ def test_combined_config_identity_when_no_axis_changed():
     # defaults = neutral on every axis -> an equivalent config (no accidental drift)
     same = combined_config(base)
     assert same == base
+
+
+def test_random_domain_config_is_dims_preserving_and_reproducible():
+    # Domain-randomized training (NEXT STEPS step-3 fix): each training iter draws a
+    # config from a DISTRIBUTION of operating points (the consolidated fix the stage
+    # 2-4 overfit findings all pointed to), so the policy can't memorize one point.
+    # Each draw must keep obs/action dims (one net spans the suite) and be reproducible.
+    from pathlib import Path
+    import numpy as np
+    from tokenomics.eval.generalization import random_domain_config
+
+    base = load_config(Path(__file__).parent / "fixtures" / "competition.json")
+    ranges = dict(degradation_range=(1.0, 1.5), quantity_choices=(1, 2, 3),
+                  capacity_range=(0.7, 1.0), cost_range=(1.0, 1.5))
+
+    draws = [random_domain_config(base, np.random.default_rng(7), **ranges) for _ in range(2)]
+    assert draws[0] == draws[1]                       # same rng seed -> identical config
+    draws[0].validate()
+    assert _dims(draws[0]) == _dims(base)             # dims fixed across the distribution
+
+    # over many seeds the configs actually vary (not collapsed to the base)
+    seen = {id(None)}
+    variants = {
+        random_domain_config(base, np.random.default_rng(s), **ranges).producer_configs[0].degradation
+        for s in range(20)
+    }
+    assert len(variants) >= 2

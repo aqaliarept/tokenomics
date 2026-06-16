@@ -126,6 +126,10 @@ class ProducingAgentView:
     headroom: int
     inventory_expansion_running: bool
     has_inventory_expansion: bool
+    # units ordered but not yet delivered, per input product (ADR-0041): the obs
+    # signal a policy needs to avoid re-ordering in-flight stock when priming a
+    # multi-hop pipeline. Defaulted so existing view constructors stay valid.
+    outstanding_inbound: dict[Product, int] = field(default_factory=dict)
 
 
 class ProducingAgent:
@@ -191,6 +195,7 @@ class ProducingAgent:
             self.headroom(),
             self.inventory_expansion_running,
             self.inventory_expansion is not None,
+            dict(self.outstanding_inbound),
         )
 
     def place_bids(self, bids: list[Bid]) -> None:

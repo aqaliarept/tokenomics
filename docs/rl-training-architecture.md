@@ -357,11 +357,7 @@ number:
 ```text
 reward =
     +10 * completed consumer units
-     -5 * rejected consumer units
-     +1 * completed investment or replenishment orders
-     -1 * orders still in progress
-     -5 * rejected producer investment or replenishment orders
-   -0.1 * inventory units held
+   -0.1 * inventory units held / number of producers
 ```
 
 Suppose one completed cycle has:
@@ -373,13 +369,14 @@ Suppose one completed cycle has:
 1 order still in progress
 0 rejected producer orders
 4 inventory units held
+4 producers
 ```
 
 Then:
 
 ```text
-reward = 10*2 - 5*1 + 1*1 - 1*1 - 5*0 - 0.1*4
-       = 14.6
+reward = 10*2 - 0.1*4/4
+       = 19.9
 ```
 
 This is a cooperative task, so the environment assigns the same cycle reward
@@ -509,7 +506,7 @@ cycle 8, p4 turn:
     store observation and sampled action as pending
 
 end of cycle 8:
-    environment calculates shared reward 14.6
+    environment calculates shared reward 19.9
 
 cycle 9, p4 turn:
     env.last() supplies the reward earned since p4 last acted
@@ -1733,11 +1730,7 @@ environment also counts inventory held into the next cycle. It calculates:
 ```text
 raw cycle reward =
       10.0 * completed consumer units
-     - 5.0 * rejected consumer units
-     + 1.0 * completed investment and replenishment orders
-     - 1.0 * orders still in progress
-     - 5.0 * rejected investment and replenishment orders
-     - 0.1 * inventory units held
+     - 0.1 * inventory units held / number of producers
 ```
 
 The corresponding event table is:
@@ -1745,37 +1738,38 @@ The corresponding event table is:
 | Event | Reward contribution |
 |---|---:|
 | Consumer unit completed | `+10` per unit |
-| Consumer unit rejected | `-5` per unit |
-| Investment order completed | `+1` per order |
-| Replenishment order completed | `+1` per order |
-| Order still in progress | `-1` per order |
-| Producer investment/replenishment order rejected | `-5` per order |
-| Inventory held into the next cycle | `-0.1` per unit |
+| Inventory held into the next cycle | `-0.1 / num_producers` per unit |
+| Consumer unit rejected | No direct term; rejection is the forgone `+10` |
+| Investment/replenishment order completed | No direct term |
+| Order still in progress | No direct term |
+| Producer investment/replenishment order rejected | No direct term |
 
 Consumer terms use units, not only order counts. A completed quantity-three
 consumer order contributes `3 * 10 = +30`, while a completed quantity-one order
 contributes `+10`.
 
-Investment and replenishment rewards are deliberately smaller. They are
-instrumental actions: their purpose is to enable later consumer fulfillment,
-not to become the objective by themselves.
+Investment and replenishment are instrumental actions: their purpose is to
+enable later consumer fulfillment, not to become rewarded objectives by
+themselves. They no longer receive a direct `+1` reward. Producer-order
+rejections and in-progress work also no longer receive direct penalties because
+those churn terms dominated the objective at scale.
 
 Worked cycle:
 
 | Cycle result | Count | Contribution |
 |---|---:|---:|
 | Consumer units completed | 2 | `+20.0` |
-| Consumer units rejected | 1 | `-5.0` |
-| Replenishment orders completed | 1 | `+1.0` |
-| Orders still in progress | 1 | `-1.0` |
+| Consumer units rejected | 1 | `0.0` direct, but the `+10` was not earned |
+| Replenishment orders completed | 1 | `0.0` direct |
+| Orders still in progress | 1 | `0.0` direct |
 | Producer orders rejected | 0 | `0.0` |
-| Inventory units held | 4 | `-0.4` |
-| **Raw reward** |  | **`14.6`** |
+| Inventory units held | 4 with 4 producers | `-0.1` |
+| **Raw reward** |  | **`19.9`** |
 
 A reward or episode return is not inherently negative. Higher is better under
-this objective, but a value can be negative when rejection, delay, and inventory
-costs outweigh fulfillment. **Return** means the sum of rewards over time; it
-does not mean a mathematical negative sign.
+this objective, but a value can be negative when inventory costs outweigh
+fulfillment. **Return** means the sum of rewards over time; it does not mean a
+mathematical negative sign.
 
 ### 12.2 Why the reward is shared and delayed
 
@@ -1810,14 +1804,14 @@ The implementation keeps three related quantities distinct:
 
 | Quantity | Meaning | Example |
 |---|---|---:|
-| Raw environment reward | Comparable economic score emitted by the environment | `14.6` |
-| Training reward | Raw reward plus any enabled training-only shaping | `14.6` when shaping is off |
-| Scaled optimization reward | Training reward multiplied by `REW_SCALE = 0.05` | `0.73` |
+| Raw environment reward | Comparable economic score emitted by the environment | `19.9` |
+| Training reward | Raw reward plus any enabled training-only shaping | `19.9` when shaping is off |
+| Scaled optimization reward | Training reward multiplied by `REW_SCALE = 0.05` | `0.995` |
 
 Scaling changes numerical units, not preferences:
 
 ```text
-14.6 * 0.05 = 0.73
+19.9 * 0.05 = 0.995
 ```
 
 An outcome that is better in raw units is still better after multiplying all
@@ -3023,8 +3017,8 @@ Interpret the table in this order:
 1. Reject policies with high death rate unless the experiment specifically
    studies recovery.
 2. Compare fulfilled consumer units.
-3. Compare return, remembering that holding costs and in-progress work can make
-   return negative.
+3. Compare return, remembering that holding costs and missed fulfillment can
+   make return low or negative.
 4. Check capacity minimum for fragility.
 5. Examine standard deviations or per-seed results for consistency.
 

@@ -71,6 +71,10 @@ def encode_producing(
     feats.append(1.0 if view.inventory_expansion_running else 0.0)
     for g in spec.input_products:
         feats.append(view.inventory.get(g, 0) / spec.inv_ref)
+    # in-flight replenishment per input (ADR-0041): lets a policy avoid re-ordering
+    # stock already on the way, which is what blocks priming a deep pipeline.
+    for g in spec.input_products:
+        feats.append(view.outstanding_inbound.get(g, 0) / spec.inv_ref)
     feats.append(view.inventory_units / spec.inv_ref)
     feats.append(view.inventory_limit / spec.inv_ref)
     feats.append(max(0, view.headroom) / spec.inv_ref)

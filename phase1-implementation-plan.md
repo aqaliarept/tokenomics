@@ -1,6 +1,50 @@
 
 ## Progress on NEXT STEPS
 
+**Pre-stage-6 reward/obs fixes + stages 2-5 re-run (ADR-0041, ADR-0042).** Before
+stage 6, the two stage-5 blockers were fixed and stages 2-5 re-run on the new reward.
+
+- **Finding A re-diagnosed and FIXED (ADR-0041).** The ADR-0040 "depth ≥4 infeasible
+  vs TTL=2" diagnosis was WRONG: raising `RESERVATION_TTL` does not help (it hurts);
+  fund size is not the depth-4 limiter. Real cause: the producing obs hid
+  `outstanding_inbound`, so an obs-only policy re-orders in-flight stock and a deep
+  pipeline never primes. Isolation: white-box stock_aware fulfils depth-4 (145 units)
+  only because it reads inbound; drop that term and it collapses to 6. Fix: added a
+  per-input outstanding-inbound block to the producing obs (+`num_inputs` dims) and to
+  the obs baseline. Result: `obs_stock_aware` now fulfils depth-4 (142, was ~0-6) and
+  depth-5 (115, was 0), matching white-box. Deep chains are viable from the obs alone.
+- **Finding B FIXED — reward recalibrated (ADR-0042).** Reward is now
+  `10*consumer_units − 0.1*held/num_producers` only. Dropped the instrumental terms
+  (investment/replenishment +1, in-progress −1, producer-order rejection −5) and the
+  per-unit consumer-rejection penalty (−5) — at scale they scaled with producer count
+  / demand and made do-nothing the return-maximizer. Rejection is now penalised
+  implicitly (forgone +10); survival implicitly (only the living complete). Holding is
+  normalized per producer so its phase1 weight survives at scale. A fulfilling baseline
+  now beats noop on return at phase1 AND depth 3/4/5 (worst-case over seeds).
+- **Domain-randomized training added** (`--domain-random`, pure `random_domain_config`)
+  — the consolidated overfit fix the stage 2-4 findings converged on.
+
+Stages 2-5 re-run (honest, modest budget — 80-120 iters, 3 seeds):
+- **Stage 2 (phase1, 3 seeds):** all seeds **100% fulfilment, 0% death** (robust).
+  Return worst 764 / median 823 / best 884 vs lean bar 985 — gap is ENTIRELY the
+  holding penalty (perfect fulfilment, no death), i.e. the trained policy over-stocks
+  vs the lean baseline. The Finding-B scale pathology is gone; the residual is the
+  pre-existing overstock-efficiency gap. **Worst-case gap explained, not a failure.**
+- **Stages 3-4 (DR vs open-loop on heldout_v1):** open-loop **14 units / ret 14**
+  (overfit reproduced) → domain-randomized **54 units / ret 375**. **DR beats open-loop
+  ~4× units, ~27× return** — the core claim confirmed. DR does NOT yet reach the obs
+  baseline (87 units): closing that fully needs more budget/wider ranges.
+- **Stage 5 (scale depth-3):** trained **57 units / ret 512** vs noop **0/0** — beats
+  do-nothing, so the objective is now learnable (no longer degenerate). But still dies
+  (100%) and is well below baseline (420 units): a STRONG scale policy needs far more
+  than 120 iters. Env/reward now valid for scale RL; budget is the remaining lever.
+
+**Net:** the fixes (A, B) are solid and unblock learning (DR ≫ open-loop; scale beats
+noop; phase1 fulfilment robust). Remaining work before stage 6 is budget/tuning, not
+mechanism: (a) lean the trained policy / re-weight holding to close the stage-2 return
+gap; (b) more DR budget + range to clear the obs baseline on the held-out suite; (c)
+much more training for a survivable scale policy.
+
 **Stage 1 — observation-compatible baselines: DONE (ADR-0036).** Added obs-only
 baselines (`obs_stock_aware`, `obs_price`) that decide from `env.observe(agent)` alone,
 never `env.system` — the fair bar the release ladder is measured against (oracle
@@ -66,7 +110,8 @@ Fix (now clearly load-bearing): **domain-randomized training** across ranges of
 demand/capacity/cost/degradation on the competition topology — same family as the
 stage 2/3 follow-ups, consolidated.
 
-**Stage 5 — scale test: generator DONE + verified (ADR-0040); scale RL DEFERRED (2 blockers).**
+**Stage 5 — scale test: generator DONE + verified; original blockers superseded
+by ADR-0041/0042.**
 Added pure `eval/scale.py::build_scale_config(seed, depth, products_per_layer,
 producers_per_layer, num_consumers)` — a layered economy generator. Fixed structural
 skeleton (recipe DAG, capacity-type set, per-producer `produces`) → **dims
@@ -76,21 +121,21 @@ each level's declarers into strong vs marginal (feasible-topology variation with
 touching dims; `produces` held fixed because `k` depends on `max_rel`). 7 new tests.
 Defaults: 12 products, 12 producers, 3 consumers, depth 3.
 
-Scale bar (obs baseline vs noop vs oracle, depth 3, 5 seeds/config, horizon 60):
+Original ADR-0040 scale bar (obs baseline vs noop vs oracle, depth 3, 5 seeds/config,
+horizon 60):
 - **Env runs at scale (~27-35 agents/cycle) and poses a clean FULFILLMENT problem**:
   obs survives (0% death), fulfils 45-93 orders vs noop's 0 (100% death).
-- **Finding A — depth ≥4 infeasible**: consumer fulfilment → 0 (pipeline can't prime
-  vs order TTL=2). Only the shallow end of "3-5 deep" is fulfillable as-is.
-- **Finding B — `return` is not a valid scale objective**: dominated by investment-order
-  churn, so do-nothing has the LEAST-negative return (noop -544 > oracle -3341 > obs
-  -6487). A return-maximizing policy at scale degenerates to inaction. Valid signal =
-  fulfilled-unit rate. **Scale PPO deliberately NOT run** — the objective rewards doing
-  nothing until the reward is recalibrated.
+- **Finding A was re-diagnosed in ADR-0041**: depth 4-5 are not TTL-infeasible; the
+  missing observation was outstanding inbound replenishment. That observation is now
+  exposed, and obs-only baselines can prime deeper chains.
+- **Finding B was fixed in ADR-0042**: `return` is now fulfilment minus normalized
+  holding, so fulfilling baselines beat do-nothing at scale.
 
-Blockers join the consolidated reward/curriculum follow-up (stages 2-4-5). Generator
-is the reusable substrate for stage 6 (stress) once reward is fixed.
-
-Remaining ladder stage (6 stress) is below — needs the reward recalibration first.
+Scale PPO has now been run as a modest-budget validity check (see the progress
+section above): the objective is learnable, but strong scale performance still needs
+more training budget and tuning. Stage 6 is no longer blocked on mechanism, but it
+should not be treated as a release gate until stages 2-5 clear the obs-compatible
+baseline bars.
 
 NEXT STEPS:
 Use a staged verification ladder.

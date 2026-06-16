@@ -42,10 +42,10 @@ def build_scale_config(
     = 12 products, 4 producers/level = 12 producers, 3 consumers — inside the stage-5
     envelope (8-16 / 10-20 / 3-5, ≥3 levels deep).
 
-    Depth defaults to 3 (the fulfillable end of the 3-5 range): a deeper chain
-    (`depth>=4`) currently drives consumer fulfillment to 0 within a normal episode —
-    the multi-hop pipeline cannot prime fast enough against order TTL=2 — see ADR-0040.
-    `depth` stays a parameter so that feasibility finding is reproducible."""
+    Depth defaults to 3 as the cheapest scale smoke target. ADR-0041 corrected the
+    earlier ADR-0040 diagnosis: depth 4-5 chains are fulfillable once producing
+    observations expose outstanding inbound replenishment. `depth` stays a parameter
+    so deeper-chain and stress findings remain reproducible."""
     rng = random.Random(seed)
     W = products_per_layer
 

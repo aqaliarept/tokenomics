@@ -1096,6 +1096,7 @@ def train(
     num_envs: int = 4,
     config: Configuration | None = None,
     curriculum: Curriculum | None = None,
+    domain_random: Callable[[Configuration, np.random.Generator], Configuration] | None = None,
     eval_every: int = 1,
     eval_seeds: int = 3,
     held_out_seeds: int = 0,
@@ -1185,6 +1186,11 @@ def train(
         # via staged_config, so a stall is attributable to a single axis. Eval stays
         # on the real base_cfg.
         cfg = staged_config(base_cfg, d) if curriculum else base_cfg
+        # Domain randomization (step-3 fix): draw a fresh operating point each iter so
+        # the policy trains on a DISTRIBUTION, not one point (the open-loop-overfit fix
+        # the stage 2-4 findings converged on). Dims-preserving, so the net is valid.
+        if domain_random is not None:
+            cfg = domain_random(cfg, rng)
         if rollout_envs is None or cfg != rollout_cfg:
             rollout_envs = [
                 TokenomicsAECEnv(config=cfg, horizon=horizon) for _ in range(num_envs)
@@ -1430,6 +1436,11 @@ def main() -> None:
     ap.add_argument("--no-anneal", action="store_true", help="disable actor LR / entropy annealing (ADR-0008)")
     ap.add_argument("--out", type=str, default=None, help="write per-iter curve CSV to this path")
     ap.add_argument("--save", type=str, default=None, help="checkpoint the trained policy to this path (for signal_check)")
+    ap.add_argument("--domain-random", action="store_true", help="domain-randomized training: draw a dims-preserving config per iter from the ranges below (step-3 overfit fix)")
+    ap.add_argument("--dr-deg-max", type=float, default=1.4, help="domain-randomization degradation factor upper bound (drawn from [1.0, this])")
+    ap.add_argument("--dr-cap-min", type=float, default=0.75, help="domain-randomization capacity factor lower bound (drawn from [this, 1.0])")
+    ap.add_argument("--dr-cost-max", type=float, default=1.4, help="domain-randomization cost factor upper bound (drawn from [1.0, this])")
+    ap.add_argument("--dr-qty-max", type=int, default=3, help="domain-randomization max consumer quantity (drawn from 1..this)")
     args = ap.parse_args()
     curriculum = None if args.no_curriculum else Curriculum(
         d_start=args.d_start, warmup_frac=args.warmup_frac,
@@ -1438,11 +1449,20 @@ def main() -> None:
         d_step=args.d_step,
     )
     cfg = load_config(args.config) if args.config else None
+    dr = None
+    if args.domain_random:
+        from ..eval.generalization import random_domain_config
+        qty_choices = tuple(range(1, args.dr_qty_max + 1))
+        dr = lambda c, rng: random_domain_config(
+            c, rng, degradation_range=(1.0, args.dr_deg_max),
+            quantity_choices=qty_choices, capacity_range=(args.dr_cap_min, 1.0),
+            cost_range=(1.0, args.dr_cost_max),
+        )
     # Shared train() kwargs; per-seed `seed`/`save`/`config`/`horizon` are handled by
     # the chosen entrypoint (the sweep threads its own seed + temp checkpoint).
     common = dict(
         iters=args.iters, steps=args.steps,
-        num_envs=args.num_envs, curriculum=curriculum, eval_every=args.eval_every,
+        num_envs=args.num_envs, curriculum=curriculum, domain_random=dr, eval_every=args.eval_every,
         eval_seeds=args.eval_seeds,
         actor_lr=args.actor_lr, ent_coef=args.ent_coef,
         surv_coef=args.surv_coef, death_penalty=args.death_penalty,

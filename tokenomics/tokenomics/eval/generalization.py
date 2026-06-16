@@ -15,6 +15,9 @@ and observation dimensions fixed across this suite")."""
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Sequence
+
+import numpy as np
 
 from ..domain.config import Configuration
 
@@ -100,6 +103,32 @@ def combined_config(
     if cost_factor != 1.0:
         out = perturb_costs(out, cost_factor)
     return out
+
+
+def random_domain_config(
+    cfg: Configuration,
+    rng: np.random.Generator,
+    *,
+    degradation_range: tuple[float, float] = (1.0, 1.0),
+    quantity_choices: Sequence[int] | None = None,
+    capacity_range: tuple[float, float] = (1.0, 1.0),
+    cost_range: tuple[float, float] = (1.0, 1.0),
+) -> Configuration:
+    """Draw ONE dims-preserving domain-randomized config off `cfg` (NEXT STEPS step-3
+    fix). Per training iter the trainer samples a fresh operating point from these
+    ranges, so the policy sees a *distribution* — the consolidated fix the stage 2-4
+    overfit findings (open-loop policy memorizes one operating point) all pointed to.
+
+    Each factor is drawn uniformly from its range (quantity_max uniformly from
+    `quantity_choices` if given), then applied via `combined_config`, so the result is
+    dims-preserving. Pure: a given `rng` state yields a deterministic config."""
+    deg = float(rng.uniform(*degradation_range))
+    cap = float(rng.uniform(*capacity_range))
+    cost = float(rng.uniform(*cost_range))
+    qty = None if not quantity_choices else int(rng.choice(np.asarray(quantity_choices)))
+    return combined_config(
+        cfg, degradation_factor=deg, quantity_max=qty, capacity_factor=cap, cost_factor=cost
+    )
 
 
 def generalization_suite(base_cfg: Configuration) -> dict[str, Configuration]:

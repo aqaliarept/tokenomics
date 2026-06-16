@@ -30,39 +30,33 @@ Action = np.ndarray | None
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "phase1.json"
 
-# Shared reward weights (ADR-0002, reweighted in Phase 1.5).
-# Consumer fulfilment is the terminal objective; investment is instrumental
-# (keep capacity alive) so it earns only a small positive — the critic learns
-# its indirect value. Rejections are penalized; in-progress is a mild drag.
-# Consumer terms are weighted by fulfilled/unmet UNITS, not order counts (#3): a
-# qty-3 order consumes ~3x the capacity of a qty-1 order, so it earns ~3x. At qty=1
-# (phase1) this is identical to the old per-order weights.
-R_CONSUMER_PER_UNIT = 10.0
-R_CONSUMER_REJECTED_PER_UNIT = -5.0
-R_INVESTMENT_COMPLETED = 1.0  # instrumental: restoration/upgrade/replenishment
-R_IN_PROGRESS = -1.0
-R_REJECTED = -5.0  # per producer-order (investment/replenishment) rejection
-# Inventory holding penalty (ADR-0025 B6): a flat per-unit-per-cycle training cost
-# applied in the env (not the domain) — the over-stocking counter-pressure to the
-# under-stocking that blocks capacity. Tokens carry no value, so this lives here.
+# Shared reward weights (ADR-0002, recalibrated in ADR-0042).
+# Consumer fulfilment is the terminal objective. Instrumental producer-order terms
+# and direct rejection penalties are intentionally excluded at scale: rejection is
+# penalized implicitly as forgone fulfilment, and only live systems keep completing
+# units. Consumer completion is weighted by fulfilled UNITS, not order counts.
+R_CONSUMER_PER_UNIT = 10.0  # the objective: delivered consumer units
+# Inventory holding penalty (ADR-0025 B6) NORMALIZED per producer (ADR-0042): the
+# over-stocking counter-pressure, applied in the env (tokens carry no value). Total
+# held inventory grows with producer count, so the penalty is divided by the number
+# of producers — keeping its per-producer weight comparable across phase1 and scale.
 R_HOLDING_PER_UNIT = 0.1
 
 
-def cycle_reward(result: CycleResult, held: int) -> float:
-    """Shared per-cycle training reward (ADR-0002/0025, #3). Consumer fulfilment is
-    the objective, weighted by delivered UNITS (+10/unit); restoration/upgrade/
-    replenishment are instrumental (+1/order); in-progress is a mild drag (−1/order);
-    consumer rejections are penalised by unmet units (−5/unit), producer-order
-    rejections per order (−5); and a flat per-unit inventory holding penalty
-    discourages over-stocking (B6)."""
-    producer_rejected = result.investment_rejected + result.replenishment_rejected
+def cycle_reward(result: CycleResult, held: int, num_producers: int = 1) -> float:
+    """Shared per-cycle training reward (ADR-0002/0025/0042). Consumer fulfilment is
+    the SOLE objective, weighted by delivered UNITS (+10/unit), minus a per-producer-
+    normalized inventory holding penalty (B6 overstock pressure).
+
+    Finding B (ADR-0042): the former instrumental terms — investment/replenishment
+    completed (+1), in-progress (−1), consumer rejection (−5/unit), producer-order
+    rejection (−5) — are dropped. At producer scale they scaled with producer count
+    and demand, swamping fulfilment and making do-nothing the return-maximizer.
+    Rejecting demand is already penalised implicitly: the forgone +10/unit. Survival
+    is rewarded implicitly: only a live system can keep completing orders."""
     return (
         R_CONSUMER_PER_UNIT * result.consumer_completed_units
-        + R_INVESTMENT_COMPLETED * (result.investment_completed + result.replenishment_completed)
-        + R_IN_PROGRESS * result.in_progress
-        + R_CONSUMER_REJECTED_PER_UNIT * result.consumer_rejected_units
-        + R_REJECTED * producer_rejected
-        - R_HOLDING_PER_UNIT * held
+        - R_HOLDING_PER_UNIT * held / max(1, num_producers)
     )
 
 
@@ -242,7 +236,7 @@ class TokenomicsAECEnv(AECEnv):
             result = self.system.complete_cycle()
             # inventory held into the next cycle = the holding liability (ADR-0025).
             held = sum(p.inventory_units() for p in self.system.producing_agents.values())
-            reward = cycle_reward(result, held)
+            reward = cycle_reward(result, held, len(self.system.producing_agents))
             self.current_cycle += 1
             self.rewards = {a: reward for a in self.agents}
             self._accumulate_episode_stats(result, reward, held)

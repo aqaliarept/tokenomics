@@ -93,3 +93,22 @@ def test_scale_env_runs_an_episode_with_obs_baseline():
     s = run_episode(env, PRODUCING_BASELINES["obs_stock_aware"],
                     ORDERING_BASELINES["even_split"], seed=0)
     assert s["cycles"] > 0
+
+
+def test_return_tracks_fulfilment_at_scale_so_fulfilling_beats_doing_nothing():
+    # Finding B (ADR-0042) acceptance bar: at a DEEP scale (depth 4 — where the old
+    # reward made do-nothing the return-maximizer) a fulfilling baseline must earn a
+    # strictly higher return than noop. Return now == 10*units − per-producer holding,
+    # so survival+fulfilment beats the quick-dying do-nothing policy.
+    from tokenomics.eval.baselines import producing_obs_stock_aware, producing_noop, ordering_proportional
+    from tokenomics.eval.runner import run_episode
+    from tokenomics.eval.scale import build_scale_config
+
+    for seed in (0, 1):
+        cfg = build_scale_config(seed=7, depth=4)
+        fulfilling = run_episode(TokenomicsAECEnv(config=cfg, horizon=60),
+                                 producing_obs_stock_aware(0.6), ordering_proportional, seed)
+        nothing = run_episode(TokenomicsAECEnv(config=cfg, horizon=60),
+                              producing_noop, ordering_proportional, seed)
+        assert fulfilling["consumer_completed_units"] > 0
+        assert fulfilling["return"] > nothing["return"]

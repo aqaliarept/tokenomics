@@ -165,6 +165,28 @@ def test_producing_obs_exposes_open_consumer_demand():
         assert tok_block[idx] == pytest.approx(open_tok[product] / sp.token_ref)
 
 
+def test_producing_obs_exposes_outstanding_inbound():
+    # Finding A (deep-chain viability): priming a multi-hop pipeline requires the
+    # policy to see what it has ALREADY ordered (outstanding inbound). Without it a
+    # producer re-orders in-flight stock every cycle and a deep chain never primes
+    # (depth-4 fulfilment collapses). The producing obs exposes a per-input inbound
+    # block right after the per-input inventory-stock block, normalized by inv_ref.
+    import pytest
+
+    e = _env(horizon=10)
+    e.reset()
+    sp = e.spec_
+    pid = next(p for p in sp.producer_ids if sp.producer_inputs[p])
+    g = sp.producer_inputs[pid][0]
+    e.system.producing_agents[pid].outstanding_inbound[g] = 7
+
+    obs = e.observe(f"prod_{pid}")
+    t = sp.num_types
+    inv_start = 2 * t + 4               # caps(2T) + requested(1) + 3 running flags
+    inbound_start = inv_start + sp.num_inputs  # after the per-input stock block
+    assert obs[inbound_start + sp.input_index[g]] == pytest.approx(7 / sp.inv_ref)
+
+
 def test_global_state_exposes_open_consumer_demand():
     # #2: the centralized critic (ADR-0004) also needs demand. global_state appends
     # the same 2P open-consumer-demand block (quantity then tokens) before the
@@ -207,6 +229,30 @@ def test_reward_shape():
     assert isinstance(reward, float)
 
 
+# --- Finding B (ADR-0042): reward = consumer fulfilment − per-producer holding ---
+def test_reward_is_fulfilment_minus_per_producer_holding_only():
+    # At producer-scale, instrumental producer-order churn (investment/replenishment
+    # completed/rejected, in-progress) and per-unit consumer rejection swamped the
+    # +10/unit fulfilment objective — do-nothing became the return-maximizer. The
+    # training reward is now consumer fulfilment minus a holding penalty normalized
+    # per producer (so it does not grow with producer count).
+    import pytest
+    from tokenomics.domain.system import CycleResult
+    from tokenomics.env.aec_env import R_CONSUMER_PER_UNIT, R_HOLDING_PER_UNIT, cycle_reward
+
+    r = CycleResult(score=0, consumer_completed_units=4, consumer_rejected_units=9,
+                    in_progress=50, investment_rejected=30, replenishment_rejected=20,
+                    investment_completed=7, replenishment_completed=8)
+    expected = R_CONSUMER_PER_UNIT * 4 - R_HOLDING_PER_UNIT * 100 / 10
+    assert cycle_reward(r, held=100, num_producers=10) == pytest.approx(expected)
+    # only consumer completions and held inventory move the reward; all the producer-
+    # order churn and consumer rejections above are ignored.
+    churn = CycleResult(score=0, consumer_completed_units=4, consumer_rejected_units=999,
+                        in_progress=999, investment_rejected=999, replenishment_rejected=999,
+                        investment_completed=999, replenishment_completed=999)
+    assert cycle_reward(churn, held=100, num_producers=10) == pytest.approx(expected)
+
+
 # --- B6 reward: inventory holding penalty ---
 def test_holding_penalty_scales_with_units_held():
     from tokenomics.domain.system import CycleResult
@@ -235,15 +281,17 @@ def test_consumer_reward_scales_with_fulfilled_units():
     assert cycle_reward(three, 0) - cycle_reward(one, 0) == pytest.approx(2 * R_CONSUMER_PER_UNIT)
 
 
-def test_consumer_rejection_penalty_scales_with_units():
-    # #3: rejecting a qty-3 order wastes ~3x the demand of a qty-1 rejection.
-    import pytest
+def test_consumer_rejection_does_not_penalize_reward():
+    # Finding B (ADR-0042): consumer rejection is no longer a separate penalty — at
+    # scale the −5/unit term swamped fulfilment (demand outstrips a deep chain's
+    # throughput, so rejection volume is policy-independent). The forgone +10/unit is
+    # the only rejection signal, so a cycle that rejects more is reward-unchanged.
     from tokenomics.domain.system import CycleResult
-    from tokenomics.env.aec_env import R_CONSUMER_REJECTED_PER_UNIT, cycle_reward
+    from tokenomics.env.aec_env import cycle_reward
 
     one = CycleResult(score=0, consumer_rejected=1, consumer_rejected_units=1)
     three = CycleResult(score=0, consumer_rejected=1, consumer_rejected_units=3)
-    assert cycle_reward(three, 0) - cycle_reward(one, 0) == pytest.approx(2 * R_CONSUMER_REJECTED_PER_UNIT)
+    assert cycle_reward(three, 0) == cycle_reward(one, 0)
 
 
 def test_holding_penalty_independent_of_completions():

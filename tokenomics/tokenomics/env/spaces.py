@@ -83,10 +83,11 @@ class EnvSpec:
 
     @property
     def producing_obs_dim(self) -> int:
+        # ... 2*num_inputs (per-input inventory stock + outstanding inbound, ADR-0041)
         # ... + 2P (per-producer summary) + 2*num_order_products (open consumer
         # demand: quantity + tokens per product, #2) + 1 (cycle progress).
         return (
-            2 * self.num_types + 1 + 3 + self.num_inputs + 3
+            2 * self.num_types + 1 + 3 + 2 * self.num_inputs + 3
             + 2 * self.num_producers + 2 * self.num_order_products + 1
         )
 
