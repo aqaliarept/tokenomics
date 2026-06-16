@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from statistics import mean, pstdev
-from typing import Iterable
+from dataclasses import dataclass
+from statistics import mean, median, pstdev
+from typing import Iterable, Mapping
 
 from ..domain.config import Configuration
 from ..env import TokenomicsAECEnv
@@ -11,6 +12,45 @@ from .baselines import Policy
 
 # metric name -> (mean, std) over seeds
 Aggregated = dict[str, tuple[float, float]]
+
+
+@dataclass(frozen=True)
+class SeedSummary:
+    """Robustness of one metric across independent MODEL seeds (NEXT STEPS stage 2).
+
+    The ladder demands *median and worst-case*, not one lucky checkpoint, so the
+    headline is `worst` (the value a deployed model is at least as good as across
+    seeds) and `median` (the typical seed), not the mean a single outlier can lift."""
+
+    median: float
+    worst: float
+    best: float
+    mean: float
+    n: int
+
+
+def summarize_seeds(
+    per_seed: list[dict[str, float]],
+    directions: Mapping[str, str],
+) -> dict[str, SeedSummary]:
+    """Summarize per-seed metrics into median + worst/best across seeds (stage 2).
+
+    `directions[m]` is "higher" (good = larger, e.g. return, fulfilled units) or
+    "lower" (good = smaller, e.g. dead_rate); the *worst* case is the bad-direction
+    extreme — min for "higher", max for "lower". Pure function of the per-seed dicts
+    so the robustness report is testable without training. Only metrics listed in
+    `directions` are summarized."""
+    if not per_seed:
+        raise ValueError("summarize_seeds needs at least one seed result")
+    out: dict[str, SeedSummary] = {}
+    for m, direction in directions.items():
+        vals = [r[m] for r in per_seed]
+        lo, hi = min(vals), max(vals)
+        worst, best = (lo, hi) if direction == "higher" else (hi, lo)
+        out[m] = SeedSummary(
+            median=median(vals), worst=worst, best=best, mean=mean(vals), n=len(vals)
+        )
+    return out
 
 
 def run_episode(env: TokenomicsAECEnv, prod_policy: Policy, order_policy: Policy, seed: int) -> dict:

@@ -1073,3 +1073,75 @@ def test_curve_csv_written(tmp_path):
     lines = out.read_text().splitlines()
     assert lines[0].startswith("iter,mean_step_reward")
     assert len(lines) == 3  # header + 2 iters
+
+
+def test_train_seeds_reports_median_and_worst_case_across_model_seeds():
+    """NEXT STEPS stage 2: train_seeds trains several independent MODEL seeds and
+    reports median + worst-case held-out metrics (not one lucky checkpoint). Each
+    seed selects its own best-on-validation checkpoint, then is scored on the SAME
+    disjoint held-out seed range; summarize_seeds rolls them up direction-aware."""
+    from tokenomics.eval.runner import SeedSummary
+    from tokenomics.train.smoke_ppo import train_seeds
+
+    sweep = train_seeds(
+        seeds=[0, 1], iters=2, steps=128, horizon=40, eval_seeds=2,
+        held_out_seeds=2, log=lambda *a, **k: None,
+    )
+    # one held-out metric dict per model seed
+    assert len(sweep.per_seed) == 2
+    # robustness summary over the seeds, direction-aware
+    assert set(["return", "dead_rate"]).issubset(sweep.summary)
+    assert all(isinstance(v, SeedSummary) for v in sweep.summary.values())
+    ret = sweep.summary["return"]
+    assert ret.n == 2
+    assert ret.worst <= ret.median <= ret.best
+    dead = sweep.summary["dead_rate"]
+    assert dead.worst >= dead.best  # worst death rate is the HIGHER one (lower=good)
+
+
+def test_train_seeds_gives_each_model_seed_an_independent_curriculum(monkeypatch):
+    """A gated curriculum is mutable — train() advances `_gated_d` and accumulates
+    evidence via curriculum.observe(). train_seeds must hand each model seed a fresh
+    copy, else later seeds inherit earlier seeds' gated level and the reported
+    median/worst-case compares different curricula, not independent seeds. Stub out
+    train/load/evaluate so the check is deterministic (not dependent on dynamics)."""
+    from tokenomics.train import smoke_ppo
+    from tokenomics.train.smoke_ppo import Curriculum, train_seeds
+
+    captured = []
+
+    def fake_train(*, curriculum=None, **kw):
+        captured.append(curriculum)
+        if curriculum is not None:
+            curriculum._gated_d = 0.7  # simulate train() advancing the gate
+        return []
+
+    metrics = {k: (0.0, 0.0) for k in smoke_ppo.DEFAULT_SEED_REPORT}
+    monkeypatch.setattr(smoke_ppo, "train", fake_train)
+    monkeypatch.setattr(smoke_ppo, "load_policies", lambda path: (None, None))
+    monkeypatch.setattr(smoke_ppo, "evaluate", lambda *a, **k: metrics)
+
+    base = Curriculum(gate=True, d_start=0.0)
+    train_seeds(seeds=[0, 1, 2], held_out_seeds=1, curriculum=base,
+                log=lambda *a, **k: None)
+
+    assert len(captured) == 3
+    assert len({id(c) for c in captured}) == 3   # a distinct curriculum per seed
+    assert base not in captured                   # never the caller's instance
+    assert base._gated_d == 0.0                    # caller's instance untouched
+
+
+def test_cli_num_seeds_runs_multi_seed_sweep(monkeypatch, capsys):
+    """NEXT STEPS stage 2: `--num-seeds N` runs the multi-seed robustness sweep and
+    prints the median/worst-case report instead of a single training run."""
+    import sys
+
+    from tokenomics.train import smoke_ppo
+
+    monkeypatch.setattr(sys, "argv", [
+        "smoke_ppo", "--num-seeds", "2", "--iters", "2", "--steps", "128",
+        "--horizon", "40", "--eval-seeds", "2", "--held-out-seeds", "2",
+    ])
+    smoke_ppo.main()
+    out = capsys.readouterr().out.lower()
+    assert "worst" in out and "median" in out

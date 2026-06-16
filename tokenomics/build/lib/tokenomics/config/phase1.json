@@ -1,0 +1,38 @@
+{
+  "cycleEmission": 1000,
+  "processSheets": [
+    { "product": 10, "require": { "capacity-1": 2 } },
+    { "product": 11, "require": { "capacity-2": 2 } },
+    { "product": 20, "require": { "capacity-3": 2 }, "inputs": { "10": 1 } },
+    { "product": 30, "require": { "capacity-4": 25 }, "inputs": { "20": 1, "11": 1 } }
+  ],
+  "consumers": [
+    { "id": "c1", "product": 30 }
+  ],
+  "producerConfigs": [
+    {
+      "id": "p1", "capacities": { "capacity-1": 120 }, "produces": [10], "degradation": 5,
+      "restoration": { "product": 11, "restores": 60, "type": "capacity-1", "cost": 40 },
+      "upgrade": { "product": 11, "capacity": 40, "type": "capacity-1", "cost": 40 }
+    },
+    {
+      "id": "p2", "capacities": { "capacity-2": 120 }, "produces": [11], "degradation": 5,
+      "restoration": { "product": 10, "restores": 60, "type": "capacity-2", "cost": 40 },
+      "upgrade": { "product": 10, "capacity": 40, "type": "capacity-2", "cost": 40 }
+    },
+    {
+      "id": "p3", "capacities": { "capacity-3": 120 }, "produces": [20], "degradation": 5,
+      "restoration": { "product": 10, "restores": 60, "type": "capacity-3", "cost": 40 },
+      "upgrade": { "product": 10, "capacity": 40, "type": "capacity-3", "cost": 40 },
+      "inventoryLimit": 30, "maxReplenish": 10, "replenishCostPerUnit": 2,
+      "inventoryExpansion": { "product": 11, "increases": 20, "cost": 30 }
+    },
+    {
+      "id": "p4", "capacities": { "capacity-4": 120 }, "produces": [30], "degradation": 5,
+      "restoration": { "product": 11, "restores": 60, "type": "capacity-4", "cost": 40 },
+      "upgrade": { "product": 11, "capacity": 40, "type": "capacity-4", "cost": 40 },
+      "inventoryLimit": 30, "maxReplenish": 10, "replenishCostPerUnit": 40,
+      "inventoryExpansion": { "product": 10, "increases": 20, "cost": 30 }
+    }
+  ]
+}

@@ -23,8 +23,9 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import tempfile
 from dataclasses import asdict, dataclass, field, replace
-from typing import Callable
+from typing import Callable, Mapping
 
 import numpy as np
 import torch
@@ -40,7 +41,7 @@ from ..env.aec_env import DEFAULT_CONFIG
 from ..env.decode import decode_producing
 from ..env.spaces import config_fingerprint
 from ..eval.baselines import Policy
-from ..eval.runner import evaluate
+from ..eval.runner import SeedSummary, evaluate, summarize_seeds
 
 
 # ADR-0020 reinterpreted for the continuous producing actor (ADR-0026):
@@ -1318,12 +1319,84 @@ def train(
     return history
 
 
+# Default robustness report (NEXT STEPS stage 2): the held-out metrics summarized
+# across model seeds, each tagged with its good direction so worst-case is the
+# bad-direction extreme (lowest fulfillment, highest death rate).
+DEFAULT_SEED_REPORT: dict[str, str] = {
+    "return": "higher",
+    "dead_rate": "lower",
+    "consumer_completed": "higher",
+    "consumer_completed_units": "higher",
+    "cap_min": "higher",
+}
+
+
+@dataclass
+class SeedSweep:
+    """Multi-seed robustness result (NEXT STEPS stage 2): the per-model-seed held-out
+    metric dicts and their direction-aware median/worst-case summary. The ladder bar
+    is the *worst* across seeds, so a single lucky checkpoint cannot pass."""
+
+    per_seed: list[dict[str, float]]
+    summary: dict[str, SeedSummary]
+
+
+def train_seeds(
+    seeds: list[int],
+    *,
+    held_out_seeds: int = 5,
+    report: Mapping[str, str] | None = None,
+    config: Configuration | None = None,
+    horizon: int = 100,
+    log: Callable[[str], None] = print,
+    **train_kwargs,
+) -> SeedSweep:
+    """Train several independent MODEL seeds and report median + worst-case held-out
+    metrics (NEXT STEPS stage 2). Each seed runs the full `train` loop — which selects
+    its own best-on-validation checkpoint (ADR-0011) on validation seeds disjoint from
+    the held-out range — then the selected policy is scored on the SAME held-out seed
+    range (`HELD_OUT_SEED_OFFSET..`, #7) so the per-seed numbers are comparable and
+    never the figure a checkpoint was picked on. `summarize_seeds` rolls them up
+    direction-aware: the headline is the worst seed, not one lucky checkpoint."""
+    report = report or DEFAULT_SEED_REPORT
+    base_cfg = config if config is not None else load_config(DEFAULT_CONFIG)
+    held_out = range(HELD_OUT_SEED_OFFSET, HELD_OUT_SEED_OFFSET + held_out_seeds)
+    # A gated Curriculum is mutable — train() advances it via observe(). Give each
+    # model seed a FRESH copy, else later seeds inherit earlier seeds' gated level and
+    # the median/worst-case would compare different curricula, not independent seeds.
+    base_curriculum = train_kwargs.pop("curriculum", None)
+    per_seed: list[dict[str, float]] = []
+    for s in seeds:
+        seed_kwargs = dict(train_kwargs)
+        if base_curriculum is not None:
+            seed_kwargs["curriculum"] = copy.deepcopy(base_curriculum)
+        with tempfile.NamedTemporaryFile(suffix=".pt") as f:
+            train(
+                seed=s, config=config, horizon=horizon, save=f.name,
+                log=lambda *a, **k: None, **seed_kwargs,
+            )
+            pp, op = load_policies(f.name)
+        m = evaluate(pp, op, seeds=held_out, horizon=horizon, config=base_cfg)
+        row = {k: m[k][0] for k in report}
+        per_seed.append(row)
+        log(
+            f"seed {s:3d}  held-out  dead {row.get('dead_rate', float('nan')):4.2f}  "
+            f"cons✓ {row.get('consumer_completed', float('nan')):7.1f}  "
+            f"ret {row.get('return', float('nan')):8.1f}"
+        )
+    summary = summarize_seeds(per_seed, report)
+    for metric, ss in summary.items():
+        log(f"  {metric:24}  median {ss.median:9.2f}  worst {ss.worst:9.2f}  best {ss.best:9.2f}")
+    return SeedSweep(per_seed=per_seed, summary=summary)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=50)
     ap.add_argument("--steps", type=int, default=1024)
     ap.add_argument("--horizon", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--num-seeds", type=int, default=1, help="train this many independent MODEL seeds (seed..seed+N-1) and report median/worst-case held-out metrics (NEXT STEPS stage 2; 1=single run)")
     ap.add_argument("--num-envs", type=int, default=4, help="parallel rollout envs (ADR-0005)")
     ap.add_argument("--config", type=str, default=None, help="env config JSON to train on (default: phase1.json); spec, rollout, and eval all use it")
     ap.add_argument("--no-curriculum", action="store_true", help="train at full real difficulty (disable ADR-0006 curriculum)")
@@ -1364,11 +1437,13 @@ def main() -> None:
         advance_fulfil=args.advance_fulfil, min_episodes=args.min_episodes,
         d_step=args.d_step,
     )
-    train(
-        iters=args.iters, steps=args.steps, horizon=args.horizon, seed=args.seed,
-        num_envs=args.num_envs, config=load_config(args.config) if args.config else None,
-        curriculum=curriculum, eval_every=args.eval_every,
-        eval_seeds=args.eval_seeds, held_out_seeds=args.held_out_seeds,
+    cfg = load_config(args.config) if args.config else None
+    # Shared train() kwargs; per-seed `seed`/`save`/`config`/`horizon` are handled by
+    # the chosen entrypoint (the sweep threads its own seed + temp checkpoint).
+    common = dict(
+        iters=args.iters, steps=args.steps,
+        num_envs=args.num_envs, curriculum=curriculum, eval_every=args.eval_every,
+        eval_seeds=args.eval_seeds,
         actor_lr=args.actor_lr, ent_coef=args.ent_coef,
         surv_coef=args.surv_coef, death_penalty=args.death_penalty,
         low_cap_coef=args.low_cap_coef, low_cap_thresh=args.low_cap_thresh,
@@ -1378,9 +1453,21 @@ def main() -> None:
         prod_replen_bias=args.prod_replen_bias,
         log_std_init=args.log_std_init,
         critic_warmup=args.critic_warmup, no_critic=args.no_critic,
-        target_kl=args.target_kl,
-        anneal=not args.no_anneal, out=args.out, save=args.save,
+        target_kl=args.target_kl, anneal=not args.no_anneal,
     )
+    if args.num_seeds > 1:
+        # NEXT STEPS stage 2: many model seeds -> median + worst-case held-out report.
+        train_seeds(
+            seeds=list(range(args.seed, args.seed + args.num_seeds)),
+            held_out_seeds=max(1, args.held_out_seeds), config=cfg, horizon=args.horizon,
+            **common,
+        )
+    else:
+        train(
+            seed=args.seed, config=cfg, horizon=args.horizon,
+            held_out_seeds=args.held_out_seeds, out=args.out, save=args.save,
+            **common,
+        )
 
 
 if __name__ == "__main__":

@@ -22,6 +22,9 @@ COMBOS = [
     ("restore_when_low", "even_split"),
     ("stock_aware", "even_split"),
     ("stock_aware", "proportional"),
+    # observation-compatible bar (NEXT STEPS stage 1): obs-only, the fair bar for RL.
+    ("obs_stock_aware", "even_split"),
+    ("obs_stock_aware", "obs_price"),
     ("always_both", "even_split"),
     ("random", "random"),
 ]

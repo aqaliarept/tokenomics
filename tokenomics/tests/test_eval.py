@@ -226,3 +226,157 @@ def test_randomized_demand_episode_is_deterministic_per_seed():
     assert a["return"] == b["return"]  # same seed -> identical replay
     assert a["consumer_completed"] == b["consumer_completed"]
     assert a["return"] != c["return"]  # different seed -> different demand workload
+
+
+# --- NEXT STEPS stage 1: observation-compatible baselines ---
+# White-box baselines read env.system (oracle); these act on ONLY the observation
+# vector the RL policy sees, so they are the fair "strongest observation-compatible
+# baseline" the release bar must be cleared against.
+def test_obs_producing_restores_when_observed_capacity_low():
+    from tokenomics.eval.baselines import decide_producing_obs
+
+    env = TokenomicsAECEnv(horizon=20)
+    env.reset(seed=0)
+    pid = env.spec_.producer_ids[0]
+    agent = f"prod_{pid}"
+    g = env.spec_.num_inputs  # restoration toggle sits at index g (after replenish dims)
+
+    # full capacity -> healthy -> no restoration
+    act = decide_producing_obs(env.spec_, env.observe(agent), pid, threshold=0.6, stock_target=3)
+    assert act[g + 0] <= 0
+
+    # drive observed capacity well below threshold -> restoration fires
+    p = env.system.producing_agents[pid]
+    for t in p.capacities:
+        p.capacities[t] = 0.1 * p.max_capacities[t]
+    act_low = decide_producing_obs(env.spec_, env.observe(agent), pid, threshold=0.6, stock_target=3)
+    assert act_low[g + 0] > 0
+
+
+def test_obs_producing_replenishes_relevant_input_below_target():
+    from tokenomics.eval.baselines import decide_producing_obs
+
+    env = TokenomicsAECEnv(horizon=20)
+    env.reset(seed=0)
+    pid = next(p for p in env.spec_.producer_ids if env.spec_.producer_inputs[p])
+    agent = f"prod_{pid}"
+    inp = env.spec_.producer_inputs[pid][0]
+    gi = env.spec_.input_index[inp]
+    p = env.system.producing_agents[pid]
+
+    # empty observed stock -> requests replenishment of that input
+    p.inventory[inp] = 0
+    act = decide_producing_obs(env.spec_, env.observe(agent), pid, threshold=0.6, stock_target=3)
+    assert act[gi] > 0
+
+    # observed stock at/above target -> no replenishment requested
+    p.inventory[inp] = 10
+    act2 = decide_producing_obs(env.spec_, env.observe(agent), pid, threshold=0.6, stock_target=3)
+    assert act2[gi] <= 0
+
+
+def test_obs_producing_action_in_bounds():
+    from tokenomics.eval.baselines import decide_producing_obs
+
+    env = TokenomicsAECEnv(horizon=20)
+    env.reset(seed=0)
+    for pid in env.spec_.producer_ids:
+        agent = f"prod_{pid}"
+        act = decide_producing_obs(env.spec_, env.observe(agent), pid, threshold=0.6, stock_target=3)
+        assert env.action_space(agent).contains(act)
+
+
+def test_obs_ordering_prefers_lower_cutoff_price_and_in_bounds():
+    from tokenomics.eval.baselines import decide_ordering_obs
+
+    env = TokenomicsAECEnv(horizon=20)
+    env.reset(seed=0)
+    sp = env.spec_
+    order_agent = next(a for a, (r, _) in env._role.items() if r == "order")
+    pa, pb = sp.producer_ids[0], sp.producer_ids[1]
+    # cheaper (lower cut-off price) producer should attract more routing weight
+    env.system.producing_agents[pa].cut_off_price = 1.0
+    env.system.producing_agents[pb].cut_off_price = 5.0
+    obs = env.observe(order_agent)
+    action = decide_ordering_obs(sp, obs)
+    assert env.action_space(order_agent).contains(action)
+    mat = action.reshape(sp.k, sp.num_producers)
+    ia, ib = sp.producer_ids.index(pa), sp.producer_ids.index(pb)
+    assert mat[0, ia] > mat[0, ib]
+
+
+def test_obs_ordering_does_not_prefer_unproven_producer():
+    # A cut-off price of 0 means "no production yet" (undefined), NOT "cheapest".
+    # On competition topologies the unproven producer is often the one that cannot
+    # produce (capacity is hidden, ADR-0029), so routing toward it starves assembly.
+    # A proven low-price producer must outrank an unproven (price-0) one.
+    from tokenomics.eval.baselines import decide_ordering_obs
+
+    env = TokenomicsAECEnv(horizon=20)
+    env.reset(seed=0)
+    sp = env.spec_
+    order_agent = next(a for a, (r, _) in env._role.items() if r == "order")
+    proven, unproven = sp.producer_ids[0], sp.producer_ids[1]
+    env.system.producing_agents[proven].cut_off_price = 2.0
+    # unproven keeps the default UNDEFINED cut-off price -> encodes to 0.0
+    mat = decide_ordering_obs(sp, env.observe(order_agent)).reshape(sp.k, sp.num_producers)
+    assert mat[0, sp.producer_ids.index(proven)] > mat[0, sp.producer_ids.index(unproven)]
+
+
+def test_observation_compatible_baseline_beats_donothing():
+    # The release bar is "beat the strongest OBSERVATION-COMPATIBLE baseline". This
+    # is that baseline: obs_stock_aware acts on the obs vector alone (no env.system),
+    # yet must still clearly beat do-nothing — survive much longer and fulfil more
+    # consumer demand — to be a meaningful bar (mirrors test_signal_exists).
+    seeds = range(5)
+    noop = evaluate(PRODUCING_BASELINES["noop"], ORDERING_BASELINES["even_split"],
+                    seeds=seeds, horizon=100)
+    good = evaluate(PRODUCING_BASELINES["obs_stock_aware"], ORDERING_BASELINES["even_split"],
+                    seeds=seeds, horizon=100)
+    assert good["cycles"][0] > 2 * noop["cycles"][0]
+    assert good["consumer_completed"][0] > 1.5 * noop["consumer_completed"][0]
+
+
+# --- multi-seed robustness summary (NEXT STEPS stage 2) ---
+# The ladder requires "median and worst-case results, not one successful checkpoint"
+# across independent MODEL seeds. summarize_seeds is a pure function of the per-seed
+# metric dicts (no torch, no training) + a per-metric direction, so the robustness
+# report is unit-testable without running PPO.
+def test_summarize_seeds_reports_median_and_direction_aware_worst_case():
+    from tokenomics.eval.runner import summarize_seeds
+
+    per_seed = [
+        {"return": 1000.0, "dead_rate": 0.0},
+        {"return": 1200.0, "dead_rate": 0.2},
+        {"return": 800.0, "dead_rate": 1.0},
+    ]
+    summary = summarize_seeds(
+        per_seed, directions={"return": "higher", "dead_rate": "lower"}
+    )
+    # median is the per-metric middle value regardless of direction
+    assert summary["return"].median == 1000.0
+    assert summary["dead_rate"].median == 0.2
+    # worst-case respects direction: lowest return, but HIGHEST dead_rate
+    assert summary["return"].worst == 800.0
+    assert summary["dead_rate"].worst == 1.0
+    # best is the opposite extreme
+    assert summary["return"].best == 1200.0
+    assert summary["dead_rate"].best == 0.0
+    assert summary["return"].n == 3
+
+
+def test_summarize_seeds_even_count_median_and_single_seed_degenerate():
+    from tokenomics.eval.runner import summarize_seeds
+
+    # even count: median averages the two middle values (statistics.median)
+    even = summarize_seeds(
+        [{"return": 10.0}, {"return": 20.0}, {"return": 30.0}, {"return": 40.0}],
+        directions={"return": "higher"},
+    )["return"]
+    assert even.median == 25.0
+    assert even.worst == 10.0 and even.best == 40.0
+
+    # single seed: median == worst == best == the lone value (no spurious spread)
+    one = summarize_seeds([{"return": 7.0}], directions={"return": "higher"})["return"]
+    assert one.median == one.worst == one.best == one.mean == 7.0
+    assert one.n == 1

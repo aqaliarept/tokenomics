@@ -65,6 +65,7 @@
 
 [Записи дизайн-решений](/docs/desicion-records.md#dr002-размещение-заказа)
 [Правила (DRAFT)](/docs/game-rules.md)
+[Machine learning and reinforcement learning architecture guide](/docs/rl-training-architecture.md)
 
 # Глоссарий
 

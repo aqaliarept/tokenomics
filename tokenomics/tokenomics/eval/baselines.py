@@ -18,13 +18,92 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
-from ..env.spaces import ACTION_LOGIT_BOUND
+from ..env.spaces import ACTION_LOGIT_BOUND, EnvSpec
 
 if TYPE_CHECKING:
     from ..env import TokenomicsAECEnv
 
 # A policy maps (env, agent name) -> a raw env-space action vector.
 Policy = Callable[["TokenomicsAECEnv", str], np.ndarray]
+
+
+# --- observation-compatible baselines (NEXT STEPS stage 1) ---
+# Unlike the white-box baselines above, these decide from ONLY the observation
+# vector the RL policy sees — never env.system. The decision is a pure function of
+# (spec, obs): the spec supplies the *static* layout + normalization constants
+# (cap/inv refs, replenish ceiling) that interpret the obs, exactly what a trained
+# net learns implicitly. This makes them the fair "observation-compatible baseline"
+# the release bar is measured against.
+def decide_producing_obs(
+    spec: EnvSpec,
+    obs: np.ndarray,
+    pid: str,
+    *,
+    threshold: float,
+    stock_target: int,
+) -> np.ndarray:
+    """Obs-only analog of `producing_stock_aware`: restore when an observed capacity
+    ratio drops below `threshold`. Reads current/max capacity straight from the
+    producing obs layout (encode.encode_producing)."""
+    t = spec.num_types
+    caps = obs[0:t]
+    maxs = obs[t : 2 * t]
+    act = np.zeros(spec.producing_action_dim, dtype=np.float32)
+    low = any(maxs[i] > 0 and caps[i] < threshold * maxs[i] for i in range(t))
+    if low:
+        act[spec.num_inputs + 0] = ACTION_LOGIT_BOUND  # restoration toggle
+
+    # top each relevant input toward `stock_target`, reading observed stock from the
+    # inventory section of the obs (denormalized by inv_ref) and mapping the wanted
+    # quantity back to its raw value (raw/BOUND*max_r -> qty, mirrors decode).
+    inv_start = 2 * t + 4  # after caps(2T), requested(1), 3 invest-running flags
+    max_r = max(1, spec.max_replenish[pid])
+    for prod in spec.producer_inputs[pid]:
+        gi = spec.input_index[prod]
+        have = obs[inv_start + gi] * spec.inv_ref
+        want = stock_target - have
+        if want > 0:
+            act[gi] = min(1.0, want / max_r) * ACTION_LOGIT_BOUND
+    return act
+
+
+def decide_ordering_obs(spec: EnvSpec, obs: np.ndarray) -> np.ndarray:
+    """Obs-only ordering router: the ordering obs hides producer capacity (ADR-0029),
+    so the only routing signal available is each producer's cut-off price. Route
+    toward the *cheapest* (lowest cut-off price = most spare/least contested
+    capacity) by emitting a per-producer logit of -price, replicated across slots;
+    decode masks each slot to its eligible producers and softmaxes."""
+    p = spec.num_producers
+    q = spec.num_order_products
+    price_start = spec.k * (3 + q)  # after the K order slots
+    prices = np.asarray(obs[price_start : price_start + p], dtype=np.float32)
+    # prefer lower cut-off price (slack capacity), BUT a 0 price is "no production
+    # yet" (UNDEFINED -> 0 in encode), not "cheapest" — often a producer that cannot
+    # produce (capacity hidden, ADR-0029). Park unproven producers at the floor so a
+    # proven cheap one always wins; at cold start all-0 collapses to an even split.
+    logits = np.where(prices > 0.0, -prices, -ACTION_LOGIT_BOUND).astype(np.float32)
+    mat = np.tile(logits, (spec.k, 1))
+    return np.clip(mat, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND).astype(np.float32).flatten()
+
+
+def producing_obs_stock_aware(threshold: float = 0.6, stock_target: int = 3) -> Policy:
+    """Observation-compatible counterpart of `producing_stock_aware`: same restore-
+    when-low + top-up-inputs behavior, but decided from `env.observe(agent)` alone —
+    never `env.system`. The fair producing bar for the RL policy."""
+
+    def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        _, pid = env._role[agent]
+        return decide_producing_obs(
+            env.spec_, env.observe(agent), pid, threshold=threshold, stock_target=stock_target
+        )
+
+    return policy
+
+
+def ordering_obs_price(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """Observation-compatible ordering baseline: routes by observed cut-off price
+    (no capacity/throughput, unlike the white-box `ordering_proportional`)."""
+    return decide_ordering_obs(env.spec_, env.observe(agent))
 
 
 def _producing(
@@ -146,11 +225,14 @@ PRODUCING_BASELINES: dict[str, Policy] = {
     "always_both": producing_always_both,
     "restore_when_low": producing_restore_when_low(0.6),
     "stock_aware": producing_stock_aware(0.6),
+    # observation-compatible bar (NEXT STEPS stage 1): obs-only, no env.system.
+    "obs_stock_aware": producing_obs_stock_aware(0.6),
     "random": random_action,
 }
 
 ORDERING_BASELINES: dict[str, Policy] = {
     "even_split": ordering_even_split,
     "proportional": ordering_proportional,
+    "obs_price": ordering_obs_price,  # observation-compatible (cut-off price routing)
     "random": random_action,
 }
