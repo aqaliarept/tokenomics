@@ -80,8 +80,32 @@ def encode_producing(
     feats.append(max(0, view.headroom) / spec.inv_ref)
     feats.extend(_producer_summary(spec, producer_infos))
     feats.extend(_open_demand_features(spec, open_demand))
+    feats.extend(_producer_mechanics(spec, view))
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
+
+
+def _producer_mechanics(spec: EnvSpec, view: ProducingAgentView) -> list[float]:
+    """The agent's own producer-mechanics (ADR-0044): the per-seed-varying action
+    semantics it must adapt to. Without it the producing obs has the same shape
+    across scale topologies but a different decision problem, so the policy
+    memorizes one operating point. Per-type degradation units this cycle, then how
+    much one restoration / upgrade buys (capacity recovered / max gained), then the
+    investment economics (max-replenish, replenish cost, restoration / upgrade cost)
+    that set what each toggle is worth — all per-seed-varying in the scale suite."""
+    out: list[float] = []
+    for t in spec.capacity_types:
+        out.append(view.degradation.get(t, 0) / spec.cap_ref)
+    out.append(view.restoration / spec.cap_ref)
+    out.append(view.upgrade / spec.cap_ref)
+    m = spec.producer_mechanics[view.id]
+    out.append(spec.max_replenish[view.id] / spec.inv_ref)
+    out.append(m.replenish_cost_per_unit / spec.token_ref)
+    out.append(m.restoration_cost / spec.token_ref)
+    out.append(m.upgrade_cost / spec.token_ref)
+    out.append(m.inventory_expansion_increases / spec.inv_ref)
+    out.append(m.inventory_expansion_cost / spec.token_ref)
+    return out
 
 
 def encode_ordering(

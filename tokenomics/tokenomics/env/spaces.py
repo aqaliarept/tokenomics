@@ -41,6 +41,19 @@ ACTION_LOGIT_BOUND = 10.0
 
 
 @dataclass
+class ProducerMechanics:
+    """Per-producer investment economics exposed in the producing obs (ADR-0044).
+    Static config values that vary per scale seed; `None` token costs (unbounded
+    funding target) and a producer with no inventory expansion read 0."""
+
+    replenish_cost_per_unit: float
+    restoration_cost: float
+    upgrade_cost: float
+    inventory_expansion_increases: int
+    inventory_expansion_cost: float
+
+
+@dataclass
 class EnvSpec:
     producer_ids: list[ProducerId]
     capacity_types: list[CapacityType]
@@ -59,6 +72,8 @@ class EnvSpec:
     producer_inputs: dict[ProducerId, list[Product]]
     # per producer replenishment ceiling (config max_replenish, default limit).
     max_replenish: dict[ProducerId, int]
+    # per producer investment economics for the obs mechanics block (ADR-0044).
+    producer_mechanics: dict[ProducerId, ProducerMechanics]
     cap_ref: float
     token_ref: float
     price_ref: float
@@ -82,13 +97,30 @@ class EnvSpec:
         return len(self.order_products)
 
     @property
+    def producing_mechanics_len(self) -> int:
+        # Per-agent producer-mechanics block (ADR-0044): the action semantics that
+        # vary per scale seed so a trained policy can adapt instead of memorizing a
+        # fixed operating point — per-type degradation units (num_types) +
+        # restoration amount + upgrade amount + max-replenish + replenish cost +
+        # restoration cost + upgrade cost + inventory-expansion increases + its cost.
+        return self.num_types + 8
+
+    @property
+    def producing_mechanics_start(self) -> int:
+        # The mechanics block is appended just before the trailing cycle-progress
+        # scalar, so the front offsets used by the obs baselines stay valid.
+        return self.producing_obs_dim - self.producing_mechanics_len - 1
+
+    @property
     def producing_obs_dim(self) -> int:
         # ... 2*num_inputs (per-input inventory stock + outstanding inbound, ADR-0041)
         # ... + 2P (per-producer summary) + 2*num_order_products (open consumer
-        # demand: quantity + tokens per product, #2) + 1 (cycle progress).
+        # demand: quantity + tokens per product, #2) + producing_mechanics_len
+        # (per-agent mechanics, ADR-0044) + 1 (cycle progress).
         return (
             2 * self.num_types + 1 + 3 + 2 * self.num_inputs + 3
-            + 2 * self.num_producers + 2 * self.num_order_products + 1
+            + 2 * self.num_producers + 2 * self.num_order_products
+            + self.producing_mechanics_len + 1
         )
 
     @property
@@ -206,6 +238,23 @@ def build_spec(config: Configuration) -> EnvSpec:
         for p in config.producer_configs
     }
 
+    # investment economics for the obs mechanics block (ADR-0044). None costs and a
+    # producer with no inventory expansion read 0 — an unbounded/absent knob.
+    producer_mechanics: dict[ProducerId, ProducerMechanics] = {
+        p.id: ProducerMechanics(
+            replenish_cost_per_unit=float(p.replenish_cost_per_unit or 0),
+            restoration_cost=float(p.restoration.cost or 0),
+            upgrade_cost=float(p.upgrade.cost or 0),
+            inventory_expansion_increases=(
+                p.inventory_expansion.increases if p.inventory_expansion else 0
+            ),
+            inventory_expansion_cost=float(
+                p.inventory_expansion.cost if p.inventory_expansion and p.inventory_expansion.cost else 0
+            ),
+        )
+        for p in config.producer_configs
+    }
+
     cap_ref = float(max(sum(p.capacities.values()) for p in config.producer_configs))
     token_ref = float(config.cycle_emission)
     price_ref = max(1.0, token_ref / cap_ref)
@@ -230,6 +279,7 @@ def build_spec(config: Configuration) -> EnvSpec:
         producer_owns=producer_owns,
         producer_inputs=producer_inputs,
         max_replenish=max_replenish,
+        producer_mechanics=producer_mechanics,
         cap_ref=cap_ref,
         token_ref=token_ref,
         price_ref=price_ref,

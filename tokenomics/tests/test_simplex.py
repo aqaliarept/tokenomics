@@ -180,7 +180,8 @@ def _pspec(input_products, producer_inputs, max_replenish):
         input_products=input_products, input_index=idx,
         order_products=input_products, order_product_index=idx,
         producer_owns={p: {"c"} for p in pids}, producer_inputs=producer_inputs,
-        max_replenish=max_replenish, cap_ref=100.0, token_ref=1000.0, price_ref=1.0, inv_ref=50.0,
+        max_replenish=max_replenish, producer_mechanics={}, cap_ref=100.0,
+        token_ref=1000.0, price_ref=1.0, inv_ref=50.0,
     )
 
 

@@ -57,6 +57,14 @@ DEFAULT_PROD_REPLEN_LOG_STD = 0.0
 # 2.0 clears the B7 bar (seed 1: return 1330 > stock_aware 1267, 100/100 consumer,
 # 0% death); 3.0 over-stocks (holding penalty drags return to 1248, just under).
 DEFAULT_PROD_REPLEN_BIAS = 2.0
+# Restoration-toggle bias (ADR-0043). 0.0 = the phase1 default: greedy eval (the
+# action MEAN) never fires restoration until learned. At deep-chain scale, absent
+# restoration causes a *localized* capacity-type collapse (one producer loses one
+# required type while total capacity stays high) -> system death even as the policy
+# fulfils. A positive bias mirrors the P1a replenishment prime: the deterministic
+# policy restores from iter 0 (a survive-first prior), so PPO learns fulfilment from
+# a living baseline instead of having to discover survival by toggle exploration.
+DEFAULT_PROD_RESTORE_BIAS = 0.0
 DEFAULT_ORDER_LOG_STD = -2.0
 DEFAULT_TARGET_KL = 0.008
 # Checkpoint schema version (ADR-0026). Bumped for the continuous-producing /
@@ -65,7 +73,7 @@ DEFAULT_TARGET_KL = 0.008
 # so a v2 ordering actor's input layer no longer matches.
 # v4 (#2): producing obs + critic global_state gained a 2P open-consumer-demand
 # block (quantity + tokens per product), so v3 producing/critic layers no longer match.
-CHECKPOINT_VERSION = 4
+CHECKPOINT_VERSION = 5
 
 
 def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:
@@ -107,6 +115,26 @@ class GaussianActor(nn.Module):
 
     def dist(self, obs: torch.Tensor) -> Normal:
         return Normal(self.actor(obs), self.log_std.exp())
+
+
+def producing_mean_bias(
+    num_inputs: int,
+    action_dim: int,
+    replen_bias: float,
+    restore_bias: float = 0.0,
+) -> np.ndarray:
+    """Output-bias init for the producing actor's final layer (P1a + ADR-0043).
+
+    Action layout (decode_producing): `[0:g]` replenishment quantities, then the
+    three investment toggles `[g]=restoration, g+1=upgrade, g+2=inventory]`. Greedy
+    eval emits the Gaussian mean, so a dim only fires deterministically when its
+    bias is positive. Prime replenishment (the consumer-reward path) and, at scale,
+    restoration (the survive-first prior). Upgrade + inventory stay at 0 — learned,
+    not primed. `restore_bias=0` reproduces the phase1 init exactly."""
+    bias = np.zeros(action_dim, dtype=np.float32)
+    bias[:num_inputs] = replen_bias
+    bias[num_inputs] = restore_bias
+    return bias
 
 
 class ValueNorm(nn.Module):
@@ -1110,6 +1138,7 @@ def train(
     prod_log_std: float = DEFAULT_PROD_LOG_STD,
     prod_replen_log_std: float = DEFAULT_PROD_REPLEN_LOG_STD,
     prod_replen_bias: float = DEFAULT_PROD_REPLEN_BIAS,
+    prod_restore_bias: float = DEFAULT_PROD_RESTORE_BIAS,
     log_std_init: float = DEFAULT_ORDER_LOG_STD,
     critic_warmup: int = 0,
     no_critic: bool = False,
@@ -1142,8 +1171,7 @@ def train(
     pdim = env.spec_.producing_action_dim
     prod_logstd = np.full(pdim, prod_log_std, dtype=np.float32)
     prod_logstd[:g] = prod_replen_log_std
-    prod_bias = np.zeros(pdim, dtype=np.float32)
-    prod_bias[:g] = prod_replen_bias
+    prod_bias = producing_mean_bias(g, pdim, prod_replen_bias, prod_restore_bias)
     prod = GaussianActor(
         prod_obs, pdim, log_std_init=prod_logstd, mean_bias=prod_bias
     )
@@ -1426,6 +1454,7 @@ def main() -> None:
     ap.add_argument("--prod-log-std", type=float, default=DEFAULT_PROD_LOG_STD, help="initial producing-actor log std (toggle dims); lower = less exploration noise (ADR-0020/0026)")
     ap.add_argument("--prod-replen-log-std", type=float, default=DEFAULT_PROD_REPLEN_LOG_STD, help="initial log std on replenishment quantity dims; wide so the replenishment path is explored (P1a)")
     ap.add_argument("--prod-replen-bias", type=float, default=DEFAULT_PROD_REPLEN_BIAS, help="positive output-bias init on replenishment dims so greedy mean fires replenishment (P1a)")
+    ap.add_argument("--prod-restore-bias", type=float, default=DEFAULT_PROD_RESTORE_BIAS, help="positive output-bias init on the restoration toggle so greedy mean restores from iter 0 (survive-first prior, ADR-0043)")
     ap.add_argument("--log-std-init", type=float, default=DEFAULT_ORDER_LOG_STD, help="initial ordering-actor log std; lower = less exploration noise (ADR-0012/0024)")
     ap.add_argument("--critic-warmup", type=int, default=0, help="freeze actors for the first K iters so policy grads use a warm critic (ADR-0013)")
     ap.add_argument("--no-critic", action="store_true", help="drop the learned critic: REINFORCE with whitened MC returns (ADR-0014)")
@@ -1471,6 +1500,7 @@ def main() -> None:
         prod_log_std=args.prod_log_std,
         prod_replen_log_std=args.prod_replen_log_std,
         prod_replen_bias=args.prod_replen_bias,
+        prod_restore_bias=args.prod_restore_bias,
         log_std_init=args.log_std_init,
         critic_warmup=args.critic_warmup, no_critic=args.no_critic,
         target_kl=args.target_kl, anneal=not args.no_anneal,

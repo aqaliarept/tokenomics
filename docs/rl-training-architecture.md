@@ -4,9 +4,6 @@ This document explains the machine learning (ML) and reinforcement learning
 (RL) implementation in the tokenomics project. It is written for readers who
 understand ordinary software systems but may be new to neural networks or RL.
 
-The guide first separates the software layers and declares one worked
-experiment used by later examples. Section 3 is a glossary preview so terms
-such as step, episode, rollout, and iteration are defined before they recur.
 The main technical narrative then follows data in execution order:
 
 1. What economy and experiment are being run?

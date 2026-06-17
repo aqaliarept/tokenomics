@@ -1,4 +1,110 @@
 
+## Scale training: BEAT the baseline on the fixed big environment (ADR-0043)
+
+**Goal (user):** train a policy that beats the best obs-compatible baseline on the big
+(depth-3 `build_scale_config`) economy. **Fixed env: DONE and verified.**
+
+- **Bars (obs-compatible, the fair target — ADR-0029 hides capacity, so white-box is an
+  oracle not a bar):** fixed seed 0 = `obs_stock_aware+even_split` **163 units / 0%**;
+  held-out = `obs_price` **253 units**.
+- **Two blockers, both about training *at* full difficulty (ADR-0043):**
+  1. The gated curriculum stalled at difficulty 0.30 — it advanced only on rollout
+     fulfilment ≥ 0.5, but scale fulfilment structurally caps ~25% (deep chains, TTL=2),
+     so difficulty never reached full; the policy trained on eased demand, evaluated on
+     hard. **Fix: survival-gate it** (`advance_fulfil=0.15`) so difficulty climbs on
+     survival and the bulk of the budget trains at full difficulty.
+  2. Greedy eval never restored (mean action, restoration toggle bias 0) → death by a
+     *localized* capacity-type collapse (`capmin`~100 at death). **Fix: restoration
+     prior** `prod_restore_bias` (default 0 → phase1 unchanged), a survive-first init.
+- **Result (400 iters, survival gate, `low_cap_coef=3.0`, `death_penalty=10.0`; no DR):**
+  deployed checkpoint **227 units / return 2157 / 0% death** on fixed seed 0 vs baseline
+  **163 / 1588 / 0%** — **+39% units, higher return, equal survival** (noop 0 / 100%).
+  Verified by re-eval of the saved checkpoint. The survival-gate fix alone cleared it.
+- **Generalization (held-out): NOT achieved; DR did not help (honest result).** Final
+  verified table (units / %death; obs-compatible baselines are the bar):
+
+  | policy | fixed seed0 | held-out (10000–05) |
+  |---|---|---|
+  | baseline obs_stock+even_split | 163 / 0% | 242 / 0% |
+  | baseline obs_stock+obs_price | 148 / 0% | **253 / 0%** |
+  | noop | 0 / 100% | 0 / 100% |
+  | **trained (fixed, no DR)** | **227 / 0%** | 114 / 33% |
+  | trained (DR topology, v4 obs) | 102 / 0% | 67 / 33% |
+  | **trained (DR topology, v5 obs, ADR-0044)** | 123 / 0% | **103 / 17%** |
+
+  - **Fixed big env: WON** (227 vs 163, +39%, 0% death). Primary goal met.
+  - **Held-out: still lost, but the obs fix moved it materially.** Re-ran the *identical*
+    DR config (`dr=seeds dwell=20 cur_gate cur_advance_fulfil=0.15 low_cap_coef=3.0
+    death_penalty=10.0`, 500 iters) — the ONLY change is the ADR-0044 producer-mechanics
+    obs block. Result vs the v4-obs DR run: **held-out 67 → 103 units (+53%) and death
+    33% → 17% (halved); fixed 102 → 123**. The mechanics block is a real, measurable
+    generalization gain. Crucially the **gate now climbs all the way to diff 0.90** under
+    DR (v4 stalled on the low rungs) — exposing the per-seed mechanics lets the policy
+    *survive* the full difficulty ramp on randomized topologies. Still below the bar
+    (103 vs 253 units; 17% vs 0% death): the remaining gap is budget/architecture, not a
+    posed-wrong observation. cev≈0 is a symptom of non-stationary DR targets, not the
+    cause.  Checkpoint `/tmp/tmp4h_2jxos.pt` (v5 schema).
+  - **DR gate/episode mechanics fixed en route:** topology-DR must (a) re-apply the
+    curriculum easing to the random topology and (b) **dwell** on each topology for N
+    iters so envs persist and episodes complete — else the gate starves (no completed
+    episodes → pinned at diff 0.0) and the policy only ever sees an episode's first ~9
+    cycles. (`tokenomics/_scale_lab.py`, scratch harness.)
+
+**Recheck / diagnosis (current).** The fixed-seed claim above is reproducible with the
+scratch harness command:
+`python -m tokenomics._scale_lab train iters=400 cur_gate=True cur_advance_fulfil=0.15 low_cap_coef=3.0 death_penalty=10.0`.
+It saves a checkpoint that re-evaluates to **227 units / return 2157 / 0% death** on
+`build_scale_config(seed=0)`.
+
+That does **not** mean the trainer has a robust scale policy. The same checkpoint loses
+to held-out obs baselines because the **producing policy**, not the ordering policy,
+does not transfer:
+
+| policy combination | fixed seed0 | held-out 10000-05 |
+|---|---:|---:|
+| trained producer + trained ordering | 227 / 0% | 115 / 33% |
+| obs producer + trained ordering | 246 / 0% | 337 / 17% |
+| trained producer + even ordering | 5 / 0% | 55 / 0% |
+| obs producer + even ordering | 163 / 0% | 242 / 0% |
+| obs producer + obs-price ordering | 148 / 0% | 253 / 0% |
+
+On held-out seeds 10000 and 10001, the trained producer lets **all level-1 producers**
+run `capacity-1` to zero by cycle ~20. Products 10-13 become unmakeable while aggregate
+`cap_min` still looks high, so the old scalar health metric hides the local collapse.
+A low-capacity restoration guard removes death but still reaches only ~154 held-out
+units, so restoration brittleness is necessary but not sufficient; replenishment /
+stock control also overfits the fixed topology.
+
+Likely root cause: the producing actor is trained against one fixed topology but its
+observation omits producer-mechanics fields that vary across scale seeds. It sees
+current/max capacity and inventory state, but not the full action semantics it must
+adapt to: per-type degradation, restoration/upgrade amounts and costs, max
+replenishment, replenishment cost, and inventory-expansion economics. The obs baseline
+uses `EnvSpec` directly for its closed-loop rule; the neural policy only receives the
+float observation. Same tensor shape is therefore not the same decision problem.
+
+Proposed next fix before claiming held-out scale success:
+
+1. **DONE (ADR-0044).** Extended the producing observation with the missing
+   per-agent producer-mechanics block — per-type degradation, restoration/upgrade
+   amounts + costs, max-replenish, replenish cost, inventory-expansion economics
+   (`num_types + 8` dims, appended before `cycle_progress`; obs-baseline front
+   offsets untouched). Static economics folded into a `ProducerMechanics` on
+   `EnvSpec`; amounts come from `ProducingAgentView` (domain stays pure). Checkpoint
+   schema bumped `4 → 5`.
+2. **DONE (ADR-0044).** Regression `test_two_scale_seeds_expose_different_mechanics_in_obs`
+   asserts two same-shape scale seeds now expose *different* degradation / restoration
+   / max-replenish in the obs — the seed-varying mechanics are no longer hidden state.
+   Per-field exposure covered by `test_producing_obs_exposes_{own_degradation,
+   restoration_and_upgrade_amounts,investment_economics,inventory_expansion_economics}`.
+   Full suite green (192).
+3. **NEXT.** Move topology-domain-randomized scale training out of `_scale_lab.py`
+   into the real trainer CLI with dwell/re-applied curriculum, then re-run the fixed
+   and held-out bars on the **enriched obs** (v5 checkpoints) to test whether the
+   mechanics block closes the held-out gap.
+4. Keep fixed-seed success as a smoke result only; the release bar remains held-out
+   median/worst-case against the strongest observation-compatible baseline.
+
 ## Progress on NEXT STEPS
 
 **Pre-stage-6 reward/obs fixes + stages 2-5 re-run (ADR-0041, ADR-0042).** Before

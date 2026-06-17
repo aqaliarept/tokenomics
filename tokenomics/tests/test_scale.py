@@ -95,6 +95,76 @@ def test_scale_env_runs_an_episode_with_obs_baseline():
     assert s["cycles"] > 0
 
 
+def test_producing_obs_exposes_investment_economics():
+    # ADR-0044: the mechanics block exposes the per-agent investment economics that
+    # vary per scale seed — max-replenish (units/cycle), replenish cost/unit, and the
+    # restoration / upgrade token costs. A None cost / no-replenish producer reads 0.
+    import pytest
+    from tokenomics.eval.scale import build_scale_config
+
+    cfg = build_scale_config(seed=7)
+    e = TokenomicsAECEnv(config=cfg, horizon=10)
+    e.reset()
+    sp = e.spec_
+    # a non-primal producer carries every economic field (replenish + investment).
+    pcfg = next(p for p in cfg.producer_configs if p.replenish_cost_per_unit is not None)
+    pid = pcfg.id
+    obs = e.observe(f"prod_{pid}")
+    base = sp.producing_mechanics_start + sp.num_types + 2  # after deg + restore + upgrade
+    assert obs[base + 0] == pytest.approx(sp.max_replenish[pid] / sp.inv_ref)
+    assert obs[base + 1] == pytest.approx(pcfg.replenish_cost_per_unit / sp.token_ref)
+    assert obs[base + 2] == pytest.approx(pcfg.restoration.cost / sp.token_ref)
+    assert obs[base + 3] == pytest.approx(pcfg.upgrade.cost / sp.token_ref)
+
+
+def test_producing_obs_exposes_inventory_expansion_economics():
+    # ADR-0044: the mechanics block ends with the inventory-expansion economics
+    # (units the limit grows + its token cost). A producer with no expansion (e.g. a
+    # primal, inventory-free producer) reads 0 for both — the knob is absent.
+    import pytest
+    from tokenomics.eval.scale import build_scale_config
+
+    cfg = build_scale_config(seed=7)
+    e = TokenomicsAECEnv(config=cfg, horizon=10)
+    e.reset()
+    sp = e.spec_
+    tail = sp.producing_mechanics_start + sp.num_types + 6  # last two block fields
+
+    has_exp = next(p for p in cfg.producer_configs if p.inventory_expansion is not None)
+    obs = e.observe(f"prod_{has_exp.id}")
+    assert obs[tail + 0] == pytest.approx(has_exp.inventory_expansion.increases / sp.inv_ref)
+    assert obs[tail + 1] == pytest.approx(has_exp.inventory_expansion.cost / sp.token_ref)
+
+    no_exp = next(p for p in cfg.producer_configs if p.inventory_expansion is None)
+    obs0 = e.observe(f"prod_{no_exp.id}")
+    assert obs0[tail + 0] == 0.0
+    assert obs0[tail + 1] == 0.0
+
+
+def test_two_scale_seeds_expose_different_mechanics_in_obs():
+    # Regression for the generalization root cause (plan #2): two scale seeds share
+    # obs/action DIMS (one net spans the suite) but differ in producer mechanics —
+    # degradation, restoration amount, max-replenish. Before ADR-0044 those were
+    # hidden state, so the same obs vector meant a different decision problem and the
+    # policy memorized one operating point. The obs mechanics block must now DIFFER.
+    import numpy as np
+    from tokenomics.eval.scale import build_scale_config
+
+    cfg_a, cfg_b = build_scale_config(seed=1), build_scale_config(seed=2)
+    assert _dims(cfg_a) == _dims(cfg_b)  # same shape: one net spans both
+
+    ea, eb = TokenomicsAECEnv(config=cfg_a, horizon=10), TokenomicsAECEnv(config=cfg_b, horizon=10)
+    ea.reset(); eb.reset()
+    sp = ea.spec_
+    pid = sp.producer_ids[0]
+    block = slice(sp.producing_mechanics_start, sp.producing_mechanics_start + sp.producing_mechanics_len)
+
+    ma = np.asarray(ea.observe(f"prod_{pid}"))[block]
+    mb = np.asarray(eb.observe(f"prod_{pid}"))[block]
+    assert ma.shape == mb.shape
+    assert not np.allclose(ma, mb)  # mechanics are no longer hidden seed state
+
+
 def test_return_tracks_fulfilment_at_scale_so_fulfilling_beats_doing_nothing():
     # Finding B (ADR-0042) acceptance bar: at a DEEP scale (depth 4 — where the old
     # reward made do-nothing the return-maximizer) a fulfilling baseline must earn a

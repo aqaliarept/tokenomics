@@ -458,6 +458,60 @@ def test_investment_request_cost_counts_executed_toggles():
     assert investment_request_cost(three, 0.5) == 1.5
 
 
+def test_producing_mean_bias_primes_restoration_and_replenishment():
+    """Scale survive-first prior (ADR-0043): greedy eval uses the action MEAN, and
+    `decode_producing` fires restoration only when the restoration-toggle dim > 0.
+    Like the P1a replenishment bias, a positive restoration-toggle bias makes the
+    deterministic policy restore from iter 0 — the survival prior the deep-chain
+    scale economy needs (absent restoration => localized capacity collapse / death,
+    even while total capacity stays high). `restore_bias=0` (the phase1 default)
+    leaves restoration off, so the canonical run is unchanged."""
+    import numpy as np
+
+    from tokenomics.domain.producing_agent import ProducingAgentView
+    from tokenomics.env.decode import decode_producing
+    from tokenomics.env.spaces import build_spec
+    from tokenomics.domain import load_config
+    from tokenomics.env.aec_env import DEFAULT_CONFIG
+    from tokenomics.train.smoke_ppo import producing_mean_bias
+
+    spec = build_spec(load_config(DEFAULT_CONFIG))
+    g = spec.num_inputs
+    pid = spec.producer_ids[0]
+    view = ProducingAgentView(
+        id=pid,
+        capacities={t: 0 for t in spec.producer_owns[pid]},
+        max_capacities={t: 0 for t in spec.producer_owns[pid]},
+        requested_capacity=0,
+        degradation={t: 0 for t in spec.producer_owns[pid]},
+        upgrade=0,
+        restoration=0,
+        upgrade_running=False,
+        restoration_running=False,
+        inventory={},
+        inventory_limit=0,
+        inventory_units=0,
+        headroom=0,
+        inventory_expansion_running=False,
+        has_inventory_expansion=False,
+    )
+
+    primed = producing_mean_bias(
+        g, spec.producing_action_dim, replen_bias=2.0, restore_bias=3.0
+    )
+    assert primed.shape == (spec.producing_action_dim,)
+    assert np.all(primed[:g] == 2.0)        # replenishment dims primed (P1a)
+    assert primed[g] == 3.0                  # restoration toggle primed
+    assert np.all(primed[g + 1 :] == 0.0)    # upgrade + inventory untouched
+    # the MEAN action (== bias) decodes to a restoration request
+    assert decode_producing(spec, primed, view).do_restoration is True
+
+    # phase1 default: no restoration bias -> greedy eval does not restore
+    default = producing_mean_bias(g, spec.producing_action_dim, replen_bias=2.0)
+    assert default[g] == 0.0
+    assert decode_producing(spec, default, view).do_restoration is False
+
+
 def test_investment_cost_skips_toggles_decode_does_not_execute():
     """Regression (ADR-0026): a positive raw toggle decode ignores — investment
     already running or unconfigured — opens no request, so it must not be charged.

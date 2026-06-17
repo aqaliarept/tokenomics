@@ -139,7 +139,7 @@ def test_producing_obs_exposes_open_consumer_demand():
     # #2: consumer orders exist before producers act, but the producing obs used to
     # carry no demand. Producers now see aggregate open consumer demand per product
     # (quantity then tokens, indexed by order_product_index) just before the
-    # cycle-progress scalar, normalized by inv_ref / token_ref.
+    # per-agent mechanics block (ADR-0044), normalized by inv_ref / token_ref.
     import pytest
     from collections import defaultdict
 
@@ -157,8 +157,9 @@ def test_producing_obs_exposes_open_consumer_demand():
     prod_agent = next(a for a in e.possible_agents if a.startswith("prod_"))
     obs = e.observe(prod_agent)
     p = sp.num_order_products
-    qty_block = obs[-(2 * p + 1):-(p + 1)]  # first P of the demand block = quantities
-    tok_block = obs[-(p + 1):-1]            # next P = backing tokens
+    od = sp.producing_mechanics_start - 2 * p  # demand block precedes the mechanics block
+    qty_block = obs[od : od + p]               # first P of the demand block = quantities
+    tok_block = obs[od + p : od + 2 * p]       # next P = backing tokens
     for product, q in open_qty.items():
         idx = sp.order_product_index[product]
         assert qty_block[idx] == pytest.approx(q / sp.inv_ref)
@@ -185,6 +186,47 @@ def test_producing_obs_exposes_outstanding_inbound():
     inv_start = 2 * t + 4               # caps(2T) + requested(1) + 3 running flags
     inbound_start = inv_start + sp.num_inputs  # after the per-input stock block
     assert obs[inbound_start + sp.input_index[g]] == pytest.approx(7 / sp.inv_ref)
+
+
+def test_producing_obs_exposes_own_degradation():
+    # Generalization fix: across scale seeds the per-producer MECHANICS (degradation,
+    # restoration/upgrade amounts+costs, max-replenish, replenish cost, inventory-
+    # expansion economics) vary while obs/action dims stay fixed. The producing obs
+    # omitted them, so the policy could not adapt — same tensor shape, different
+    # decision problem. A mechanics block (appended before cycle_progress, located by
+    # spec.producing_mechanics_start) exposes the agent's OWN mechanics. First field:
+    # per-type degradation units this cycle, normalized by cap_ref.
+    import pytest
+
+    e = _env(horizon=10)
+    e.reset()
+    sp = e.spec_
+    pid = sp.producer_ids[0]
+    view = e.system.producing_agents[pid].view()
+
+    obs = e.observe(f"prod_{pid}")
+    start = sp.producing_mechanics_start
+    for t in sp.capacity_types:
+        i = sp.type_index[t]
+        assert obs[start + i] == pytest.approx(view.degradation.get(t, 0) / sp.cap_ref)
+
+
+def test_producing_obs_exposes_restoration_and_upgrade_amounts():
+    # The mechanics block also exposes how much a single restoration/upgrade buys
+    # (capacity units recovered / max-capacity gained), normalized by cap_ref —
+    # these vary per scale seed and set the value of each investment toggle.
+    import pytest
+
+    e = _env(horizon=10)
+    e.reset()
+    sp = e.spec_
+    pid = sp.producer_ids[0]
+    view = e.system.producing_agents[pid].view()
+
+    obs = e.observe(f"prod_{pid}")
+    base = sp.producing_mechanics_start + sp.num_types  # after per-type degradation
+    assert obs[base + 0] == pytest.approx(view.restoration / sp.cap_ref)
+    assert obs[base + 1] == pytest.approx(view.upgrade / sp.cap_ref)
 
 
 def test_global_state_exposes_open_consumer_demand():
