@@ -134,6 +134,28 @@ def encode_ordering(
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
 
 
+def _global_mechanics(spec: EnvSpec, view: ProducingAgentView) -> list[float]:
+    """Per-producer producer-mechanics rolled up for the centralized critic (plan
+    item 1) — the critic counterpart of the per-agent obs block (ADR-0044). The
+    obs gives the *acting* producer its own mechanics; the critic needs every
+    producer's so two scale seeds with identical global-vector shape no longer
+    collapse to the same value input despite different return dynamics. Degradation
+    is summed over types (the global state already sums capacity per producer);
+    investment amounts/economics mirror `_producer_mechanics`."""
+    m = spec.producer_mechanics[view.id]
+    return [
+        sum(view.degradation.values()) / spec.cap_ref,
+        view.restoration / spec.cap_ref,
+        view.upgrade / spec.cap_ref,
+        spec.max_replenish[view.id] / spec.inv_ref,
+        m.replenish_cost_per_unit / spec.token_ref,
+        m.restoration_cost / spec.token_ref,
+        m.upgrade_cost / spec.token_ref,
+        m.inventory_expansion_increases / spec.inv_ref,
+        m.inventory_expansion_cost / spec.token_ref,
+    ]
+
+
 def encode_global(
     spec: EnvSpec,
     views: dict[str, ProducingAgentView],
@@ -142,7 +164,8 @@ def encode_global(
     cycle_progress: float,
 ) -> np.ndarray:
     """Centralized-critic global state (ADR-0004): every producer's rolled-up
-    state + cut-off price + cycle progress. Producers are the system state."""
+    state + cut-off price, then every producer's mechanics block (plan item 1),
+    then open consumer demand + cycle progress. Producers are the system state."""
     feats: list[float] = []
     for pid in spec.producer_ids:
         v = views[pid]
@@ -151,6 +174,8 @@ def encode_global(
         feats.append(v.requested_capacity / spec.cap_ref)
         feats.append(v.inventory_units / spec.inv_ref)
         feats.append(_price(spec, producer_infos[pid].cut_off_price))
+    for pid in spec.producer_ids:
+        feats.extend(_global_mechanics(spec, views[pid]))
     feats.extend(_open_demand_features(spec, open_demand))
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)

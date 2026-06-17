@@ -23,9 +23,11 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import math
 import tempfile
+from collections import deque
 from dataclasses import asdict, dataclass, field, replace
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -39,7 +41,7 @@ from ..domain.producing_agent import ProducingAgentCommand, ProducingAgentView
 from ..env import TokenomicsAECEnv
 from ..env.aec_env import DEFAULT_CONFIG
 from ..env.decode import decode_producing
-from ..env.spaces import config_fingerprint
+from ..env.spaces import build_spec, config_fingerprint
 from ..eval.baselines import Policy
 from ..eval.runner import SeedSummary, evaluate, summarize_seeds
 
@@ -73,7 +75,10 @@ DEFAULT_TARGET_KL = 0.008
 # so a v2 ordering actor's input layer no longer matches.
 # v4 (#2): producing obs + critic global_state gained a 2P open-consumer-demand
 # block (quantity + tokens per product), so v3 producing/critic layers no longer match.
-CHECKPOINT_VERSION = 5
+# v5 (ADR-0044): producing obs gained the per-agent producer-mechanics block.
+# v6 (plan item 1): critic global_state gained a per-producer mechanics block, so the
+# critic input dim changed -> a v5 critic layer no longer matches.
+CHECKPOINT_VERSION = 6
 
 
 def mlp(in_dim: int, out_dim: int, hidden: int = 64) -> nn.Sequential:
@@ -720,6 +725,309 @@ def load_policies(path: str) -> tuple[Policy, Policy]:
 
 
 @dataclass
+class BCData:
+    """Per-role (obs, action) pairs recorded from a baseline rollout for supervised
+    behavior cloning (VERIFICATION §11.4). Arrays are stacked rows: obs widths match
+    the actor input dims, action widths the actor output dims, so the cloned net is
+    checkpoint-schema compatible."""
+
+    prod_obs: np.ndarray
+    prod_act: np.ndarray
+    order_obs: np.ndarray
+    order_act: np.ndarray
+
+
+def collect_bc_dataset(
+    config: Configuration,
+    prod_policy: Policy,
+    order_policy: Policy,
+    seeds: "range | list[int]",
+    horizon: int = 100,
+) -> BCData:
+    """Roll out a baseline policy pair and record what each actor *should* output per
+    observation (VERIFICATION §11.4). The producing actor is the fulfillment blocker
+    (§12: it hoards capacity, never replenishes), so cloning the baseline's
+    obs→action map gives PPO a policy that already fulfills to fine-tune from, instead
+    of requiring random discovery of the multi-hop replenishment→assembly chain."""
+    po: list[np.ndarray] = []
+    pa: list[np.ndarray] = []
+    oo: list[np.ndarray] = []
+    oa: list[np.ndarray] = []
+    for s in seeds:
+        env = TokenomicsAECEnv(config=config, horizon=horizon)
+        env.reset(seed=s)
+        for a in env.possible_agents:
+            env.action_space(a).seed(s)
+        max_iter = env.horizon * len(env.possible_agents) * 3 + 100
+        for agent in env.agent_iter(max_iter=max_iter):
+            _, _, term, trunc, _ = env.last()
+            if term or trunc:
+                env.step(None)
+                continue
+            obs = np.asarray(env.observe(agent), dtype=np.float32)
+            if env._role[agent][0] == "prod":
+                act = prod_policy(env, agent)
+                po.append(obs)
+                pa.append(np.asarray(act, dtype=np.float32))
+            else:
+                act = order_policy(env, agent)
+                oo.append(obs)
+                oa.append(np.asarray(act, dtype=np.float32))
+            env.step(act)
+    return BCData(
+        prod_obs=np.stack(po), prod_act=np.stack(pa),
+        order_obs=np.stack(oo), order_act=np.stack(oa),
+    )
+
+
+def _build_clone_actors(
+    config: Configuration,
+    *,
+    prod_log_std: float,
+    prod_replen_log_std: float,
+    prod_replen_bias: float,
+    prod_restore_bias: float,
+    log_std_init: float,
+) -> "tuple[GaussianActor, GaussianActor, float]":
+    """Build the producing/ordering actors with the exact train-time init (per-dim
+    log_std + replenishment/restore mean bias) so a clone is checkpoint-schema
+    compatible and PPO can resume from it (VERIFICATION §11.4). Shared by
+    behavior_clone and dagger_clone."""
+    env = TokenomicsAECEnv(config=config, horizon=1)
+    bound = float(env.action_space(env._order_agents[0]).high[0])
+    prod_obs = env.observation_space(env._prod_agents[0]).shape[0]
+    order_obs = env.observation_space(env._order_agents[0]).shape[0]
+    g = env.spec_.num_inputs
+    pdim = env.spec_.producing_action_dim
+    prod_logstd = np.full(pdim, prod_log_std, dtype=np.float32)
+    prod_logstd[:g] = prod_replen_log_std
+    prod_bias = producing_mean_bias(g, pdim, prod_replen_bias, prod_restore_bias)
+    prod = GaussianActor(prod_obs, pdim, log_std_init=prod_logstd, mean_bias=prod_bias)
+    order = GaussianActor(order_obs, env.spec_.ordering_action_dim, log_std_init=log_std_init)
+    return prod, order, bound
+
+
+def _fit_clone(
+    actor: GaussianActor, obs: np.ndarray, act: np.ndarray,
+    bound: float, epochs: int, lr: float,
+) -> float:
+    """MSE-fit a Gaussian actor's mean to clipped target actions (greedy deploys
+    clip(mean), ADR-0026). Full-batch Adam; returns the final loss."""
+    X = torch.as_tensor(obs, dtype=torch.float32)
+    Y = torch.clamp(torch.as_tensor(act, dtype=torch.float32), -bound, bound)
+    opt = torch.optim.Adam(actor.actor.parameters(), lr=lr)
+    loss = torch.tensor(0.0)
+    for _ in range(epochs):
+        opt.zero_grad()
+        loss = ((actor.actor(X) - Y) ** 2).mean()
+        loss.backward()
+        opt.step()
+    return float(loss.detach())
+
+
+def behavior_clone(
+    config: Configuration,
+    prod_policy: Policy,
+    order_policy: Policy,
+    *,
+    seeds: "range | list[int]" = range(2),
+    horizon: int = 100,
+    epochs: int = 1000,
+    lr: float = 3e-3,
+    seed: int = 0,
+    prod_log_std: float = DEFAULT_PROD_LOG_STD,
+    prod_replen_log_std: float = DEFAULT_PROD_REPLEN_LOG_STD,
+    prod_replen_bias: float = DEFAULT_PROD_REPLEN_BIAS,
+    prod_restore_bias: float = DEFAULT_PROD_RESTORE_BIAS,
+    log_std_init: float = DEFAULT_ORDER_LOG_STD,
+    log_std_save: float | None = None,
+    save: str | None = None,
+    log: Callable[[str], None] = print,
+) -> str | None:
+    """Supervised pre-train of both actors to a baseline's obs→action map, saved as a
+    PPO-loadable checkpoint (VERIFICATION §11.4). Actors are built with the exact train
+    init (per-dim log_std + replenishment/restore mean bias) so PPO can resume from the
+    saved state without a schema mismatch. Fits the Gaussian *mean* via MSE to the
+    clipped baseline action (greedy deploys clip(mean), ADR-0026), giving PPO a policy
+    that already fulfills instead of needing to discover the multi-hop chain by chance
+    (§12: the from-scratch producing actor hoards capacity and never replenishes)."""
+    torch.manual_seed(seed)   # reproducible actor MLP init -> reproducible clone (§13.3)
+    prod, order, bound = _build_clone_actors(
+        config, prod_log_std=prod_log_std, prod_replen_log_std=prod_replen_log_std,
+        prod_replen_bias=prod_replen_bias, prod_restore_bias=prod_restore_bias,
+        log_std_init=log_std_init,
+    )
+    data = collect_bc_dataset(config, prod_policy, order_policy, seeds, horizon)
+    pl = _fit_clone(prod, data.prod_obs, data.prod_act, bound, epochs, lr)
+    ol = _fit_clone(order, data.order_obs, data.order_act, bound, epochs, lr)
+    log(f"bc fit: prod_mse {pl:.4f} ({data.prod_obs.shape[0]} rows)  "
+        f"order_mse {ol:.4f} ({data.order_obs.shape[0]} rows)")
+    # Tighten exploration for warm-start fine-tuning (§13.3): the wide init log_std
+    # makes stochastic rollouts drift the policy off the cloned greedy optimum.
+    if log_std_save is not None:
+        with torch.no_grad():
+            prod.log_std.fill_(log_std_save)
+            order.log_std.fill_(log_std_save)
+    if save is not None:
+        save_policies(prod, order, bound, save, config=config)
+    return save
+
+
+def dagger_relabel_dataset(
+    config: Configuration,
+    learner_prod: Policy,
+    learner_order: Policy,
+    expert_prod: Policy,
+    expert_order: Policy,
+    seeds: "range | list[int]",
+    horizon: int,
+    bound: float,
+) -> BCData:
+    """One DAgger relabel pass (VERIFICATION §13.11 fix). Roll out the LEARNER (its
+    action drives the env), but at every visited state record the EXPERT's action as
+    the supervised label. Aggregating these over rounds trains the clone on the state
+    distribution it actually reaches — fixing the compounding distribution shift that
+    plain BC suffers (§13.5): plain BC only ever sees the expert's own trajectory, so
+    a small mean error walks the learner into states the expert never visited and the
+    error snowballs over the 100-cycle chain.
+
+    Actions are clipped to the action bound to match the deployed greedy policy
+    (clip(mean), ADR-0026), so labels are exactly what the learner should output."""
+    po: list[np.ndarray] = []
+    pa: list[np.ndarray] = []
+    oo: list[np.ndarray] = []
+    oa: list[np.ndarray] = []
+    for s in seeds:
+        env = TokenomicsAECEnv(config=config, horizon=horizon)
+        env.reset(seed=s)
+        for a in env.possible_agents:
+            env.action_space(a).seed(s)
+        max_iter = env.horizon * len(env.possible_agents) * 3 + 100
+        for agent in env.agent_iter(max_iter=max_iter):
+            _, _, term, trunc, _ = env.last()
+            if term or trunc:
+                env.step(None)
+                continue
+            obs = np.asarray(env.observe(agent), dtype=np.float32)
+            if env._role[agent][0] == "prod":
+                label = np.clip(np.asarray(expert_prod(env, agent), dtype=np.float32), -bound, bound)
+                po.append(obs); pa.append(label)
+                step_act = learner_prod(env, agent)
+            else:
+                label = np.clip(np.asarray(expert_order(env, agent), dtype=np.float32), -bound, bound)
+                oo.append(obs); oa.append(label)
+                step_act = learner_order(env, agent)
+            env.step(step_act)
+    return BCData(
+        prod_obs=np.stack(po), prod_act=np.stack(pa),
+        order_obs=np.stack(oo), order_act=np.stack(oa),
+    )
+
+
+def dagger_clone(
+    configs: "list[Configuration]",
+    expert_prod: Policy,
+    expert_order: Policy,
+    *,
+    dagger_iters: int = 3,
+    seeds: "range | list[int]" = range(2),
+    horizon: int = 100,
+    epochs: int = 1500,
+    lr: float = 3e-3,
+    seed: int = 0,
+    prod_log_std: float = DEFAULT_PROD_LOG_STD,
+    prod_replen_log_std: float = DEFAULT_PROD_REPLEN_LOG_STD,
+    prod_replen_bias: float = DEFAULT_PROD_REPLEN_BIAS,
+    prod_restore_bias: float = DEFAULT_PROD_RESTORE_BIAS,
+    log_std_init: float = DEFAULT_ORDER_LOG_STD,
+    log_std_save: float | None = None,
+    save: str | None = None,
+    log: Callable[[str], None] = print,
+) -> str | None:
+    """Multi-topology DAgger (VERIFICATION §13.11 fix). Round 0 is plain BC on the
+    experts' own rollouts across every config in `configs`; each later round rolls
+    out the CURRENT clone, relabels the states it visits with the experts, AGGREGATES
+    into the dataset, and refits from a fresh (seeded) init. This attacks both held-out
+    failures at once: multiple topologies give generalization breadth, and the relabel
+    fixes the compounding error that made plain multi-topology BC worse (§13.11).
+
+    Actors/dims come from `configs[0]`; the dims-preserving rule (ADR-0039) guarantees
+    every scale topology shares obs/action dims, so one net spans the suite."""
+    pf, of = [], []  # per-(config) aggregated obs/act, grown each round
+    pa_all, oa_all = [], []
+
+    def aggregate(d: BCData) -> None:
+        pf.append(d.prod_obs); pa_all.append(d.prod_act)
+        of.append(d.order_obs); oa_all.append(d.order_act)
+
+    # round 0: plain BC on expert trajectories across all topologies
+    for cfg in configs:
+        aggregate(collect_bc_dataset(cfg, expert_prod, expert_order, seeds, horizon))
+
+    prod = order = None
+    bound = 0.0
+    for it in range(dagger_iters):
+        torch.manual_seed(seed)  # refit from a fixed init on the grown dataset
+        prod, order, bound = _build_clone_actors(
+            configs[0], prod_log_std=prod_log_std, prod_replen_log_std=prod_replen_log_std,
+            prod_replen_bias=prod_replen_bias, prod_restore_bias=prod_restore_bias,
+            log_std_init=log_std_init,
+        )
+        PO, PA = np.concatenate(pf), np.concatenate(pa_all)
+        OO, OA = np.concatenate(of), np.concatenate(oa_all)
+        pl = _fit_clone(prod, PO, PA, bound, epochs, lr)
+        ol = _fit_clone(order, OO, OA, bound, epochs, lr)
+        log(f"dagger round {it}: prod_mse {pl:.4f} order_mse {ol:.4f} "
+            f"({PO.shape[0]} prod rows, {len(configs)} topos)")
+        # relabel the CURRENT clone's visited states with the experts (skip after the
+        # final fit — nothing would consume the new data).
+        if it < dagger_iters - 1:
+            lp, lo = greedy_eval_policies(prod, order, bound)
+            for cfg in configs:
+                aggregate(dagger_relabel_dataset(cfg, lp, lo, expert_prod, expert_order,
+                                                 seeds, horizon, bound))
+
+    if log_std_save is not None:
+        with torch.no_grad():
+            prod.log_std.fill_(log_std_save)
+            order.log_std.fill_(log_std_save)
+    if save is not None:
+        save_policies(prod, order, bound, save, config=configs[0])
+    return save
+
+
+def evaluate_validation_suite(
+    prod_policy: Policy,
+    order_policy: Policy,
+    configs: list[Configuration],
+    seeds: "range | list[int]",
+    horizon: int,
+) -> dict[str, float]:
+    """Aggregate greedy-policy eval across a fixed validation topology suite (plan
+    item 3). Each config is scored over `seeds`; the returned metric is the mean of
+    the per-config eval means. Selecting checkpoints on this — not on base_cfg alone —
+    stops a policy that wins the single fixed topology but loses the held-out
+    distribution from being kept (ADR-0011 best-on-eval generalized to a suite)."""
+    per = [
+        evaluate(prod_policy, order_policy, seeds=seeds, horizon=horizon, config=c)
+        for c in configs
+    ]
+    return {k: float(np.mean([m[k][0] for m in per])) for k in per[0]}
+
+
+def _model_dims(config: Configuration) -> tuple[int, int, int, int, int]:
+    """Actor/critic tensor dimensions that must match across train/validation configs."""
+    sp = build_spec(config)
+    return (
+        sp.producing_obs_dim,
+        sp.producing_action_dim,
+        sp.ordering_obs_dim,
+        sp.ordering_action_dim,
+        sp.global_state_dim,
+    )
+
+
+@dataclass
 class IterStats:
     """One per-iteration training-curve record (ADR-0003). Optimization signals
     (rollout reward + actor/critic losses) plus greedy-eval task metrics from the
@@ -741,18 +1049,38 @@ class IterStats:
     order_kl: float = float("nan")
     order_clipfrac: float = float("nan")
     critic_explained_var: float = float("nan")
+    # per-role critic fit (VERIFICATION §13.6 diagnostic): the pooled EV above can
+    # mask one role being fit far worse than the other (different return scales,
+    # one shared value head). NaN when that role had no transitions this iter.
+    critic_explained_var_prod: float = float("nan")
+    critic_explained_var_order: float = float("nan")
+    # critic fit gate (VERIFICATION §13.6): True on iters where actors were held
+    # frozen (warmup window or EV below the gate), so the curve shows when PPO
+    # actually drove the policy vs. when only the critic was learning.
+    actors_frozen: bool = False
     eval_cycles: float = float("nan")
     eval_dead_rate: float = float("nan")
     eval_consumer_completed: float = float("nan")
     eval_consumer_rejected: float = float("nan")
     eval_cap_min: float = float("nan")
     eval_return: float = float("nan")
+    # validation topology-suite metrics (VERIFICATION §9.5): the score that actually
+    # drives checkpoint selection, surfaced in the curve. NaN when no suite is given.
+    val_dead_rate: float = float("nan")
+    val_consumer_completed_units: float = float("nan")
+    val_return: float = float("nan")
 
 
 # Held-out reporting seeds start here (#7) — disjoint from validation seeds
 # range(eval_seeds) and from signal_check's default 0..N, so the held-out report is
 # on episodes that never influenced checkpoint selection.
 HELD_OUT_SEED_OFFSET = 10_000
+
+# Topology-seed bands kept disjoint so a checkpoint is never validated or reported on a
+# topology it trained on (plan item 3): training DR draws [1, TRAINING_SEED_HI), the
+# validation suite uses [VALIDATION_SEED_OFFSET, ...), held-out uses [HELD_OUT_SEED_OFFSET, ...).
+TRAINING_SEED_HI = 9_000
+VALIDATION_SEED_OFFSET = 9_000
 
 # Reward scale for optimization only (logging stays raw). Keeps critic targets
 # and advantages at O(1) so value loss doesn't dominate — the cycle reward is a
@@ -893,6 +1221,52 @@ def explained_variance(y: np.ndarray, pred: np.ndarray) -> float:
     return 1.0 - float((y - pred).var()) / var_y
 
 
+def role_explained_variance(
+    ret_all: np.ndarray, preds: np.ndarray, n_prod: int
+) -> tuple[float, float, float]:
+    """Pooled + per-role critic fit (VERIFICATION §13.6 diagnostic).
+
+    The centralized critic regresses ONE pooled target — `glob_all = pbuf.glob +
+    obuf.glob`, so the first `n_prod` rows are producer transitions and the rest are
+    ordering. A single value head + one PopArt normalizer over both roles can fit a
+    bimodal target poorly; splitting EV by role localizes the failure (which the
+    pooled number alone hides). Degenerate slices report NaN (EV undefined)."""
+    pooled = explained_variance(ret_all, preds)
+    prod = explained_variance(ret_all[:n_prod], preds[:n_prod]) if n_prod > 0 else float("nan")
+    order = (
+        explained_variance(ret_all[n_prod:], preds[n_prod:])
+        if n_prod < len(ret_all)
+        else float("nan")
+    )
+    return pooled, prod, order
+
+
+def actors_should_freeze(
+    it: int,
+    critic_warmup: int,
+    recent_evs: Sequence[float],
+    critic_gate_ev: float | None,
+) -> bool:
+    """Critic fit gate (VERIFICATION §13.6, generalizes the ADR-0013 fixed warmup).
+
+    Why: at depth-3 scale the critic shows negative explained variance, so PPO
+    advantages are untrustworthy and actor updates drift a good (cloned) policy
+    toward under-production. Hold the actors frozen until value learning earns the
+    right to drive them.
+
+    Frozen when (a) inside the fixed `critic_warmup` window, or (b) a gate threshold
+    is set and the critic has not yet demonstrated its fit — either no finite EV has
+    been read (`recent_evs` empty) or the rolling-mean EV is below `critic_gate_ev`.
+    `critic_gate_ev=None` disables the EV gate (warmup-only behaviour)."""
+    if it < critic_warmup:
+        return True
+    if critic_gate_ev is None:
+        return False
+    if not recent_evs:
+        return True
+    return (sum(recent_evs) / len(recent_evs)) < critic_gate_ev
+
+
 def critic_update(
     critic: CentralCritic,
     glob: list,
@@ -948,6 +1322,7 @@ class Curriculum:
 
     d_start: float = 0.0
     warmup_frac: float = 0.6
+    d_max: float = 1.0  # difficulty ceiling: hold a capped rung for faster-feedback probes (VERIFICATION §9.1)
     gate: bool = False
     advance_below: float = 0.2
     advance_fulfil: float = 0.8  # min rollout consumer fulfillment to advance (0 = survival-only)
@@ -973,10 +1348,10 @@ class Curriculum:
         return min(1.0, self.d_start + (1.0 - self.d_start) * (it / span))
 
     def level(self, it: int, iters: int) -> float:
-        """Effective difficulty: iteration schedule or evidence-gated level."""
-        if not self.gate:
-            return self.difficulty(it, iters)
-        return self._gated_d
+        """Effective difficulty: iteration schedule or evidence-gated level, clamped
+        to `d_max` so a capped rung can be trained to retention (VERIFICATION §9.1)."""
+        raw = self.difficulty(it, iters) if not self.gate else self._gated_d
+        return min(raw, self.d_max)
 
     def observe(self, stats: RolloutStats) -> None:
         """Accumulate rollout evidence at the current difficulty and advance one
@@ -1079,6 +1454,46 @@ def staged_config(base_cfg: Configuration, p: float) -> Configuration:
     return cfg
 
 
+def topology_dr(
+    *, depth: int = 3, dwell: int = 20, seed_lo: int = 1, seed_hi: int = TRAINING_SEED_HI,
+) -> Callable[[Configuration, np.random.Generator], Configuration]:
+    """Topology domain-randomization provider for `train(topology_random=...)` —
+    the supported trainer path for plan item 2 (was scratch in `_scale_lab`).
+
+    Returns a fresh scale topology (the held-out family, `build_scale_config`) and
+    holds it for `dwell` iters before rotating the seed. Two subtleties this fixes:
+      (1) easing: the trainer applies `staged_config(active_base, d)` to whatever
+          base this returns, so the curriculum easing is re-applied to the random
+          topology automatically — handled structurally by siting the provider
+          *before* staging, not inside it (cf. the scale-lab closure that re-eased
+          by hand). A full-difficulty random base would otherwise discard the easing
+          and survival never bootstraps.
+      (2) dwell: a NEW topology every iter forces the trainer to rebuild rollout
+          envs every iter (cfg changes), so in-progress episodes never reach horizon
+          and the gate starves (no episodes -> no evidence -> pinned). Holding one
+          topology for `dwell` iters keeps the (seed, difficulty) pair stable so envs
+          persist and episodes run full-length; rotate the seed every `dwell` iters
+          for generalization breadth.
+
+    Dims-preserving (`build_scale_config` fixes the recipe DAG + counts), so the net
+    and critic built once on `base_cfg` stay valid across the whole DR stream."""
+    from ..eval.scale import build_scale_config
+
+    state = {"seed": None, "left": 0}
+
+    def dr(_cfg: Configuration, rng: np.random.Generator) -> Configuration:
+        if state["left"] <= 0:
+            state["seed"] = int(rng.integers(seed_lo, seed_hi))
+            state["left"] = dwell
+        state["left"] -= 1
+        return build_scale_config(state["seed"], depth=depth)
+
+    dr.fresh = lambda: topology_dr(  # type: ignore[attr-defined]
+        depth=depth, dwell=dwell, seed_lo=seed_lo, seed_hi=seed_hi
+    )
+    return dr
+
+
 def scale_competition(cfg: Configuration, d: float) -> Configuration:
     """Copy `cfg` easing *competition* by difficulty `d` (#1-proper, review item #5).
 
@@ -1120,11 +1535,14 @@ def train(
     iters: int = 50,
     steps: int = 1024,
     horizon: int = 100,
+    eval_horizon: int | None = None,
     seed: int = 0,
     num_envs: int = 4,
     config: Configuration | None = None,
     curriculum: Curriculum | None = None,
     domain_random: Callable[[Configuration, np.random.Generator], Configuration] | None = None,
+    topology_random: Callable[[Configuration, np.random.Generator], Configuration] | None = None,
+    validation_configs: list[Configuration] | None = None,
     eval_every: int = 1,
     eval_seeds: int = 3,
     held_out_seeds: int = 0,
@@ -1141,11 +1559,15 @@ def train(
     prod_restore_bias: float = DEFAULT_PROD_RESTORE_BIAS,
     log_std_init: float = DEFAULT_ORDER_LOG_STD,
     critic_warmup: int = 0,
+    critic_gate_ev: float | None = None,
+    critic_gate_window: int = 3,
     no_critic: bool = False,
     target_kl: float | None = DEFAULT_TARGET_KL,
     anneal: bool = True,
+    init_from: str | None = None,
     out: str | None = None,
     save: str | None = None,
+    on_init: Callable[[dict, dict], None] | None = None,
     log: Callable[[str], None] = print,
 ) -> list[IterStats]:
     torch.manual_seed(seed)
@@ -1156,6 +1578,10 @@ def train(
     # rollout envs, AND the internal greedy-eval all derive from this one config,
     # so a non-phase1 spec no longer dimension-mismatches the eval env.
     base_cfg = config if config is not None else load_config(DEFAULT_CONFIG)
+    # Eval horizon is decoupled from the rollout (training) horizon (VERIFICATION §9.2):
+    # train short for dense feedback, eval at the baseline-comparable horizon. Rollout
+    # envs use `horizon`; greedy-eval, validation suite, and held-out use `eff_eval_h`.
+    eff_eval_h = eval_horizon if eval_horizon is not None else horizon
     # Network shapes come from the real spec — degradation scaling never changes
     # obs/action dims (ADR-0006), so one build is valid for every difficulty.
     env = TokenomicsAECEnv(config=base_cfg, horizon=horizon)
@@ -1176,6 +1602,20 @@ def train(
         prod_obs, pdim, log_std_init=prod_logstd, mean_bias=prod_bias
     )
     order = GaussianActor(order_obs, env.spec_.ordering_action_dim, log_std_init=log_std_init)
+    # Warm start from a behavior-cloned checkpoint (VERIFICATION §11.4): overwrite the
+    # from-scratch actor weights with the cloned obs→action map so PPO fine-tunes a
+    # policy that already fulfills, instead of rediscovering the multi-hop chain (§12).
+    if init_from is not None:
+        ckpt = torch.load(init_from, weights_only=True)
+        if ckpt.get("version") != CHECKPOINT_VERSION:
+            raise ValueError(
+                f"init_from checkpoint version {ckpt.get('version')!r} != "
+                f"{CHECKPOINT_VERSION}; behavior-clone with the current schema"
+            )
+        prod.load_state_dict(ckpt["prod"])
+        order.load_state_dict(ckpt["order"])
+    if on_init is not None:
+        on_init(copy.deepcopy(prod.state_dict()), copy.deepcopy(order.state_dict()))
     # ADR-0014: --no-critic drops the learned baseline entirely (REINFORCE with
     # whitened MC returns), testing whether the critic↔actor coupling — not a
     # missing baseline — drove the collapse-from-good-init instability.
@@ -1193,6 +1633,10 @@ def train(
     best_state: tuple[dict, dict] | None = None
     rollout_envs: list[TokenomicsAECEnv] | None = None
     rollout_cfg: Configuration | None = None
+    # Critic fit gate (VERIFICATION §13.6): rolling window of recent FINITE critic
+    # explained-variance readings; the gate frees the actors only once their mean
+    # clears `critic_gate_ev`. One-iter lag (EV is read after the update) is fine.
+    recent_evs: deque[float] = deque(maxlen=max(1, critic_gate_window))
     for it in range(iters):
         # ADR-0008: linearly anneal actor LR to 10% and decay entropy coef to 0
         # over the run. The regression when curriculum pins at diff 1.0 was a
@@ -1209,11 +1653,16 @@ def train(
         # Curriculum config changes still require fresh envs because degradation
         # cannot be changed coherently in the middle of an episode.
         d = curriculum.level(it, iters) if curriculum else 1.0
+        # Topology DR (plan item 2): pick the iter's base topology BEFORE staging so
+        # the curriculum easing below is re-applied to the random topology (subtlety
+        # 1). `topology_dr` holds one topology for `dwell` iters so envs persist
+        # (subtlety 2). Dims-preserving, so the net built on base_cfg stays valid.
+        active_base = topology_random(base_cfg, rng) if topology_random is not None else base_cfg
         # Sequential 5-stage ladder (#1-proper, review 2026-06-15): the gated scalar
         # `d` ramps one axis at a time (qty -> mixture -> competition -> degradation)
         # via staged_config, so a stall is attributable to a single axis. Eval stays
         # on the real base_cfg.
-        cfg = staged_config(base_cfg, d) if curriculum else base_cfg
+        cfg = staged_config(active_base, d) if curriculum else active_base
         # Domain randomization (step-3 fix): draw a fresh operating point each iter so
         # the policy trains on a DISTRIBUTION, not one point (the open-loop-overfit fix
         # the stage 2-4 findings converged on). Dims-preserving, so the net is valid.
@@ -1239,9 +1688,11 @@ def train(
 
         p_adv, p_ret = gae([r * REW_SCALE for r in pbuf.rew], pbuf.val, pbuf.term, pbuf.boot, pbuf.next_idx)
         o_adv, o_ret = gae([r * REW_SCALE for r in obuf.rew], obuf.val, obuf.term, obuf.boot, obuf.next_idx)
-        # Optional historical ablation (ADR-0013): fit the critic while delaying
-        # actor updates. Its original motivation predated the trajectory fix.
-        warming = it < critic_warmup
+        # Fit the critic while delaying actor updates (ADR-0013 fixed warmup,
+        # generalized by the §13.6 EV gate): hold actors frozen until value
+        # learning is trustworthy, so PPO never drives a good policy off an unfit
+        # critic. `recent_evs` carries prior iters' finite EV readings.
+        warming = actors_should_freeze(it, critic_warmup, recent_evs, critic_gate_ev)
         pstats = ActorStats() if warming else actor_update(prod, pbuf, p_adv, popt, is_discrete=False, ent_coef=cur_ent, target_kl=target_kl)
         ostats = ActorStats() if warming else actor_update(order, obuf, o_adv, oopt, is_discrete=False, ent_coef=cur_ent, target_kl=target_kl)
         pl, ol = pstats.loss, ostats.loss
@@ -1249,13 +1700,21 @@ def train(
         glob_all = pbuf.glob + obuf.glob
         ret_all = np.concatenate([p_ret, o_ret])
         cl = 0.0 if critic is None else critic_update(critic, glob_all, ret_all, copt)
-        critic_ev = float("nan")
+        critic_ev = critic_ev_prod = critic_ev_order = float("nan")
         if critic is not None and glob_all:
             with torch.no_grad():
                 preds = critic.value(
                     torch.as_tensor(np.array(glob_all), dtype=torch.float32)
                 ).cpu().numpy()
-            critic_ev = explained_variance(ret_all, preds)
+            # Split the pooled fit by role (producer rows come first in glob_all) so
+            # a value-fit failure is attributable to one role's return scale (§13.6).
+            critic_ev, critic_ev_prod, critic_ev_order = role_explained_variance(
+                ret_all, preds, len(pbuf.glob)
+            )
+        # Feed the gate's rolling window only finite readings (NaN on no-critic /
+        # empty rollout) so the mean stays well-defined for the next iter.
+        if not math.isnan(critic_ev):
+            recent_evs.append(critic_ev)
         with torch.no_grad():
             # P2 (review 2026-06-15): log entropy over the same per-transition active
             # dims `actor_update` uses. A flat `.mean()` lets the wide replenishment
@@ -1286,6 +1745,9 @@ def train(
             order_kl=ostats.approx_kl,
             order_clipfrac=ostats.clip_frac,
             critic_explained_var=critic_ev,
+            critic_explained_var_prod=critic_ev_prod,
+            critic_explained_var_order=critic_ev_order,
+            actors_frozen=warming,
         )
 
         # Greedy-eval the deployed policy through the eval harness (ADR-0003):
@@ -1296,15 +1758,28 @@ def train(
             # default): the actor input layer matches base_cfg's spec, so a
             # non-default suite would otherwise crash the greedy eval on a shape
             # mismatch. Curriculum eases degradation only — eval stays real.
-            m = evaluate(pp, op, seeds=range(eval_seeds), horizon=horizon, config=base_cfg)
+            m = evaluate(pp, op, seeds=range(eval_seeds), horizon=eff_eval_h, config=base_cfg)
             rec.eval_cycles = m["cycles"][0]
             rec.eval_dead_rate = m["dead_rate"][0]
             rec.eval_consumer_completed = m["consumer_completed"][0]
             rec.eval_consumer_rejected = m["consumer_rejected"][0]
             rec.eval_cap_min = m["cap_min"][0]
             rec.eval_return = m["return"][0]
-            # survival-first ranking: minimize dead rate, then maximize return
-            key = (rec.eval_dead_rate, -rec.eval_return)
+            # Checkpoint selection (ADR-0011). Survival-first ranking: minimize dead
+            # rate, then maximize the goal metric. On a validation topology SUITE
+            # (plan item 3) rank on mean death then mean consumer UNITS — the held-out
+            # goal — so a checkpoint that wins base_cfg but loses the distribution is
+            # not kept; without a suite, fall back to the base eval (death, return).
+            if validation_configs:
+                vs = evaluate_validation_suite(
+                    pp, op, validation_configs, range(eval_seeds), eff_eval_h
+                )
+                key = (vs["dead_rate"], -vs["consumer_completed_units"])
+                rec.val_dead_rate = vs["dead_rate"]
+                rec.val_consumer_completed_units = vs["consumer_completed_units"]
+                rec.val_return = vs["return"]
+            else:
+                key = (rec.eval_dead_rate, -rec.eval_return)
             if best_key is None or key < best_key:
                 best_key = key
                 best_state = (
@@ -1315,11 +1790,16 @@ def train(
         history.append(rec)
         log(
             f"iter {it:3d}  diff {d:4.2f}  step_rew {mean_rew:8.3f}  ploss {pl:7.3f}  oloss {ol:7.3f}  closs {cl:7.3f}"
-            f"  cev {rec.critic_explained_var:5.2f}  pkl {rec.prod_kl:5.3f}  pcf {rec.prod_clipfrac:4.2f}  okl {rec.order_kl:5.3f}  ocf {rec.order_clipfrac:4.2f}"
+            f"  cev {rec.critic_explained_var:5.2f} (p {rec.critic_explained_var_prod:5.2f} o {rec.critic_explained_var_order:5.2f})  pkl {rec.prod_kl:5.3f}  pcf {rec.prod_clipfrac:4.2f}  okl {rec.order_kl:5.3f}  ocf {rec.order_clipfrac:4.2f}"
             f"  roll_dead {roll_dead:4.2f}  rfill {roll.fulfillment:4.2f}  pent {rec.prod_entropy:4.2f}  ostd {rec.order_std:4.2f}"
             f"  | eval cyc {rec.eval_cycles:6.1f}  dead {rec.eval_dead_rate:4.2f}"
             f"  cons✓ {rec.eval_consumer_completed:7.1f}  cons✗ {rec.eval_consumer_rejected:6.1f}"
             f"  capmin {rec.eval_cap_min:6.1f}  ret {rec.eval_return:8.1f}"
+            + (
+                f"  | val dead {rec.val_dead_rate:4.2f}  vcu✓ {rec.val_consumer_completed_units:7.1f}"
+                if validation_configs and not math.isnan(rec.val_consumer_completed_units)
+                else ""
+            )
         )
 
     if out:
@@ -1330,7 +1810,10 @@ def train(
     if best_state is not None:
         prod.load_state_dict(best_state[0])
         order.load_state_dict(best_state[1])
-        log(f"best eval: dead {best_key[0]:.2f}  ret {-best_key[1]:.1f}")
+        # Selection metric is validation-suite mean units when a suite is given, else
+        # base_cfg return (plan item 3) — labelled generically.
+        sel = "val_units" if validation_configs else "ret"
+        log(f"best eval: dead {best_key[0]:.2f}  {sel} {-best_key[1]:.1f}")
     # #7: report the selected checkpoint on a DISJOINT held-out seed range. Checkpoint
     # selection used validation seeds range(eval_seeds); held-out seeds start at
     # HELD_OUT_SEED_OFFSET so the reported number is on episodes never seen by model
@@ -1340,7 +1823,7 @@ def train(
         ho = evaluate(
             pp, op,
             seeds=range(HELD_OUT_SEED_OFFSET, HELD_OUT_SEED_OFFSET + held_out_seeds),
-            horizon=horizon, config=base_cfg,
+            horizon=eff_eval_h, config=base_cfg,
         )
         log(
             f"held-out ({held_out_seeds} seeds)  cyc {ho['cycles'][0]:6.1f}  "
@@ -1394,23 +1877,28 @@ def train_seeds(
     direction-aware: the headline is the worst seed, not one lucky checkpoint."""
     report = report or DEFAULT_SEED_REPORT
     base_cfg = config if config is not None else load_config(DEFAULT_CONFIG)
+    eff_eval_h = train_kwargs.get("eval_horizon") or horizon
     held_out = range(HELD_OUT_SEED_OFFSET, HELD_OUT_SEED_OFFSET + held_out_seeds)
     # A gated Curriculum is mutable — train() advances it via observe(). Give each
     # model seed a FRESH copy, else later seeds inherit earlier seeds' gated level and
     # the median/worst-case would compare different curricula, not independent seeds.
     base_curriculum = train_kwargs.pop("curriculum", None)
+    base_topology_random = train_kwargs.pop("topology_random", None)
     per_seed: list[dict[str, float]] = []
     for s in seeds:
         seed_kwargs = dict(train_kwargs)
         if base_curriculum is not None:
             seed_kwargs["curriculum"] = copy.deepcopy(base_curriculum)
+        if base_topology_random is not None:
+            fresh = getattr(base_topology_random, "fresh", None)
+            seed_kwargs["topology_random"] = fresh() if fresh is not None else copy.deepcopy(base_topology_random)
         with tempfile.NamedTemporaryFile(suffix=".pt") as f:
             train(
                 seed=s, config=config, horizon=horizon, save=f.name,
                 log=lambda *a, **k: None, **seed_kwargs,
             )
             pp, op = load_policies(f.name)
-        m = evaluate(pp, op, seeds=held_out, horizon=horizon, config=base_cfg)
+        m = evaluate(pp, op, seeds=held_out, horizon=eff_eval_h, config=base_cfg)
         row = {k: m[k][0] for k in report}
         per_seed.append(row)
         log(
@@ -1428,7 +1916,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=50)
     ap.add_argument("--steps", type=int, default=1024)
-    ap.add_argument("--horizon", type=int, default=100)
+    ap.add_argument("--horizon", type=int, default=100, help="rollout (training) horizon: max cycles per training episode")
+    ap.add_argument("--eval-horizon", type=int, default=None, help="separate horizon for greedy/validation/held-out eval (VERIFICATION §9.2; default = --horizon). Train short, eval at the baseline-comparable horizon.")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--num-seeds", type=int, default=1, help="train this many independent MODEL seeds (seed..seed+N-1) and report median/worst-case held-out metrics (NEXT STEPS stage 2; 1=single run)")
     ap.add_argument("--num-envs", type=int, default=4, help="parallel rollout envs (ADR-0005)")
@@ -1436,6 +1925,7 @@ def main() -> None:
     ap.add_argument("--no-curriculum", action="store_true", help="train at full real difficulty (disable ADR-0006 curriculum)")
     ap.add_argument("--d-start", type=float, default=0.0, help="curriculum start progress on the staged ladder (0=stage 1 fixed-qty1; #1-proper)")
     ap.add_argument("--warmup-frac", type=float, default=0.6, help="fraction of run to reach full difficulty (iter floor)")
+    ap.add_argument("--max-diff", type=float, default=1.0, help="curriculum difficulty ceiling: hold a capped rung (VERIFICATION §9.1; 1.0=full task). Both gated and iter-schedule are clamped to this.")
     ap.add_argument("--gate", action="store_true", help="eval-gated curriculum: advance difficulty on rollout survival (ADR-0009)")
     ap.add_argument("--advance-below", type=float, default=0.2, help="max rollout death-rate to advance the gated curriculum (ADR-0009)")
     ap.add_argument("--advance-fulfil", type=float, default=0.8, help="min rollout consumer fulfillment to advance the gated curriculum (review 2026-06-15)")
@@ -1457,6 +1947,8 @@ def main() -> None:
     ap.add_argument("--prod-restore-bias", type=float, default=DEFAULT_PROD_RESTORE_BIAS, help="positive output-bias init on the restoration toggle so greedy mean restores from iter 0 (survive-first prior, ADR-0043)")
     ap.add_argument("--log-std-init", type=float, default=DEFAULT_ORDER_LOG_STD, help="initial ordering-actor log std; lower = less exploration noise (ADR-0012/0024)")
     ap.add_argument("--critic-warmup", type=int, default=0, help="freeze actors for the first K iters so policy grads use a warm critic (ADR-0013)")
+    ap.add_argument("--critic-gate-ev", type=float, default=None, help="critic fit gate: keep actors frozen until the rolling-mean critic explained variance clears this threshold (VERIFICATION §13.6; off by default)")
+    ap.add_argument("--critic-gate-window", type=int, default=3, help="rolling window (iters) over which the critic-fit-gate averages explained variance")
     ap.add_argument("--no-critic", action="store_true", help="drop the learned critic: REINFORCE with whitened MC returns (ADR-0014)")
     kl = ap.add_mutually_exclusive_group()
     kl.add_argument("--target-kl", type=float, dest="target_kl", help="actor target-KL (default 0.008; ADR-0015/0024)")
@@ -1465,19 +1957,52 @@ def main() -> None:
     ap.add_argument("--no-anneal", action="store_true", help="disable actor LR / entropy annealing (ADR-0008)")
     ap.add_argument("--out", type=str, default=None, help="write per-iter curve CSV to this path")
     ap.add_argument("--save", type=str, default=None, help="checkpoint the trained policy to this path (for signal_check)")
+    ap.add_argument("--init-from", type=str, default=None, help="warm-start actors from a behavior-cloned checkpoint before PPO (VERIFICATION §11.4)")
     ap.add_argument("--domain-random", action="store_true", help="domain-randomized training: draw a dims-preserving config per iter from the ranges below (step-3 overfit fix)")
     ap.add_argument("--dr-deg-max", type=float, default=1.4, help="domain-randomization degradation factor upper bound (drawn from [1.0, this])")
     ap.add_argument("--dr-cap-min", type=float, default=0.75, help="domain-randomization capacity factor lower bound (drawn from [this, 1.0])")
     ap.add_argument("--dr-cost-max", type=float, default=1.4, help="domain-randomization cost factor upper bound (drawn from [1.0, this])")
     ap.add_argument("--dr-qty-max", type=int, default=3, help="domain-randomization max consumer quantity (drawn from 1..this)")
+    ap.add_argument("--topology-random", action="store_true", help="topology domain-randomization (plan item 2): train on fresh dims-preserving scale topologies, staged by the curriculum (supersedes the _scale_lab scratch path)")
+    ap.add_argument("--topology-depth", type=int, default=3, help="supply-chain depth of the randomized scale topologies (build_scale_config depth)")
+    ap.add_argument("--topology-dwell", type=int, default=20, help="iters to hold each random topology before rotating the seed (keeps envs stable so the gate gets episode evidence)")
+    ap.add_argument("--validation-seeds", type=int, default=0, help="checkpoint selection on a validation topology suite of this many seeds (plan item 3; 0=select on base_cfg only). Band disjoint from training + held-out.")
     args = ap.parse_args()
     curriculum = None if args.no_curriculum else Curriculum(
-        d_start=args.d_start, warmup_frac=args.warmup_frac,
+        d_start=args.d_start, warmup_frac=args.warmup_frac, d_max=args.max_diff,
         gate=args.gate, advance_below=args.advance_below,
         advance_fulfil=args.advance_fulfil, min_episodes=args.min_episodes,
         d_step=args.d_step,
     )
     cfg = load_config(args.config) if args.config else None
+    topo_dr = None
+    if args.topology_random:
+        topo_dr = topology_dr(depth=args.topology_depth, dwell=args.topology_dwell)
+        # The net + critic are built once on base_cfg; topology DR yields scale
+        # topologies, so the base must share their dims. Default the base to a scale
+        # topology (seed 0) when no explicit --config is given, else a phase1-sized
+        # net dim-mismatches the first rotated topology's global state.
+        if cfg is None:
+            from ..eval.scale import build_scale_config
+            cfg = build_scale_config(0, depth=args.topology_depth)
+    val_cfgs = None
+    if args.validation_seeds > 0:
+        from ..eval.scale import build_scale_config
+        if cfg is None:
+            # Validation seeds are scale topologies. Without an explicit base config,
+            # default to the matching scale family so the actors/critic are built with
+            # compatible dimensions even when --topology-random is omitted.
+            cfg = build_scale_config(0, depth=args.topology_depth)
+        val_cfgs = [
+            build_scale_config(VALIDATION_SEED_OFFSET + i, depth=args.topology_depth)
+            for i in range(args.validation_seeds)
+        ]
+        if val_cfgs and _model_dims(cfg) != _model_dims(val_cfgs[0]):
+            ap.error(
+                "--validation-seeds builds a scale validation suite whose "
+                "observation/action dimensions do not match --config; use a matching "
+                "scale config or omit --validation-seeds"
+            )
     dr = None
     if args.domain_random:
         from ..eval.generalization import random_domain_config
@@ -1491,8 +2016,9 @@ def main() -> None:
     # the chosen entrypoint (the sweep threads its own seed + temp checkpoint).
     common = dict(
         iters=args.iters, steps=args.steps,
-        num_envs=args.num_envs, curriculum=curriculum, domain_random=dr, eval_every=args.eval_every,
-        eval_seeds=args.eval_seeds,
+        num_envs=args.num_envs, curriculum=curriculum, domain_random=dr,
+        topology_random=topo_dr, validation_configs=val_cfgs, eval_every=args.eval_every,
+        eval_seeds=args.eval_seeds, eval_horizon=args.eval_horizon,
         actor_lr=args.actor_lr, ent_coef=args.ent_coef,
         surv_coef=args.surv_coef, death_penalty=args.death_penalty,
         low_cap_coef=args.low_cap_coef, low_cap_thresh=args.low_cap_thresh,
@@ -1502,8 +2028,10 @@ def main() -> None:
         prod_replen_bias=args.prod_replen_bias,
         prod_restore_bias=args.prod_restore_bias,
         log_std_init=args.log_std_init,
-        critic_warmup=args.critic_warmup, no_critic=args.no_critic,
+        critic_warmup=args.critic_warmup, critic_gate_ev=args.critic_gate_ev,
+        critic_gate_window=args.critic_gate_window, no_critic=args.no_critic,
         target_kl=args.target_kl, anneal=not args.no_anneal,
+        init_from=args.init_from,
     )
     if args.num_seeds > 1:
         # NEXT STEPS stage 2: many model seeds -> median + worst-case held-out report.

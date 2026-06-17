@@ -165,6 +165,58 @@ def test_two_scale_seeds_expose_different_mechanics_in_obs():
     assert not np.allclose(ma, mb)  # mechanics are no longer hidden seed state
 
 
+def test_two_scale_seeds_expose_different_mechanics_in_global_state():
+    # Plan item 1 (critic mechanics state): the producing OBS got the mechanics block
+    # (ADR-0044) but the centralized-critic GLOBAL STATE did not, so under topology DR
+    # the critic sees the same global vector for two seeds with different return
+    # dynamics -> noisy value targets -> weak advantages -> the producing policy does
+    # not transfer. The critic must see the per-producer seed-varying mechanics too.
+    import numpy as np
+    from tokenomics.eval.scale import build_scale_config
+
+    cfg_a, cfg_b = build_scale_config(seed=1), build_scale_config(seed=2)
+    assert _dims(cfg_a) == _dims(cfg_b)  # same shape: one critic spans both
+
+    ea, eb = TokenomicsAECEnv(config=cfg_a, horizon=10), TokenomicsAECEnv(config=cfg_b, horizon=10)
+    ea.reset(); eb.reset()
+    sp = ea.spec_
+    block = slice(sp.global_mechanics_start, sp.global_mechanics_start + sp.global_mechanics_len)
+
+    ga = np.asarray(ea.global_state())[block]
+    gb = np.asarray(eb.global_state())[block]
+    assert ga.shape == gb.shape
+    assert not np.allclose(ga, gb)  # critic mechanics are no longer hidden seed state
+
+
+def test_global_state_mechanics_block_matches_producer_economics():
+    # Plan item 1: lock the per-producer critic mechanics layout. Each producer's
+    # 9-field block (global_mechanics_len) is: summed degradation, restoration amount,
+    # upgrade amount, max-replenish, replenish cost, restoration cost, upgrade cost,
+    # inventory-expansion increases, its cost — normalized like the obs block.
+    import pytest
+    from tokenomics.eval.scale import build_scale_config
+
+    cfg = build_scale_config(seed=7)
+    e = TokenomicsAECEnv(config=cfg, horizon=10)
+    e.reset()
+    sp = e.spec_
+    gs = e.global_state()
+    pcfg = next(p for p in cfg.producer_configs if p.replenish_cost_per_unit is not None)
+    pid = pcfg.id
+    j = sp.producer_ids.index(pid)
+    base = sp.global_mechanics_start + j * sp.global_mechanics_len
+    view = e.system.producing_agents[pid].view()
+    assert gs[base + 0] == pytest.approx(sum(view.degradation.values()) / sp.cap_ref)
+    assert gs[base + 1] == pytest.approx(view.restoration / sp.cap_ref)
+    assert gs[base + 2] == pytest.approx(view.upgrade / sp.cap_ref)
+    assert gs[base + 3] == pytest.approx(sp.max_replenish[pid] / sp.inv_ref)
+    assert gs[base + 4] == pytest.approx(pcfg.replenish_cost_per_unit / sp.token_ref)
+    assert gs[base + 5] == pytest.approx(pcfg.restoration.cost / sp.token_ref)
+    assert gs[base + 6] == pytest.approx(pcfg.upgrade.cost / sp.token_ref)
+    assert gs[base + 7] == pytest.approx(pcfg.inventory_expansion.increases / sp.inv_ref)
+    assert gs[base + 8] == pytest.approx(pcfg.inventory_expansion.cost / sp.token_ref)
+
+
 def test_return_tracks_fulfilment_at_scale_so_fulfilling_beats_doing_nothing():
     # Finding B (ADR-0042) acceptance bar: at a DEEP scale (depth 4 — where the old
     # reward made do-nothing the return-maximizer) a fulfilling baseline must earn a

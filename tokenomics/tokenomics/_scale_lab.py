@@ -42,7 +42,7 @@ def train_eval(**kw):
     """Train one config and report fixed-seed + held-out eval. kw passed to a fresh
     train() call; `dr` and `depth` handled here."""
     from tokenomics.train.smoke_ppo import (Curriculum, load_policies, train,
-                                            staged_config)
+                                            topology_dr)
     depth = kw.pop("depth", 3)
     dr_mode = kw.pop("dr", None)  # None | "seeds"
     dwell = int(kw.pop("dwell", 20))  # iters to hold each random topology
@@ -50,32 +50,12 @@ def train_eval(**kw):
     use_cur = kw.pop("curriculum", True)
     cur_kw = {k[4:]: kw.pop(k) for k in list(kw) if k.startswith("cur_")}  # cur_gate=, cur_d_step=, ...
     cur = Curriculum(**cur_kw) if use_cur else None
-    dr = None
-    if dr_mode == "seeds":
-        # Topology DR with DWELL. A fresh random scale topology (the held-out family),
-        # EASED by the curriculum's live difficulty. Two subtleties this addresses:
-        #  (1) easing: train() applies staged_config to base_cfg then hands it here;
-        #      replacing it with a full-difficulty random config discards the easing, so
-        #      survival never bootstraps. Re-apply the same easing to the random topo.
-        #  (2) dwell: a NEW topology every iter forces train() to rebuild rollout envs
-        #      every iter, so in-progress episodes never reach horizon and NEVER
-        #      complete (at eased difficulty nothing dies in one short rollout either).
-        #      The gate then starves (no episodes => no evidence => pinned at 0.0) and
-        #      the policy only ever sees cycles 0-9. Hold each topology for `dwell` iters
-        #      so the (seed, difficulty) pair is stable -> staged_config returns an EQUAL
-        #      config -> envs persist -> episodes run full-length and the gate gets
-        #      evidence; rotate the seed every `dwell` iters for generalization breadth.
-        state = {"seed": None, "left": 0}
-        def dr(c, rng):
-            if state["left"] <= 0:
-                state["seed"] = int(rng.integers(1, 9999))
-                state["left"] = dwell
-            state["left"] -= 1
-            cfg = build_scale_config(state["seed"], depth=depth)
-            d = cur._gated_d if (cur is not None and cur.gate) else 1.0
-            return staged_config(cfg, d)
+    # Topology DR now lives in the supported trainer (plan item 2): train() stages the
+    # provider's base with the live curriculum difficulty, so the easing re-application
+    # and dwell subtleties are handled there, not by a scratch closure here.
+    topo = topology_dr(depth=depth, dwell=dwell) if dr_mode == "seeds" else None
     f = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
-    train(config=net_base, horizon=100, num_envs=4, curriculum=cur, domain_random=dr,
+    train(config=net_base, horizon=100, num_envs=4, curriculum=cur, topology_random=topo,
           eval_seeds=2, save=f.name, log=print, **kw)
     pp, op = load_policies(f.name)
     fu, fr, fd = _eval(pp, op, [TRAIN_SEED], depth=depth)

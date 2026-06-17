@@ -41,6 +41,103 @@ def test_train_runs_two_iters():
     assert all(r.eval_cycles > 0 for r in history)
 
 
+def test_topology_dr_holds_each_topology_for_dwell_iters():
+    # Plan item 2 (real trainer topology DR): a NEW random scale topology every iter
+    # forces train() to rebuild rollout envs each iter, so in-progress episodes never
+    # reach horizon and the gate starves. The DR provider must hold one topology for
+    # `dwell` iters (a stable (seed, difficulty) pair -> envs persist -> episodes run
+    # full-length) and rotate the seed afterward for generalization breadth.
+    import numpy as np
+
+    from tokenomics.train.smoke_ppo import topology_dr
+
+    dr = topology_dr(depth=3, dwell=3)
+    rng = np.random.default_rng(0)
+    cfgs = [dr(None, rng) for _ in range(7)]
+    assert cfgs[0] == cfgs[1] == cfgs[2]    # window 1 stable
+    assert cfgs[3] == cfgs[4] == cfgs[5]    # window 2 stable
+    assert cfgs[0] != cfgs[3]               # rotates across windows
+
+
+def test_topology_dr_preserves_obs_action_dims():
+    # Dims-preserving rule (ADR-0039 generalized): one trained net/critic must span the
+    # whole DR stream, so every topology the provider yields shares obs/action/global
+    # dims. build_scale_config fixes the recipe DAG + counts, so this must hold.
+    import numpy as np
+
+    from tokenomics.env.spaces import build_spec
+    from tokenomics.train.smoke_ppo import topology_dr
+
+    dr = topology_dr(depth=3, dwell=1)
+    rng = np.random.default_rng(1)
+    dims = set()
+    for _ in range(6):
+        s = build_spec(dr(None, rng))
+        dims.add((s.producing_obs_dim, s.producing_action_dim,
+                  s.ordering_obs_dim, s.ordering_action_dim, s.global_state_dim))
+    assert len(dims) == 1
+
+
+def test_train_runs_with_topology_dr_and_curriculum():
+    # End-to-end: the supported trainer accepts the topology-DR provider and stages it
+    # (subtlety 1, easing re-applied AFTER topology selection — handled structurally by
+    # train applying staged_config to the provider's base). The loop must complete with
+    # the net built once on base_cfg and never dim-mismatch on a rotated topology.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import Curriculum, topology_dr, train
+
+    base = build_scale_config(0, depth=3)
+    cur = Curriculum(d_start=0.0, gate=True)
+    history = train(
+        iters=2, steps=128, horizon=30, seed=0, num_envs=2, eval_seeds=1,
+        config=base, curriculum=cur, topology_random=topology_dr(depth=3, dwell=2),
+        log=lambda *a, **k: None,
+    )
+    assert len(history) == 2
+
+
+def test_validation_suite_averages_metrics_across_topologies():
+    # Plan item 3: checkpoint selection must score on a fixed VALIDATION TOPOLOGY SUITE,
+    # not only base_cfg — else a checkpoint that wins the one fixed topology but loses
+    # the held-out distribution is kept. The suite score is the per-topology eval mean
+    # averaged across topologies.
+    from tokenomics.eval.baselines import ordering_even_split, producing_obs_stock_aware
+    from tokenomics.eval.runner import evaluate
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import evaluate_validation_suite
+
+    pp, op = producing_obs_stock_aware(0.6), ordering_even_split
+    a, b = build_scale_config(11, depth=3), build_scale_config(12, depth=3)
+    seeds, H = range(2), 40
+
+    single = evaluate_validation_suite(pp, op, [a], seeds, H)
+    assert single["consumer_completed_units"] == pytest.approx(
+        evaluate(pp, op, seeds, H, a)["consumer_completed_units"][0]
+    )
+    both = evaluate_validation_suite(pp, op, [a, b], seeds, H)
+    ma, mb = evaluate(pp, op, seeds, H, a), evaluate(pp, op, seeds, H, b)
+    assert both["dead_rate"] == pytest.approx((ma["dead_rate"][0] + mb["dead_rate"][0]) / 2)
+    assert both["consumer_completed_units"] == pytest.approx(
+        (ma["consumer_completed_units"][0] + mb["consumer_completed_units"][0]) / 2
+    )
+
+
+def test_train_selects_on_validation_suite():
+    # End-to-end: train accepts a validation topology suite for checkpoint selection and
+    # completes, with the net built on base_cfg spanning every suite topology's dims.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import topology_dr, train
+
+    base = build_scale_config(0, depth=3)
+    val = [build_scale_config(s, depth=3) for s in (100, 101)]
+    history = train(
+        iters=2, steps=128, horizon=30, seed=0, num_envs=2, eval_seeds=1,
+        config=base, topology_random=topology_dr(depth=3, dwell=2),
+        validation_configs=val, log=lambda *a, **k: None,
+    )
+    assert len(history) == 2
+
+
 def test_train_accepts_config_and_evals_on_it():
     """B9 plumbing: train(config=...) runs on a non-phase1 suite end-to-end.
     competition.json has 5 producers vs phase1's 4, so the actor input layer is
@@ -1185,6 +1282,63 @@ def test_train_seeds_gives_each_model_seed_an_independent_curriculum(monkeypatch
     assert base._gated_d == 0.0                    # caller's instance untouched
 
 
+def test_train_seeds_recreates_stateful_topology_dr_per_model_seed(monkeypatch):
+    """topology_dr() owns mutable dwell state. A multi-seed sweep must give each
+    model seed a fresh provider, else later seeds inherit the previous seed's
+    topology and remaining dwell window."""
+    from tokenomics.train import smoke_ppo
+    from tokenomics.train.smoke_ppo import topology_dr, train_seeds
+
+    seen = []
+
+    def fake_train(*, topology_random=None, **kw):
+        seen.append(topology_random)
+        return []
+
+    metrics = {k: (0.0, 0.0) for k in smoke_ppo.DEFAULT_SEED_REPORT}
+    monkeypatch.setattr(smoke_ppo, "train", fake_train)
+    monkeypatch.setattr(smoke_ppo, "load_policies", lambda path: (None, None))
+    monkeypatch.setattr(smoke_ppo, "evaluate", lambda *a, **k: metrics)
+
+    train_seeds(
+        seeds=[0, 1, 2],
+        held_out_seeds=1,
+        topology_random=topology_dr(depth=3, dwell=99),
+        log=lambda *a, **k: None,
+    )
+
+    assert len(seen) == 3
+    assert all(t is not None for t in seen)
+    assert len({id(t) for t in seen}) == 3
+
+
+def test_train_seeds_uses_eval_horizon_for_held_out_summary(monkeypatch):
+    """--eval-horizon must apply to the robustness sweep's held-out summary, not
+    only to checkpoint selection inside each train() call."""
+    from tokenomics.train import smoke_ppo
+    from tokenomics.train.smoke_ppo import train_seeds
+
+    horizons = []
+
+    def fake_evaluate(*a, horizon=None, **k):
+        horizons.append(horizon)
+        return {m: (0.0, 0.0) for m in smoke_ppo.DEFAULT_SEED_REPORT}
+
+    monkeypatch.setattr(smoke_ppo, "train", lambda **kw: [])
+    monkeypatch.setattr(smoke_ppo, "load_policies", lambda path: (None, None))
+    monkeypatch.setattr(smoke_ppo, "evaluate", fake_evaluate)
+
+    train_seeds(
+        seeds=[0, 1],
+        held_out_seeds=1,
+        horizon=20,
+        eval_horizon=60,
+        log=lambda *a, **k: None,
+    )
+
+    assert horizons == [60, 60]
+
+
 def test_cli_num_seeds_runs_multi_seed_sweep(monkeypatch, capsys):
     """NEXT STEPS stage 2: `--num-seeds N` runs the multi-seed robustness sweep and
     prints the median/worst-case report instead of a single training run."""
@@ -1199,3 +1353,395 @@ def test_cli_num_seeds_runs_multi_seed_sweep(monkeypatch, capsys):
     smoke_ppo.main()
     out = capsys.readouterr().out.lower()
     assert "worst" in out and "median" in out
+
+
+def test_cli_validation_seeds_defaults_base_to_matching_scale_config(monkeypatch):
+    """--validation-seeds builds a scale suite. Without --config, the CLI should
+    build the actors on a matching scale base instead of defaulting to phase1 and
+    crashing on a shape mismatch during validation eval."""
+    import sys
+
+    from tokenomics.env.spaces import build_spec
+    from tokenomics.train import smoke_ppo
+
+    captured = {}
+
+    def fake_train(**kw):
+        captured.update(kw)
+        return []
+
+    monkeypatch.setattr(sys, "argv", [
+        "smoke_ppo", "--validation-seeds", "1", "--iters", "1", "--steps", "64",
+    ])
+    monkeypatch.setattr(smoke_ppo, "train", fake_train)
+
+    smoke_ppo.main()
+
+    base = build_spec(captured["config"])
+    val = build_spec(captured["validation_configs"][0])
+    assert base.producing_obs_dim == val.producing_obs_dim
+    assert base.ordering_obs_dim == val.ordering_obs_dim
+    assert base.global_state_dim == val.global_state_dim
+
+
+def test_cli_validation_seeds_rejects_shape_mismatched_config(monkeypatch, capsys):
+    """An explicit non-scale --config with --validation-seeds is invalid because
+    validation observations would not match the actors built for the base config."""
+    import sys
+
+    from tokenomics.env.aec_env import DEFAULT_CONFIG
+    from tokenomics.train import smoke_ppo
+
+    monkeypatch.setattr(sys, "argv", [
+        "smoke_ppo", "--config", str(DEFAULT_CONFIG), "--validation-seeds", "1",
+    ])
+    monkeypatch.setattr(
+        smoke_ppo, "train",
+        lambda **kw: pytest.fail("train should not run with mismatched validation dims"),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        smoke_ppo.main()
+
+    assert exc.value.code == 2
+    assert "do not match --config" in capsys.readouterr().err
+
+
+def test_curriculum_caps_difficulty_at_d_max():
+    # Faster-feedback rung probe (VERIFICATION §9.1): hold the curriculum at a capped
+    # difficulty so one rung is trained to retention before escalating. The cap binds
+    # both the iter-schedule and the gated level.
+    from tokenomics.train.smoke_ppo import Curriculum
+
+    capped = Curriculum(d_start=0.0, warmup_frac=0.6, d_max=0.25)
+    assert capped.level(100, 100) <= 0.25 + 1e-9   # past full ramp, still capped
+    assert capped.level(50, 100) <= 0.25 + 1e-9
+    uncapped = Curriculum(d_start=0.0, warmup_frac=0.6)
+    assert uncapped.level(100, 100) > 0.25          # default reaches full difficulty
+
+    gated = Curriculum(d_start=0.2, gate=True, d_max=0.25)
+    gated._gated_d = 0.9                             # pretend evidence advanced it past cap
+    assert gated.level(0, 10) <= 0.25 + 1e-9
+
+
+def test_train_eval_horizon_is_independent_of_train_horizon():
+    # VERIFICATION §9.2: train at a short horizon for dense/fast feedback, but evaluate
+    # at a separate horizon for baseline comparability. eval_cycles must follow
+    # eval_horizon, not the (longer) training horizon.
+    from tokenomics.train.smoke_ppo import train
+
+    history = train(
+        iters=1, steps=128, horizon=50, eval_horizon=3, seed=0, eval_seeds=1,
+        log=lambda *a, **k: None,
+    )
+    assert history[0].eval_cycles <= 3   # eval capped at eval_horizon, not horizon=50
+
+
+def test_train_records_validation_suite_metrics_in_curve():
+    # VERIFICATION §9.5: the validation-suite score drives checkpoint selection but was
+    # hidden from the curve. Expose val_* columns so selected-checkpoint health is
+    # visible per-iter, not only at the final 'best eval' line.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import train
+
+    history = train(
+        iters=1, steps=128, horizon=30, eval_horizon=30, seed=0, eval_seeds=1,
+        config=build_scale_config(0, depth=3),
+        validation_configs=[build_scale_config(9000, depth=3)],
+        log=lambda *a, **k: None,
+    )
+    r = history[0]
+    assert not math.isnan(r.val_dead_rate)
+    assert not math.isnan(r.val_consumer_completed_units)
+    assert not math.isnan(r.val_return)
+
+
+def test_collect_bc_dataset_returns_per_role_obs_action_pairs():
+    # VERIFICATION §11.4: behavior-clone the obs-compatible baseline before PPO. Step 1
+    # is recording (obs, action) pairs per role from a baseline rollout. Widths must
+    # match the actor schema so the cloned net is checkpoint-compatible.
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.env.aec_env import TokenomicsAECEnv
+    from tokenomics.train.smoke_ppo import collect_bc_dataset
+
+    cfg = build_scale_config(0, depth=3)
+    spec = TokenomicsAECEnv(config=cfg).spec_
+    data = collect_bc_dataset(
+        cfg,
+        PRODUCING_BASELINES["obs_stock_aware"],
+        ORDERING_BASELINES["even_split"],
+        seeds=[0],
+        horizon=10,
+    )
+    assert data.prod_obs.shape[0] > 0 and data.order_obs.shape[0] > 0
+    assert data.prod_obs.shape[1] == spec.producing_obs_dim
+    assert data.prod_act.shape[1] == spec.producing_action_dim
+    assert data.order_obs.shape[1] == spec.ordering_obs_dim
+    assert data.order_act.shape[1] == spec.ordering_action_dim
+    assert data.prod_obs.shape[0] == data.prod_act.shape[0]
+
+
+def test_behavior_clone_writes_checkpoint_fitting_producing_baseline(tmp_path):
+    # VERIFICATION §11.4: supervised-fit the actor means to baseline actions, save a
+    # PPO-loadable checkpoint. The cloned producing actor must predict baseline actions
+    # markedly better than the predict-the-mean baseline (i.e. it actually learned the
+    # obs→action map), so PPO starts from a policy that fulfills.
+    import numpy as np
+    import torch
+
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import (GaussianActor, behavior_clone,
+                                            collect_bc_dataset, load_policies)
+
+    cfg = build_scale_config(0, depth=3)
+    prod_base = PRODUCING_BASELINES["obs_stock_aware"]
+    order_base = ORDERING_BASELINES["even_split"]
+    path = tmp_path / "bc.pt"
+    behavior_clone(cfg, prod_base, order_base, seeds=[0, 1], horizon=40,
+                   epochs=800, save=str(path), log=lambda *a, **k: None)
+
+    # checkpoint is loadable as a deployable Policy pair
+    pp, op = load_policies(str(path))
+    assert callable(pp) and callable(op)
+
+    # cloned producing actor predicts baseline actions far better than predict-the-mean
+    ckpt = torch.load(str(path), weights_only=True)
+    prod = GaussianActor(ckpt["prod_obs"], ckpt["prod_act"])
+    prod.load_state_dict(ckpt["prod"])
+    data = collect_bc_dataset(cfg, prod_base, order_base, seeds=[0, 1], horizon=40)
+    bound = ckpt["bound"]
+    target = np.clip(data.prod_act, -bound, bound)
+    with torch.no_grad():
+        pred = prod.actor(torch.as_tensor(data.prod_obs)).numpy()
+    cloned_mse = float(np.mean((pred - target) ** 2))
+    mean_mse = float(np.mean((target - target.mean(axis=0)) ** 2))
+    assert cloned_mse < 0.5 * mean_mse
+
+
+def test_behavior_clone_sets_tight_log_std_for_fine_tuning(tmp_path):
+    # Warm-start fine-tuning needs the cloned actors to explore tightly around their
+    # greedy mean, else stochastic rollouts drift the policy off the cloned optimum
+    # (VERIFICATION §13.3). log_std_save overrides the (wide) init exploration on save.
+    import torch
+
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import behavior_clone
+
+    cfg = build_scale_config(0, depth=3)
+    path = tmp_path / "bc.pt"
+    behavior_clone(cfg, PRODUCING_BASELINES["obs_stock_aware"],
+                   ORDERING_BASELINES["even_split"], seeds=[0], horizon=20,
+                   epochs=10, log_std_save=-1.6, save=str(path),
+                   log=lambda *a, **k: None)
+    ckpt = torch.load(str(path), weights_only=True)
+    assert torch.allclose(ckpt["prod"]["log_std"],
+                          torch.full_like(ckpt["prod"]["log_std"], -1.6))
+    assert torch.allclose(ckpt["order"]["log_std"],
+                          torch.full_like(ckpt["order"]["log_std"], -1.6))
+
+
+def test_behavior_clone_is_reproducible_given_seed(tmp_path):
+    # Clone quality must be reproducible: the actor MLP init is random, so without a
+    # fixed seed two clones land in different optima (one may even die on a held seed,
+    # VERIFICATION §13.3). Same seed -> identical cloned weights.
+    import torch
+
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import behavior_clone
+
+    cfg = build_scale_config(0, depth=3)
+    a, b = tmp_path / "a.pt", tmp_path / "b.pt"
+    kw = dict(seeds=[0], horizon=20, epochs=20, log=lambda *x, **k: None)
+    behavior_clone(cfg, PRODUCING_BASELINES["obs_stock_aware"],
+                   ORDERING_BASELINES["even_split"], seed=7, save=str(a), **kw)
+    behavior_clone(cfg, PRODUCING_BASELINES["obs_stock_aware"],
+                   ORDERING_BASELINES["even_split"], seed=7, save=str(b), **kw)
+    wa = torch.load(str(a), weights_only=True)["prod"]["actor.0.weight"]
+    wb = torch.load(str(b), weights_only=True)["prod"]["actor.0.weight"]
+    assert torch.allclose(wa, wb)
+
+
+def test_train_warm_starts_actors_from_checkpoint(tmp_path):
+    # VERIFICATION §11.4: PPO must resume from the behavior-cloned checkpoint. A
+    # warm-started run loads the cloned actor weights before the first update, so its
+    # initial actors equal the checkpoint's — not the from-scratch init.
+    import torch
+
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import behavior_clone, train
+
+    cfg = build_scale_config(0, depth=3)
+    path = tmp_path / "bc.pt"
+    behavior_clone(cfg, PRODUCING_BASELINES["obs_stock_aware"],
+                   ORDERING_BASELINES["even_split"], seeds=[0], horizon=20,
+                   epochs=50, save=str(path), log=lambda *a, **k: None)
+    clone = torch.load(str(path), weights_only=True)
+
+    saved = tmp_path / "after.pt"
+    captured: dict = {}
+    train(iters=1, steps=64, horizon=20, eval_horizon=20, seed=0, eval_seeds=1,
+          config=cfg, init_from=str(path), save=str(saved),
+          on_init=lambda p, o: captured.update(prod=p, order=o),
+          log=lambda *a, **k: None)
+
+    # actors at iter 0 (before any PPO update) carry the cloned weights
+    w_clone = clone["prod"]["actor.0.weight"]
+    w_init = captured["prod"]["actor.0.weight"]
+    assert torch.allclose(w_init, w_clone)
+
+
+def test_role_explained_variance_splits_pooled_fit_by_role():
+    # Value-fit diagnostic (VERIFICATION §13.6): the critic regresses ONE pooled
+    # target (producer rows then ordering rows). Splitting EV by role localizes a
+    # value-fit failure — a role whose return scale differs can be fit poorly while
+    # the other looks fine, which the pooled number alone would hide.
+    import numpy as np
+
+    from tokenomics.train.smoke_ppo import role_explained_variance
+
+    ret = np.array([1.0, 2.0, 3.0, 10.0, 20.0, 30.0])
+    preds = np.array([1.0, 2.0, 3.0, 30.0, 20.0, 10.0])  # prod exact, order reversed
+    pooled, prod, order = role_explained_variance(ret, preds, n_prod=3)
+    assert prod == pytest.approx(1.0)   # producer rows fit perfectly
+    assert order < 0.0                  # ordering rows worse than predicting the mean
+    assert not math.isnan(pooled)
+    # degenerate splits report NaN, not a crash
+    _, all_prod, no_order = role_explained_variance(ret, preds, n_prod=len(ret))
+    assert math.isnan(no_order)
+    _, no_prod, all_order = role_explained_variance(ret, preds, n_prod=0)
+    assert math.isnan(no_prod)
+
+
+def test_train_records_per_role_critic_explained_variance():
+    # train() must surface both per-role EV readings in the curve so the §13.6
+    # value-learning blocker can be attributed to producer vs ordering returns.
+    from tokenomics.train.smoke_ppo import train
+
+    history = train(
+        iters=2, steps=128, horizon=40, seed=0, eval_seeds=1,
+        log=lambda *a, **k: None,
+    )
+    assert all(not math.isnan(r.critic_explained_var_prod) for r in history)
+    assert all(not math.isnan(r.critic_explained_var_order) for r in history)
+
+
+def test_actors_should_freeze_gates_on_warmup_then_critic_fit():
+    # Critic fit gate (VERIFICATION §13.6): generalize the fixed `critic_warmup` K
+    # into a condition on critic explained variance. Actors stay frozen during the
+    # warmup window, then until the rolling-mean EV clears the gate threshold.
+    from tokenomics.train.smoke_ppo import actors_should_freeze
+
+    # Fixed warmup window dominates regardless of EV / gate.
+    assert actors_should_freeze(0, critic_warmup=2, recent_evs=[0.9], critic_gate_ev=0.5)
+    assert actors_should_freeze(1, critic_warmup=2, recent_evs=[0.9], critic_gate_ev=0.5)
+    # No gate set -> unfreeze the moment the warmup window ends.
+    assert not actors_should_freeze(2, critic_warmup=2, recent_evs=[], critic_gate_ev=None)
+    # Gate set but no finite EV seen yet -> stay frozen (never trust an unfit critic).
+    assert actors_should_freeze(2, critic_warmup=0, recent_evs=[], critic_gate_ev=0.0)
+    # Rolling-mean EV below threshold -> frozen; at/above -> unfrozen.
+    assert actors_should_freeze(5, critic_warmup=0, recent_evs=[-0.3, 0.1], critic_gate_ev=0.2)
+    assert not actors_should_freeze(5, critic_warmup=0, recent_evs=[0.1, 0.5], critic_gate_ev=0.2)
+
+
+def test_critic_gate_freezes_actor_weights_until_ev_clears(tmp_path):
+    # An unreachable EV threshold (>1.0) must keep actors frozen every iter, so the
+    # actor weights never move from their init and every record flags actors_frozen.
+    import torch
+
+    from tokenomics.train.smoke_ppo import train
+
+    captured: dict = {}
+    saved = tmp_path / "gated.pt"
+    history = train(
+        iters=3, steps=128, horizon=40, seed=0, eval_seeds=1,
+        critic_gate_ev=2.0, save=str(saved),
+        on_init=lambda p, o: captured.update(prod=p, order=o),
+        log=lambda *a, **k: None,
+    )
+    assert all(r.actors_frozen for r in history)
+    # frozen actors never move off their init weights
+    final = torch.load(str(saved), weights_only=True)
+    assert torch.allclose(final["prod"]["actor.0.weight"], captured["prod"]["actor.0.weight"])
+    assert torch.allclose(final["order"]["actor.0.weight"], captured["order"]["actor.0.weight"])
+    # default (no gate, no warmup) leaves actors unfrozen
+    history2 = train(
+        iters=2, steps=128, horizon=40, seed=0, eval_seeds=1,
+        log=lambda *a, **k: None,
+    )
+    assert not any(r.actors_frozen for r in history2)
+
+
+def test_dagger_relabel_reduces_to_bc_when_learner_is_expert():
+    # DAgger relabel pass (VERIFICATION §13.11 fix): roll out the LEARNER but label
+    # visited states with the EXPERT. When learner==expert the trajectory and labels
+    # are both the expert's, so the dataset must equal a plain BC dataset.
+    import numpy as np
+
+    from tokenomics.env.aec_env import TokenomicsAECEnv
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import collect_bc_dataset, dagger_relabel_dataset
+
+    cfg = build_scale_config(0, depth=3)
+    pb, ob = PRODUCING_BASELINES["obs_stock_aware"], ORDERING_BASELINES["even_split"]
+    env = TokenomicsAECEnv(config=cfg, horizon=40)
+    bound = float(env.action_space(env._order_agents[0]).high[0])
+
+    bc = collect_bc_dataset(cfg, pb, ob, seeds=[0, 1], horizon=40)
+    dag = dagger_relabel_dataset(cfg, pb, ob, pb, ob, seeds=[0, 1], horizon=40, bound=bound)
+    assert dag.prod_obs.shape == bc.prod_obs.shape
+    assert np.allclose(dag.prod_act, np.clip(bc.prod_act, -bound, bound))
+    assert np.allclose(dag.order_act, np.clip(bc.order_act, -bound, bound))
+
+
+def test_dagger_relabel_labels_with_expert_not_learner():
+    # The trajectory must follow the LEARNER while labels come from the EXPERT. With a
+    # noop learner (no production) and the obs_stock_aware expert, the recorded actions
+    # are the expert's (nonzero), and the noop trajectory differs from a BC rollout.
+    import numpy as np
+
+    from tokenomics.env.aec_env import TokenomicsAECEnv
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import collect_bc_dataset, dagger_relabel_dataset
+
+    cfg = build_scale_config(0, depth=3)
+    pb, ob = PRODUCING_BASELINES["obs_stock_aware"], ORDERING_BASELINES["even_split"]
+    noop = PRODUCING_BASELINES["noop"]
+    env = TokenomicsAECEnv(config=cfg, horizon=40)
+    bound = float(env.action_space(env._order_agents[0]).high[0])
+
+    bc = collect_bc_dataset(cfg, pb, ob, seeds=[0], horizon=40)
+    dag = dagger_relabel_dataset(cfg, noop, ob, pb, ob, seeds=[0], horizon=40, bound=bound)
+    # labels are the expert's (obs_stock_aware produces nonzero actions)
+    assert np.abs(dag.prod_act).sum() > 0.0
+    # trajectory follows the noop learner, not the expert -> different visited states
+    assert dag.prod_obs.shape[0] != bc.prod_obs.shape[0]
+
+
+def test_dagger_clone_runs_and_saves_loadable_checkpoint(tmp_path):
+    # End-to-end DAgger: a couple of relabel rounds across two topologies, then a
+    # loadable checkpoint whose cloned producing actor fits the aggregated labels
+    # better than predict-the-mean.
+    import numpy as np
+    import torch
+
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.smoke_ppo import GaussianActor, dagger_clone, load_policies
+
+    cfgs = [build_scale_config(s, depth=3) for s in (0, 1)]
+    pb, ob = PRODUCING_BASELINES["obs_stock_aware"], ORDERING_BASELINES["even_split"]
+    path = tmp_path / "dagger.pt"
+    dagger_clone(cfgs, pb, ob, dagger_iters=2, seeds=[0], horizon=40,
+                 epochs=300, save=str(path), log=lambda *a, **k: None)
+
+    pp, op = load_policies(str(path))
+    assert callable(pp) and callable(op)
+    ckpt = torch.load(str(path), weights_only=True)
+    assert ckpt["version"] == 6

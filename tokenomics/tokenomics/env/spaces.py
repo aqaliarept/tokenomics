@@ -139,11 +139,32 @@ class EnvSpec:
         return self.num_inputs + 3
 
     @property
+    def global_mechanics_len(self) -> int:
+        # Per-producer producer-mechanics rolled up for the critic (plan item 1):
+        # total degradation this cycle (sum over types) + restoration amount +
+        # upgrade amount + max-replenish + replenish cost + restoration cost +
+        # upgrade cost + inventory-expansion increases + its cost = 9 fields. The
+        # critic counterpart of the per-agent obs block (ADR-0044): without it two
+        # scale seeds give the critic the same global vector but a different return
+        # distribution, so value targets are noisy under topology DR.
+        return 9
+
+    @property
+    def global_mechanics_start(self) -> int:
+        # Mechanics loop follows the 5-field per-producer state block.
+        return 5 * self.num_producers
+
+    @property
     def global_state_dim(self) -> int:
         # Centralized-critic input (ADR-0004): per-producer rolled-up state
-        # (total cap, max total, requested, inventory units, cut-off) + open
-        # consumer demand (quantity + tokens per product, #2) + progress.
-        return 5 * self.num_producers + 2 * self.num_order_products + 1
+        # (total cap, max total, requested, inventory units, cut-off) + per-producer
+        # mechanics block (plan item 1) + open consumer demand (quantity + tokens per
+        # product, #2) + progress.
+        return (
+            5 * self.num_producers
+            + self.global_mechanics_len * self.num_producers
+            + 2 * self.num_order_products + 1
+        )
 
     def producing_obs_space(self) -> spaces.Box:
         return spaces.Box(0.0, OBS_CLIP, shape=(self.producing_obs_dim,), dtype=np.float32)
