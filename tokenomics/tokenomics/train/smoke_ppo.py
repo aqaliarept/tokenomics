@@ -1967,7 +1967,13 @@ def main() -> None:
     ap.add_argument("--topology-depth", type=int, default=3, help="supply-chain depth of the randomized scale topologies (build_scale_config depth)")
     ap.add_argument("--topology-dwell", type=int, default=20, help="iters to hold each random topology before rotating the seed (keeps envs stable so the gate gets episode evidence)")
     ap.add_argument("--validation-seeds", type=int, default=0, help="checkpoint selection on a validation topology suite of this many seeds (plan item 3; 0=select on base_cfg only). Band disjoint from training + held-out.")
+    ap.add_argument("--threads", type=int, default=1, help="torch intra-op CPU threads. Rollout collection is batch-1 (one forward per agent-decision, smoke_ppo.py collect), where multithreaded BLAS is pure thread-launch overhead, so 1 is fastest for a single run AND lets you fan out one process per core. Raise only if running a lone update-bound job.")
     args = ap.parse_args()
+    # Pin BLAS threads before any tensor work. See --threads help: batch-1 rollout
+    # dominates wall-clock, and the throughput win on 8 cores is N parallel runs
+    # (tokenomics.train.parallel), each single-threaded, not one multithreaded run.
+    if args.threads > 0:
+        torch.set_num_threads(args.threads)
     curriculum = None if args.no_curriculum else Curriculum(
         d_start=args.d_start, warmup_frac=args.warmup_frac, d_max=args.max_diff,
         gate=args.gate, advance_below=args.advance_below,

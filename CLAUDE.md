@@ -26,6 +26,18 @@ phase1-implementation-plan.md   roadmap + status + RL target numbers
 ../.venv/bin/python -m tokenomics.train.smoke_ppo --iters 50
 ```
 
+## Parallel training (use the cores)
+One PPO run is single-threaded: rollout `collect` is a sequential Python round-robin over `num_envs`, and inference is batch-1 — extra cores do nothing for one run. Pin BLAS to 1 thread (`--threads 1`, the default) and get throughput by fanning out **independent** runs, one process per core, via `tokenomics.train.parallel`:
+```
+# grid (fixed depth, climbing demand rung)
+../.venv/bin/python -m tokenomics.train.parallel --workers 8 \
+  --common "--iters 400 --steps 1024 --topology-depth 3" \
+  --job d3_p00 "--max-diff 0.00" --job d3_p25 "--max-diff 0.25"
+# seed sweep: one process per seed
+../.venv/bin/python -m tokenomics.train.parallel --workers 8 --seeds 0-7 --common "..."
+```
+Each child auto-gets `--threads 1`; logs stream to `<log-dir>/<name>.log`; `--dry-run` prints commands first. Prefer this over `--num-seeds` (in-process, sequential) for multi-run work.
+
 ## Architecture rules
 - **`domain/` stays pure.** No RL, no numpy, no IO, no logging. Just the simulation.
 - **`env/` = RL adapter only.** All gym spaces, normalization, reward live here — never in domain.
