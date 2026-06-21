@@ -13,6 +13,7 @@ tests/test_scale.py
 tests/test_simplex.py
 tests/test_train_smoke.py
 tokenomics/__init__.py
+tokenomics/_scale_lab.py
 tokenomics.egg-info/PKG-INFO
 tokenomics.egg-info/SOURCES.txt
 tokenomics.egg-info/dependency_links.txt
@@ -40,7 +41,10 @@ tokenomics/eval/held_out.py
 tokenomics/eval/runner.py
 tokenomics/eval/scale.py
 tokenomics/eval/signal_check.py
+tokenomics/eval/swap_eval.py
 tokenomics/eval/manifests/heldout_v1.json
 tokenomics/eval/manifests/heldout_v1_base.json
 tokenomics/train/__init__.py
+tokenomics/train/boundary_grid.py
+tokenomics/train/parallel.py
 tokenomics/train/smoke_ppo.py

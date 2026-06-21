@@ -9,3 +9,9 @@ emulation/emulation
 __pycache__/
 *.pyc
 .claude/sessions/
+
+# transient experiment scratch (curated runs live in experiments/)
+boundary_runs/
+parallel_runs/
+tokenomics/boundary_runs/
+tokenomics/parallel_runs/

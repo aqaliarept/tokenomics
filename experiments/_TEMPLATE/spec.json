@@ -1,0 +1,10 @@
+{
+  "version": "<experiment-kind>-v1",
+  "date": "YYYY-MM-DD",
+  "driver": "<python module or script that ran it>",
+  "question": "<the one question this experiment answers>",
+  "params": {},
+  "configs": {},
+  "compute": {"where": "<local | runpod pod-id / GPU / vCPU>", "wall_time": "<approx>"},
+  "reproduce": "<exact command to re-run>"
+}

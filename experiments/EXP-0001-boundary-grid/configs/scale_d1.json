@@ -1,0 +1,177 @@
+{
+  "cycleEmission": 2800,
+  "processSheets": [
+    {
+      "product": 0,
+      "require": {
+        "capacity-0": 3
+      },
+      "inputs": {}
+    },
+    {
+      "product": 1,
+      "require": {
+        "capacity-0": 3
+      },
+      "inputs": {}
+    },
+    {
+      "product": 2,
+      "require": {
+        "capacity-0": 2
+      },
+      "inputs": {}
+    },
+    {
+      "product": 3,
+      "require": {
+        "capacity-0": 3
+      },
+      "inputs": {}
+    }
+  ],
+  "producerConfigs": [
+    {
+      "id": "p0_0",
+      "capacities": {
+        "capacity-0": 112
+      },
+      "degradation": 6,
+      "restoration": {
+        "product": 0,
+        "restores": 52,
+        "type": "capacity-0",
+        "cost": 49
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 39,
+        "type": "capacity-0",
+        "cost": 50
+      },
+      "produces": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inventoryLimit": 0
+    },
+    {
+      "id": "p0_1",
+      "capacities": {
+        "capacity-0": 117
+      },
+      "degradation": 4,
+      "restoration": {
+        "product": 0,
+        "restores": 56,
+        "type": "capacity-0",
+        "cost": 24
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 39,
+        "type": "capacity-0",
+        "cost": 24
+      },
+      "produces": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inventoryLimit": 0
+    },
+    {
+      "id": "p0_2",
+      "capacities": {
+        "capacity-0": 17
+      },
+      "degradation": 5,
+      "restoration": {
+        "product": 0,
+        "restores": 69,
+        "type": "capacity-0",
+        "cost": 37
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 49,
+        "type": "capacity-0",
+        "cost": 48
+      },
+      "produces": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inventoryLimit": 0
+    },
+    {
+      "id": "p0_3",
+      "capacities": {
+        "capacity-0": 86
+      },
+      "degradation": 3,
+      "restoration": {
+        "product": 0,
+        "restores": 68,
+        "type": "capacity-0",
+        "cost": 47
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 40,
+        "type": "capacity-0",
+        "cost": 35
+      },
+      "produces": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inventoryLimit": 0
+    }
+  ],
+  "consumers": [
+    {
+      "id": "c0",
+      "product": 0,
+      "products": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "quantityMin": 1,
+      "quantityMax": 2
+    },
+    {
+      "id": "c1",
+      "product": 0,
+      "products": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "quantityMin": 1,
+      "quantityMax": 3
+    },
+    {
+      "id": "c2",
+      "product": 0,
+      "products": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "quantityMin": 1,
+      "quantityMax": 3
+    }
+  ]
+}

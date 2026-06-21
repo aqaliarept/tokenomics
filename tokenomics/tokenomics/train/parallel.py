@@ -46,11 +46,14 @@ from typing import Sequence
 
 @dataclass(frozen=True)
 class Job:
-    """One training run: a `name` (used for the log file) and the smoke_ppo CLI
-    args (already split into argv tokens) that distinguish it from the others."""
+    """One run: a `name` (used for the log file), the CLI args (already split into argv
+    tokens) that distinguish it, and the `module` to run them with. `module` defaults to
+    the smoke_ppo trainer; the boundary grid reuses this pool for `eval.swap_eval` too
+    by overriding it (so the swap stage doesn't re-implement the executor)."""
 
     name: str
     args: list[str]
+    module: str = "tokenomics.train.smoke_ppo"
 
 
 @dataclass(frozen=True)
@@ -92,7 +95,7 @@ def build_jobs(
 def _run_one(job: Job, log_dir: Path, dry_run: bool) -> JobResult:
     """Launch one smoke_ppo subprocess, streaming combined output to its log file.
     Uses the current interpreter (`sys.executable -m`) so the active venv is kept."""
-    cmd = [sys.executable, "-m", "tokenomics.train.smoke_ppo", *job.args]
+    cmd = [sys.executable, "-m", job.module, *job.args]
     log_path = log_dir / f"{job.name}.log"
     if dry_run:
         print(f"[dry-run] {job.name}: {shlex.join(cmd)}")

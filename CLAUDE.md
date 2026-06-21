@@ -11,9 +11,10 @@ tokenomics/tokenomics/
   domain/   pure sim logic (no RL, no IO, no logging)
   env/      PettingZoo AEC adapter: spaces, encode, decode, aec_env
   eval/     heuristic baselines + metrics harness (signal check)
-  train/    smoke PPO (optional: needs torch)
+  train/    smoke PPO + parallel fan-out + boundary_grid driver (optional: needs torch)
   config/   phase1.json
 docs/        ADRs (adr/), deep-research-report (6-phase curriculum), requirements
+experiments/ empirical runs + results, one dir per experiment — see experiments/README.md
 CONTEXT.md   domain glossary — READ FIRST, use these exact terms
 phase1-implementation-plan.md   roadmap + status + RL target numbers
 ```
@@ -37,6 +38,42 @@ One PPO run is single-threaded: rollout `collect` is a sequential Python round-r
 ../.venv/bin/python -m tokenomics.train.parallel --workers 8 --seeds 0-7 --common "..."
 ```
 Each child auto-gets `--threads 1`; logs stream to `<log-dir>/<name>.log`; `--dry-run` prints commands first. Prefer this over `--num-seeds` (in-process, sequential) for multi-run work.
+
+## Experiments (boundary grid)
+A full experiment = a question + materialized configs + many runs + a result, kept as **one dir** under `experiments/`. **Read `experiments/README.md` first** — it owns the layout/convention (`spec.json`, `RESULT.md`, `summary.csv`, `configs/` tracked; `artifacts/` = checkpoints/logs via **git-lfs**). ADRs = design decisions; experiments = empirical results; `VERIFICATION.md` = open questions linking out.
+
+`tokenomics.train.boundary_grid` is the driver (don't hand-roll raw `parallel`/`smoke_ppo` for this). It materializes the fixed depth-1/2/3 scale topologies, fans out from-scratch PPO across the depth × quantity grid (via `tokenomics.train.parallel`), runs the policy-swap probe per checkpoint, and **emits the whole experiments-dir layout directly** — point `--out-dir` at a fresh `EXP-NNNN` dir:
+```
+# local
+../.venv/bin/python -m tokenomics.train.boundary_grid --iters 400 --steps 1024 \
+  --workers 6 --held-out-seeds 5 --swap-seeds 5 --out-dir ../experiments/EXP-0002-<title>
+# subset / fast check: --cells d3_p00,d3_p25 --dry-run
+```
+Then fill in `RESULT.md`'s Conclusions and add an index row to `experiments/README.md`. Worked example: `experiments/EXP-0001-boundary-grid/` (depth is the wall, producer is the blocker).
+
+**Off-box**: wrap the same command with the Runpod driver below — `--train` runs boundary_grid on the pod, `--pull` brings the EXP dir back:
+```
+python run_pod_training.py --pod-id <id> \
+  --train "-u -m tokenomics.train.boundary_grid --iters 400 --steps 1024 --workers 6 \
+           --held-out-seeds 5 --swap-seeds 5 --out-dir /workspace/tokenomics/boundary_runs/grid" \
+  --pull "/workspace/tokenomics/boundary_runs/grid:./experiments/EXP-NNNN-<title>"
+```
+`-u` keeps the driver's stdout unbuffered (per-cell iter logs already flush live to their files). Pod (25 vCPU) runs all 6 cells concurrently; full grid ≈ 15 min.
+
+## Remote GPU training (Runpod)
+`run_pod_training.py` (repo root) drives a full off-box run on a Runpod GPU pod: **start pod → rsync code → venv+install → train → stop pod**. Pod stop runs in a `finally`, so the pod is stopped even on error / Ctrl-C (the whole point: don't pay for an idle GPU). Needs `runpodctl` authed (`runpodctl doctor`), plus `ssh`+`rsync` locally.
+```
+# default = smoke PPO; stops pod when done
+python run_pod_training.py --pod-id <id>
+# real run: save a checkpoint, pull it back, then stop
+python run_pod_training.py --pod-id <id> \
+  --train "-m tokenomics.train.smoke_ppo --iters 400 --steps 1024 --save /workspace/model.pt" \
+  --pull /workspace/model.pt:./model.pt
+```
+- `--train "<args>"` = args handed to the pod's `.venv/bin/python` (default: smoke PPO). `--pull REMOTE:LOCAL` (repeatable) rsyncs files back before stopping.
+- Pod addressed by **id**; ip/port resolved fresh each run via `runpodctl ssh info` (they change across restarts). Code goes to `/workspace/tokenomics`; pod venv is `--system-site-packages` to reuse the image's CUDA torch.
+- Skips: `--no-stop` (leave pod up for inspection), `--no-sync`, `--no-install`. `--ssh-key` / `--ready-timeout` override defaults.
+- **Caveat**: training runs in the **foreground** over SSH — the script must stay connected for the whole run. Fine for short/smoke runs; for long runs that must survive a laptop sleep/disconnect, switch to a detached `nohup`+poll model first (not yet implemented).
 
 ## Architecture rules
 - **`domain/` stays pure.** No RL, no numpy, no IO, no logging. Just the simulation.

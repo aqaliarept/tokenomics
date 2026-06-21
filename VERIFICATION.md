@@ -81,3 +81,45 @@ The current evidence says learning starts failing much earlier than the full com
 
   My current read: the first real wall is probably depth-3 producer credit assignment, made worse by variable quantity.
   Product mixture and topology randomization are later generalization problems, not the original learning failure.
+
+---
+
+## RESULT — boundary grid (2026-06-21)
+
+Ran the exact grid above: from-scratch PPO (400 iters, 1024 steps, seed 0) on a FIXED scale
+topology per depth, held at the cell's quantity rung (`--max-diff`), then the policy-swap
+probe. Driver: `tokenomics.train.boundary_grid` (materializes the depth configs, fans out via
+`tokenomics.train.parallel`, runs `eval.swap_eval` per checkpoint). Held-out = 5 disjoint seeds;
+cu✓ = consumer units fulfilled.
+
+| cell    | depth | p    | train cu✓ | base+base | train/base | base+train | train+base       | verdict            |
+|---------|-------|------|-----------|-----------|------------|------------|------------------|--------------------|
+| d1_p00  | 1     | 0.00 | 539       | 562       | 1.00       | 562        | 562              | solved (parity)    |
+| d2_p00  | 2     | 0.00 | 524       | 561       | 0.98       | 555        | 544              | solved (parity)    |
+| d3_p00  | 3     | 0.00 | 129       | 362       | 0.37       | 392        | 39  (80% dead)   | WALL — producer    |
+| d3_p10  | 3     | 0.10 | 99        | 362       | 0.34       | 258        | 54  (80% dead)   | producer           |
+| d3_p24  | 3     | 0.24 | 93        | 362       | 0.34       | 154        | 52               | producer + death   |
+| d3_p25  | 3     | 0.25 | 106       | 362       | 0.40       | 269        | 52               | producer + death   |
+
+Conclusions (the open questions above, resolved):
+
+1. **The wall is chain DEPTH, not variable quantity.** Depth 1 and depth 2 reach baseline parity
+   (ratio ~1.0). Depth 3 collapses to ~37% of baseline *with quantity fixed* (p=0.00) — the
+   fulfillment failure is fully present before any quantity randomization. Failure starts at
+   depth 3, not depth 2; fixed quantity p=0.00 is NOT learnable at depth 3.
+
+2. **The blocker is the PRODUCER (confirmed by swap).** At every depth-3 cell `base+train ≈
+   base+base` (trained ordering is good, sometimes better), while `train+base` collapses to
+   28–46 cons✓, often 80% death. RL learns ordering; it does not learn depth-3 producer
+   replenishment/inventory/assembly.
+
+3. **Variable quantity adds a SEPARATE failure: survival.** At p≤0.10 held-out death = 0; at
+   p≥0.24 it jumps to 0.40–0.60 (episodes die at cyc 70–83). Quantity does not create the
+   fulfillment wall (already there at p=0) but breaks survival on top of it.
+
+Artifacts: `tokenomics/boundary_runs/grid-cloud/grid/` (per-cell `.log`/`.pt`/`.csv`/`.swap.log`
++ materialized `configs/scale_d{1,2,3}.json`). Run on a Runpod 25-vCPU pod, ~15 min wall.
+
+Next: the fix is producer-side — get the depth-3 producer to learn the chain (DAgger warm-start
+from `stock_aware`, or denser producer credit assignment). Not an ordering or generalization
+problem.

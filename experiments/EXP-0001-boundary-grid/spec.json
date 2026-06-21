@@ -1,0 +1,36 @@
+{
+  "version": "boundary-grid-v1",
+  "date": "2026-06-21",
+  "driver": "tokenomics.train.boundary_grid",
+  "question": "Is the depth-3 learning failure caused by chain depth or by variable quantity (the demand rung)? Which side — producer or orderer — is the blocker? (VERIFICATION.md)",
+  "params": {
+    "iters": 400,
+    "steps": 1024,
+    "seed": 0,
+    "held_out_seeds": 5,
+    "eval_every": 10,
+    "eval_seeds": 3,
+    "swap_seeds": 5,
+    "swap_horizon": 100
+  },
+  "cells": [
+    {"name": "d1_p00", "depth": 1, "max_diff": 0.0},
+    {"name": "d2_p00", "depth": 2, "max_diff": 0.0},
+    {"name": "d3_p00", "depth": 3, "max_diff": 0.0},
+    {"name": "d3_p10", "depth": 3, "max_diff": 0.1},
+    {"name": "d3_p24", "depth": 3, "max_diff": 0.24},
+    {"name": "d3_p25", "depth": 3, "max_diff": 0.25}
+  ],
+  "configs": {
+    "1": "configs/scale_d1.json",
+    "2": "configs/scale_d2.json",
+    "3": "configs/scale_d3.json"
+  },
+  "compute": {
+    "where": "Runpod pod h8n0zosgxesksp (1x RTX A4000, 25 vCPU)",
+    "driver_script": "run_pod_training.py",
+    "wall_time": "~15 min",
+    "note": "CPU-bound (batch-1 rollout, BLAS pinned to 1 thread); 6 cells fanned out via tokenomics.train.parallel"
+  },
+  "reproduce": "cd tokenomics && python -m tokenomics.train.boundary_grid --iters 400 --steps 1024 --workers 6 --held-out-seeds 5 --swap-seeds 5 --eval-every 10 --out-dir <EXP-dir>"
+}

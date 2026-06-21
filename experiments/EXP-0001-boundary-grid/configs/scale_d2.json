@@ -1,0 +1,345 @@
+{
+  "cycleEmission": 3600,
+  "processSheets": [
+    {
+      "product": 0,
+      "require": {
+        "capacity-0": 3
+      },
+      "inputs": {}
+    },
+    {
+      "product": 1,
+      "require": {
+        "capacity-0": 3
+      },
+      "inputs": {}
+    },
+    {
+      "product": 2,
+      "require": {
+        "capacity-0": 2
+      },
+      "inputs": {}
+    },
+    {
+      "product": 3,
+      "require": {
+        "capacity-0": 3
+      },
+      "inputs": {}
+    },
+    {
+      "product": 10,
+      "require": {
+        "capacity-1": 6
+      },
+      "inputs": {
+        "0": 1
+      }
+    },
+    {
+      "product": 11,
+      "require": {
+        "capacity-1": 5
+      },
+      "inputs": {
+        "1": 1
+      }
+    },
+    {
+      "product": 12,
+      "require": {
+        "capacity-1": 5
+      },
+      "inputs": {
+        "2": 1
+      }
+    },
+    {
+      "product": 13,
+      "require": {
+        "capacity-1": 4
+      },
+      "inputs": {
+        "3": 1
+      }
+    }
+  ],
+  "producerConfigs": [
+    {
+      "id": "p0_0",
+      "capacities": {
+        "capacity-0": 110
+      },
+      "degradation": 5,
+      "restoration": {
+        "product": 0,
+        "restores": 58,
+        "type": "capacity-0",
+        "cost": 48
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 36,
+        "type": "capacity-0",
+        "cost": 36
+      },
+      "produces": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inventoryLimit": 0
+    },
+    {
+      "id": "p0_1",
+      "capacities": {
+        "capacity-0": 88
+      },
+      "degradation": 3,
+      "restoration": {
+        "product": 0,
+        "restores": 59,
+        "type": "capacity-0",
+        "cost": 45
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 38,
+        "type": "capacity-0",
+        "cost": 49
+      },
+      "produces": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inventoryLimit": 0
+    },
+    {
+      "id": "p0_2",
+      "capacities": {
+        "capacity-0": 125
+      },
+      "degradation": 7,
+      "restoration": {
+        "product": 0,
+        "restores": 68,
+        "type": "capacity-0",
+        "cost": 24
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 39,
+        "type": "capacity-0",
+        "cost": 23
+      },
+      "produces": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inventoryLimit": 0
+    },
+    {
+      "id": "p0_3",
+      "capacities": {
+        "capacity-0": 18
+      },
+      "degradation": 5,
+      "restoration": {
+        "product": 0,
+        "restores": 55,
+        "type": "capacity-0",
+        "cost": 37
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 33,
+        "type": "capacity-0",
+        "cost": 31
+      },
+      "produces": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "inventoryLimit": 0
+    },
+    {
+      "id": "p1_0",
+      "capacities": {
+        "capacity-1": 107
+      },
+      "degradation": 5,
+      "restoration": {
+        "product": 0,
+        "restores": 59,
+        "type": "capacity-1",
+        "cost": 40
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 36,
+        "type": "capacity-1",
+        "cost": 50
+      },
+      "produces": [
+        10,
+        11,
+        12,
+        13
+      ],
+      "inventoryLimit": 37,
+      "inventoryExpansion": {
+        "product": 0,
+        "increases": 23,
+        "cost": 28
+      },
+      "replenishCostPerUnit": 5,
+      "maxReplenish": 11
+    },
+    {
+      "id": "p1_1",
+      "capacities": {
+        "capacity-1": 138
+      },
+      "degradation": 7,
+      "restoration": {
+        "product": 0,
+        "restores": 69,
+        "type": "capacity-1",
+        "cost": 20
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 32,
+        "type": "capacity-1",
+        "cost": 43
+      },
+      "produces": [
+        10,
+        11,
+        12,
+        13
+      ],
+      "inventoryLimit": 32,
+      "inventoryExpansion": {
+        "product": 0,
+        "increases": 24,
+        "cost": 35
+      },
+      "replenishCostPerUnit": 2,
+      "maxReplenish": 13
+    },
+    {
+      "id": "p1_2",
+      "capacities": {
+        "capacity-1": 13
+      },
+      "degradation": 4,
+      "restoration": {
+        "product": 0,
+        "restores": 63,
+        "type": "capacity-1",
+        "cost": 30
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 32,
+        "type": "capacity-1",
+        "cost": 26
+      },
+      "produces": [
+        10,
+        11,
+        12,
+        13
+      ],
+      "inventoryLimit": 38,
+      "inventoryExpansion": {
+        "product": 0,
+        "increases": 17,
+        "cost": 37
+      },
+      "replenishCostPerUnit": 3,
+      "maxReplenish": 9
+    },
+    {
+      "id": "p1_3",
+      "capacities": {
+        "capacity-1": 85
+      },
+      "degradation": 5,
+      "restoration": {
+        "product": 0,
+        "restores": 68,
+        "type": "capacity-1",
+        "cost": 36
+      },
+      "upgrade": {
+        "product": 0,
+        "capacity": 45,
+        "type": "capacity-1",
+        "cost": 23
+      },
+      "produces": [
+        10,
+        11,
+        12,
+        13
+      ],
+      "inventoryLimit": 29,
+      "inventoryExpansion": {
+        "product": 0,
+        "increases": 16,
+        "cost": 37
+      },
+      "replenishCostPerUnit": 4,
+      "maxReplenish": 12
+    }
+  ],
+  "consumers": [
+    {
+      "id": "c0",
+      "product": 10,
+      "products": [
+        10,
+        11,
+        12,
+        13
+      ],
+      "quantityMin": 1,
+      "quantityMax": 3
+    },
+    {
+      "id": "c1",
+      "product": 10,
+      "products": [
+        10,
+        11,
+        12,
+        13
+      ],
+      "quantityMin": 1,
+      "quantityMax": 2
+    },
+    {
+      "id": "c2",
+      "product": 10,
+      "products": [
+        10,
+        11,
+        12,
+        13
+      ],
+      "quantityMin": 1,
+      "quantityMax": 3
+    }
+  ]
+}
