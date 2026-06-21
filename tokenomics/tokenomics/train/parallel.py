@@ -98,10 +98,13 @@ def _run_one(job: Job, log_dir: Path, dry_run: bool) -> JobResult:
         print(f"[dry-run] {job.name}: {shlex.join(cmd)}")
         return JobResult(job.name, 0, 0.0, log_path)
     start = time.monotonic()
+    # Child stdout is the log file (not a tty), so Python block-buffers it and per-iter
+    # lines only land at ~8KB chunks / process exit. Force unbuffered so logs stream live.
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     with log_path.open("w") as log:
         log.write(f"# {shlex.join(cmd)}\n")
         log.flush()
-        proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT)
+        proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
     elapsed = time.monotonic() - start
     print(f"[done] {job.name:16}  rc={proc.returncode}  {elapsed:7.1f}s  -> {log_path}")
     return JobResult(job.name, proc.returncode, elapsed, log_path)

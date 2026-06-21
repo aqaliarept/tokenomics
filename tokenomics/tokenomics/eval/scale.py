@@ -22,6 +22,49 @@ import random
 from ..domain.config import (Configuration, ConsumerConfig, InventoryExpansion,
                              ProcessSheet, ProducingAgentConfig, Restoration, Upgrade)
 
+
+def config_to_dict(cfg: Configuration) -> dict:
+    """Inverse of `domain.config.load_config`: serialize a Configuration to the JSON
+    schema so a built scale topology can be pinned to a file and trained via
+    `smoke_ppo --config` (the only clean way to fix a depth-D base; `--topology-depth`
+    alone is inert without `--topology-random`/`--validation-seeds`)."""
+    producers = []
+    for p in cfg.producer_configs:
+        d: dict = {
+            "id": p.id,
+            "capacities": dict(p.capacities),
+            "degradation": p.degradation,
+            "restoration": {"product": p.restoration.require, "restores": p.restoration.restores,
+                            "type": p.restoration.type, "cost": p.restoration.cost},
+            "upgrade": {"product": p.upgrade.require, "capacity": p.upgrade.increases,
+                        "type": p.upgrade.type, "cost": p.upgrade.cost},
+            "produces": sorted(p.produces),
+            "inventoryLimit": p.inventory_limit,
+        }
+        if p.inventory_expansion is not None:
+            d["inventoryExpansion"] = {"product": p.inventory_expansion.require,
+                                       "increases": p.inventory_expansion.increases,
+                                       "cost": p.inventory_expansion.cost}
+        if p.replenish_cost_per_unit is not None:
+            d["replenishCostPerUnit"] = p.replenish_cost_per_unit
+        if p.max_replenish is not None:
+            d["maxReplenish"] = p.max_replenish
+        producers.append(d)
+    return {
+        "cycleEmission": cfg.cycle_emission,
+        "processSheets": [
+            {"product": ps.product, "require": dict(ps.require),
+             "inputs": {str(k): v for k, v in ps.inputs.items()}}
+            for ps in cfg.process_sheets
+        ],
+        "producerConfigs": producers,
+        "consumers": [
+            {"id": c.id, "product": c.product, "products": list(c.products),
+             "quantityMin": c.quantity_min, "quantityMax": c.quantity_max}
+            for c in cfg.consumers
+        ],
+    }
+
 # product id = level*10 + index; capacity type = "capacity-{level}".
 _MAINT = 0  # the layer-0 primal product every restoration/upgrade/expansion requires
 
@@ -114,3 +157,22 @@ def build_scale_config(
     )
     cfg.validate()
     return cfg
+
+
+def main() -> None:
+    import argparse
+    import json
+    ap = argparse.ArgumentParser(description="dump build_scale_config(seed, depth) to JSON")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--depth", type=int, default=3)
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+    cfg = build_scale_config(args.seed, depth=args.depth)
+    with open(args.out, "w") as f:
+        json.dump(config_to_dict(cfg), f, indent=2)
+    print(f"depth {args.depth} seed {args.seed} -> {args.out} "
+          f"({len(cfg.producer_configs)} producers, {len(cfg.process_sheets)} sheets)")
+
+
+if __name__ == "__main__":
+    main()
