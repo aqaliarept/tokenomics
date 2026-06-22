@@ -49,3 +49,6 @@ to isolate the blocker. Held-out = 5 disjoint seeds. `cu✓` = consumer units fu
 The fix is producer-side: get the depth-3 producer to learn the chain (DAgger warm-start from
 `stock_aware`, or denser producer credit assignment). Not an ordering or generalization problem.
 Tracked in memory `boundary-grid-result`; the VERIFICATION.md "RESULT" section mirrors this.
+
+> **Follow-up:** the producer-first warm-start fix is its own experiment —
+> see `experiments/EXP-0002-producer-warm-start/`.

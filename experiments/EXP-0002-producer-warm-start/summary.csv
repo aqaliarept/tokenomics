@@ -1,0 +1,16 @@
+row_type,key,clone_path,depth,topos,clone_base_units,clone_base_dead,base_base_units,ratio,decoded_match,restore_fp,restore_fn,replen_exact,verdict
+gate,d3_plain_mse,plain-MSE BC,3,1,217.2,0.0,361.8,0.60,0.122,485,0,0.800,FAIL
+gate,d3_decode_aware,masked-MSE+BCE-toggle DAgger,3,1,373.6,0.0,361.8,1.03,0.999,0,0,0.999,PASS
+gate,d3_multi,decode-aware DAgger + multi-topology,3,3,361.8,0.0,361.8,1.00,0.995,0,1,0.993,PASS
+gate,d3_perm,decode-aware DAgger + slot permutation,3,9,361.6,0.0,361.8,1.00,,,,,PASS
+regression,d1_decode_aware,decode-aware DAgger,1,1,562.0,0.0,562.0,1.00,,,,,PASS
+regression,d2_decode_aware,decode-aware DAgger,2,1,560.6,0.0,560.6,1.00,,,,,PASS
+heldout,d3_multi_seed3,decode-aware DAgger + multi-topology,3,3,244.6,0.0,200.8,1.22,,,,,PASS
+heldout,d3_multi_seed4,decode-aware DAgger + multi-topology,3,3,483.0,0.0,511.6,0.94,,,,,PASS
+heldout,d3_multi_seed5,decode-aware DAgger + multi-topology,3,3,440.8,0.0,440.4,1.00,,,,,PASS
+heldout,d3_perm_seed3,decode-aware DAgger + slot permutation,3,9,240.7,0.0,202.0,1.19,,,,,PASS
+heldout,d3_perm_seed4,decode-aware DAgger + slot permutation,3,9,489.7,0.0,502.3,0.97,,,,,PASS
+heldout,d3_perm_seed5,decode-aware DAgger + slot permutation,3,9,407.7,0.0,442.3,0.92,,,,,PASS
+heldout_perm,d3_perm_p_a,decode-aware DAgger + slot permutation,3,9,326.2,0.0,383.8,0.85,,,,,PASS
+heldout_perm,d3_perm_p_b,decode-aware DAgger + slot permutation,3,9,323.8,0.0,376.4,0.86,,,,,PASS
+heldout_perm,d3_perm_p_c,decode-aware DAgger + slot permutation,3,9,365.2,0.0,359.8,1.02,,,,,PASS

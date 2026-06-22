@@ -9,6 +9,7 @@ questions and methodology and links out to the experiment that answered each.
 | ID | Date | Question | Verdict |
 |---|---|---|---|
 | [EXP-0001](EXP-0001-boundary-grid/RESULT.md) | 2026-06-21 | Depth-3 wall: chain depth or variable quantity? Producer or orderer? | Wall = **depth** (fails at depth-3, p=0.00; depth-2 fine). Blocker = **producer**. Variable quantity = separate survival failure. |
+| [EXP-0002](EXP-0002-producer-warm-start/RESULT.md) | 2026-06-22 | Can a clone of `obs_stock_aware` clear the d3_p00 producer gate, why does plain cloning fail, and does it survive slot permutation? | **Phase 1 PASS** (decode-aware clone+base 373.6, ratio 1.03; plain MSE FAILS 0.60 — gated decode + sign error, restore FP 485). **Phase 2 PASS**: multi-topology + slot permutation hold (held-out seeds 0.92–1.19; held-out *permutations* of trained economy 0.85–1.02, above bar — learned local rule, not slots; d1/d2 regress 1.00). |
 
 ## Layout & conventions
 

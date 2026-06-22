@@ -18,6 +18,8 @@ deterministic for a given seed."""
 from __future__ import annotations
 
 import random
+from dataclasses import replace
+from typing import Sequence
 
 from ..domain.config import (Configuration, ConsumerConfig, InventoryExpansion,
                              ProcessSheet, ProducingAgentConfig, Restoration, Upgrade)
@@ -157,6 +159,93 @@ def build_scale_config(
     )
     cfg.validate()
     return cfg
+
+
+def permute_scale_config(
+    cfg: Configuration,
+    *,
+    product_perm: Sequence[int],
+    producer_perm: Sequence[int],
+) -> Configuration:
+    """Relabel a scale config's slots without changing the economy (ADR-0049 Phase 2
+    slot randomization). `product_perm` permutes the within-level product index (applied
+    to every level, so the index-aligned recipe DAG stays isomorphic); `producer_perm`
+    permutes the within-level producer slot `k`. Both are bijections of the per-level
+    width, so dims, the capacity-type set, and `produces` (always a whole level) are
+    preserved — only WHICH sorted id holds which config changes. That moves the obs
+    producer-summary slots, the input/open-demand product slots, and the replenish
+    action dims (and, run through the real env, the expert labels) off fixed positions,
+    fighting slot memorization. Pure: relabel + re-validate, no mechanics touched."""
+    pp = list(product_perm)
+    qp = list(producer_perm)
+
+    def map_prod(pid: int) -> int:
+        return (pid // 10) * 10 + pp[pid % 10]
+
+    def map_producer(pid: str) -> str:
+        level, k = pid[1:].split("_")
+        return f"p{level}_{qp[int(k)]}"
+
+    sheets = [
+        replace(ps, product=map_prod(ps.product),
+                inputs={map_prod(k): v for k, v in ps.inputs.items()})
+        for ps in cfg.process_sheets
+    ]
+    producers = [
+        replace(
+            p,
+            id=map_producer(p.id),
+            produces=frozenset(map_prod(x) for x in p.produces),
+            restoration=replace(p.restoration, require=map_prod(p.restoration.require)),
+            upgrade=replace(p.upgrade, require=map_prod(p.upgrade.require)),
+            inventory_expansion=(
+                replace(p.inventory_expansion, require=map_prod(p.inventory_expansion.require))
+                if p.inventory_expansion is not None else None
+            ),
+        )
+        for p in cfg.producer_configs
+    ]
+    consumers = [
+        replace(c, product=map_prod(c.product),
+                products=tuple(map_prod(x) for x in c.product_pool))
+        for c in cfg.consumers
+    ]
+    out = Configuration(
+        cycle_emission=cfg.cycle_emission, process_sheets=sheets,
+        producer_configs=producers, consumers=consumers,
+    )
+    out.validate()
+    return out
+
+
+def scale_topology_set(
+    seeds: Sequence[int],
+    *,
+    depth: int = 3,
+    perms: int = 0,
+    perm_seed: int = 0,
+    products_per_layer: int = 4,
+    producers_per_layer: int = 4,
+) -> list[Configuration]:
+    """The Phase 2 training-config set (ADR-0049): each base `build_scale_config(seed)`
+    followed by `perms` slot-permuted variants of it (distinct product- and producer-
+    index permutations drawn from `perm_seed`). All variants share the dims envelope so
+    one net spans the set; the permutations relabel slots without changing the economy
+    (`permute_scale_config`), adding slot-memorization pressure on top of the multi-seed
+    mechanics variation. `perms=0` returns exactly the base configs (identity)."""
+    rng = random.Random(perm_seed)
+    out: list[Configuration] = []
+    for s in seeds:
+        base = build_scale_config(s, depth=depth, products_per_layer=products_per_layer,
+                                  producers_per_layer=producers_per_layer)
+        out.append(base)
+        for _ in range(perms):
+            pp = list(range(products_per_layer))
+            qp = list(range(producers_per_layer))
+            rng.shuffle(pp)
+            rng.shuffle(qp)
+            out.append(permute_scale_config(base, product_perm=pp, producer_perm=qp))
+    return out
 
 
 def main() -> None:

@@ -89,14 +89,29 @@ def pod_status(pod_id: str) -> str:
     return json.loads(out).get("desiredStatus", "UNKNOWN")
 
 
-def start_pod(pod_id: str) -> None:
+def start_pod(pod_id: str, *, retries: int = 0, retry_delay: int = 30) -> None:
+    """Start the pod, retrying transient start failures.
+
+    Runpod refuses `pod start` with "not enough free GPUs on the host machine" when the
+    pod's host is momentarily full — a transient capacity error, not a config error. We
+    retry up to `retries` extra times with a fixed delay so a queued run can grab a GPU
+    as soon as one frees, instead of failing the whole off-box cycle."""
     status = pod_status(pod_id)
     log(f"pod {pod_id} status: {status}")
     if status == "RUNNING":
         log("pod already running")
         return
-    log("starting pod...")
-    run(["runpodctl", "pod", "start", pod_id])
+    attempts = retries + 1
+    for attempt in range(1, attempts + 1):
+        log(f"starting pod... (attempt {attempt}/{attempts})")
+        res = run(["runpodctl", "pod", "start", pod_id], check=False, capture=True)
+        if res.returncode == 0:
+            return
+        reason = (res.stderr or res.stdout).strip()
+        if attempt == attempts:
+            raise RuntimeError(f"pod start failed after {attempts} attempt(s): {reason}")
+        log(f"start failed ({reason}); retrying in {retry_delay}s")
+        time.sleep(retry_delay)
 
 
 def stop_pod(pod_id: str) -> None:
@@ -207,6 +222,8 @@ def main() -> int:
     ap.add_argument("--ssh-key", default=None, help="override SSH private key path")
     ap.add_argument("--remote-log", default="/workspace/train.log", help="log path on the pod")
     ap.add_argument("--ready-timeout", type=int, default=600, help="seconds to wait for SSH after start")
+    ap.add_argument("--start-retries", type=int, default=0, help="extra pod-start attempts on transient failure (e.g. host out of free GPUs)")
+    ap.add_argument("--start-retry-delay", type=int, default=30, help="seconds between pod-start retries")
     ap.add_argument(
         "--pull",
         action="append",
@@ -225,7 +242,7 @@ def main() -> int:
 
     started_ok = False
     try:
-        start_pod(args.pod_id)
+        start_pod(args.pod_id, retries=args.start_retries, retry_delay=args.start_retry_delay)
         ssh = wait_for_ssh(args.pod_id, args.ssh_key, args.ready_timeout)
         started_ok = True
 

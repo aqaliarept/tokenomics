@@ -825,6 +825,54 @@ def _fit_clone(
     return float(loss.detach())
 
 
+def _fit_producer_clone(
+    actor: GaussianActor,
+    obs: np.ndarray,
+    act: np.ndarray,
+    masks: np.ndarray,
+    weights: np.ndarray,
+    *,
+    g: int,
+    bound: float,
+    epochs: int,
+    lr: float,
+    toggle_weight: float = 5.0,
+) -> float:
+    """Decode-aware producer clone fit (ADR-0049 Phase 1). Plain full-vector MSE
+    (`_fit_clone`) ignores that `decode_producing` is gated at 0 — toggles fire for
+    raw>0, replenish for raw>0, masked dims are no-ops — so a low-MSE clone decodes
+    the wrong command (empirically ~85% restoration false positives, decoded match
+    0.15). This loss matches the decode boundary:
+
+      - replenishment dims: weighted MSE over decode-ACTIVE dims only (`masks`);
+      - toggle dims: BCE on the SIGN (target = label>0), exactly decode's threshold,
+        so the optimizer is penalized for crossing it rather than for L2 distance.
+
+    Per-sample `weights` upweight the middle layer + positive examples (the depth-3
+    wall is L1 restoration/replenishment, EXP-0001 trace)."""
+    X = torch.as_tensor(obs, dtype=torch.float32)
+    Y = torch.clamp(torch.as_tensor(act, dtype=torch.float32), -bound, bound)
+    M = torch.as_tensor(masks, dtype=torch.float32)
+    W = torch.as_tensor(weights, dtype=torch.float32).unsqueeze(1)
+    tog_target = (Y[:, g : g + 3] > 0).float()  # decode fires a toggle iff raw > 0
+    opt = torch.optim.Adam(actor.actor.parameters(), lr=lr)
+    loss = torch.tensor(0.0)
+    for _ in range(epochs):
+        opt.zero_grad()
+        out = actor.actor(X)
+        rep_w = M[:, :g] * W
+        rep_loss = (((out[:, :g] - Y[:, :g]) ** 2) * rep_w).sum() / rep_w.sum().clamp_min(1.0)
+        tog_w = M[:, g : g + 3] * W
+        tog_bce = nn.functional.binary_cross_entropy_with_logits(
+            out[:, g : g + 3], tog_target, reduction="none"
+        )
+        tog_loss = (tog_bce * tog_w).sum() / tog_w.sum().clamp_min(1.0)
+        loss = rep_loss + toggle_weight * tog_loss
+        loss.backward()
+        opt.step()
+    return float(loss.detach())
+
+
 def behavior_clone(
     config: Configuration,
     prod_policy: Policy,

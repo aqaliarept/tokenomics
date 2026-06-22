@@ -1,0 +1,40 @@
+{
+  "version": "producer-warm-start-v1",
+  "date": "2026-06-22",
+  "driver": "tokenomics.train.warm_start (gate swap_gate) + tokenomics.train.clone_fidelity (decode-aware clone + diagnostics)",
+  "question": "Can a supervised/DAgger clone of obs_stock_aware clear the d3_p00 producer gate (clone+base >= 0.8 * base+base, near-zero death), and what makes the clone fail or succeed? (ADR-0049 Phase 1 + 2)",
+  "params": {
+    "depth": 3,
+    "expert": "obs_stock_aware",
+    "order_expert": "proportional",
+    "base_producer": "stock_aware",
+    "base_orderer": "proportional",
+    "dagger_iters": 3,
+    "clone_rollout_seeds": 2,
+    "horizon": 100,
+    "epochs": 1500,
+    "lr": 3e-3,
+    "log_std_save": -2.5,
+    "swap_seeds": 5,
+    "pass_frac": 0.8,
+    "max_dead": 0.05,
+    "train_seeds_multi": 3,
+    "held_out_seeds_multi": 3,
+    "perms": 2,
+    "perm_seed": 1,
+    "train_topologies_perm": 9
+  },
+  "configs": {
+    "gate_seed0": "configs/scale_d3_s0.json",
+    "train_seed1": "configs/scale_d3_s1.json",
+    "train_seed2": "configs/scale_d3_s2.json"
+  },
+  "artifacts": {
+    "d3_plain_mse.pt": "plain full-vector MSE BC clone (the FAIL baseline)",
+    "d3_decode_aware.pt": "decode-aware (masked-MSE + BCE-toggle) producer-first DAgger, single topology",
+    "d3_multi.pt": "decode-aware DAgger across 3 same-depth topologies (Phase 2 multi-topology)",
+    "d3_perm.pt": "decode-aware DAgger across 3 seeds x {base + 2 slot permutations} = 9 topologies (Phase 2 slot permutation)"
+  },
+  "compute": {"where": "local (CPU, BLAS pinned to 1 thread)", "wall_time": "~1 min (single), ~2.5 min (multi), ~7 min (perm, 9 topologies)"},
+  "reproduce": "cd tokenomics && ../.venv/bin/python -m tokenomics.train.warm_start --depth 3 --mode dagger --expert obs_stock_aware --order-expert proportional --save <EXP>/artifacts/d3_decode_aware.pt --trace   # FAIL baseline: --mode bc --save <EXP>/artifacts/d3_plain_mse.pt   # multi-topology: --train-seeds 3 --held-out-seeds 3 --save <EXP>/artifacts/d3_multi.pt   # slot permutation: --train-seeds 3 --perms 2 --perm-seed 1 --held-out-seeds 3 --trace --save <EXP>/artifacts/d3_perm.pt"
+}

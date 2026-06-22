@@ -217,6 +217,84 @@ def test_global_state_mechanics_block_matches_producer_economics():
     assert gs[base + 8] == pytest.approx(pcfg.inventory_expansion.cost / sp.token_ref)
 
 
+def _level_capacities(cfg):
+    """Sorted multiset of total capacity per producer, grouped by level — the
+    relabeling-invariant fingerprint of a scale economy's productive base."""
+    by_level: dict[int, list[int]] = {}
+    for p in cfg.producer_configs:
+        lvl = int(p.id[1:].split("_")[0])
+        by_level.setdefault(lvl, []).append(sum(p.capacities.values()))
+    return {lvl: sorted(v) for lvl, v in by_level.items()}
+
+
+def test_producer_permutation_relabels_slots_but_preserves_the_economy():
+    # Phase 2 (ADR-0049) slot randomization: relabeling which producer config holds
+    # which sorted id within a level permutes the per-producer OBS slots but leaves the
+    # economy multiset identical — a true relabeling symmetry. base+base is only CLOSE,
+    # not exactly equal: `proportional` routing + auction tie-breaking iterate producers
+    # in sorted-id order, so slot position leaks into integer-split rounding (exactly the
+    # memorization pressure this augmentation adds). Structure is the exact invariant.
+    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from tokenomics.eval.runner import evaluate
+    from tokenomics.eval.scale import build_scale_config, permute_scale_config
+
+    cfg = build_scale_config(0, depth=3)
+    # identity on products, reverse the 4 producer slots within each level.
+    perm = permute_scale_config(cfg, product_perm=[0, 1, 2, 3], producer_perm=[3, 2, 1, 0])
+    assert _dims(perm) == _dims(cfg)                              # same shape: one net spans both
+    assert config_fingerprint(perm) != config_fingerprint(cfg)   # a real relabel
+    assert _level_capacities(perm) == _level_capacities(cfg)     # exact symmetry: same productive base
+
+    base_p = PRODUCING_BASELINES["stock_aware"]
+    base_o = ORDERING_BASELINES["proportional"]
+    m0 = evaluate(base_p, base_o, seeds=range(3), horizon=100, config=cfg)["consumer_completed_units"][0]
+    m1 = evaluate(base_p, base_o, seeds=range(3), horizon=100, config=perm)["consumer_completed_units"][0]
+    assert abs(m1 - m0) <= 0.05 * m0  # isomorphic economy performs within 5%
+
+
+def test_product_permutation_preserves_recipe_dag_and_eligibility():
+    # The product-index permutation must be applied consistently across every level, so
+    # each composite still consumes its same-(permuted-)index lower product — the recipe
+    # DAG stays isomorphic and chain depths are preserved. `produces` stays a whole level
+    # set, so eligibility (>=2 declarers per top product) survives.
+    from tokenomics.eval.scale import build_scale_config, permute_scale_config
+
+    cfg = build_scale_config(0, depth=3)
+    perm = permute_scale_config(cfg, product_perm=[2, 0, 3, 1], producer_perm=[0, 1, 2, 3])
+    assert _dims(perm) == _dims(cfg)
+    perm.validate()
+    # chain-depth spectrum is preserved (same multiset of recipe depths).
+    spec0 = sorted(_chain_depth(cfg, ps.product) for ps in cfg.process_sheets)
+    spec1 = sorted(_chain_depth(perm, ps.product) for ps in perm.process_sheets)
+    assert spec0 == spec1
+    top = max(_layer(ps.product) for ps in perm.process_sheets)
+    for ps in perm.process_sheets:
+        if _layer(ps.product) == top:
+            assert len([p for p in perm.producer_configs if ps.product in p.produces]) >= 2
+
+
+def test_scale_topology_set_expands_seeds_into_permuted_same_shape_configs():
+    # Phase 2 step 5+1-4: the training set is each base seed plus `perms` slot-permuted
+    # variants. All share the dims envelope (one net spans them), every variant is a
+    # genuine relabel of its base (different fingerprint), and identity-only (perms=0)
+    # returns exactly the base configs.
+    from tokenomics.eval.scale import build_scale_config, config_to_dict, scale_topology_set
+
+    base_only = scale_topology_set([0, 1], depth=3, perms=0)
+    assert [config_to_dict(c) for c in base_only] == [
+        config_to_dict(build_scale_config(s, depth=3)) for s in (0, 1)
+    ]
+
+    cfgs = scale_topology_set([0, 1], depth=3, perms=2, perm_seed=7)
+    assert len(cfgs) == 2 * (1 + 2)                 # seed x (base + 2 perms)
+    assert len({_dims(c) for c in cfgs}) == 1       # all same shape
+    fps = [config_fingerprint(c) for c in cfgs]
+    assert len(set(fps)) == len(fps)                # every variant distinct
+    # the two permutations of seed 0 are relabelings of the same productive base.
+    assert _level_capacities(cfgs[1]) == _level_capacities(cfgs[0])
+    assert _level_capacities(cfgs[2]) == _level_capacities(cfgs[0])
+
+
 def test_return_tracks_fulfilment_at_scale_so_fulfilling_beats_doing_nothing():
     # Finding B (ADR-0042) acceptance bar: at a DEEP scale (depth 4 — where the old
     # reward made do-nothing the return-maximizer) a fulfilling baseline must earn a
