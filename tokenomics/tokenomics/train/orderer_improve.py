@@ -1,0 +1,419 @@
+"""Orderer expert-iteration trainer (EXP-0005 Stage 2, M2).
+
+EXP-0005 Stage 1 isolated the improvement lever: holding the `stock_aware` producer
+fixed, a *random* orderer beats `proportional` by 14–76% (1a), the gain is per-cycle
+re-routing not a fixed shape (1c), and a **directed routing search** captures it
+*deterministically* (+32–52% over `proportional`, 1d) — a clean, reproducible teacher
+that beats the hardcoded baseline. This module turns that search oracle into a learned
+orderer (AlphaGo-style expert iteration, NOT PPO; ADR-0049's decode-aware clone for the
+orderer side):
+
+  1. **Label generation** — drive episodes with the producer fixed at the EXP-0004 **v4**
+     clone and, each cycle, run `orderer_oracle._search_best_pol` to pick the winning
+     routing; record every orderer transition `(obs, applied per-agent action, decode
+     mask)`. The label is the per-agent action of the *winning* policy (a named baseline
+     for a baseline-win, the committed routing vector for a sampled win), so it is a
+     proper per-agent target — not a global vector.
+  2. **Fit** a fresh orderer `GaussianActor` by masked MSE over `ordering_action_mask`
+     (only the eligible-producer dims of multi-eligible slots are behavioral; the rest
+     are decode no-ops, ADR-0029).
+  3. **DAgger** (optional rounds) — roll the *current* orderer clone forward (producer
+     still v4), relabel the states it visits with the search oracle, refit from a fresh
+     init on the grown dataset. Closes the train/visited-state gap the same way the
+     producer warm-start does.
+
+The saved checkpoint bundles the **v4 producer state** + the **new orderer state** so
+`load_policies` / `signal_check` deploy the M2 pair directly. The open risk (RESULT.md):
+the 1c gain is temporal diversification, so a *deterministic* clone captures it only if
+the obs carries enough load/queue state — if fidelity drops, the fallback is a stochastic
+orderer (the Gaussian `log_std`). Training is on Runpod per CLAUDE.md (real run); the
+label search is local-feasible (domain is `deepcopy`-able ~3 ms).
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+from dataclasses import dataclass
+
+import numpy as np
+
+from ..env import TokenomicsAECEnv
+from ..eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
+from ..eval.orderer_oracle import ENVELOPE_COMBOS as _ENVELOPE_COMBOS
+from ..eval.orderer_oracle import _search_best_pol
+from ..eval.runner import evaluate
+from ..eval.scale import build_scale_config
+
+
+@dataclass
+class OrdererSample:
+    """One orderer decision: the obs the learner sees, the search oracle's per-agent
+    action label, and the decode mask (`ordering_action_mask`) marking the dims that
+    actually allocate (eligible producers of multi-eligible slots)."""
+
+    obs: np.ndarray
+    label: np.ndarray
+    mask: np.ndarray
+
+
+def _greedy_closure(actor, bound: float) -> Policy:
+    """Wrap a GaussianActor as the deployed greedy `Policy` (clip(mean), ADR-0026)."""
+    import torch
+
+    def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        o = torch.as_tensor(env.observe(agent), dtype=torch.float32)
+        with torch.no_grad():
+            mean = actor.actor(o).numpy()
+        return np.clip(mean, -bound, bound).astype(np.float32)
+
+    return pol
+
+
+def collect_orderer_samples(
+    config,
+    prod: Policy,
+    base_candidates: dict[str, Policy],
+    *,
+    n_samples: int,
+    sample_scale: float,
+    lookahead: int,
+    seeds: "range | list[int]",
+    horizon: int = 100,
+    student_order: "Policy | None" = None,
+    tag: str = "",
+    log=None,
+) -> list[OrdererSample]:
+    """Drive episodes (producer fixed at `prod`) and record orderer transitions labeled
+    by the per-cycle directed routing search. Round 0 (`student_order is None`): the
+    search policy both labels AND drives — on-oracle BC. DAgger rounds: the `student_order`
+    drives (visits the clone's state distribution) while the search still provides the
+    label (relabel). Reproducible — the search RNG is seeded by (seed, cycle). The search
+    is silent and slow, so `log` (if given) streams per-episode progress — the label-gen
+    phase otherwise produces no output for ~minutes (search is single-threaded)."""
+    from .smoke_ppo import ordering_action_mask
+
+    out: list[OrdererSample] = []
+    seed_list = list(seeds)
+    for si, s in enumerate(seed_list):
+        env = TokenomicsAECEnv(config=config, horizon=horizon)
+        env.reset(seed=s)
+        for a in env.possible_agents:
+            env.action_space(a).seed(s)
+        max_iter = env.horizon * len(env.possible_agents) * 3 + 100
+        adim = env.spec_.ordering_action_dim
+        cur = -1
+        label_pol: Policy = next(iter(base_candidates.values()))
+        for agent in env.agent_iter(max_iter=max_iter):
+            _, _, term, trunc, _ = env.last()
+            if term or trunc:
+                env.step(None)
+                continue
+            if env.current_cycle != cur:
+                cur = env.current_cycle
+                label_pol, _ = _search_best_pol(
+                    env, prod, base_candidates, n_samples, sample_scale,
+                    lookahead, s, cur, adim)
+            role, did = env._role[agent]
+            if role == "prod":
+                env.step(prod(env, agent))
+                continue
+            obs = np.asarray(env.observe(agent), dtype=np.float32)
+            oview = env.system.ordering_agents[did].view(env.system.producer_infos)
+            mask = ordering_action_mask(env.spec_, oview)
+            label = np.asarray(label_pol(env, agent), dtype=np.float32)
+            out.append(OrdererSample(obs, label, mask))
+            drive = student_order if student_order is not None else label_pol
+            env.step(drive(env, agent))
+        if log is not None:
+            log(f"  label-gen {tag} episode {si + 1}/{len(seed_list)} (seed {s}): "
+                f"{len(out)} rows so far")
+    return out
+
+
+def _fit_orderer_clone(
+    actor, samples: list[OrdererSample], bound: float, *, epochs: int, lr: float,
+) -> float:
+    """Masked-MSE fit of the orderer mean to the search-oracle labels. Only the
+    decode-active dims (`ordering_action_mask`: eligible producers of multi-eligible
+    slots) carry gradient — the softmax over an order's eligible producers is the only
+    thing that allocates (ADR-0029); the rest are no-ops and would just inject noise.
+    Greedy deploys clip(mean), so targets are clipped to the action bound (ADR-0026)."""
+    import torch
+
+    X = torch.as_tensor(np.stack([s.obs for s in samples]), dtype=torch.float32)
+    Y = torch.clamp(
+        torch.as_tensor(np.stack([s.label for s in samples]), dtype=torch.float32),
+        -bound, bound)
+    M = torch.as_tensor(np.stack([s.mask for s in samples]), dtype=torch.float32)
+    opt = torch.optim.Adam(actor.actor.parameters(), lr=lr)
+    loss = torch.tensor(0.0)
+    for _ in range(epochs):
+        opt.zero_grad()
+        out = actor.actor(X)
+        loss = (((out - Y) ** 2) * M).sum() / M.sum().clamp_min(1.0)
+        loss.backward()
+        opt.step()
+    return float(loss.detach())
+
+
+def dagger_orderer(
+    configs,
+    prod: Policy,
+    bound: float,
+    order_obs_dim: int,
+    order_act_dim: int,
+    *,
+    candidates: dict[str, Policy],
+    n_samples: int,
+    sample_scale: float,
+    lookahead: int,
+    dagger_iters: int = 1,
+    seeds: "range | list[int]" = range(2),
+    horizon: int = 100,
+    epochs: int = 1500,
+    lr: float = 3e-3,
+    seed: int = 0,
+    log_std_init: float = -2.0,
+    log=print,
+):
+    """Expert-iterate a fresh orderer `GaussianActor` toward the search oracle, over one
+    or more topologies (producer fixed at `prod`). Round 0 is on-oracle BC; each later
+    round rolls the current clone forward, relabels its visited states with the search,
+    and refits from a fixed init on the grown dataset (DAgger). Returns the fitted actor."""
+    import torch
+
+    from .smoke_ppo import GaussianActor
+
+    cfg_list = list(configs) if isinstance(configs, (list, tuple)) else [configs]
+    samples_by_cfg = [
+        collect_orderer_samples(
+            c, prod, candidates, n_samples=n_samples, sample_scale=sample_scale,
+            lookahead=lookahead, seeds=seeds, horizon=horizon,
+            tag=f"round0 topo{i}", log=log)
+        for i, c in enumerate(cfg_list)
+    ]
+
+    order = None
+    for it in range(dagger_iters):
+        torch.manual_seed(seed)  # refit from a fixed init on the grown dataset
+        order = GaussianActor(order_obs_dim, order_act_dim, log_std_init=log_std_init)
+        flat = [s for smp in samples_by_cfg for s in smp]
+        loss = _fit_orderer_clone(order, flat, bound, epochs=epochs, lr=lr)
+        log(f"orderer-dagger round {it}: masked_mse {loss:.4f} ({len(flat)} rows, "
+            f"{len(cfg_list)} topos)")
+        if it < dagger_iters - 1:
+            student = _greedy_closure(order, bound)
+            for i, c in enumerate(cfg_list):
+                samples_by_cfg[i] += collect_orderer_samples(
+                    c, prod, candidates, n_samples=n_samples, sample_scale=sample_scale,
+                    lookahead=lookahead, seeds=seeds, horizon=horizon,
+                    student_order=student, tag=f"round{it+1} topo{i}", log=log)
+    return order
+
+
+def _load_v4_producer(path: str):
+    """Load the EXP-0004 v4 producer actor + bound from its checkpoint, as the fixed
+    producer for M2 (Stage 1: the producer is near-optimal, the orderer is the lever)."""
+    from .clone_fidelity import load_producer_actor
+
+    return load_producer_actor(path)
+
+
+# --- evaluation against both bars (RESULT.md success criterion) ---
+# best-of-baseline envelope (_ENVELOPE_COMBOS) = the strict M0 bar; canonical in
+# eval.orderer_oracle (imported at top — one source of truth, no import cycle).
+
+
+def _ci(std: float, n: int) -> float:
+    return 1.96 * std / math.sqrt(n) if n > 1 else 0.0
+
+
+def eval_m2(
+    save: str,
+    *,
+    depth: int,
+    seeds: "list[int]",
+    eval_seeds: int = 5,
+    horizon: int = 100,
+    log=print,
+) -> list[dict]:
+    """Score the saved M2 pair vs M0 (`stock_aware+proportional`) and the best-of-baseline
+    envelope on held-out topologies (mean ± 95% CI over `eval_seeds`). Primary metric is
+    consumer units; rejects + investment churn are reported for the efficiency criterion."""
+    from .smoke_ppo import load_policies
+
+    m2_prod, m2_order = load_policies(save)
+    rows: list[dict] = []
+    log(f"\n=== M2 eval (v4 producer + learned orderer)  depth={depth}  seeds={seeds} ===")
+    log(f"  {'seed':>4} {'M2_cu':>8} {'M0_cu':>8} {'env_cu':>8} {'M2/M0':>6} "
+        f"{'M2/env':>6} {'M2_rej':>7} {'env_name':>22}")
+    for s in seeds:
+        cfg = build_scale_config(s, depth=depth)
+        rng = range(eval_seeds)
+        m2 = evaluate(m2_prod, m2_order, seeds=rng, horizon=horizon, config=cfg)
+        m2_cu, m2_sd = m2["consumer_completed_units"]
+        m0 = evaluate(PRODUCING_BASELINES["stock_aware"], ORDERING_BASELINES["proportional"],
+                      seeds=rng, horizon=horizon, config=cfg)
+        m0_cu = m0["consumer_completed_units"][0]
+        env_best_cu, env_best_name = -1.0, ""
+        for name, (pp, oo) in _ENVELOPE_COMBOS.items():
+            m = evaluate(PRODUCING_BASELINES[pp], ORDERING_BASELINES[oo],
+                         seeds=rng, horizon=horizon, config=cfg)
+            if m["consumer_completed_units"][0] > env_best_cu:
+                env_best_cu, env_best_name = m["consumer_completed_units"][0], name
+        r_m0 = m2_cu / m0_cu if m0_cu else float("nan")
+        r_env = m2_cu / env_best_cu if env_best_cu else float("nan")
+        log(f"  {s:>4} {m2_cu:>7.0f}± {m2_cu and _ci(m2_sd, eval_seeds):<5.0f}"
+            f"{m0_cu:>7.0f} {env_best_cu:>7.0f} {r_m0:>6.2f} {r_env:>6.2f} "
+            f"{m2['consumer_rejected_units'][0]:>7.0f} {env_best_name:>22}")
+        rows.append({
+            "seed": s, "m2_cu": round(m2_cu, 1), "m2_ci": round(_ci(m2_sd, eval_seeds), 1),
+            "m0_cu": round(m0_cu, 1), "env_cu": round(env_best_cu, 1),
+            "env_name": env_best_name, "ratio_m0": round(r_m0, 3), "ratio_env": round(r_env, 3),
+            "m2_dead": m2["dead_rate"][0], "m2_rej_units": round(m2["consumer_rejected_units"][0], 1),
+            "m2_invest": round(m2["investment_completed"][0], 1),
+        })
+    won_m0 = sum(1 for r in rows if r["ratio_m0"] >= 1.10)
+    won_env = sum(1 for r in rows if r["ratio_env"] >= 1.10)
+    log(f"\n{len(rows)} seeds: M2 beats M0 by >=10% on {won_m0}; beats ENVELOPE by >=10% on {won_env}")
+    return rows
+
+
+def run_orderer_improve(
+    *,
+    depth: int,
+    prod_ckpt: str,
+    train_seeds: int,
+    held_out_seeds: int,
+    candidates: list[str],
+    n_samples: int,
+    sample_scale: float,
+    lookahead: int,
+    dagger_iters: int,
+    label_seeds: int,
+    horizon: int,
+    epochs: int,
+    lr: float,
+    seed: int,
+    log_std_save: float | None,
+    eval_seeds: int,
+    save: str,
+    csv_out: "str | None" = None,
+    train_seed_list: "list[int] | None" = None,
+    held_out_seed_list: "list[int] | None" = None,
+    log=print,
+) -> list[dict]:
+    """EXP-0005 Stage 2 driver: expert-iterate the orderer toward the search oracle with
+    the producer fixed at the v4 clone, save the M2 pair, score it vs M0 + envelope on
+    held-out topologies. Returns the eval rows. Train/held-out topology seeds are the
+    contiguous `range(train_seeds)` / `range(train_seeds, +held_out_seeds)` by default, or
+    explicit `train_seed_list` / `held_out_seed_list` (M2-v2: widen coverage without
+    overlapping the held-out suite — a non-contiguous split)."""
+    import torch
+
+    prod_actor, bound = _load_v4_producer(prod_ckpt)
+    prod = _greedy_closure(prod_actor, bound)
+
+    train_ids = train_seed_list if train_seed_list is not None else list(range(train_seeds))
+    held = (held_out_seed_list if held_out_seed_list is not None
+            else list(range(train_seeds, train_seeds + held_out_seeds)))
+
+    cfg0 = build_scale_config(train_ids[0], depth=depth)
+    probe = TokenomicsAECEnv(config=cfg0, horizon=1)
+    order_obs_dim = probe.observation_space(probe._order_agents[0]).shape[0]
+    order_act_dim = probe.spec_.ordering_action_dim
+
+    train_cfgs = [build_scale_config(s, depth=depth) for s in train_ids]
+    cand = {name: ORDERING_BASELINES[name] for name in candidates}
+    log(f"=== orderer expert-iteration (M2)  depth={depth}  train_seeds={train_ids}  held_out={held}  "
+        f"oracle: lookahead={lookahead} K={n_samples} cand={candidates}  dagger_iters={dagger_iters} ===")
+    order = dagger_orderer(
+        train_cfgs, prod, bound, order_obs_dim, order_act_dim, candidates=cand,
+        n_samples=n_samples, sample_scale=sample_scale, lookahead=lookahead,
+        dagger_iters=dagger_iters, seeds=range(label_seeds), horizon=horizon,
+        epochs=epochs, lr=lr, seed=seed, log=log)
+
+    from .smoke_ppo import save_policies
+
+    if log_std_save is not None:
+        with torch.no_grad():
+            prod_actor.log_std.fill_(log_std_save)
+            order.log_std.fill_(log_std_save)
+    save_policies(prod_actor, order, bound, save, config=cfg0)
+    log(f"saved M2 (v4 producer + learned orderer) -> {save}")
+
+    rows = eval_m2(save, depth=depth, seeds=held, eval_seeds=eval_seeds, horizon=horizon, log=log)
+    if csv_out and rows:
+        import csv
+
+        with open(csv_out, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+        log(f"{len(rows)} rows -> {csv_out}")
+    return rows
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--depth", type=int, default=3)
+    ap.add_argument("--prod-ckpt", required=True, help="fixed producer checkpoint (EXP-0004 v4)")
+    ap.add_argument("--train-seeds", type=int, default=6, help="topologies 0..N-1 for label-gen")
+    ap.add_argument("--held-out-seeds", type=int, default=4, help="unseen topologies for eval (after train)")
+    ap.add_argument("--train-seed-list", default=None,
+                    help="explicit comma-separated train topology seeds (overrides --train-seeds; "
+                         "M2-v2: widen coverage without overlapping held-out, e.g. 0,1,2,3,4,5,10,11,12,13)")
+    ap.add_argument("--held-out-seed-list", default=None,
+                    help="explicit comma-separated held-out topology seeds (overrides --held-out-seeds)")
+    ap.add_argument("--candidates", default="even_split,proportional,obs_price",
+                    help="named orderer baselines included in the per-cycle search")
+    ap.add_argument("--samples", type=int, default=12, help="sampled routing vectors per cycle (Stage 1d K)")
+    ap.add_argument("--sample-scale", type=float, default=1.0, help="stdev of sampled routing logits")
+    ap.add_argument("--lookahead", type=int, default=12, help="search rollout horizon (cycles)")
+    ap.add_argument("--dagger-iters", type=int, default=1, help="1 = on-oracle BC; >1 adds relabel rounds")
+    ap.add_argument("--label-seeds", type=int, default=2, help="episode seeds per topology for label-gen")
+    ap.add_argument("--horizon", type=int, default=100)
+    ap.add_argument("--epochs", type=int, default=1500)
+    ap.add_argument("--lr", type=float, default=3e-3)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--log-std-save", type=float, default=-2.5)
+    ap.add_argument("--eval-seeds", type=int, default=5)
+    ap.add_argument("--save", required=True)
+    ap.add_argument("--csv-out", default=None)
+    ap.add_argument("--eval-only", action="store_true",
+                    help="skip training: load --save and score it vs M0 + envelope on the held-out "
+                         "seeds (regenerate the eval CSV from an existing checkpoint)")
+    args = ap.parse_args()
+    train_seed_list = ([int(x) for x in args.train_seed_list.split(",")]
+                       if args.train_seed_list else None)
+    held_out_seed_list = ([int(x) for x in args.held_out_seed_list.split(",")]
+                          if args.held_out_seed_list else None)
+    if args.eval_only:
+        held = (held_out_seed_list if held_out_seed_list is not None
+                else list(range(args.train_seeds, args.train_seeds + args.held_out_seeds)))
+        rows = eval_m2(args.save, depth=args.depth, seeds=held,
+                       eval_seeds=args.eval_seeds, horizon=args.horizon)
+        if args.csv_out and rows:
+            import csv
+
+            with open(args.csv_out, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                w.writeheader()
+                w.writerows(rows)
+            print(f"{len(rows)} rows -> {args.csv_out}")
+        return
+    run_orderer_improve(
+        depth=args.depth, prod_ckpt=args.prod_ckpt, train_seeds=args.train_seeds,
+        held_out_seeds=args.held_out_seeds,
+        candidates=[s for s in args.candidates.split(",")],
+        n_samples=args.samples, sample_scale=args.sample_scale, lookahead=args.lookahead,
+        dagger_iters=args.dagger_iters, label_seeds=args.label_seeds, horizon=args.horizon,
+        epochs=args.epochs, lr=args.lr, seed=args.seed, log_std_save=args.log_std_save,
+        eval_seeds=args.eval_seeds, save=args.save, csv_out=args.csv_out,
+        train_seed_list=train_seed_list, held_out_seed_list=held_out_seed_list,
+    )
+
+
+if __name__ == "__main__":
+    main()

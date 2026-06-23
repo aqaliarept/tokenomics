@@ -1,0 +1,9 @@
+stage,model,seed,m2_cu,m2_ci95,m0_cu,env_cu,env_name,ratio_m0,ratio_env,dead,rej_units,invest_completed
+stage2,M2-v1,6,478.6,15.0,424.8,483.4,stock_aware+random,1.127,0.990,0.0,28.6,139.4
+stage2,M2-v1,7,465.4,19.4,438.6,438.6,stock_aware+proportional,1.061,1.061,0.0,40.6,144.0
+stage2,M2-v1,8,542.8,18.7,403.4,531.4,stock_aware+random,1.346,1.021,0.0,68.0,142.8
+stage2,M2-v1,9,456.0,14.7,405.4,504.0,stock_aware+random,1.125,0.905,0.0,100.4,131.8
+stage2c,M2-v2a,6,456.4,9.8,413.3,476.1,stock_aware+random,1.104,0.959,0.0,46.4,125.8
+stage2c,M2-v2a,7,458.7,5.8,436.6,436.6,stock_aware+proportional,1.051,1.051,0.0,42.4,135.9
+stage2c,M2-v2a,8,537.3,8.3,399.3,537.5,stock_aware+random,1.346,1.000,0.0,67.0,138.5
+stage2c,M2-v2a,9,435.1,27.7,402.0,499.9,stock_aware+random,1.082,0.870,0.05,102.7,120.8

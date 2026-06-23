@@ -1,0 +1,11 @@
+producing        ordering       cycles  dead%   cons✓     cu✓   cons✗   return  capmin
+--------------------------------------------------------------------------------------
+noop             even_split         20    100     0.0     0.0    54.0        0     6.3
+always_restore   even_split         21    100     0.0     0.0    57.0        0    38.8
+restore_when_low even_split        100      0     0.0     0.0   294.0        0    71.7
+stock_aware      even_split        100      0   164.0   292.0   131.6     2870    72.7
+stock_aware      proportional      100      0   277.6   511.6    21.8     5054    68.0
+obs_stock_aware  even_split        100      0   164.0   292.0   131.6     2870    72.7
+obs_stock_aware  obs_price         100      0   191.6   320.6   105.2     3151    30.4
+always_both      even_split         21    100     0.0     0.0    57.0        0   149.5
+random           random            100      0   177.6   318.6   120.6     3019   129.0

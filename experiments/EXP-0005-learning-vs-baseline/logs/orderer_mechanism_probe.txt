@@ -1,0 +1,15 @@
+EXP-0005 Stage 1c orderer MECHANISM probe (stock_aware producer; cu_ok mean/5)
+fixed_rand = ONE random split reused every cycle (open-loop); random = re-sampled per call
+
+seed proportional  even_split  fixed_rand    random
+   0        361.8       160.4       169.2     448.2
+   3        200.8        84.4       125.0     352.8
+   4        511.6       292.0       254.0     513.6
+   5        440.4       286.2       109.8     536.2
+   6        424.8       354.0       145.6     483.4
+   7        438.6       354.0       175.2     434.0
+   8        403.4       434.0       249.8     531.4
+   9        405.4       306.0       256.8     504.0
+
+CONCLUSION: fixed open-loop split (any shape) ~ proportional or worse; only PER-CYCLE
+re-randomization wins -> headroom needs STATE-REACTIVE routing, not a fixed heuristic.

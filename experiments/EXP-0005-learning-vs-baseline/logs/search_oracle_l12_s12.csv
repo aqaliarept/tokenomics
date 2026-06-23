@@ -1,0 +1,5 @@
+config_seed,rung,oracle_cu,base_cu,ratio,oracle_dead,base_dead,detail
+0,native,499,377,1.3236,0.0,0.0,sample_wins/ep=68
+3,native,317,208,1.524,0.0,0.0,sample_wins/ep=94
+5,native,619,438,1.4132,0.0,0.0,sample_wins/ep=67
+8,native,615,448,1.3728,0.0,0.0,sample_wins/ep=58
