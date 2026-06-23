@@ -19,7 +19,7 @@ from ..eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from ..eval.runner import evaluate
 from ..eval.scale import build_scale_config, scale_topology_set
 from ..train.clone_fidelity import dagger_producer_first
-from ..train.smoke_ppo import behavior_clone, load_policies
+from ..train.smoke_ppo import behavior_clone, load_policies, staged_config
 
 
 @dataclass
@@ -163,6 +163,8 @@ def run_warm_start(
     train_seeds: int = 1,
     perms: int = 0,
     perm_seed: int = 0,
+    rungs: list[float] | None = None,
+    rung_weights: dict[str, float] | None = None,
     held_out_seeds: int = 0,
     swap_seeds: int = 5,
     pass_frac: float = 0.8,
@@ -193,10 +195,27 @@ def run_warm_start(
         train_configs = scale_topology_set(
             range(train_seeds), depth=depth, perms=perms, perm_seed=perm_seed,
         )
+        cfg_weights = None
+        if rungs:
+            # EXP-0004: the EXP-0002 clone diverges from its OWN teacher at high quantity
+            # because DAgger only ever rolled out at p=0. Stage the same topologies across
+            # the curriculum quantity rungs so the clone is relabeled on the high-quantity
+            # states it currently fails — a pure data-coverage fix (no RL, same expert).
+            base_topos = train_configs
+            train_configs = [
+                staged_config(cfg, r) for cfg in base_topos for r in rungs
+            ]
+            if rung_weights:
+                # EXP-0004 Stage C: upweight under-fit rungs (low-quantity stage) so they
+                # aren't averaged out by the degraded-state mass of the full ladder. Aligned
+                # to the (cfg, rung) ordering of train_configs above.
+                cfg_weights = [
+                    rung_weights.get(f"{r:.2f}", 1.0) for _cfg in base_topos for r in rungs
+                ]
         dagger_producer_first(
             train_configs, expert_prod, expert_ord, base_ord, dagger_iters=dagger_iters,
             seeds=range(seeds), horizon=horizon, epochs=epochs, lr=lr, seed=seed,
-            log_std_save=log_std_save, save=save, log=log,
+            log_std_save=log_std_save, cfg_weights=cfg_weights, save=save, log=log,
         )
     elif mode == "bc":
         # legacy plain-MSE clone (the documented low-fidelity baseline / diagnostic).
@@ -258,6 +277,13 @@ def main() -> None:
                     help="slot-permuted relabelings added per training seed (Phase 2 "
                          "slot randomization; 0 = none)")
     ap.add_argument("--perm-seed", type=int, default=0, help="RNG seed for slot permutations")
+    ap.add_argument("--rungs", default=None,
+                    help="comma-separated quantity rungs p in [0,1] (staged_config) to stage the "
+                         "DAgger rollout across (EXP-0004 coverage fix; omitted = p=0 only)")
+    ap.add_argument("--rung-weights", default=None,
+                    help="per-rung loss-weight multipliers as rung:w,... (e.g. '0.00:3,0.10:3,"
+                         "0.24:3'); rungs unlisted default to 1.0. EXP-0004 Stage C targeted "
+                         "weighting — upweight under-fit low-quantity rungs (no RL).")
     ap.add_argument("--held-out-seeds", type=int, default=0,
                     help="unseen topologies to score clone+base on after the gate")
     ap.add_argument("--swap-seeds", type=int, default=5)
@@ -273,6 +299,12 @@ def main() -> None:
         seeds=args.seeds, horizon=args.horizon, epochs=args.epochs, lr=args.lr,
         seed=args.seed, log_std_save=args.log_std_save, save=args.save,
         train_seeds=args.train_seeds, perms=args.perms, perm_seed=args.perm_seed,
+        rungs=[float(x) for x in args.rungs.split(",")] if args.rungs else None,
+        rung_weights=(
+            {f"{float(k):.2f}": float(v) for k, v in
+             (kv.split(":") for kv in args.rung_weights.split(","))}
+            if args.rung_weights else None
+        ),
         held_out_seeds=args.held_out_seeds,
         swap_seeds=args.swap_seeds, pass_frac=args.pass_frac, max_dead=args.max_dead,
         trace=args.trace, trace_seed=args.trace_seed,

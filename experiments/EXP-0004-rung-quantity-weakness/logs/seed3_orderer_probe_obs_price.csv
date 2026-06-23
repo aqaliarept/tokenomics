@@ -1,0 +1,5 @@
+checkpoint,rung,config_seed,clone_units,base_units,ratio,clone_dead,base_dead,verdict
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.00,3,141,141,1.0,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.10,3,85.2,85.8,0.993,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.24,3,64.4,54,1.193,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.25,3,114.8,114.2,1.005,0.0,0.0,ok

@@ -1,0 +1,17 @@
+checkpoint,rung,config_seed,clone_units,base_units,ratio,clone_dead,base_dead,verdict
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.00,0,285,291,0.979,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.10,0,243,254.8,0.954,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.24,0,205.2,203.8,1.007,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.25,0,305.2,315.2,0.968,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.00,3,6,144,0.042,0.0,0.0,FAIL
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.10,3,61.4,62.4,0.984,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.24,3,29.2,29.2,1.0,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.25,3,227.6,208,1.094,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.00,4,288,288,1.0,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.10,4,241,241,1.0,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.24,4,243.2,243.2,1.0,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.25,4,510.8,509.4,1.003,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.00,5,294,288,1.021,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.10,5,297.2,309.4,0.961,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.24,5,248,248,1.0,0.0,0.0,ok
+../experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt,0.25,5,438.8,447.6,0.98,0.0,0.0,ok

@@ -27,6 +27,9 @@ phase1-implementation-plan.md   roadmap + status + RL target numbers
 ../.venv/bin/python -m tokenomics.train.smoke_ppo --iters 50
 ```
 
+## Where training runs (HARD RULE)
+**All real training runs on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `boundary_grid`, `warm_start`/`clone_fidelity` DAgger, `producer_improve`, full `smoke_ppo`/`parallel` sweeps, any multi-topology or multi-iter run. **Only exception: smoke runs** — `smoke_ppo --iters` ≲ 50, a single-cell sanity check, or a fast `--dry-run` — may run on the local `.venv`. Evals (`signal_check`, `producer_rungs`, `swap_eval`, traces) are local. If unsure, it goes to the cloud.
+
 ## Parallel training (use the cores)
 One PPO run is single-threaded: rollout `collect` is a sequential Python round-robin over `num_envs`, and inference is batch-1 — extra cores do nothing for one run. Pin BLAS to 1 thread (`--threads 1`, the default) and get throughput by fanning out **independent** runs, one process per core, via `tokenomics.train.parallel`:
 ```

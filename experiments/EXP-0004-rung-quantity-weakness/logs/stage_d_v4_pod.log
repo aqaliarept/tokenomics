@@ -1,0 +1,87 @@
+[run_pod] pod r799px7l29ckx9 status: EXITED
+[run_pod] starting pod... (attempt 1/4)
+[run_pod] waiting for pod to become reachable (timeout 900s)...
+[run_pod] SSH up at 157.157.221.30:36402
+[run_pod] syncing /workspaces/tokenomics/tokenomics -> 157.157.221.30:/workspace/tokenomics
+
+sent 195,197 bytes  received 1,307 bytes  78,601.60 bytes/sec
+total size is 622,839  speedup is 3.17
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.1.2
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.12.1+cpu cuda False
+[run_pod] running training: -u -m tokenomics.train.warm_start --depth 3 --mode dagger --expert obs_stock_aware --order-expert proportional --train-seeds 6 --perms 2 --perm-seed 1 --rungs 0.00,0.10,0.24,0.25,0.50,0.75,1.00 --rung-weights 0.00:3,0.10:3,0.24:3 --dagger-iters 2 --save /workspace/d3_rung_dagger_v4.pt --held-out-seeds 4 --trace
+pf-dagger round 0: loss 0.0324 decoded_match[min/mean] 0.861/0.984 (302400 rows, 126 topos)
+pf-dagger round 1: loss 0.0316 decoded_match[min/mean] 0.887/0.986 (604800 rows, 126 topos)
+combo           units✓   dead
+base+base        361.8   0.00
+clone+clone      269.6   0.00
+clone+base       359.2   0.00
+base+clone       270.2   0.00
+gate clone+base 359.2 vs 0.80*base+base 289.4  dead 0.00<= 0.05  -> PASS
+held-out topologies (clone+base vs base+base):
+  seed 6: clone+base=   450.7  base+base=   422.0  ratio= 1.07  dead= 0.00
+  seed 7: clone+base=   431.0  base+base=   431.7  ratio= 1.00  dead= 0.00
+  seed 8: clone+base=   442.0  base+base=   420.0  ratio= 1.05  dead= 0.00
+  seed 9: clone+base=   391.7  base+base=   401.0  ratio= 0.98  dead= 0.00
+
+=== clone+base  seed=0 ===
+  episode: cycles=100 dead=False  cu_total=370  repl_done=592  repl_rej=521
+  cyc |L0  inv inbblk  rsv  cap |L1  inv inbblk  rsv  cap |L2  inv inbblk  rsv  cap | repl+ repl-  cu
+    1 |     0   0  0    0  252 |    48   0 48  250  319 |     0  50  5   19  316 |    16     0   0
+    2 |     0   0  0    0  239 |    12   0 14   70  295 |    32  18  8   32  295 |    10     0   0
+    3 |     0   0  0    0  226 |    48   0  0    0  271 |    27   0  6   23  274 |    12     6   1
+    4 |     0   0  0    0  213 |    25   0  0    0  247 |    47   0  5   20  253 |     9     0   2
+    5 |     0   0  0    0  210 |    33   0  1    6  223 |    38   2  0    0  232 |     6     7  13
+    6 |     0   0  0    0  197 |    30   0  4   18  247 |    39   5  0    0  223 |     9     5   6
+    7 |     0   0  0    0  184 |    27   0  5   22  271 |    38   6  0    0  244 |     7     7   6
+    8 |     0   0  0    0  171 |    31   0  5   22  247 |    35   5  1    3  223 |     4    10   4
+    9 |     0   0  0    0  167 |    31   0  8   34  270 |    37   8  1    3  299 |     5     5   4
+   10 |     0   0  0    0  213 |    32   0  6   25  246 |    38   6  3   15  278 |     5     6   0
+   11 |     0   0  0    0  255 |    38   0  7   30  222 |    31   8  1    3  257 |     3     6   9
+   12 |     0   0  0    0  242 |    32   0  8   32  288 |    41   8  3   18  248 |     8     4   0
+   13 |     0   0  0    0  229 |    38   0  4   16  264 |    37   5  4   12  227 |     5     5   5
+   14 |     0   0  0    0  216 |    39   0  5   21  248 |    38   5  5   21  248 |     4     5   1
+   15 |     0   0  0    0  213 |    37   0  6   25  224 |    34   9  2    6  227 |     5     3   7
+   20 |     0   0  0    0  216 |    36   0  2    8  247 |    36   3  0    0  231 |     9     6   5
+   30 |     0   0  0    0  219 |    33   0 10   43  241 |    37  12  3    9  268 |     6     4   1
+   40 |     0   0  0    0  222 |    31   0  5   22  294 |    36   7  2    9  264 |     9     5   3
+   50 |     0   0  0    0  226 |    34   0  0    0  296 |    44   0  2    6  259 |     6     4   4
+   60 |     0   0  0    0  229 |    33   0  7   29  248 |    32  10  4   15  254 |     5     7   3
+   70 |     0   0  0    0  232 |    38   0  3   12  256 |    33   5  4   21  237 |     4     7   3
+   80 |     0   0  0    0  235 |    33   0 13   65  255 |    27  16  4   17  285 |     4     6   1
+   90 |     0   0  0    0  233 |    33   0 10   42  256 |    32  12  1    3  238 |     3     6   5
+  100 |     0   0  0    0  190 |    36   0 11   50  258 |    30  15  3   14  273 |     5     4   2
+
+=== stock_aware+base  seed=0 ===
+  episode: cycles=100 dead=False  cu_total=377  repl_done=618  repl_rej=495
+  cyc |L0  inv inbblk  rsv  cap |L1  inv inbblk  rsv  cap |L2  inv inbblk  rsv  cap | repl+ repl-  cu
+    1 |     0   0  0    0  252 |    48   0 48  240  319 |     0  48  5   19  316 |    16     0   0
+    2 |     0   0  0    0  239 |    12   0 12   60  295 |    36  12  8   32  295 |    12     0   0
+    3 |     0   0  0    0  226 |    48   0  0    0  271 |    30   0  5   20  274 |    12     4   1
+    4 |     0   0  0    0  213 |    30   0  0    0  247 |    44   0  3   12  253 |     8     0   2
+    5 |     0   0  0    0  210 |    34   0  1    6  223 |    39   1  0    0  242 |     7     7  13
+    6 |     0   0  0    0  197 |    32   0  2   10  247 |    39   3  0    0  221 |    10     5   6
+    7 |     0   0  0    0  184 |    27   0  1    4  271 |    41   1  0    0  242 |     9     7   6
+    8 |     0   0  0    0  171 |    31   0  4   18  247 |    37   4  0    0  276 |     4     7   6
+    9 |     0   0  0    0  167 |    33   0  7   30  270 |    39   7  2   12  297 |     5     4   1
+   10 |     0   0  0    0  213 |    39   0  4   17  246 |    38   4  5   27  286 |     6     4   0
+   11 |     0   0  0    0  200 |    38   0  4   16  222 |    34   4  2    9  265 |     5     4   8
+   12 |     0   0  0    0  187 |    33   0  7   28  294 |    40   7  3   18  244 |     6     4   2
+   13 |     0   0  0    0  239 |    38   0  3   12  270 |    35   3  3   12  223 |     5     7   5
+   14 |     0   0  0    0  226 |    35   0  4   16  246 |    36   6  4   18  244 |     5     5   2
+   15 |     0   0  0    0  223 |    38   0  6   24  222 |    33   9  2    6  233 |     7     3   7
+   20 |     0   0  0    0  177 |    36   0  4   17  245 |    34   7  0    0  235 |     8     5   4
+   30 |     0   0  0    0  229 |    34   0  9   40  244 |    33  12  2    6  268 |     4     3   4
+   40 |     0   0  0    0  237 |    32   0  4   16  242 |    39   6  6   33  272 |    12     3   0
+   50 |     0   0  0    0  240 |    36   0  4   18  289 |    32   6  6   18  263 |     4     5   4
+   60 |     0   0  0    0  243 |    36   0  1    4  288 |    41   2  2    6  254 |     5     4   4
+   70 |     0   0  0    0  236 |    43   0  5   22  239 |    34   6  1    3  235 |     5     2  10
+   80 |     0   0  0    0  241 |    31   0 12   56  285 |    26  15  4   17  283 |     6     7   3
+   90 |     0   0  0    0  198 |    32   0  5   21  284 |    31   8  6   33  232 |     4     9   2
+  100 |     0   0  0    0  201 |    35   0  6   28  235 |    28  14  5   26  265 |     7     3   2
+[run_pod] pulling /workspace/d3_rung_dagger_v4.pt -> ./experiments/EXP-0004-rung-quantity-weakness/artifacts/d3_rung_dagger_v4.pt
+[run_pod] training complete
+[run_pod] stopping pod r799px7l29ckx9...
+[run_pod] pod stopped

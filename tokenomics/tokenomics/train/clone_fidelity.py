@@ -183,6 +183,7 @@ def dagger_producer_first(
     toggle_weight: float = 5.0,
     l1_weight: float = 2.0,
     pos_weight: float = 1.0,
+    cfg_weights: "list[float] | None" = None,
     save: "str | None" = None,
     log=print,
 ) -> "str | None":
@@ -217,6 +218,10 @@ def dagger_producer_first(
     from ..env.spaces import build_spec
 
     cfg_list = list(configs) if isinstance(configs, (list, tuple)) else [configs]
+    if cfg_weights is not None and len(cfg_weights) != len(cfg_list):
+        raise ValueError(
+            f"cfg_weights length {len(cfg_weights)} != {len(cfg_list)} configs"
+        )
     specs = [build_spec(c) for c in cfg_list]
     g = specs[0].num_inputs
     samples_by_cfg = [
@@ -239,7 +244,12 @@ def dagger_producer_first(
         obs = np.concatenate([a[0] for a in arrs])
         act = np.concatenate([a[1] for a in arrs])
         masks = np.concatenate([a[2] for a in arrs])
-        weights = np.concatenate([a[3] for a in arrs])
+        # EXP-0004 Stage C: scale each config's per-sample weights by its cfg multiplier so
+        # under-fit operating points (e.g. low-quantity rungs) aren't averaged out by the
+        # degraded-state mass under uniform full-ladder coverage. Targeted supervised
+        # weighting, not RL — keeps the same decode-aware loss and expert labels.
+        cw = cfg_weights if cfg_weights is not None else [1.0] * len(arrs)
+        weights = np.concatenate([a[3] * w for a, w in zip(arrs, cw)])
         loss = _fit_producer_clone(
             prod, obs, act, masks, weights, g=g, bound=bound, epochs=epochs, lr=lr,
             toggle_weight=toggle_weight,

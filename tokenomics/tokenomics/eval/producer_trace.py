@@ -36,7 +36,7 @@ from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from .scale import build_scale_config
 from ..domain.config import Configuration
 from ..env import TokenomicsAECEnv
-from ..train.smoke_ppo import load_policies
+from ..train.smoke_ppo import load_policies, staged_config
 
 
 @dataclass
@@ -171,8 +171,15 @@ def main() -> None:
     ap.add_argument("--depth", type=int, required=True, help="cell topology depth")
     ap.add_argument("--seed", type=int, default=0, help="episode seed to trace in detail")
     ap.add_argument("--horizon", type=int, default=100)
+    ap.add_argument("--config-seed", type=int, default=0,
+                    help="topology seed for build_scale_config (default 0, the swap config)")
+    ap.add_argument("--rung", type=float, default=None,
+                    help="staged_config quantity/degradation rung p in [0,1]; "
+                         "omitted = native (un-staged) topology")
     args = ap.parse_args()
-    cfg = build_scale_config(0, depth=args.depth)
+    cfg = build_scale_config(args.config_seed, depth=args.depth)
+    if args.rung is not None:
+        cfg = staged_config(cfg, args.rung)
     run(args.pt, args.depth, args.seed, args.horizon, cfg)
 
 

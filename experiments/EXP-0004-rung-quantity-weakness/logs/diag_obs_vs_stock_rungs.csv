@@ -1,0 +1,17 @@
+checkpoint,rung,config_seed,clone_units,base_units,ratio,clone_dead,base_dead,verdict
+baseline:obs_stock_aware,0.00,0,291,291,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.10,0,254.8,254.8,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.24,0,203.8,203.8,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.25,0,315.2,315.2,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.00,3,144,144,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.10,3,62.4,62.4,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.24,3,29.2,29.2,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.25,3,208,208,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.00,4,288,288,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.10,4,241,241,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.24,4,243.2,243.2,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.25,4,509.4,509.4,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.00,5,288,288,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.10,5,309.4,309.4,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.24,5,248,248,1.0,0.0,0.0,ok
+baseline:obs_stock_aware,0.25,5,447.6,447.6,1.0,0.0,0.0,ok

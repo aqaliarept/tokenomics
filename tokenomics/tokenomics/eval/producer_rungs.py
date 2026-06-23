@@ -32,7 +32,7 @@ def _verdict(ratio: float, clone_dead: float) -> str:
 
 
 def producer_rungs(
-    pt: str,
+    pt: str | None,
     *,
     depth: int,
     rungs: list[float],
@@ -42,19 +42,33 @@ def producer_rungs(
     out: str,
     base_prod_name: str = "stock_aware",
     order_name: str = "proportional",
+    train_prod_name: str | None = None,
 ) -> list[dict]:
-    """Evaluate `train_prod + proportional` vs `stock_aware + proportional` on each
-    (config_seed, rung) staged topology. Returns the rows and writes them to `out`.
+    """Evaluate the train-side producer + `proportional` vs `stock_aware` + `proportional`
+    on each (config_seed, rung) staged topology. Returns the rows and writes them to `out`.
+
+    The train side is a trained checkpoint (`pt`) by default; pass `train_prod_name` to use
+    a white-box baseline producer instead (e.g. `obs_stock_aware` vs `stock_aware`). The
+    latter is the EXP-0004 crux diagnostic: it isolates *expert* weakness on a rung from
+    *cloning* infidelity, since no checkpoint is involved.
 
     Rung application matches the trainer's curriculum: `staged_config(base, p)` ramps
     the quantity axis off `build_scale_config(seed, depth)`, so a rung evaluator and the
     `producer_improve` trainer score the producer on identical operating points."""
-    train_prod, _train_ord = load_policies(pt)
+    if train_prod_name is not None:
+        train_prod = PRODUCING_BASELINES[train_prod_name]
+        label = f"baseline:{train_prod_name}"
+    else:
+        if pt is None:
+            raise ValueError("producer_rungs needs either `pt` or `train_prod_name`")
+        train_prod, _train_ord = load_policies(pt)
+        label = pt
     base_prod: Policy = PRODUCING_BASELINES[base_prod_name]
     order: Policy = ORDERING_BASELINES[order_name]
 
     rows: list[dict] = []
-    print(f"\n=== {pt}  depth={depth}  config_seeds={config_seeds}  eval_seeds={eval_seeds} ===")
+    print(f"\n=== {label}  vs {base_prod_name}  depth={depth}  "
+          f"config_seeds={config_seeds}  eval_seeds={eval_seeds} ===")
     print(f"{'rung':>6}  {'seed':>4}  {'clone✓':>8}  {'base✓':>8}  {'ratio':>6}  "
           f"{'cl_dead':>7}  {'bs_dead':>7}  verdict")
     for seed in config_seeds:
@@ -70,7 +84,7 @@ def producer_rungs(
             base_dead = bm["dead_rate"][0]
             verdict = _verdict(ratio, clone_dead)
             rows.append({
-                "checkpoint": pt,
+                "checkpoint": label,
                 "rung": f"{p:.2f}",
                 "config_seed": seed,
                 "clone_units": round(clone_units, 1),
@@ -97,7 +111,11 @@ def producer_rungs(
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--pt", required=True, help="trained checkpoint (the train-side producer)")
+    ap.add_argument("--pt", help="trained checkpoint (the train-side producer)")
+    ap.add_argument("--train-baseline",
+                    help="use this white-box baseline producer as the train side instead of "
+                         "--pt (e.g. obs_stock_aware) — the expert-vs-expert crux diagnostic")
+    ap.add_argument("--base-prod", default="stock_aware", help="comparison (denominator) producer")
     ap.add_argument("--depth", type=int, required=True)
     ap.add_argument("--rungs", default="0.00,0.10,0.24,0.25",
                     help="comma-separated quantity rungs p in [0,1] for staged_config")
@@ -105,8 +123,12 @@ def main() -> None:
                     help="comma-separated build_scale_config seeds (topologies)")
     ap.add_argument("--eval-seeds", type=int, default=5, help="episode seeds per cell")
     ap.add_argument("--horizon", type=int, default=100)
+    ap.add_argument("--order", default="proportional", choices=tuple(ORDERING_BASELINES),
+                    help="ordering baseline held fixed for both arms (orderer-coupling probe)")
     ap.add_argument("--out", required=True, help="CSV output path")
     args = ap.parse_args()
+    if not args.pt and not args.train_baseline:
+        ap.error("pass either --pt or --train-baseline")
     producer_rungs(
         args.pt,
         depth=args.depth,
@@ -115,6 +137,9 @@ def main() -> None:
         eval_seeds=args.eval_seeds,
         horizon=args.horizon,
         out=args.out,
+        base_prod_name=args.base_prod,
+        order_name=args.order,
+        train_prod_name=args.train_baseline,
     )
 
 
