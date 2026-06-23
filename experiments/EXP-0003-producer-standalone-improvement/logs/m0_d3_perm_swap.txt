@@ -1,0 +1,7 @@
+
+=== ../experiments/EXP-0002-producer-warm-start/artifacts/d3_perm.pt  depth=3  seeds=5  horizon=100 ===
+combo               units✓   dead    cons✓       ret
+base  + base         361.8   0.00    217.8    3562.5
+train + train        248.4   0.00    148.6    2428.5
+train + base         361.6   0.00    216.0    3557.5
+base  + train        248.6   0.00    148.6    2433.1

@@ -1,0 +1,206 @@
+producer_improve: init=/workspace/tokenomics/_pod_init/d3_perm.pt depth=3 rungs=[0.0, 0.1, 0.24, 0.25] train_cfgs=9 select_cfgs=3 held_cfgs=12
+precomputing base (stock_aware+proportional) rung table ...
+iter   0  rung 0.24  step_rew   14.232  ploss  -0.000  closs  9.199  pkl 0.1600  cev -0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.983  min 0.683
+iter   1  rung 0.24  step_rew   14.841  ploss   0.001  closs  2.271  pkl 0.1901  cev -0.01  roll_dead 0.00  rfill 0.32
+iter   2  rung 0.24  step_rew   14.682  ploss   0.004  closs  0.951  pkl 0.0849  cev -0.01  roll_dead 0.00  rfill 0.33
+iter   3  rung 0.24  step_rew   14.785  ploss   0.001  closs  0.527  pkl 0.1834  cev -0.00  roll_dead 0.00  rfill 0.32
+iter   4  rung 0.24  step_rew   15.443  ploss   0.000  closs  0.339  pkl 0.1197  cev  0.00  roll_dead 0.00  rfill 0.33
+iter   5  rung 0.24  step_rew   15.843  ploss   0.000  closs  0.283  pkl 0.1841  cev  0.00  roll_dead 0.00  rfill 0.34
+iter   6  rung 0.24  step_rew   16.862  ploss   0.002  closs  0.251  pkl 0.0627  cev -0.00  roll_dead  nan  rfill  nan
+iter   7  rung 0.24  step_rew   14.726  ploss   0.004  closs  0.164  pkl 0.0187  cev  0.00  roll_dead 0.00  rfill 0.35
+iter   8  rung 0.24  step_rew   14.859  ploss   0.006  closs  0.087  pkl 0.0054  cev -0.00  roll_dead 0.00  rfill 0.32
+iter   9  rung 0.24  step_rew   15.571  ploss   0.006  closs  0.102  pkl 0.0180  cev  0.00  roll_dead 0.00  rfill 0.32
+iter  10  rung 0.10  step_rew    7.206  ploss   0.002  closs  0.089  pkl 0.0134  cev  0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.992  min 0.677
+iter  11  rung 0.10  step_rew    8.169  ploss  -0.001  closs  0.020  pkl 0.0084  cev  0.01  roll_dead 0.00  rfill 0.24
+iter  12  rung 0.10  step_rew    7.055  ploss  -0.002  closs  0.048  pkl 0.0082  cev  0.06  roll_dead 0.00  rfill 0.27
+iter  13  rung 0.10  step_rew    7.909  ploss  -0.000  closs  0.014  pkl 0.0046  cev -0.01  roll_dead 0.00  rfill 0.24
+iter  14  rung 0.10  step_rew    8.232  ploss   0.001  closs  0.029  pkl 0.0054  cev  0.09  roll_dead 0.00  rfill 0.28
+iter  15  rung 0.10  step_rew    7.276  ploss  -0.000  closs  0.012  pkl 0.0035  cev  0.17  roll_dead 0.00  rfill 0.23
+iter  16  rung 0.10  step_rew    8.414  ploss  -0.000  closs  0.006  pkl 0.0022  cev  0.01  roll_dead  nan  rfill  nan
+iter  17  rung 0.10  step_rew    7.700  ploss  -0.001  closs  0.014  pkl 0.0049  cev  0.03  roll_dead 0.00  rfill 0.25
+iter  18  rung 0.10  step_rew    6.908  ploss   0.002  closs  0.022  pkl 0.0086  cev  0.01  roll_dead 0.00  rfill 0.26
+iter  19  rung 0.10  step_rew    8.149  ploss   0.003  closs  0.017  pkl 0.0066  cev -0.01  roll_dead 0.00  rfill 0.23
+iter  20  rung 0.25  step_rew   27.735  ploss  -0.001  closs  0.382  pkl 0.0102  cev -0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 1.003  min 0.696
+iter  21  rung 0.25  step_rew   28.693  ploss   0.002  closs  0.128  pkl 0.0117  cev -0.00  roll_dead 0.00  rfill 0.59
+iter  22  rung 0.25  step_rew   26.429  ploss   0.003  closs  0.057  pkl 0.0062  cev -0.00  roll_dead 0.00  rfill 0.58
+iter  23  rung 0.25  step_rew   27.914  ploss   0.002  closs  0.039  pkl 0.0072  cev -0.00  roll_dead 0.00  rfill 0.56
+iter  24  rung 0.25  step_rew   25.989  ploss   0.002  closs  0.032  pkl 0.0093  cev  0.00  roll_dead 0.00  rfill 0.57
+iter  25  rung 0.25  step_rew   27.933  ploss  -0.000  closs  0.045  pkl 0.0101  cev  0.00  roll_dead 0.00  rfill 0.57
+iter  26  rung 0.25  step_rew   29.820  ploss   0.002  closs  0.017  pkl 0.0053  cev  0.00  roll_dead  nan  rfill  nan
+iter  27  rung 0.25  step_rew   27.847  ploss   0.002  closs  0.015  pkl 0.0061  cev  0.00  roll_dead 0.00  rfill 0.59
+iter  28  rung 0.25  step_rew   27.837  ploss   0.000  closs  0.010  pkl 0.0118  cev -0.01  roll_dead 0.00  rfill 0.58
+iter  29  rung 0.25  step_rew   27.298  ploss   0.002  closs  0.007  pkl 0.0041  cev  0.01  roll_dead 0.00  rfill 0.57
+iter  30  rung 0.25  step_rew   37.795  ploss   0.002  closs  0.036  pkl 0.0026  cev  0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.977  min 0.689
+iter  31  rung 0.25  step_rew   37.818  ploss   0.005  closs  0.017  pkl 0.0152  cev  0.00  roll_dead 0.00  rfill 0.78
+iter  32  rung 0.25  step_rew   36.978  ploss   0.004  closs  0.012  pkl 0.0385  cev  0.00  roll_dead 0.00  rfill 0.78
+iter  33  rung 0.25  step_rew   39.027  ploss   0.006  closs  0.010  pkl 0.0659  cev  0.01  roll_dead 0.00  rfill 0.79
+iter  34  rung 0.25  step_rew   36.951  ploss   0.009  closs  0.013  pkl 0.0265  cev  0.01  roll_dead 0.00  rfill 0.77
+iter  35  rung 0.25  step_rew   38.770  ploss   0.012  closs  0.008  pkl 0.0179  cev  0.00  roll_dead 0.00  rfill 0.76
+iter  36  rung 0.25  step_rew   38.749  ploss   0.014  closs  0.007  pkl 0.0106  cev -0.00  roll_dead  nan  rfill  nan
+iter  37  rung 0.25  step_rew   37.606  ploss   0.015  closs  0.007  pkl 0.0153  cev  0.01  roll_dead 0.00  rfill 0.77
+iter  38  rung 0.25  step_rew   37.928  ploss   0.016  closs  0.005  pkl 0.0201  cev  0.00  roll_dead 0.00  rfill 0.78
+iter  39  rung 0.25  step_rew   36.534  ploss   0.015  closs  0.009  pkl 0.0619  cev  0.01  roll_dead 0.00  rfill 0.79
+iter  40  rung 0.24  step_rew   16.601  ploss   0.015  closs  0.019  pkl 0.0956  cev  0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.970  min 0.683
+iter  41  rung 0.24  step_rew   15.539  ploss   0.010  closs  0.008  pkl 0.1309  cev  0.01  roll_dead 0.00  rfill 0.35
+iter  42  rung 0.24  step_rew   17.176  ploss   0.006  closs  0.006  pkl 0.1616  cev  0.01  roll_dead 0.00  rfill 0.36
+iter  43  rung 0.24  step_rew   15.051  ploss   0.003  closs  0.004  pkl 0.1432  cev  0.01  roll_dead 0.00  rfill 0.36
+iter  44  rung 0.24  step_rew   16.202  ploss   0.001  closs  0.003  pkl 0.1150  cev  0.01  roll_dead 0.00  rfill 0.34
+iter  45  rung 0.24  step_rew   15.163  ploss   0.001  closs  0.002  pkl 0.1272  cev  0.01  roll_dead 0.00  rfill 0.34
+iter  46  rung 0.24  step_rew   18.092  ploss   0.002  closs  0.002  pkl 0.0987  cev  0.00  roll_dead  nan  rfill  nan
+iter  47  rung 0.24  step_rew   16.254  ploss   0.004  closs  0.002  pkl 0.0561  cev  0.01  roll_dead 0.00  rfill 0.36
+iter  48  rung 0.24  step_rew   16.953  ploss   0.006  closs  0.002  pkl 0.0111  cev  0.01  roll_dead 0.00  rfill 0.36
+iter  49  rung 0.24  step_rew   16.531  ploss   0.008  closs  0.001  pkl 0.0068  cev  0.01  roll_dead 0.00  rfill 0.36
+iter  50  rung 0.25  step_rew   38.184  ploss   0.006  closs  0.015  pkl 0.0085  cev -0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.974  min 0.690
+iter  51  rung 0.25  step_rew   37.015  ploss   0.008  closs  0.006  pkl 0.0199  cev -0.00  roll_dead 0.00  rfill 0.80
+iter  52  rung 0.25  step_rew   35.622  ploss   0.007  closs  0.005  pkl 0.0328  cev  0.01  roll_dead 0.00  rfill 0.78
+iter  53  rung 0.25  step_rew   36.455  ploss   0.005  closs  0.004  pkl 0.0551  cev  0.00  roll_dead 0.00  rfill 0.75
+iter  54  rung 0.25  step_rew   38.914  ploss   0.003  closs  0.006  pkl 0.0370  cev  0.01  roll_dead 0.00  rfill 0.77
+iter  55  rung 0.25  step_rew   38.748  ploss   0.002  closs  0.005  pkl 0.0303  cev  0.00  roll_dead 0.00  rfill 0.78
+iter  56  rung 0.25  step_rew   39.642  ploss   0.002  closs  0.004  pkl 0.0241  cev -0.00  roll_dead  nan  rfill  nan
+iter  57  rung 0.25  step_rew   36.062  ploss   0.001  closs  0.003  pkl 0.0223  cev  0.01  roll_dead 0.00  rfill 0.79
+iter  58  rung 0.25  step_rew   36.046  ploss   0.001  closs  0.002  pkl 0.0150  cev  0.01  roll_dead 0.00  rfill 0.75
+iter  59  rung 0.25  step_rew   37.306  ploss   0.001  closs  0.003  pkl 0.0098  cev  0.01  roll_dead 0.00  rfill 0.76
+iter  60  rung 0.25  step_rew   26.392  ploss  -0.000  closs  0.003  pkl 0.0050  cev  0.02  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.973  min 0.670
+iter  61  rung 0.25  step_rew   26.917  ploss  -0.001  closs  0.003  pkl 0.0042  cev  0.02  roll_dead 0.00  rfill 0.57
+iter  62  rung 0.25  step_rew   27.638  ploss  -0.001  closs  0.002  pkl 0.0074  cev  0.02  roll_dead 0.00  rfill 0.55
+iter  63  rung 0.25  step_rew   27.807  ploss  -0.001  closs  0.002  pkl 0.0083  cev  0.01  roll_dead 0.00  rfill 0.56
+iter  64  rung 0.25  step_rew   28.045  ploss  -0.000  closs  0.001  pkl 0.0048  cev  0.01  roll_dead 0.00  rfill 0.59
+iter  65  rung 0.25  step_rew   28.901  ploss  -0.000  closs  0.002  pkl 0.0067  cev -0.00  roll_dead 0.00  rfill 0.58
+iter  66  rung 0.25  step_rew   28.444  ploss  -0.001  closs  0.001  pkl 0.0053  cev -0.00  roll_dead  nan  rfill  nan
+iter  67  rung 0.25  step_rew   25.652  ploss  -0.000  closs  0.002  pkl 0.0068  cev  0.00  roll_dead 0.00  rfill 0.59
+iter  68  rung 0.25  step_rew   27.078  ploss  -0.001  closs  0.001  pkl 0.0032  cev  0.00  roll_dead 0.00  rfill 0.54
+iter  69  rung 0.25  step_rew   27.991  ploss   0.001  closs  0.002  pkl 0.0057  cev  0.01  roll_dead 0.00  rfill 0.56
+iter  70  rung 0.24  step_rew    8.493  ploss  -0.001  closs  0.006  pkl 0.0079  cev  0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.936  min 0.651
+iter  71  rung 0.24  step_rew    8.087  ploss   0.000  closs  0.007  pkl 0.0070  cev  0.00  roll_dead 0.00  rfill 0.19
+iter  72  rung 0.24  step_rew    8.348  ploss  -0.000  closs  0.004  pkl 0.0053  cev  0.01  roll_dead 0.00  rfill 0.19
+iter  73  rung 0.24  step_rew    8.481  ploss   0.001  closs  0.002  pkl 0.0074  cev  0.01  roll_dead 0.00  rfill 0.18
+iter  74  rung 0.24  step_rew    8.884  ploss  -0.002  closs  0.002  pkl 0.0147  cev -0.00  roll_dead 0.00  rfill 0.19
+iter  75  rung 0.24  step_rew    9.218  ploss  -0.001  closs  0.002  pkl 0.0114  cev -0.01  roll_dead 0.00  rfill 0.21
+iter  76  rung 0.24  step_rew    7.610  ploss   0.000  closs  0.001  pkl 0.0073  cev  0.00  roll_dead  nan  rfill  nan
+iter  77  rung 0.24  step_rew    9.515  ploss  -0.000  closs  0.001  pkl 0.0072  cev  0.00  roll_dead 0.00  rfill 0.18
+iter  78  rung 0.24  step_rew    8.078  ploss   0.001  closs  0.001  pkl 0.0067  cev  0.00  roll_dead 0.00  rfill 0.21
+iter  79  rung 0.24  step_rew    8.142  ploss  -0.002  closs  0.001  pkl 0.0128  cev  0.00  roll_dead 0.00  rfill 0.18
+iter  80  rung 0.00  step_rew   21.200  ploss   0.002  closs  0.002  pkl 0.0111  cev -0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 1.021  min 0.700
+iter  81  rung 0.00  step_rew   22.689  ploss   0.002  closs  0.003  pkl 0.0086  cev -0.00  roll_dead 0.00  rfill 0.75
+iter  82  rung 0.00  step_rew   21.392  ploss   0.002  closs  0.002  pkl 0.0051  cev -0.00  roll_dead 0.00  rfill 0.79
+iter  83  rung 0.00  step_rew   21.525  ploss  -0.000  closs  0.001  pkl 0.0051  cev -0.00  roll_dead 0.00  rfill 0.75
+iter  84  rung 0.00  step_rew   21.483  ploss  -0.001  closs  0.001  pkl 0.0072  cev  0.00  roll_dead 0.00  rfill 0.75
+iter  85  rung 0.00  step_rew   22.370  ploss   0.002  closs  0.001  pkl 0.0046  cev  0.01  roll_dead 0.00  rfill 0.79
+iter  86  rung 0.00  step_rew   24.309  ploss   0.001  closs  0.001  pkl 0.0070  cev -0.00  roll_dead  nan  rfill  nan
+iter  87  rung 0.00  step_rew   21.896  ploss  -0.000  closs  0.002  pkl 0.0055  cev -0.00  roll_dead 0.00  rfill 0.82
+iter  88  rung 0.00  step_rew   21.152  ploss   0.002  closs  0.000  pkl 0.0059  cev  0.01  roll_dead 0.00  rfill 0.75
+iter  89  rung 0.00  step_rew   21.655  ploss   0.002  closs  0.000  pkl 0.0085  cev -0.00  roll_dead 0.00  rfill 0.76
+iter  90  rung 0.25  step_rew   21.557  ploss   0.001  closs  0.002  pkl 0.0066  cev  0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 1.030  min 0.692
+iter  91  rung 0.25  step_rew   20.162  ploss   0.002  closs  0.003  pkl 0.0073  cev  0.01  roll_dead 0.00  rfill 0.46
+iter  92  rung 0.25  step_rew   23.797  ploss   0.001  closs  0.002  pkl 0.0036  cev  0.01  roll_dead 0.00  rfill 0.45
+iter  93  rung 0.25  step_rew   21.279  ploss   0.001  closs  0.002  pkl 0.0082  cev  0.01  roll_dead 0.00  rfill 0.47
+iter  94  rung 0.25  step_rew   22.109  ploss   0.003  closs  0.002  pkl 0.0074  cev  0.02  roll_dead 0.00  rfill 0.47
+iter  95  rung 0.25  step_rew   22.964  ploss   0.004  closs  0.003  pkl 0.0105  cev  0.01  roll_dead 0.00  rfill 0.48
+iter  96  rung 0.25  step_rew   23.539  ploss   0.004  closs  0.001  pkl 0.0121  cev  0.00  roll_dead  nan  rfill  nan
+iter  97  rung 0.25  step_rew   22.741  ploss   0.003  closs  0.003  pkl 0.0087  cev  0.01  roll_dead 0.00  rfill 0.46
+iter  98  rung 0.25  step_rew   20.075  ploss   0.003  closs  0.001  pkl 0.0154  cev  0.02  roll_dead 0.00  rfill 0.48
+iter  99  rung 0.25  step_rew   22.508  ploss   0.003  closs  0.002  pkl 0.0257  cev  0.03  roll_dead 0.00  rfill 0.44
+iter 100  rung 0.00  step_rew   15.319  ploss   0.003  closs  0.001  pkl 0.0176  cev  0.02  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.951  min 0.679
+iter 101  rung 0.00  step_rew   15.472  ploss   0.003  closs  0.002  pkl 0.0187  cev  0.02  roll_dead 0.00  rfill 0.56
+iter 102  rung 0.00  step_rew   15.048  ploss   0.003  closs  0.001  pkl 0.0311  cev  0.03  roll_dead 0.00  rfill 0.55
+iter 103  rung 0.00  step_rew   15.225  ploss   0.003  closs  0.001  pkl 0.1254  cev  0.03  roll_dead 0.00  rfill 0.56
+iter 104  rung 0.00  step_rew   15.563  ploss   0.005  closs  0.000  pkl 0.1152  cev  0.04  roll_dead 0.00  rfill 0.56
+iter 105  rung 0.00  step_rew   15.809  ploss   0.007  closs  0.000  pkl 0.0596  cev  0.04  roll_dead 0.00  rfill 0.57
+iter 106  rung 0.00  step_rew   16.421  ploss   0.010  closs  0.000  pkl 0.0355  cev  0.01  roll_dead  nan  rfill  nan
+iter 107  rung 0.00  step_rew   15.332  ploss   0.013  closs  0.000  pkl 0.0209  cev  0.05  roll_dead 0.00  rfill 0.57
+iter 108  rung 0.00  step_rew   15.604  ploss   0.015  closs  0.000  pkl 0.0135  cev  0.05  roll_dead 0.00  rfill 0.56
+iter 109  rung 0.00  step_rew   15.863  ploss   0.013  closs  0.000  pkl 0.0071  cev  0.07  roll_dead 0.00  rfill 0.57
+iter 110  rung 0.24  step_rew    0.561  ploss   0.005  closs  0.003  pkl 0.0016  cev  0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.949  min 0.559
+iter 111  rung 0.24  step_rew    0.399  ploss   0.005  closs  0.010  pkl 0.0043  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 112  rung 0.24  step_rew    0.870  ploss   0.005  closs  0.003  pkl 0.0062  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 113  rung 0.24  step_rew    0.376  ploss   0.004  closs  0.002  pkl 0.0198  cev  0.00  roll_dead 0.00  rfill 0.03
+iter 114  rung 0.24  step_rew    0.783  ploss   0.004  closs  0.002  pkl 0.0134  cev  0.00  roll_dead 0.00  rfill 0.03
+iter 115  rung 0.24  step_rew    0.656  ploss   0.003  closs  0.001  pkl 0.0285  cev -0.01  roll_dead 0.00  rfill 0.03
+iter 116  rung 0.24  step_rew    0.756  ploss   0.003  closs  0.001  pkl 0.0188  cev  0.00  roll_dead  nan  rfill  nan
+iter 117  rung 0.24  step_rew    0.593  ploss   0.003  closs  0.001  pkl 0.0125  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 118  rung 0.24  step_rew    0.426  ploss   0.003  closs  0.001  pkl 0.0099  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 119  rung 0.24  step_rew    0.836  ploss   0.002  closs  0.000  pkl 0.0151  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 120  rung 0.24  step_rew   11.238  ploss   0.002  closs  0.001  pkl 0.0046  cev -0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 1.003  min 0.693
+iter 121  rung 0.24  step_rew   10.496  ploss   0.003  closs  0.004  pkl 0.0057  cev -0.00  roll_dead 0.00  rfill 0.25
+iter 122  rung 0.24  step_rew   10.837  ploss   0.003  closs  0.001  pkl 0.0066  cev -0.00  roll_dead 0.00  rfill 0.23
+iter 123  rung 0.24  step_rew   10.900  ploss   0.003  closs  0.002  pkl 0.0048  cev -0.00  roll_dead 0.00  rfill 0.23
+iter 124  rung 0.24  step_rew   11.462  ploss   0.003  closs  0.001  pkl 0.0107  cev -0.00  roll_dead 0.00  rfill 0.25
+iter 125  rung 0.24  step_rew   10.054  ploss   0.002  closs  0.001  pkl 0.0075  cev  0.00  roll_dead 0.00  rfill 0.23
+iter 126  rung 0.24  step_rew   11.228  ploss   0.003  closs  0.001  pkl 0.0056  cev -0.01  roll_dead  nan  rfill  nan
+iter 127  rung 0.24  step_rew    9.529  ploss  -0.000  closs  0.001  pkl 0.0052  cev -0.01  roll_dead 0.00  rfill 0.24
+iter 128  rung 0.24  step_rew   11.420  ploss   0.002  closs  0.000  pkl 0.0044  cev -0.00  roll_dead 0.00  rfill 0.22
+iter 129  rung 0.24  step_rew   10.565  ploss   0.001  closs  0.001  pkl 0.0050  cev -0.00  roll_dead 0.00  rfill 0.24
+iter 130  rung 0.25  step_rew   20.680  ploss   0.003  closs  0.004  pkl 0.0076  cev  0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.965  min 0.676
+iter 131  rung 0.25  step_rew   21.083  ploss   0.003  closs  0.009  pkl 0.0072  cev  0.00  roll_dead 0.00  rfill 0.43
+iter 132  rung 0.25  step_rew   22.784  ploss   0.001  closs  0.005  pkl 0.0072  cev  0.01  roll_dead 0.00  rfill 0.47
+iter 133  rung 0.25  step_rew   21.405  ploss   0.003  closs  0.005  pkl 0.0061  cev  0.01  roll_dead 0.00  rfill 0.47
+iter 134  rung 0.25  step_rew   19.869  ploss   0.003  closs  0.003  pkl 0.0058  cev  0.01  roll_dead 0.00  rfill 0.44
+iter 135  rung 0.25  step_rew   21.672  ploss   0.001  closs  0.003  pkl 0.0105  cev  0.01  roll_dead 0.00  rfill 0.43
+iter 136  rung 0.25  step_rew   23.301  ploss  -0.000  closs  0.003  pkl 0.0123  cev -0.00  roll_dead  nan  rfill  nan
+iter 137  rung 0.25  step_rew   22.476  ploss   0.003  closs  0.003  pkl 0.0080  cev  0.01  roll_dead 0.00  rfill 0.47
+iter 138  rung 0.25  step_rew   20.883  ploss   0.002  closs  0.004  pkl 0.0053  cev  0.01  roll_dead 0.00  rfill 0.46
+iter 139  rung 0.25  step_rew   22.903  ploss   0.002  closs  0.004  pkl 0.0075  cev  0.01  roll_dead 0.00  rfill 0.46
+iter 140  rung 0.24  step_rew    0.444  ploss   0.000  closs  0.006  pkl 0.0039  cev  0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.924  min 0.500
+iter 141  rung 0.24  step_rew    0.339  ploss  -0.001  closs  0.023  pkl 0.0038  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 142  rung 0.24  step_rew    0.562  ploss   0.001  closs  0.006  pkl 0.0020  cev  0.01  roll_dead 0.00  rfill 0.02
+iter 143  rung 0.24  step_rew    0.048  ploss   0.000  closs  0.005  pkl 0.0012  cev  0.00  roll_dead 0.00  rfill 0.03
+iter 144  rung 0.24  step_rew    0.691  ploss   0.001  closs  0.004  pkl 0.0041  cev  0.00  roll_dead 0.00  rfill 0.02
+iter 145  rung 0.24  step_rew    0.508  ploss  -0.000  closs  0.003  pkl 0.0021  cev -0.01  roll_dead 0.00  rfill 0.03
+iter 146  rung 0.24  step_rew    0.341  ploss   0.002  closs  0.002  pkl 0.0046  cev  0.00  roll_dead  nan  rfill  nan
+iter 147  rung 0.24  step_rew    0.616  ploss   0.001  closs  0.002  pkl 0.0083  cev  0.00  roll_dead 0.00  rfill 0.03
+iter 148  rung 0.24  step_rew    0.275  ploss   0.002  closs  0.001  pkl 0.0054  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 149  rung 0.24  step_rew    0.800  ploss   0.002  closs  0.001  pkl 0.0064  cev  0.00  roll_dead 0.00  rfill 0.02
+iter 150  rung 0.24  step_rew   12.639  ploss   0.002  closs  0.002  pkl 0.0058  cev  0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 1.015  min 0.679
+iter 151  rung 0.24  step_rew   13.484  ploss   0.001  closs  0.008  pkl 0.0014  cev -0.00  roll_dead 0.00  rfill 0.29
+iter 152  rung 0.24  step_rew   12.379  ploss   0.001  closs  0.003  pkl 0.0047  cev  0.00  roll_dead 0.00  rfill 0.29
+iter 153  rung 0.24  step_rew   11.419  ploss  -0.001  closs  0.002  pkl 0.0029  cev  0.01  roll_dead 0.00  rfill 0.27
+iter 154  rung 0.24  step_rew   13.210  ploss   0.002  closs  0.002  pkl 0.0039  cev  0.01  roll_dead 0.00  rfill 0.27
+iter 155  rung 0.24  step_rew   11.523  ploss   0.000  closs  0.003  pkl 0.0049  cev  0.01  roll_dead 0.00  rfill 0.27
+iter 156  rung 0.24  step_rew   14.603  ploss   0.001  closs  0.002  pkl 0.0061  cev -0.00  roll_dead  nan  rfill  nan
+iter 157  rung 0.24  step_rew   13.779  ploss   0.003  closs  0.002  pkl 0.0038  cev  0.01  roll_dead 0.00  rfill 0.29
+iter 158  rung 0.24  step_rew   14.317  ploss  -0.001  closs  0.002  pkl 0.0044  cev  0.02  roll_dead 0.00  rfill 0.31
+iter 159  rung 0.24  step_rew   12.601  ploss   0.001  closs  0.001  pkl 0.0024  cev  0.01  roll_dead 0.00  rfill 0.30
+iter 160  rung 0.24  step_rew    0.592  ploss   0.001  closs  0.004  pkl 0.0013  cev  0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.985  min 0.690
+iter 161  rung 0.24  step_rew    0.669  ploss  -0.001  closs  0.009  pkl 0.0017  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 162  rung 0.24  step_rew    0.616  ploss  -0.002  closs  0.003  pkl 0.0028  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 163  rung 0.24  step_rew    0.194  ploss   0.000  closs  0.002  pkl 0.0059  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 164  rung 0.24  step_rew    0.542  ploss   0.000  closs  0.002  pkl 0.0015  cev -0.00  roll_dead 0.00  rfill 0.02
+iter 165  rung 0.24  step_rew    0.127  ploss   0.001  closs  0.001  pkl 0.0072  cev -0.00  roll_dead 0.00  rfill 0.03
+iter 166  rung 0.24  step_rew    0.501  ploss  -0.001  closs  0.001  pkl 0.0131  cev  0.00  roll_dead  nan  rfill  nan
+iter 167  rung 0.24  step_rew    0.612  ploss  -0.002  closs  0.001  pkl 0.0127  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 168  rung 0.24  step_rew    0.549  ploss   0.001  closs  0.000  pkl 0.0055  cev  0.00  roll_dead 0.00  rfill 0.03
+iter 169  rung 0.24  step_rew    0.248  ploss   0.001  closs  0.000  pkl 0.0046  cev  0.00  roll_dead 0.00  rfill 0.03
+iter 170  rung 0.00  step_rew   14.694  ploss   0.001  closs  0.005  pkl 0.0065  cev  0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.981  min 0.694
+iter 171  rung 0.00  step_rew   13.955  ploss   0.003  closs  0.012  pkl 0.0233  cev  0.00  roll_dead 0.00  rfill 0.54
+iter 172  rung 0.00  step_rew   14.540  ploss   0.003  closs  0.003  pkl 0.0334  cev -0.00  roll_dead 0.00  rfill 0.52
+iter 173  rung 0.00  step_rew   14.246  ploss   0.002  closs  0.003  pkl 0.0587  cev  0.00  roll_dead 0.00  rfill 0.53
+iter 174  rung 0.00  step_rew   14.437  ploss   0.002  closs  0.002  pkl 0.0338  cev  0.01  roll_dead 0.00  rfill 0.52
+iter 175  rung 0.00  step_rew   13.926  ploss   0.002  closs  0.002  pkl 0.0793  cev  0.01  roll_dead 0.00  rfill 0.52
+iter 176  rung 0.00  step_rew   15.082  ploss   0.003  closs  0.001  pkl 0.0682  cev -0.00  roll_dead  nan  rfill  nan
+iter 177  rung 0.00  step_rew   14.483  ploss   0.004  closs  0.001  pkl 0.0211  cev  0.02  roll_dead 0.00  rfill 0.51
+iter 178  rung 0.00  step_rew   15.143  ploss   0.005  closs  0.001  pkl 0.0143  cev  0.01  roll_dead 0.00  rfill 0.53
+iter 179  rung 0.00  step_rew   14.467  ploss   0.007  closs  0.000  pkl 0.0921  cev  0.03  roll_dead 0.00  rfill 0.55
+iter 180  rung 0.24  step_rew    0.422  ploss   0.000  closs  0.005  pkl 0.0141  cev  0.01  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.986  min 0.711
+iter 181  rung 0.24  step_rew    0.753  ploss   0.003  closs  0.013  pkl 0.0135  cev  0.00  roll_dead 0.00  rfill 0.03
+iter 182  rung 0.24  step_rew    0.131  ploss   0.003  closs  0.003  pkl 0.0073  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 183  rung 0.24  step_rew    0.677  ploss   0.002  closs  0.003  pkl 0.0086  cev  0.01  roll_dead 0.00  rfill 0.02
+iter 184  rung 0.24  step_rew    0.484  ploss   0.002  closs  0.002  pkl 0.0089  cev -0.00  roll_dead 0.00  rfill 0.03
+iter 185  rung 0.24  step_rew    0.270  ploss   0.002  closs  0.002  pkl 0.0033  cev -0.00  roll_dead 0.00  rfill 0.03
+iter 186  rung 0.24  step_rew   -0.014  ploss  -0.000  closs  0.001  pkl 0.0015  cev  0.01  roll_dead  nan  rfill  nan
+iter 187  rung 0.24  step_rew    0.420  ploss   0.000  closs  0.001  pkl 0.0054  cev  0.00  roll_dead 0.00  rfill 0.02
+iter 188  rung 0.24  step_rew   -0.086  ploss   0.002  closs  0.001  pkl 0.0042  cev  0.01  roll_dead 0.00  rfill 0.03
+iter 189  rung 0.24  step_rew    0.521  ploss   0.001  closs  0.000  pkl 0.0095  cev -0.00  roll_dead 0.00  rfill 0.02
+iter 190  rung 0.24  step_rew   10.688  ploss   0.001  closs  0.005  pkl 0.0059  cev -0.00  roll_dead  nan  rfill  nan  | SEL dead 0.00  ratio 0.996  min 0.765
+iter 191  rung 0.24  step_rew   11.526  ploss   0.001  closs  0.008  pkl 0.0026  cev -0.00  roll_dead 0.00  rfill 0.24
+iter 192  rung 0.24  step_rew   11.550  ploss   0.001  closs  0.003  pkl 0.0023  cev -0.00  roll_dead 0.00  rfill 0.25
+iter 193  rung 0.24  step_rew   11.032  ploss  -0.000  closs  0.003  pkl 0.0026  cev -0.00  roll_dead 0.00  rfill 0.24
+iter 194  rung 0.24  step_rew   11.202  ploss   0.001  closs  0.002  pkl 0.0047  cev -0.01  roll_dead 0.00  rfill 0.24
+iter 195  rung 0.24  step_rew   10.477  ploss   0.001  closs  0.001  pkl 0.0073  cev  0.00  roll_dead 0.00  rfill 0.25
+iter 196  rung 0.24  step_rew   10.481  ploss   0.001  closs  0.001  pkl 0.0056  cev  0.00  roll_dead  nan  rfill  nan
+iter 197  rung 0.24  step_rew   11.204  ploss   0.001  closs  0.002  pkl 0.0037  cev -0.01  roll_dead 0.00  rfill 0.23
+iter 198  rung 0.24  step_rew   10.497  ploss   0.002  closs  0.001  pkl 0.0010  cev -0.01  roll_dead 0.00  rfill 0.24
+iter 199  rung 0.24  step_rew   10.598  ploss  -0.000  closs  0.002  pkl 0.0015  cev -0.01  roll_dead 0.00  rfill 0.23  | SEL dead 0.00  ratio 1.014  min 0.732
+best select: dead 0.000  ratio 1.030
+held-out (12 cfgs x 4 rungs): dead 0.000  ratio 1.121  min 0.299
+curve -> /workspace/tokenomics/prod_improve_v1_curve.csv
+policy -> /workspace/tokenomics/prod_improve_v1.pt

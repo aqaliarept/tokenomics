@@ -1157,6 +1157,8 @@ def actor_update(
     clip: float = 0.2,
     ent_coef: float = 0.01,
     target_kl: float | None = None,
+    anchor_mean: torch.Tensor | None = None,
+    anchor_coef: float = 0.0,
 ) -> ActorStats:
     """Clipped PPO policy-gradient step on a decentralized actor (ADR-0004). No
     value loss here — the centralized critic is trained separately. `ent_coef`
@@ -1165,7 +1167,13 @@ def actor_update(
     ADR-0015: optional **target-KL early stop**. Clipping alone does not bound
     the aggregate step, so stop actor epochs when the rollout-policy KL exceeds
     `1.5·target_kl`. Earlier causal claims about collapse were confounded by
-    ADR-0017 and ADR-0018."""
+    ADR-0017 and ADR-0018.
+
+    `anchor_mean`/`anchor_coef` (EXP-0003): optional BC anchor toward a frozen
+    reference policy's action means on the SAME obs (per-row precomputed). Adds
+    `anchor_coef · mean_active((mean − anchor_mean)²)` to the loss — a conservative
+    pull that keeps a producer-only fine-tune near its clone instead of drifting off
+    the cloned operating point. `anchor_coef=0` (default) reproduces plain PPO."""
     if not buf.obs:
         return ActorStats()
     obs = torch.as_tensor(np.array(buf.obs), dtype=torch.float32)
@@ -1232,6 +1240,11 @@ def actor_update(
         s2 = torch.clamp(ratio, 1 - clip, 1 + clip) * adv_t
         pg = -torch.min(s1, s2).mean()
         loss = pg - ent_coef * ent
+        if anchor_coef and anchor_mean is not None:
+            # conservative BC pull toward the frozen reference means (EXP-0003), on
+            # the active dims only so masked-out dims add no spurious gradient.
+            bc = (((d.mean - anchor_mean) ** 2) * mask).sum(-1).mean()
+            loss = loss + anchor_coef * bc
         opt.zero_grad()
         loss.backward()
         if pin:

@@ -1,0 +1,21 @@
+
+=== ../experiments/EXP-0003-producer-standalone-improvement/artifacts/prod_improve_v1.pt  depth=3  config_seeds=[0, 3, 4, 5]  eval_seeds=5 ===
+  rung  seed    clone✓     base✓   ratio  cl_dead  bs_dead  verdict
+  0.00     0     291.0     291.0    1.00     0.00     0.00  ok
+  0.10     0     230.6     254.8    0.91     0.00     0.00  ok
+  0.24     0     141.0     203.8    0.69     0.00     0.00  FAIL
+  0.25     0     300.4     315.2    0.95     0.00     0.00  ok
+  0.00     3      37.0     144.0    0.26     0.00     0.00  FAIL
+  0.10     3      94.2      62.4    1.51     0.00     0.00  ok
+  0.24     3      84.8      29.2    2.90     0.00     0.00  ok
+  0.25     3     285.0     208.0    1.37     0.00     0.00  ok
+  0.00     4     167.0     288.0    0.58     0.00     0.00  FAIL
+  0.10     4     197.4     241.0    0.82     0.00     0.00  ok
+  0.24     4     140.6     243.2    0.58     0.00     0.00  FAIL
+  0.25     4     502.2     509.4    0.99     0.00     0.00  ok
+  0.00     5     244.0     288.0    0.85     0.00     0.00  ok
+  0.10     5     216.8     309.4    0.70     0.00     0.00  FAIL
+  0.24     5     163.8     248.0    0.66     0.00     0.00  FAIL
+  0.25     5     441.8     447.6    0.99     0.00     0.00  ok
+
+16 rows -> ../experiments/EXP-0003-producer-standalone-improvement/m2_prod_improve_v1_rungs.csv  (6 FAIL)

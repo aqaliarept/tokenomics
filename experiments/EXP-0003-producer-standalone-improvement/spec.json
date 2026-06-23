@@ -1,0 +1,49 @@
+{
+  "version": "producer-standalone-improvement-v1",
+  "date": "2026-06-22",
+  "driver": "tokenomics.train.producer_improve (producer-only PPO, frozen proportional orderer, BC anchor) + tokenomics.eval.producer_rungs (quantity-rung gate) + tokenomics.eval.swap_eval (2x2 swap baseline)",
+  "question": "Can the Phase-2 producer clone (EXP-0002 d3_perm) survive the quantity rungs and then improve BEYOND stock_aware via producer-only RL, while the orderer stays fixed to proportional? smoke_ppo --init-from is excluded because it co-trains the orderer, confounding the standalone-producer question.",
+  "models": {
+    "M0": "control: EXP-0002 d3_perm clone, no training — the current bar",
+    "M2": "producer-only improvement v1: init from d3_perm, train producer actor only, orderer frozen to proportional, conservative PPO (low lr + tight target-KL) with BC anchor to the clone"
+  },
+  "params": {
+    "depth": 3,
+    "rungs": [0.0, 0.1, 0.24, 0.25],
+    "base_producer": "stock_aware",
+    "base_orderer": "proportional",
+    "m0_config_seeds": [0, 3, 4, 5],
+    "m0_eval_seeds": 5,
+    "m2_init_from": "../experiments/EXP-0002-producer-warm-start/artifacts/d3_perm.pt",
+    "m2_train_seeds": 3,
+    "m2_perms": 2,
+    "m2_perm_seed": 1,
+    "m2_iters": 200,
+    "m2_steps": 4096,
+    "m2_num_envs": 4,
+    "m2_actor_lr": 5e-5,
+    "m2_target_kl": 0.003,
+    "m2_bc_anchor": 0.05,
+    "m2_explore_log_std": -1.5,
+    "m2_eval_every": 10,
+    "m2_eval_seeds": 5,
+    "m2_held_out_seeds": 3,
+    "m2_held_out_perms": 3,
+    "horizon": 100
+  },
+  "acceptance": "Accept improved producer only if: death <= 0.05 everywhere; d3_p00 ratio >= d3_perm - 0.02; held-out seed/perm ratio >= 0.80; L1 trace healthy; beats base+base by >= 5% on at least one meaningful rung/topology OR matches units while materially reducing rejects/waste. Reject if improvement appears only on seed 0, if L1 decay returns, or if held-out ratios drop.",
+  "configs": {
+    "scale_d3_s0..s2": "M2 train topologies (configs/scale_d3_s{0,1,2}.json)",
+    "scale_d3_s3..s5": "M2 held-out + M0 rung topologies (configs/scale_d3_s{3,4,5}.json)"
+  },
+  "artifacts": {
+    "prod_improve_v1.pt": "M2 best-selected producer-only checkpoint (orderer = unchanged clone orderer, present only for schema; eval pairs it with proportional)",
+    "m0_d3_perm_rungs.csv": "M0 clone quantity-rung table",
+    "m2_prod_improve_v1_rungs.csv": "M2 improved-checkpoint quantity-rung table (same grid as M0, for the per-cell clone->improved comparison)",
+    "prod_improve_v1_curve.csv": "M2 per-iter training curve (canonical = CPU-pod run)",
+    "prod_improve_v1_local.pt / prod_improve_v1_curve_local.csv": "M2 backup from the local rerun (torch 2.12.0 vs pod 2.12.1; same conclusion, held-out-min differs)"
+  },
+  "compute": {"where": "M0 + rung/trace evals: local CPU (BLAS 1 thread). M2 v1 training: CPU Runpod pod kgmtmt2lqxyz4s (8 vCPU, 32GB, runpod/base ubuntu2004, python3.12, torch 2.12.1+cpu) via run_pod_training.py --cpu --python python3.12", "wall_time": "M0 rungs ~2 min; M2 v1 ~20 min on the CPU pod (~6 s/iter)"},
+  "cpu_pod_notes": "run_pod_training.py gained a --cpu profile + --python flag for base CPU images: isolated venv built from python3.12 (base image python3 is 3.8 < requires-python 3.11), torch installed from the CPU wheel index (download.pytorch.org/whl/cpu) so the CUDA build's multi-GB nvidia-* deps don't overflow the 5GB container disk, --no-cache-dir to spare disk. (An earlier GPU pod with a 512MB memory cgroup thrashed torch and was abandoned.)",
+  "reproduce": "cd tokenomics && ../.venv/bin/python -m tokenomics.eval.swap_eval --pt ../experiments/EXP-0002-producer-warm-start/artifacts/d3_perm.pt --depth 3 --seeds 5  &&  ../.venv/bin/python -m tokenomics.eval.producer_rungs --pt ../experiments/EXP-0002-producer-warm-start/artifacts/d3_perm.pt --depth 3 --rungs 0.00,0.10,0.24,0.25 --config-seeds 0,3,4,5 --eval-seeds 5 --out <EXP>/m0_d3_perm_rungs.csv  &&  ../.venv/bin/python -m tokenomics.train.producer_improve --init-from ../experiments/EXP-0002-producer-warm-start/artifacts/d3_perm.pt --depth 3 --train-seeds 3 --perms 2 --perm-seed 1 --rungs 0.00,0.10,0.24,0.25 --iters 200 --steps 4096 --actor-lr 5e-5 --target-kl 0.003 --bc-anchor 0.05 --explore-log-std -1.5 --eval-every 10 --eval-seeds 5 --held-out-seeds 3 --held-out-perms 3 --save <EXP>/artifacts/prod_improve_v1.pt --out <EXP>/prod_improve_v1_curve.csv"
+}

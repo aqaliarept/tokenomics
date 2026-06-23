@@ -11,8 +11,18 @@ End-to-end driver for off-box training. Everything the run needs lives here:
 The pod is addressed by id; SSH ip/port are resolved fresh via `runpodctl ssh info`
 each run, because they change across restarts.
 
+Pod profiles (--cpu):
+  * GPU (default): a `runpod/pytorch:*` image — reuse its system CUDA torch.
+  * CPU (`--cpu`):  a `runpod/base:*` image — no torch; install the `[train]` extra
+    (CPU torch) into an isolated venv. Correct for the CPU-bound trainers, where the
+    GPU buys nothing (batch-1 inference + single-threaded Python rollout).
+
 Usage:
   python run_pod_training.py --pod-id h8n0zosgxesksp \
+      --train "-m tokenomics.train.smoke_ppo --iters 50 --steps 1024 --seed 0"
+
+  # CPU pod (base image): install CPU torch via the [train] extra
+  python run_pod_training.py --pod-id <cpu-pod-id> --cpu \
       --train "-m tokenomics.train.smoke_ppo --iters 50 --steps 1024 --seed 0"
 
   # leave the pod running for inspection afterwards:
@@ -185,13 +195,44 @@ def rsync_down(ssh: Ssh, remote_path: str, local_path: str) -> None:
     run(["rsync", "-az", "-e", ssh_inline, f"root@{ssh.ip}:{remote_path}", local_path])
 
 
-def setup_env(ssh: Ssh, remote_dir: str) -> None:
-    """Create venv (reusing system CUDA torch) and install the package editable."""
-    log("setting up venv + installing package...")
+def setup_env(ssh: Ssh, remote_dir: str, *, cpu: bool = False, python_bin: str = "python3") -> None:
+    """Create the venv and install the package editable.
+
+    Two pod profiles:
+      * GPU (default): a `runpod/pytorch:*` image ships CUDA torch in system
+        site-packages. Make the venv `--system-site-packages` and install the base
+        package (`-e .`) so it REUSES that prebuilt CUDA torch — no multi-GB download.
+      * CPU (`cpu=True`): a `runpod/base:*` image has no torch. Make an ISOLATED venv
+        (no system site-packages, so a stray system torch can't shadow it) and install
+        the `[train]` extra so pip pulls CPU torch into the venv. This is the right
+        profile for the single-threaded, CPU-bound trainers (smoke_ppo / parallel /
+        producer_improve) — the GPU buys nothing for batch-1 inference + a Python
+        round-robin rollout, so a cheap CPU pod is the correct off-box target.
+
+    `python_bin` selects the interpreter the venv is built from — base CPU images
+    default `python3` to a too-old build (ubuntu 20.04 ships 3.8, below the package's
+    `requires-python >= 3.11`), so pass e.g. `--python python3.12` for those."""
+    log(f"setting up venv + installing package ({'CPU' if cpu else 'GPU'} profile, {python_bin})...")
+    if cpu:
+        # CPU profile: install torch from the CPU wheel index FIRST. PyPI's default
+        # `torch` is the CUDA build, which drags in multi-GB `nvidia-*` deps that blow a
+        # small container disk (5 GB). The CPU wheel is ~190 MB with no CUDA libs.
+        # `--no-cache-dir` keeps pip from also stashing the wheel on the same small disk.
+        # The second install then sees torch satisfied and adds only the rest of [train].
+        install = (
+            f"test -x .venv/bin/python || {python_bin} -m venv .venv && "
+            ".venv/bin/pip install --no-cache-dir -q torch "
+            "--index-url https://download.pytorch.org/whl/cpu && "
+            ".venv/bin/pip install --no-cache-dir -q -e .[train]"
+        )
+    else:
+        # GPU profile: reuse the image's system CUDA torch (no torch install).
+        install = (
+            f"test -x .venv/bin/python || {python_bin} -m venv --system-site-packages .venv && "
+            ".venv/bin/pip install -e . -q"
+        )
     cmd = (
-        f"cd {remote_dir} && "
-        "test -x .venv/bin/python || python -m venv --system-site-packages .venv && "
-        ".venv/bin/pip install -e . -q && "
+        f"cd {remote_dir} && {install} && "
         ".venv/bin/python -c 'import tokenomics, torch; "
         "print(\"env ok | torch\", torch.__version__, \"cuda\", torch.cuda.is_available())'"
     )
@@ -234,6 +275,12 @@ def main() -> int:
     ap.add_argument("--no-stop", action="store_true", help="leave the pod running when done")
     ap.add_argument("--no-sync", action="store_true", help="skip rsync (code already on pod)")
     ap.add_argument("--no-install", action="store_true", help="skip venv/install step")
+    ap.add_argument("--cpu", action="store_true",
+                    help="CPU-pod profile: isolated venv + install the [train] extra (CPU torch) "
+                         "instead of reusing a GPU image's system CUDA torch (default: GPU profile)")
+    ap.add_argument("--python", default="python3", dest="python_bin",
+                    help="interpreter to build the pod venv from (default python3; base CPU "
+                         "images need e.g. python3.12, as their python3 is below requires-python)")
     args = ap.parse_args()
 
     if not args.local_dir.exists():
@@ -249,7 +296,7 @@ def main() -> int:
         if not args.no_sync:
             rsync_up(ssh, args.local_dir, args.remote_dir)
         if not args.no_install:
-            setup_env(ssh, args.remote_dir)
+            setup_env(ssh, args.remote_dir, cpu=args.cpu, python_bin=args.python_bin)
 
         train(ssh, args.remote_dir, args.train, args.remote_log)
 
