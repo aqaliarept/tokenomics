@@ -77,10 +77,10 @@ def decide_ordering_obs(spec: EnvSpec, obs: np.ndarray) -> np.ndarray:
     toward the *cheapest* (lowest cut-off price = most spare/least contested
     capacity) by emitting a per-producer logit of -price, replicated across slots;
     decode masks each slot to its eligible producers and softmaxes."""
-    p = spec.num_producers
-    q = spec.num_order_products
-    price_start = spec.k * (3 + q)  # after the K order slots
-    prices = np.asarray(obs[price_start : price_start + p], dtype=np.float32)
+    # version-aware: the cut-off price block moved under enriched v2 obs (strided in the
+    # per-producer block), so read it via the spec's indices, not a hardcoded v1 offset —
+    # keeps obs_price identical across v1/v2 (the search candidate held fixed).
+    prices = np.asarray(obs[spec.ordering_price_indices()], dtype=np.float32)
     # prefer lower cut-off price (slack capacity), BUT a 0 price is "no production
     # yet" (UNDEFINED -> 0 in encode), not "cheapest" — often a producer that cannot
     # produce (capacity hidden, ADR-0029). Park unproven producers at the floor so a

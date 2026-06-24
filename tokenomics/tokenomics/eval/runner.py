@@ -81,8 +81,12 @@ def evaluate(
     seeds: Iterable[int] = range(10),
     horizon: int = 100,
     config: Configuration | None = None,
+    enriched_orderer_obs: bool = False,
 ) -> Aggregated:
-    runs = [run_episode(TokenomicsAECEnv(config=config, horizon=horizon), prod_policy, order_policy, s)
+    runs = [run_episode(
+                TokenomicsAECEnv(config=config, horizon=horizon,
+                                 enriched_orderer_obs=enriched_orderer_obs),
+                prod_policy, order_policy, s)
             for s in seeds]
 
     def agg(key: str) -> tuple[float, float]:

@@ -94,3 +94,74 @@ obs; `build_spec(cfg, orderer_obs_version=2)`.
       telemetry fold, then dropped — feed `failed_ema`/`recent_rejected_qty`/latency
 - [x] `accept_qty_now`/`capacity_makeable_qty`/`capacity_bottleneck_ratio`/
       `slot_makeability` use available capacity (current − live reservations), not raw
+
+## EXP-0006A cloud run — M2-v3-obs training (IN PROGRESS)
+Crossing into the cloud step of EXP-0006A. The obs contract existed but no trainer
+could *drive* it — `orderer_improve` + `eval.runner.evaluate` built v1 envs only, so
+a cloud run would have silently retrained M2-v1. Wired the enriched flag end-to-end
+(TDD, +3 tests, suite **274 passed**):
+- [x] `eval.runner.evaluate(enriched_orderer_obs=False)` → builds v2 envs when set
+- [x] `orderer_improve`: `collect_orderer_samples` / `dagger_orderer` /
+      `run_orderer_improve` / `eval_m2` thread the flag; probe sized to v2; CLI
+      `--enriched`; `save_policies(orderer_obs_version=2)` (ckpt fp == v2, verified)
+- [x] local smoke (tiny dagger+eval) GREEN end-to-end before launch
+- [x] **Runpod CPU run DONE** (pod bh6app36yc1o67, ~70 min, exit 0): `orderer_improve
+      --enriched` = EXP-0005 M2-v1 recipe + obs v2 only (clean A/B), held-out 6,7,8,9.
+      Artifacts pulled + ckpt fp verified == v2. Experiment written:
+      `experiments/EXP-0006A-orderer-observation/` (spec/RESULT/summary.csv), README row.
+
+### EXP-0006A verdict: REJECT (strict) — observability is a PARTIAL lever
+M2-v3-obs vs strict envelope (M2-v1 in parens): s6 **1.01**(0.99) s7 **1.04**(1.06)
+s8 **1.08**(1.02) s9 **0.87**(0.91). Zero death all 4; beats M0 on all 4 (1.04–1.42).
+Enriched obs lifts 3/4 seeds over the envelope but **s9 regressed** (wide CI ±42,
+rej 121). s9 envelope-best = `sa+random` → routing *diversity* wins; a deterministic
+mean can't reproduce it regardless of inputs → residual = **distillation form, not
+state**. Next = **EXP-0006B stochastic distillation**, keep v2 obs as the contract.
+
+## EXP-0006B — stochastic orderer distillation (LOCAL IMPL DONE, awaiting cloud)
+Acting on the EXP-0006A finding (s9 residual = distillation *form*: a single deterministic
+mean can't reproduce the `sa+random` routing diversity that wins s9). Distill a **stochastic**
+orderer: learn the per-dim `log_std` and **deploy by sampling** instead of collapsing the
+teacher's per-cycle variety into clip(mean). Form chosen (user): **learned log_std (MLE)** —
+reuses the existing single-label pipeline, smallest new surface. TDD, +3 tests, suite **277**.
+- [x] **Slice 1** `_fit_orderer_clone(stochastic=True)`: masked Gaussian **NLL** fits mean +
+      per-dim log_std; std recovers the teacher label spread on decode-active dims, masked
+      dims keep init (deterministic masked-MSE path unchanged).
+- [x] **Slice 2** `_stochastic_closure(actor, bound, seed)`: deploy = sample
+      `a~Normal(mean,std)`, clip to ±bound; varies per call, reproducible per seed.
+- [x] **Slice 3** `--stochastic` end-to-end: `dagger_orderer`/`run_orderer_improve`/`eval_m2`
+      thread the flag; save **skips the orderer log_std clamp** (producer stays greedy-clamped);
+      eval deploys via `load_order_actor` + `_stochastic_closure`. Tests:
+      `tests/test_orderer_stochastic.py`.
+- [ ] **Cloud run** (Runpod, on "run cloud"): same M2-v3-obs recipe + `--stochastic`, eval the
+      sampled orderer over **more seeds** (sampling adds variance → tighter CIs) vs the strict
+      envelope on held-out 6,7,8,9. Accept gate: envelope ratio > 1.00 on **all 4** incl s9,
+      mean ≥ 1.10, zero death. Then write `experiments/EXP-0006B-orderer-stochastic/`.
+
+### Review fixes (2 correctness bugs, +1 test, suite 278)
+Pre-cloud review of the enriched/stochastic paths caught two result-invalidating bugs:
+- [x] **P1 — obs_price corrupted under v2.** `decide_ordering_obs` read the producer cut-off
+      price at the hardcoded **v1** offset `k*(3+q)`; under enriched v2 obs that block is
+      strided inside the per-producer block (cut-off = idx 8 of 16), so the `obs_price`
+      search candidate parsed garbage → the v2 teacher's candidate set was NOT held fixed
+      vs v1. Fix: `EnvSpec.ordering_price_indices()` (version-aware, single source of truth);
+      obs_price now emits identical actions in v1 and v2 (test guards it).
+- [x] **P2 — stochastic eval order-dependent.** `eval_m2` built one `_stochastic_closure`
+      with a single closure RNG reused across all held-out seeds, so seed-9's score depended
+      on what was sampled before it (`seeds=[9]` ≠ `seeds=[6,7,8,9]`). Fix: draw noise from
+      `env.action_space(agent).np_random` (seeded per episode by `run_episode`, like the
+      `random` baseline) → reproducible per seed, order-independent.
+- ✅ **EXP-0006A clean re-run DONE** (pod 9ytl7r42avgpmm, 8 vCPU, ~50 min; artifacts
+      `m2_v3_obs_fixed.*`). Verdict **unchanged: REJECT (strict)** — but the mechanism is now
+      clean. Fixed-teacher M2/env: s6 **0.99**(buggy 1.01), s7 **1.10**(1.04), s8 **1.05**(1.08),
+      s9 **0.96**(0.87); beats M0 on all 4 (1.10–1.38), mean env 1.025 (buggy 0.999), 0 death.
+      The "seed-9 cliff" was **largely a teacher artifact** (0.87→0.96, rejects 121→76, CI
+      ±42→±18). Now misses on **s6 + s9**, both `sa+random`-dominated → residual = **routing
+      diversity, not state**. Per the decision rule ("improves but still fails → 6B justified"),
+      **EXP-0006B is GO on clean evidence**.
+- Infra fixes this round: (a) **P1** obs_price v2 offset (above); (b) **P2** stochastic eval
+      per-seed RNG (above); (c) RunPod pods need `PUBLIC_KEY` env set or sshd never starts
+      (connection refused) — the working pod had it; stopped pods can't restart on full hosts
+      (deploy fresh). `run_pod_training.py` SSH resolution left as the proven original (a
+      mid-debug `runtime.ports` change was reverted — this runpodctl's `ssh info` already
+      returns the direct endpoint).

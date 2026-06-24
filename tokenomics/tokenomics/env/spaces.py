@@ -48,6 +48,9 @@ ORDERER_SLOT_SCALARS = 10  # active, tokens, qty, tokens/unit, age, ttl, type(3)
 ORDERER_PRODUCT_FEATURES = 9  # open demand q/tok, demand EMA, rej EMA, depth, recipe(3), elig#
 ORDERER_PP_FEATURES = 15  # per (slot, producer): eligibility, makeability, bottleneck, EMAs
 ORDERER_PRODUCER_FEATURES = 16  # per producer: capacity/load/cut-off/in-flight/rates
+ORDERER_PRODUCER_CUTOFF_OFFSET = 8  # cut-off price's index within that block
+# (_enriched_producer_block: total_cur, total_max, headroom, min/mean ratio, requested,
+#  reserved, total_load, [8] cut_off, ...). Guarded by the obs_price v1==v2 test.
 
 
 @dataclass
@@ -146,6 +149,22 @@ class EnvSpec:
         # one-hot (B9 observability); plus one cut-off price per producer and the
         # cycle-progress scalar.
         return self.k * (3 + self.num_order_products) + self.num_producers + 1
+
+    def ordering_price_indices(self) -> list[int]:
+        """Indices of the P producer cut-off prices within the ordering obs, for the
+        active obs version — the only producer signal `obs_price` routes by (ADR-0029).
+        Single source of truth so `decide_ordering_obs` reads the *same* price regardless
+        of version: v1 stores them contiguously after the K slots; v2 (enriched) strides
+        them through the per-producer block. Keeps the search candidate fixed across the
+        EXP-0006A/B v1->v2 A/B."""
+        P, K, Q = self.num_producers, self.k, self.num_order_products
+        if self.orderer_obs_version >= 2:
+            slot_block = K * (ORDERER_SLOT_SCALARS + Q + ORDERER_PRODUCT_FEATURES
+                              + P * ORDERER_PP_FEATURES)
+            return [slot_block + j * ORDERER_PRODUCER_FEATURES + ORDERER_PRODUCER_CUTOFF_OFFSET
+                    for j in range(P)]
+        start = K * (3 + Q)  # after the K order slots, before cycle progress
+        return [start + j for j in range(P)]
 
     @property
     def _ordering_obs_dim_enriched(self) -> int:

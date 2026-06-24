@@ -135,6 +135,9 @@ def stop_pod(pod_id: str) -> None:
 
 
 def resolve_ssh(pod_id: str, key_override: str | None) -> Ssh:
+    """Resolve the pod's direct SSH endpoint via `runpodctl ssh info` (ip/port + key
+    path). On this runpodctl that endpoint is already the direct `root@ip -p port`
+    target the driver connects to."""
     out = run(["runpodctl", "ssh", "info", pod_id], capture=True).stdout
     info = json.loads(out)
     key = key_override or info["ssh_key"]["path"]

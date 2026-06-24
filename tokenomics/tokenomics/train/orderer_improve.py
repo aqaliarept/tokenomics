@@ -70,6 +70,29 @@ def _greedy_closure(actor, bound: float) -> Policy:
     return pol
 
 
+def _stochastic_closure(actor, bound: float) -> Policy:
+    """Wrap a GaussianActor as a *sampling* deploy `Policy` (EXP-0006B): draw
+    `a ~ Normal(mean, std)` and clip to ±bound, instead of the greedy `clip(mean)`. The
+    learned per-dim `log_std` (from the stochastic NLL fit) carries the teacher's routing
+    diversity, so sampling reproduces the per-cycle re-routing a deterministic mean
+    collapses. The noise is drawn from the agent's **action-space RNG**, which
+    `run_episode` seeds per episode (exactly like the `random` baseline) — so each
+    (topology, episode) seed scores identically regardless of evaluation order, instead
+    of a single closure-scoped RNG leaking state across seeds."""
+    import torch
+
+    def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        o = torch.as_tensor(env.observe(agent), dtype=torch.float32)
+        with torch.no_grad():
+            mean = actor.actor(o).numpy()
+            std = actor.log_std.exp().numpy()
+        noise = env.action_space(agent).np_random.standard_normal(mean.shape)
+        a = mean + noise.astype(np.float32) * std
+        return np.clip(a, -bound, bound).astype(np.float32)
+
+    return pol
+
+
 def collect_orderer_samples(
     config,
     prod: Policy,
@@ -82,6 +105,7 @@ def collect_orderer_samples(
     horizon: int = 100,
     student_order: "Policy | None" = None,
     tag: str = "",
+    enriched_orderer_obs: bool = False,
     log=None,
 ) -> list[OrdererSample]:
     """Drive episodes (producer fixed at `prod`) and record orderer transitions labeled
@@ -96,7 +120,8 @@ def collect_orderer_samples(
     out: list[OrdererSample] = []
     seed_list = list(seeds)
     for si, s in enumerate(seed_list):
-        env = TokenomicsAECEnv(config=config, horizon=horizon)
+        env = TokenomicsAECEnv(config=config, horizon=horizon,
+                               enriched_orderer_obs=enriched_orderer_obs)
         env.reset(seed=s)
         for a in env.possible_agents:
             env.action_space(a).seed(s)
@@ -133,12 +158,20 @@ def collect_orderer_samples(
 
 def _fit_orderer_clone(
     actor, samples: list[OrdererSample], bound: float, *, epochs: int, lr: float,
+    stochastic: bool = False,
 ) -> float:
-    """Masked-MSE fit of the orderer mean to the search-oracle labels. Only the
-    decode-active dims (`ordering_action_mask`: eligible producers of multi-eligible
-    slots) carry gradient — the softmax over an order's eligible producers is the only
-    thing that allocates (ADR-0029); the rest are no-ops and would just inject noise.
-    Greedy deploys clip(mean), so targets are clipped to the action bound (ADR-0026)."""
+    """Masked fit of the orderer to the search-oracle labels. Only the decode-active dims
+    (`ordering_action_mask`: eligible producers of multi-eligible slots) carry gradient —
+    the softmax over an order's eligible producers is the only thing that allocates
+    (ADR-0029); the rest are no-ops and would just inject noise. Greedy deploys clip(mean),
+    so targets are clipped to the action bound (ADR-0026).
+
+    `stochastic=False` (EXP-0005 M2): masked MSE, mean only — the deployed std is later
+    clamped near zero. `stochastic=True` (EXP-0006B): masked Gaussian **NLL**, fitting the
+    mean *and* the per-dim `log_std`, so the std absorbs the per-cycle spread of the
+    teacher's labels — distilling routing *diversity* rather than collapsing it into one
+    mean (the EXP-0006A seed-9 residual). The std is then deployed by sampling, not
+    clamped."""
     import torch
 
     X = torch.as_tensor(np.stack([s.obs for s in samples]), dtype=torch.float32)
@@ -146,12 +179,20 @@ def _fit_orderer_clone(
         torch.as_tensor(np.stack([s.label for s in samples]), dtype=torch.float32),
         -bound, bound)
     M = torch.as_tensor(np.stack([s.mask for s in samples]), dtype=torch.float32)
-    opt = torch.optim.Adam(actor.actor.parameters(), lr=lr)
+    params = list(actor.actor.parameters()) + ([actor.log_std] if stochastic else [])
+    opt = torch.optim.Adam(params, lr=lr)
     loss = torch.tensor(0.0)
     for _ in range(epochs):
         opt.zero_grad()
         out = actor.actor(X)
-        loss = (((out - Y) ** 2) * M).sum() / M.sum().clamp_min(1.0)
+        if stochastic:
+            # Gaussian NLL (drop the const 0.5*log(2π)): 0.5*((y-µ)/σ)² + log σ.
+            # log_std is per-dim (act_dim,), broadcast over rows; masked dims (M=0)
+            # get no gradient so their log_std stays at init.
+            per = 0.5 * ((out - Y) / actor.log_std.exp()) ** 2 + actor.log_std
+            loss = (per * M).sum() / M.sum().clamp_min(1.0)
+        else:
+            loss = (((out - Y) ** 2) * M).sum() / M.sum().clamp_min(1.0)
         loss.backward()
         opt.step()
     return float(loss.detach())
@@ -175,12 +216,19 @@ def dagger_orderer(
     lr: float = 3e-3,
     seed: int = 0,
     log_std_init: float = -2.0,
+    enriched_orderer_obs: bool = False,
+    stochastic: bool = False,
     log=print,
 ):
     """Expert-iterate a fresh orderer `GaussianActor` toward the search oracle, over one
     or more topologies (producer fixed at `prod`). Round 0 is on-oracle BC; each later
     round rolls the current clone forward, relabels its visited states with the search,
-    and refits from a fixed init on the grown dataset (DAgger). Returns the fitted actor."""
+    and refits from a fixed init on the grown dataset (DAgger). Returns the fitted actor.
+
+    `stochastic=True` (EXP-0006B): fit the per-dim `log_std` too (masked Gaussian NLL) so
+    the deployed orderer samples — distilling the teacher's routing diversity instead of
+    one mean. The DAgger relabel still rolls the *greedy* mean forward (a stable, central
+    state distribution); only the saved/deployed policy samples."""
     import torch
 
     from .smoke_ppo import GaussianActor
@@ -190,7 +238,7 @@ def dagger_orderer(
         collect_orderer_samples(
             c, prod, candidates, n_samples=n_samples, sample_scale=sample_scale,
             lookahead=lookahead, seeds=seeds, horizon=horizon,
-            tag=f"round0 topo{i}", log=log)
+            enriched_orderer_obs=enriched_orderer_obs, tag=f"round0 topo{i}", log=log)
         for i, c in enumerate(cfg_list)
     ]
 
@@ -199,7 +247,8 @@ def dagger_orderer(
         torch.manual_seed(seed)  # refit from a fixed init on the grown dataset
         order = GaussianActor(order_obs_dim, order_act_dim, log_std_init=log_std_init)
         flat = [s for smp in samples_by_cfg for s in smp]
-        loss = _fit_orderer_clone(order, flat, bound, epochs=epochs, lr=lr)
+        loss = _fit_orderer_clone(order, flat, bound, epochs=epochs, lr=lr,
+                                  stochastic=stochastic)
         log(f"orderer-dagger round {it}: masked_mse {loss:.4f} ({len(flat)} rows, "
             f"{len(cfg_list)} topos)")
         if it < dagger_iters - 1:
@@ -208,7 +257,8 @@ def dagger_orderer(
                 samples_by_cfg[i] += collect_orderer_samples(
                     c, prod, candidates, n_samples=n_samples, sample_scale=sample_scale,
                     lookahead=lookahead, seeds=seeds, horizon=horizon,
-                    student_order=student, tag=f"round{it+1} topo{i}", log=log)
+                    student_order=student, enriched_orderer_obs=enriched_orderer_obs,
+                    tag=f"round{it+1} topo{i}", log=log)
     return order
 
 
@@ -236,14 +286,23 @@ def eval_m2(
     seeds: "list[int]",
     eval_seeds: int = 5,
     horizon: int = 100,
+    enriched_orderer_obs: bool = False,
+    stochastic: bool = False,
     log=print,
 ) -> list[dict]:
     """Score the saved M2 pair vs M0 (`stock_aware+proportional`) and the best-of-baseline
     envelope on held-out topologies (mean ± 95% CI over `eval_seeds`). Primary metric is
-    consumer units; rejects + investment churn are reported for the efficiency criterion."""
-    from .smoke_ppo import load_policies
+    consumer units; rejects + investment churn are reported for the efficiency criterion.
+
+    `stochastic=True` (EXP-0006B): deploy the orderer by *sampling* its learned `log_std`
+    (`_stochastic_closure`) instead of greedy clip(mean) — the diversity is the lever, so
+    it must be scored as deployed. Producer stays greedy."""
+    from .smoke_ppo import load_order_actor, load_policies
 
     m2_prod, m2_order = load_policies(save)
+    if stochastic:
+        order_actor, bound = load_order_actor(save)
+        m2_order = _stochastic_closure(order_actor, bound)
     rows: list[dict] = []
     log(f"\n=== M2 eval (v4 producer + learned orderer)  depth={depth}  seeds={seeds} ===")
     log(f"  {'seed':>4} {'M2_cu':>8} {'M0_cu':>8} {'env_cu':>8} {'M2/M0':>6} "
@@ -251,7 +310,8 @@ def eval_m2(
     for s in seeds:
         cfg = build_scale_config(s, depth=depth)
         rng = range(eval_seeds)
-        m2 = evaluate(m2_prod, m2_order, seeds=rng, horizon=horizon, config=cfg)
+        m2 = evaluate(m2_prod, m2_order, seeds=rng, horizon=horizon, config=cfg,
+                      enriched_orderer_obs=enriched_orderer_obs)
         m2_cu, m2_sd = m2["consumer_completed_units"]
         m0 = evaluate(PRODUCING_BASELINES["stock_aware"], ORDERING_BASELINES["proportional"],
                       seeds=rng, horizon=horizon, config=cfg)
@@ -302,6 +362,8 @@ def run_orderer_improve(
     csv_out: "str | None" = None,
     train_seed_list: "list[int] | None" = None,
     held_out_seed_list: "list[int] | None" = None,
+    enriched_orderer_obs: bool = False,
+    stochastic: bool = False,
     log=print,
 ) -> list[dict]:
     """EXP-0005 Stage 2 driver: expert-iterate the orderer toward the search oracle with
@@ -320,7 +382,8 @@ def run_orderer_improve(
             else list(range(train_seeds, train_seeds + held_out_seeds)))
 
     cfg0 = build_scale_config(train_ids[0], depth=depth)
-    probe = TokenomicsAECEnv(config=cfg0, horizon=1)
+    probe = TokenomicsAECEnv(config=cfg0, horizon=1,
+                             enriched_orderer_obs=enriched_orderer_obs)
     order_obs_dim = probe.observation_space(probe._order_agents[0]).shape[0]
     order_act_dim = probe.spec_.ordering_action_dim
 
@@ -332,18 +395,25 @@ def run_orderer_improve(
         train_cfgs, prod, bound, order_obs_dim, order_act_dim, candidates=cand,
         n_samples=n_samples, sample_scale=sample_scale, lookahead=lookahead,
         dagger_iters=dagger_iters, seeds=range(label_seeds), horizon=horizon,
-        epochs=epochs, lr=lr, seed=seed, log=log)
+        epochs=epochs, lr=lr, seed=seed,
+        enriched_orderer_obs=enriched_orderer_obs, stochastic=stochastic, log=log)
 
     from .smoke_ppo import save_policies
 
+    # Producer (v4) deploys greedy → always tighten its log_std. The orderer log_std is
+    # the *learned* exploration when stochastic (EXP-0006B) — keep it; only the
+    # deterministic M2 clamps the orderer to the deploy floor.
     if log_std_save is not None:
         with torch.no_grad():
             prod_actor.log_std.fill_(log_std_save)
-            order.log_std.fill_(log_std_save)
-    save_policies(prod_actor, order, bound, save, config=cfg0)
+            if not stochastic:
+                order.log_std.fill_(log_std_save)
+    save_policies(prod_actor, order, bound, save, config=cfg0,
+                  orderer_obs_version=2 if enriched_orderer_obs else 1)
     log(f"saved M2 (v4 producer + learned orderer) -> {save}")
 
-    rows = eval_m2(save, depth=depth, seeds=held, eval_seeds=eval_seeds, horizon=horizon, log=log)
+    rows = eval_m2(save, depth=depth, seeds=held, eval_seeds=eval_seeds, horizon=horizon,
+                   enriched_orderer_obs=enriched_orderer_obs, stochastic=stochastic, log=log)
     if csv_out and rows:
         import csv
 
@@ -381,6 +451,13 @@ def main() -> None:
     ap.add_argument("--eval-seeds", type=int, default=5)
     ap.add_argument("--save", required=True)
     ap.add_argument("--csv-out", default=None)
+    ap.add_argument("--enriched", action="store_true",
+                    help="train/score the enriched orderer obs (orderer_obs_version 2, "
+                         "EXP-0006A M2-v3-obs) instead of the legacy v1 obs")
+    ap.add_argument("--stochastic", action="store_true",
+                    help="EXP-0006B M2-v3-stochastic: distill a learned per-dim log_std "
+                         "(masked Gaussian NLL) and deploy by sampling, preserving the "
+                         "teacher's routing diversity instead of one deterministic mean")
     ap.add_argument("--eval-only", action="store_true",
                     help="skip training: load --save and score it vs M0 + envelope on the held-out "
                          "seeds (regenerate the eval CSV from an existing checkpoint)")
@@ -393,7 +470,8 @@ def main() -> None:
         held = (held_out_seed_list if held_out_seed_list is not None
                 else list(range(args.train_seeds, args.train_seeds + args.held_out_seeds)))
         rows = eval_m2(args.save, depth=args.depth, seeds=held,
-                       eval_seeds=args.eval_seeds, horizon=args.horizon)
+                       eval_seeds=args.eval_seeds, horizon=args.horizon,
+                       enriched_orderer_obs=args.enriched, stochastic=args.stochastic)
         if args.csv_out and rows:
             import csv
 
@@ -412,6 +490,7 @@ def main() -> None:
         epochs=args.epochs, lr=args.lr, seed=args.seed, log_std_save=args.log_std_save,
         eval_seeds=args.eval_seeds, save=args.save, csv_out=args.csv_out,
         train_seed_list=train_seed_list, held_out_seed_list=held_out_seed_list,
+        enriched_orderer_obs=args.enriched, stochastic=args.stochastic,
     )
 
 

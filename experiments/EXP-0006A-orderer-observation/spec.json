@@ -1,0 +1,29 @@
+{
+  "version": "orderer-obs-enrichment-v1",
+  "date": "2026-06-24",
+  "driver": "tokenomics.train.orderer_improve --enriched (M2 expert iteration on the enriched orderer_obs_version=2 observation; producer fixed v4)",
+  "question": "Is the EXP-0005 orderer clone gap caused by missing orderer observation signal? Holding everything in the EXP-0005 M2-v1 recipe fixed and changing ONLY the observation (legacy v1 -> enriched v2, ADR-0051), does the distilled orderer (M2-v3-obs) beat the strict random-inclusive envelope on held-out seeds 6,7,8,9 with zero death?",
+  "params": {
+    "depth": 3,
+    "producer": "EXP-0004 v4 clone (fixed) — m2_inputs/d3_rung_dagger_v4.pt",
+    "orderer_obs_version": 2,
+    "search_teacher": "directed routing search, lookahead=12, K(samples)=12, candidates {even_split, proportional, obs_price}",
+    "dagger_iters": 2,
+    "train_topology_seeds": "0-5",
+    "label_seeds_per_topology": 3,
+    "held_out_seeds": "6,7,8,9",
+    "eval_seeds": 5,
+    "horizon": 100,
+    "epochs": 1500,
+    "lr": 3e-3,
+    "loss": "masked-MSE over decode-active orderer dims (ADR-0029)",
+    "control": "identical to EXP-0005 M2-v1 except orderer_obs_version 1 -> 2 (a clean A/B isolating observability)"
+  },
+  "configs": {
+    "topologies": "tokenomics.eval.scale.build_scale_config(seed, depth=3) — same fixed scale suite as EXP-0004/0005",
+    "observation": "docs/adr/0051-orderer-observation-economy-metrics.md (canonical feature catalog / formulas)"
+  },
+  "compute": {"where": "AUTHORITATIVE re-run: runpod CPU pod 9ytl7r42avgpmm (8 vCPU, runpod/base:0.7.0-ubuntu2004, python3.12, torch 2.12.1+cpu) via run_pod_training.py --cpu --python python3.12. Original run (teacher-degraded, P1): pod bh6app36yc1o67.", "wall_time": "~50 min (8 vCPU)"},
+  "correction": "First run used a BUGGY obs_price search candidate: decide_ordering_obs read the producer cut-off price at the v1 obs offset, which under enriched v2 obs points into the wrong block, so the v2 teacher's candidate set was not held fixed vs v1 (broke the clean A/B). Fixed via EnvSpec.ordering_price_indices() (version-aware) — obs_price now emits identical actions in v1 and v2. Authoritative artifacts: m2_v3_obs_fixed.pt / m2_v3_obs_heldout_fixed.csv. Verdict unchanged (REJECT strict) but the seed-9 'cliff' (0.87) was largely a teacher artifact and recovers to 0.96 with the fix.",
+  "reproduce": "python run_pod_training.py --pod-id <id> --cpu --python python3.12 --train \"-u -m tokenomics.train.orderer_improve --depth 3 --prod-ckpt /workspace/tokenomics/m2_inputs/d3_rung_dagger_v4.pt --train-seeds 6 --held-out-seeds 4 --candidates even_split,proportional,obs_price --samples 12 --lookahead 12 --dagger-iters 2 --label-seeds 3 --horizon 100 --epochs 1500 --eval-seeds 5 --enriched --save /workspace/tokenomics/m2_v3_obs_fixed.pt --csv-out /workspace/tokenomics/m2_v3_obs_heldout_fixed.csv\" --pull /workspace/tokenomics/m2_v3_obs_fixed.pt:./experiments/EXP-0006A-orderer-observation/artifacts/m2_v3_obs_fixed.pt --pull /workspace/tokenomics/m2_v3_obs_heldout_fixed.csv:./experiments/EXP-0006A-orderer-observation/artifacts/m2_v3_obs_heldout_fixed.csv"
+}

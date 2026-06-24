@@ -1,0 +1,5 @@
+seed,m2v3_cu,m2v3_ci,m0_cu,env_cu,env_name,ratio_m0,ratio_env,m2v3_dead,m2v3_rej_units,m2v3_invest,m2v1_ratio_env,buggy_ratio_env
+6,478.2,12.0,423.8,483.4,stock_aware+random,1.128,0.989,0.0,30.2,135.6,0.99,1.012
+7,484,11.5,438.6,438.6,stock_aware+proportional,1.104,1.104,0.0,23,133.8,1.06,1.038
+8,557.6,16.2,403.4,531.4,stock_aware+random,1.382,1.049,0.0,54.2,140.4,1.02,1.077
+9,482.2,18.1,405.4,504,stock_aware+random,1.189,0.957,0.0,76.4,130.6,0.91,0.868

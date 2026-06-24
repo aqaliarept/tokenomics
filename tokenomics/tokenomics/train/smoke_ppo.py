@@ -729,6 +729,19 @@ def load_policies(path: str) -> tuple[Policy, Policy]:
     return greedy_eval_policies(prod, order, ckpt["bound"])
 
 
+def load_order_actor(path: str) -> tuple[GaussianActor, float]:
+    """Rebuild the orderer GaussianActor + action bound from a `save_policies` checkpoint
+    (mirrors `clone_fidelity.load_producer_actor`). `load_policies` returns the greedy
+    closures; this exposes the raw actor so a *stochastic* deploy (EXP-0006B) can sample
+    from its learned `log_std` instead of collapsing to clip(mean)."""
+    ckpt = torch.load(path, weights_only=True)
+    if ckpt.get("version") != CHECKPOINT_VERSION:
+        raise ValueError(f"checkpoint version {ckpt.get('version')!r} != {CHECKPOINT_VERSION}")
+    order = GaussianActor(ckpt["order_obs"], ckpt["order_act"])
+    order.load_state_dict(ckpt["order"])
+    return order, ckpt["bound"]
+
+
 @dataclass
 class BCData:
     """Per-role (obs, action) pairs recorded from a baseline rollout for supervised
