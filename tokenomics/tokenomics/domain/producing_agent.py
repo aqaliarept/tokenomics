@@ -43,6 +43,10 @@ class Bid:
     product: Product = 0
     inputs: dict[Product, int] = field(default_factory=dict)
     quantity: int = 1  # units of `product` this sub-order fulfils (ADR-0025)
+    # cycle this bundle was routed (EXP-0006A). Travels on the bid so production
+    # telemetry can age completion/failure latency per bid — a same-order remainder
+    # re-routed in a later cycle gets its own bid and cannot overwrite this one.
+    routed_cycle: int = 0
 
     def is_composite(self) -> bool:
         return bool(self.inputs)
@@ -205,13 +209,14 @@ class ProducingAgent:
                     raise RuntimeError(f"producer {self.id} does not own capacity type {t}")
         self.bids.extend(bids)
 
-    def place_sub_orders(self, subs: list[SubOrder]) -> None:
+    def place_sub_orders(self, subs: list[SubOrder], routed_cycle: int = 0) -> None:
         """Accept routed sub-orders and expand each into an internal bid using this
         producer's own process sheet (ADR-0029). Capacity and input requirements
-        scale with the sub-order quantity — recipe knowledge stays producer-side."""
-        self.place_bids([self._to_bid(s) for s in subs])
+        scale with the sub-order quantity — recipe knowledge stays producer-side.
+        `routed_cycle` stamps each bid for latency telemetry (EXP-0006A)."""
+        self.place_bids([self._to_bid(s, routed_cycle) for s in subs])
 
-    def _to_bid(self, sub: SubOrder) -> Bid:
+    def _to_bid(self, sub: SubOrder, routed_cycle: int = 0) -> Bid:
         if sub.product not in self.sheets:
             raise RuntimeError(f"producer {self.id} has no process sheet for product {sub.product}")
         ps = self.sheets[sub.product]
@@ -222,6 +227,7 @@ class ProducingAgent:
             product=sub.product,
             inputs={p: n * sub.quantity for p, n in ps.inputs.items()},
             quantity=sub.quantity,
+            routed_cycle=routed_cycle,
         )
 
     def inventory_units(self) -> int:

@@ -39,6 +39,16 @@ INVESTMENT_STREAMS = 3
 OBS_CLIP = 10.0
 ACTION_LOGIT_BOUND = 10.0
 
+# Enriched orderer observation block widths (EXP-0006A, orderer_obs_version 2). Each
+# mirrors a block the encoder emits from the domain OrdererEconomyView; the dim and
+# the encoder are kept in lockstep by test D2. Per order slot: scalar header, then
+# the slot product one-hot, then the product-level features, then the producer-
+# product grid; plus one global producer block per producer and cycle progress.
+ORDERER_SLOT_SCALARS = 10  # active, tokens, qty, tokens/unit, age, ttl, type(3), elig#
+ORDERER_PRODUCT_FEATURES = 9  # open demand q/tok, demand EMA, rej EMA, depth, recipe(3), elig#
+ORDERER_PP_FEATURES = 15  # per (slot, producer): eligibility, makeability, bottleneck, EMAs
+ORDERER_PRODUCER_FEATURES = 16  # per producer: capacity/load/cut-off/in-flight/rates
+
 
 @dataclass
 class ProducerMechanics:
@@ -79,6 +89,11 @@ class EnvSpec:
     price_ref: float
     inv_ref: float
     k: int = ORDER_LIFETIME
+    # 1 = legacy capacity-blind ordering obs (ADR-0029); 2 = enriched producer/
+    # product/order obs (EXP-0006A). Opt-in so v1 checkpoints stay valid. Hashed into
+    # config_fingerprint (which takes an explicit orderer_obs_version) so a v2 model
+    # can't be mis-scored against a v1 economy.
+    orderer_obs_version: int = 1
 
     @property
     def num_producers(self) -> int:
@@ -125,10 +140,24 @@ class EnvSpec:
 
     @property
     def ordering_obs_dim(self) -> int:
-        # per slot: active, tokens, quantity (no capacity, ADR-0029) + a product
+        if self.orderer_obs_version >= 2:
+            return self._ordering_obs_dim_enriched
+        # v1: per slot: active, tokens, quantity (no capacity, ADR-0029) + a product
         # one-hot (B9 observability); plus one cut-off price per producer and the
         # cycle-progress scalar.
         return self.k * (3 + self.num_order_products) + self.num_producers + 1
+
+    @property
+    def _ordering_obs_dim_enriched(self) -> int:
+        # EXP-0006A: per slot = scalar header + product one-hot + product features +
+        # producer-product grid; plus one global producer block per producer + cycle
+        # progress. Mirror of the encode_ordering_enriched layout (test D2).
+        P, K, Q = self.num_producers, self.k, self.num_order_products
+        return (
+            K * (ORDERER_SLOT_SCALARS + Q + ORDERER_PRODUCT_FEATURES + P * ORDERER_PP_FEATURES)
+            + P * ORDERER_PRODUCER_FEATURES
+            + 1
+        )
 
     @property
     def ordering_action_dim(self) -> int:
@@ -195,7 +224,7 @@ def _canonical_economy(config: Configuration) -> str:
     )
 
 
-def config_fingerprint(config: Configuration) -> str:
+def config_fingerprint(config: Configuration, orderer_obs_version: int = 1) -> str:
     """Stable short hash identifying a config's *economy* (review P1, #7).
 
     Stamped into a checkpoint at save time so an eval can detect it is scoring a policy
@@ -207,8 +236,12 @@ def config_fingerprint(config: Configuration) -> str:
     demand), random_demand.json vs composite.json (different recipes) — no longer
     collide and get silently reported as a valid match (the P1 review defect).
     Two configs with identical fingerprints are interchangeable as a trained-policy
-    comparison; a mismatch is at best a transfer test, at worst an off-config eval."""
-    sp = build_spec(config)
+    comparison; a mismatch is at best a transfer test, at worst an off-config eval.
+
+    `orderer_obs_version` (EXP-0006A) is part of the contract: a v2 (enriched) orderer
+    checkpoint and a v1 one on the *same* economy must not collide, so the spec is
+    built at that version (changing ordering_obs_dim) and the version is hashed in."""
+    sp = build_spec(config, orderer_obs_version=orderer_obs_version)
     canonical = repr((
         sorted(sp.producer_ids),
         sorted(sp.capacity_types),
@@ -220,12 +253,13 @@ def config_fingerprint(config: Configuration) -> str:
         sp.producing_action_dim,
         sp.ordering_action_dim,
         sp.k,
+        sp.orderer_obs_version,  # EXP-0006A: v1/v2 orderer obs contract
         _canonical_economy(config),  # P1: same shape, different economy -> different fp
     ))
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
-def build_spec(config: Configuration) -> EnvSpec:
+def build_spec(config: Configuration, orderer_obs_version: int = 1) -> EnvSpec:
     producer_ids = sorted(p.id for p in config.producer_configs)
     capacity_types = sorted({t for p in config.producer_configs for t in p.capacities})
     type_index = {t: i for i, t in enumerate(capacity_types)}
@@ -306,4 +340,5 @@ def build_spec(config: Configuration) -> EnvSpec:
         price_ref=price_ref,
         inv_ref=inv_ref,
         k=k,
+        orderer_obs_version=orderer_obs_version,
     )

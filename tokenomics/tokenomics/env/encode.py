@@ -9,9 +9,16 @@ from __future__ import annotations
 import numpy as np
 
 from ..domain.common import Product, Tokens, is_nan
-from ..domain.order import OrderInfo
+from ..domain.order import ORDER_TTL, OrderInfo
+from ..domain.orderer_view import OrdererEconomyView
 from ..domain.producing_agent import ProducerInfo, ProducingAgentView
-from .spaces import OBS_CLIP, EnvSpec
+from .spaces import (
+    OBS_CLIP,
+    ORDERER_PP_FEATURES,
+    ORDERER_PRODUCT_FEATURES,
+    ORDERER_SLOT_SCALARS,
+    EnvSpec,
+)
 
 
 def _price(spec: EnvSpec, p: float) -> float:
@@ -130,6 +137,99 @@ def encode_ordering(
         else:
             feats.extend([0.0] * (3 + spec.num_order_products))
     feats.extend(_producer_prices(spec, producer_infos))  # no capacity (ADR-0029)
+    feats.append(cycle_progress)
+    return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
+
+
+def _enriched_slot_block(spec: EnvSpec, slot, view: OrdererEconomyView) -> list[float]:
+    """One order slot: scalar header + product one-hot + product features + the
+    producer-product grid. Widths mirror spaces.ORDERER_* (test D2 ties them)."""
+    out: list[float] = []
+    # scalar header (ORDERER_SLOT_SCALARS)
+    out.append(1.0)  # active
+    out.append(slot.available_tokens / spec.token_ref)
+    out.append(slot.unresolved_quantity / spec.inv_ref)
+    out.append(slot.tokens_per_unit / spec.token_ref)
+    out.append(slot.order_age / ORDER_TTL)
+    out.append(slot.ttl_remaining / ORDER_TTL)
+    out.extend(slot.order_type)  # one_hot(consumer, replenishment, investment)
+    out.append(slot.eligible_producer_count / spec.num_producers)
+    # slot product one-hot (Q)
+    onehot = [0.0] * spec.num_order_products
+    onehot[spec.order_product_index[slot.product]] = 1.0
+    out.extend(onehot)
+    # product features (ORDERER_PRODUCT_FEATURES)
+    pf = view.products[slot.product]
+    out.append(pf.open_demand_quantity / spec.inv_ref)
+    out.append(pf.open_demand_tokens / spec.token_ref)
+    out.append(pf.recent_average_cycle_demand / spec.inv_ref)
+    out.append(pf.recent_rejected_quantity / spec.inv_ref)
+    out.append(float(pf.product_depth))
+    out.append(float(pf.recipe_input_count))
+    out.append(float(pf.recipe_input_units))
+    out.append(float(pf.recipe_capacity_type_count))
+    out.append(pf.eligible_producer_count / spec.num_producers)
+    # producer-product grid (num_producers * ORDERER_PP_FEATURES)
+    for pid in spec.producer_ids:
+        pp = view.producer_products[(slot.order_id, pid)]
+        out.append(pp.eligible)
+        out.append(pp.accept_qty_now / spec.inv_ref)
+        out.append(pp.complete_qty_now / spec.inv_ref)
+        out.append(pp.makeable_qty_now / spec.inv_ref)
+        out.append(pp.capacity_bottleneck_ratio)
+        out.append(pp.input_bottleneck_ratio)
+        out.append(pp.bottleneck_ratio)
+        out.append(pp.slot_makeability)
+        out.append(pp.recent_routed_qty / spec.inv_ref)
+        out.append(pp.recent_completed_qty / spec.inv_ref)
+        out.append(pp.recent_rejected_qty / spec.inv_ref)
+        out.append(pp.recent_success_rate)
+        out.append(pp.recent_throughput / spec.inv_ref)
+        out.append(pp.recent_completion_latency / ORDER_TTL)
+        out.append(pp.recent_failure_latency / ORDER_TTL)
+    return out
+
+
+def _enriched_producer_block(spec: EnvSpec, ps) -> list[float]:
+    """One producer's global state (ORDERER_PRODUCER_FEATURES): capacity / load /
+    cut-off / in-flight / recent rates — the load the search teacher routes by."""
+    return [
+        ps.total_current_capacity / spec.cap_ref,
+        ps.total_max_capacity / spec.cap_ref,
+        ps.capacity_headroom / spec.cap_ref,
+        ps.min_capacity_ratio,
+        ps.mean_capacity_ratio,
+        ps.requested_load / spec.cap_ref,
+        ps.reserved_load / spec.cap_ref,
+        ps.total_load / spec.cap_ref,
+        _price(spec, ps.cut_off_price),
+        ps.outstanding_inbound_units / spec.inv_ref,
+        *ps.active_investments,
+        ps.acceptance_rate,
+        ps.completion_rate,
+        ps.rejection_rate,
+    ]
+
+
+def encode_ordering_enriched(
+    spec: EnvSpec, view: OrdererEconomyView, cycle_progress: float
+) -> np.ndarray:
+    """Enriched orderer obs (EXP-0006A, orderer_obs_version 2): normalize the domain
+    OrdererEconomyView into a fixed-width vector. Producer/product/order state the
+    capacity-blind v1 obs (ADR-0029) hid — added so the search teacher is
+    distillable. The domain owns the facts; this only normalizes + clips."""
+    P, Q = spec.num_producers, spec.num_order_products
+    slot_width = (
+        ORDERER_SLOT_SCALARS + Q + ORDERER_PRODUCT_FEATURES + P * ORDERER_PP_FEATURES
+    )
+    feats: list[float] = []
+    for k in range(spec.k):
+        if k < len(view.order_slots):
+            feats.extend(_enriched_slot_block(spec, view.order_slots[k], view))
+        else:
+            feats.extend([0.0] * slot_width)
+    for pid in spec.producer_ids:
+        feats.extend(_enriched_producer_block(spec, view.producers[pid]))
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
 

@@ -21,7 +21,12 @@ from ..domain.consumer import Consumer, ScheduleEntry
 from ..domain.producing_agent import ProducerInfo
 from ..domain.system import CycleResult
 from .decode import decode_ordering, decode_producing
-from .encode import encode_global, encode_ordering, encode_producing
+from .encode import (
+    encode_global,
+    encode_ordering,
+    encode_ordering_enriched,
+    encode_producing,
+)
 from .spaces import build_spec
 
 # Action handed to step(): both roles emit a raw float vector (Box); None = a
@@ -64,12 +69,18 @@ class TokenomicsAECEnv(AECEnv):
     metadata = {"render_modes": ["human"], "name": "tokenomics_aec_v0", "is_parallelizable": False}
 
     def __init__(
-        self, config: Configuration | None = None, horizon: int = 100, render_mode: str | None = None
+        self,
+        config: Configuration | None = None,
+        horizon: int = 100,
+        render_mode: str | None = None,
+        enriched_orderer_obs: bool = False,
     ) -> None:
         super().__init__()
         self.config = config or load_config(DEFAULT_CONFIG)
         self.config.validate()
-        self.spec_ = build_spec(self.config)
+        # EXP-0006A: opt in to the enriched (capacity-aware) ordering obs. Off by
+        # default so M2-v1 / v1 checkpoints keep their exact observation contract.
+        self.spec_ = build_spec(self.config, orderer_obs_version=2 if enriched_orderer_obs else 1)
         self.horizon = horizon
         self.render_mode = render_mode
 
@@ -200,6 +211,8 @@ class TokenomicsAECEnv(AECEnv):
         if role == "prod":
             view = self.system.producing_agents[did].view()
             return encode_producing(self.spec_, view, infos, self._open_consumer_demand(), cp)
+        if self.spec_.orderer_obs_version >= 2:
+            return encode_ordering_enriched(self.spec_, self.system.orderer_economy_view(did), cp)
         incoming = self.system.ordering_agents[did].incoming
         return encode_ordering(self.spec_, incoming, infos, cp)
 

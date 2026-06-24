@@ -281,6 +281,21 @@ def test_producer_expands_sub_order_into_bundle_via_its_own_sheet():
     assert b.product == 30
 
 
+def test_place_sub_orders_stamps_route_cycle_per_bid():
+    # EXP-0006A: each bid remembers the cycle it was routed so production telemetry
+    # can age latency per bid, even when a remainder is re-routed in a later cycle.
+    ps = ProcessSheet(product=30, require={"capacity-1": 2}, inputs={20: 1})
+    cfg = ProducingAgentConfig(
+        id="p1", capacities={"capacity-1": 999}, degradation=0,
+        restoration=Restoration(30, 10, "capacity-1"), upgrade=Upgrade(30, 10, "capacity-1"),
+        produces=frozenset({30}),
+    )
+    prod = ProducingAgent(cfg, sheets={30: ps})
+    prod.place_sub_orders([RoutedSubOrder("o1", 30, 1, 25)], routed_cycle=1)
+    prod.place_sub_orders([RoutedSubOrder("o1", 30, 1, 25)], routed_cycle=4)
+    assert [b.routed_cycle for b in prod.bids] == [1, 4]  # each keeps its own
+
+
 def test_ordering_agent_rejects_ineligible_producer():
     # Eligibility is authoritative (ADR-0028): p2 owns every required capacity type
     # but does NOT declare product 30 in `produces`, so it is ineligible. Owning the

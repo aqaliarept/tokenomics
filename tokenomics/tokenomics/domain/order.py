@@ -28,6 +28,11 @@ from .requests import ConsumerRequest, InvestmentRequest, ReplenishmentRequest
 
 Score = int
 
+# Maximum cycles an order stays in progress before it is rejected (ADR-0025). The
+# order is placed at cycle_counter 0 and rejected once it reaches this age. Named so
+# the enriched orderer observation can expose order TTL/age (EXP-0006A).
+ORDER_TTL = 2
+
 
 # --- Order events (domain.OrderEvent) ---
 @dataclass
@@ -236,7 +241,7 @@ class Order:
         if reserved_pending == 0 and self.unresolved_quantity() == 0:
             return self._reject(3)
 
-        if self.cycle_counter == 2:
+        if self.cycle_counter == ORDER_TTL:
             return self._reject(5)
 
         self.cycle_counter += 1

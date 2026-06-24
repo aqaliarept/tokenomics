@@ -37,13 +37,17 @@ from .order import (
     ReplenishmentRequestRejected,
     Score,
 )
+from .orderer_view import OrdererEconomyView, build_orderer_economy_view
 from .ordering_agent import OrderingAgent, OrderingAgentCommand, OrderingAgentView
 from .requests import InvestmentType, ReplenishmentRequest
+from .telemetry import EconomyTelemetry
 from .producing_agent import (
+    Bid,
     ProducerInfo,
     ProducingAgent,
     ProducingAgentCommand,
     ProducingAgentView,
+    _Reservation,
 )
 
 
@@ -184,6 +188,12 @@ class System:
         self.consumers = consumers
         self.cycle_counter = 0
 
+        # EXP-0006A: domain-owned economy history (recent routed/produced/demand
+        # EMAs) behind the enriched orderer observation. Each bid carries its own
+        # routed cycle (see ProducingAgent.place_sub_orders), so production events are
+        # attributed a completion/failure latency per bid.
+        self.telemetry = EconomyTelemetry()
+
         self.producer_infos: dict[ProducerId, ProducerInfo] = self._snapshot_producer_infos()
         for c in consumers.values():
             aid = from_consumer_id(c.id())
@@ -196,6 +206,19 @@ class System:
 
     def _snapshot_producer_infos(self) -> dict[ProducerId, ProducerInfo]:
         return {pid: p.info() for pid, p in self.producing_agents.items()}
+
+    def _record_production(self, kind: str, pid: ProducerId, bid: Bid) -> None:
+        """Feed one production-result bid into the orderer telemetry (EXP-0006A).
+        Latency is dated from when this bundle was routed (a same-cycle complete is
+        latency 0; a reservation that assembles later ages from its routing)."""
+        rc = bid.routed_cycle
+        record = {
+            "accepted": self.telemetry.record_accepted,
+            "completed": self.telemetry.record_completed,
+            "failed": self.telemetry.record_failed,
+            "rejected": self.telemetry.record_rejected,
+        }[kind]
+        record(pid, bid.product, bid.quantity, rc, self.cycle_counter)
 
     # --- producing agent phase ---
     def producing_agent_view(self, pid: ProducerId) -> ProducingAgentView:
@@ -221,13 +244,24 @@ class System:
             raise WrongStateError()
         return must_get(self.ordering_agents, aid).view(self.producer_infos)
 
+    def orderer_economy_view(self, aid: OrderingAgentId) -> OrdererEconomyView:
+        """The enriched, authoritative feature bundle for one ordering agent's open
+        orders (EXP-0006A). The env layer normalizes this into the observation."""
+        agent = must_get(self.ordering_agents, aid)
+        incoming = {oid: self.orders[oid] for oid in agent.incoming}
+        return build_orderer_economy_view(
+            incoming, self.producing_agents, self.telemetry, self.process_sheets, self.orders
+        )
+
     def ordering_agent_action(self, aid: OrderingAgentId, cmd: OrderingAgentCommand) -> None:
         if self.state != SystemState.ORDERING:
             raise WrongStateError()
         agent = must_get(self.ordering_agents, aid)
         routed = agent.handle_cmd(cmd, self.producer_infos)
         for prod_id, subs in routed.items():
-            must_get(self.producing_agents, prod_id).place_sub_orders(subs)
+            must_get(self.producing_agents, prod_id).place_sub_orders(subs, self.cycle_counter)
+            for s in subs:  # record realized routing for the orderer telemetry
+                self.telemetry.record_routed(prod_id, s.product, s.quantity, self.cycle_counter)
 
     # --- cycle lifecycle ---
     def _emit(self) -> None:
@@ -245,6 +279,8 @@ class System:
                 self.orders[oid] = Order.new_consumer_order(
                     oid, must_get(self.process_sheets, request.product), request
                 )
+                # product-level demand history (true demand, not routed load).
+                self.telemetry.record_demand(request.product, request.quantity)
 
     def start_cycle(self) -> None:
         self.state = SystemState.ORDERS_PLACEMENT
@@ -272,16 +308,22 @@ class System:
         for oa in self.ordering_agents.values():
             oa.complete_cycle()
 
-        for p in self.producing_agents.values():
+        for pid, p in self.producing_agents.items():
             result = p.produce()
+            # attribute each production event to the cycle the bundle was routed, so
+            # the orderer telemetry can age completion/failure latency (EXP-0006A).
             for bid in result.accepted:
                 must_get(self.orders, bid.order_id).sub_accepted(bid.quantity, bid.tokens)
+                self._record_production("accepted", pid, bid)
             for bid in result.completed:
                 must_get(self.orders, bid.order_id).sub_completed(bid.quantity)
+                self._record_production("completed", pid, bid)
             for bid in result.failed:
                 must_get(self.orders, bid.order_id).sub_failed(bid.quantity)
+                self._record_production("failed", pid, bid)
             for bid in result.rejected:
                 must_get(self.orders, bid.order_id).sub_rejected(bid.quantity)
+                self._record_production("rejected", pid, bid)
 
         cycle_score: Score = 0
         completed_ids: list[OrderId] = []
@@ -306,6 +348,7 @@ class System:
             elif isinstance(event, ConsumerRequestRejected):
                 n_cons_rej += 1
                 units_cons_rej += order.quantity  # whole order's demand went unmet
+                self.telemetry.record_consumer_rejected(order.product, order.quantity)
                 self.consumers[event.request.consumer_id].emit(event.remaining)
             elif isinstance(event, InvestmentRequestRejected):
                 n_inv_rej += 1
@@ -326,12 +369,23 @@ class System:
             del self.orders[oid]
 
         # A composite reservation can outlive its parent order: the order's TTL may
-        # fire while the reservation still waits for inputs. Drop those orphaned
-        # reservations now — otherwise the next produce() surfaces a bid for a
-        # deleted order and must_get raises (ADR-0025).
+        # fire while the reservation still waits for inputs. That accepted capacity
+        # will never deliver, so surface it as failed production (the failure
+        # pressure the enriched orderer needs, EXP-0006A) before dropping it —
+        # otherwise the next produce() surfaces a bid for a deleted order and
+        # must_get raises (ADR-0025). Record before the fold so it lands this cycle.
         if removed:
-            for p in self.producing_agents.values():
-                p.reservations = [r for r in p.reservations if r.bid.order_id not in removed]
+            for pid, p in self.producing_agents.items():
+                survivors: list[_Reservation] = []
+                for r in p.reservations:
+                    if r.bid.order_id in removed:
+                        self._record_production("failed", pid, r.bid)
+                    else:
+                        survivors.append(r)
+                p.reservations = survivors
+
+        # fold this cycle's telemetry accumulators into their EMAs (once per cycle).
+        self.telemetry.end_cycle()
 
         self.start_cycle()
         return CycleResult(

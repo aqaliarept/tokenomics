@@ -664,16 +664,21 @@ def save_policies(
     bound: float,
     path: str,
     config: Configuration | None = None,
+    orderer_obs_version: int = 1,
 ) -> None:
     """Checkpoint the deployed actors + the dims needed to rebuild them, so the
     eval harness (signal_check) can score the trained policy against the baseline
     table without re-training. Stamped with `CHECKPOINT_VERSION` (ADR-0026) and, when
     `config` is given, the training config's fingerprint (#7) so an eval can detect a
-    wrong-config mismatch before the actor crashes on a dim error."""
+    wrong-config mismatch before the actor crashes on a dim error. Pass
+    `orderer_obs_version=2` for an enriched-orderer checkpoint (EXP-0006A) so its
+    fingerprint cannot collide with a v1 model on the same economy."""
     torch.save(
         {
             "version": CHECKPOINT_VERSION,
-            "config_fingerprint": config_fingerprint(config) if config is not None else None,
+            "config_fingerprint": (
+                config_fingerprint(config, orderer_obs_version) if config is not None else None
+            ),
             "prod_obs": prod.actor[0].in_features,
             "prod_act": prod.log_std.numel(),
             "order_obs": order.actor[0].in_features,
