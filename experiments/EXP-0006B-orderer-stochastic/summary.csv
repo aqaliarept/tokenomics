@@ -1,0 +1,5 @@
+seed,m2_cu,m2_ci,m0_cu,env_cu,env_name,ratio_m0,ratio_env,m2_dead,m2_rej_units,m2_invest,det_obs_ratio_env,m2v1_ratio_env
+6,491.0,9.7,421.6,478.7,stock_aware+random,1.165,1.026,0.0,14.5,139.8,0.99,0.99
+7,475.2,6.8,437.7,437.7,stock_aware+proportional,1.086,1.086,0.0,27.6,142.5,1.10,1.06
+8,566.5,9.9,396.9,535.9,stock_aware+random,1.427,1.057,0.0,40.9,142.2,1.05,1.02
+9,513.9,13.4,399.3,502.8,stock_aware+random,1.287,1.022,0.0,42.4,129.0,0.96,0.91

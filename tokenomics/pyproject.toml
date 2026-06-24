@@ -28,3 +28,9 @@ tokenomics = ["config/*.json", "eval/manifests/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Champion regression gate (EXP-0006B) runs a ~13-min full eval — deselect it from the
+# default fast suite; opt in with `pytest -m champion` (CLI -m overrides this).
+addopts = "-m 'not champion'"
+markers = [
+    "champion: slow full-eval regression gate for the shipped orderer champion (opt-in)",
+]

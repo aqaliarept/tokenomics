@@ -5,8 +5,17 @@ End-to-end driver for off-box training. Everything the run needs lives here:
   1. start the pod (runpodctl) and wait until SSH is reachable
   2. rsync the local project to the pod (no git; excludes build/run artifacts)
   3. create a --system-site-packages venv (reuses the image's CUDA torch) + pip install -e .
-  4. run the training command, streaming its output live
+  4. launch the training command DETACHED on the pod, then monitor it
   5. ALWAYS stop the pod afterwards (even on failure / Ctrl-C), unless --no-stop
+
+Client–server / detached model (default):
+  The pod runs the job in its own session (`setsid`), writing to a log file plus pid/exit
+  marker files — so it survives an SSH drop or the client going away. The client polls
+  those markers over SSH, streaming new log bytes, and **auto-reconnects** (re-resolving
+  ip/port) whenever the link breaks, finishing only when the remote exit marker appears.
+  Ctrl-C just detaches the client (the run keeps going); reconnect later with `--attach`.
+  `--foreground` keeps the legacy behavior (stream over a blocking SSH session that dies
+  with the link). This is the disconnect-proof model CLAUDE.md flagged as not-yet-done.
 
 The pod is addressed by id; SSH ip/port are resolved fresh via `runpodctl ssh info`
 each run, because they change across restarts.
@@ -43,6 +52,13 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
+
+# Monitor-loop collaborators (dependency-injected so the reconnect logic is testable).
+PollFn = Callable[[int], str]        # offset -> raw poll output (raises SshDropped on transport loss)
+ContentSink = Callable[[str], None]  # consume newly streamed log content
+ReconnectFn = Callable[[], None]     # re-establish the SSH endpoint after a drop
+SleepFn = Callable[[float], None]    # sleep between polls (injectable for tests)
 
 # Project dir to sync = the directory holding pyproject.toml (the package root).
 DEFAULT_LOCAL_DIR = Path(__file__).resolve().parent / "tokenomics"
@@ -175,6 +191,66 @@ def ssh_run(ssh: Ssh, remote_cmd: str, *, check: bool = True) -> int:
     return res.returncode
 
 
+# ssh exit code 255 = transport-level failure (connect refused/reset/timeout), distinct
+# from a remote command's own non-zero exit. The poll command itself always exits 0, so a
+# 255 (or a local timeout) means the link dropped — recoverable by reconnecting.
+SSH_TRANSPORT_FAIL = 255
+
+
+def ssh_capture(ssh: Ssh, remote_cmd: str, *, timeout_s: int = 30) -> str:
+    """Run a remote command capturing stdout; raise `SshDropped` if the link failed.
+
+    Used by the poll loop: a dropped/!reachable pod must surface as `SshDropped` (so the
+    monitor reconnects) rather than as a fatal error."""
+    try:
+        res = subprocess.run(
+            ssh.base_cmd() + [remote_cmd],
+            text=True, capture_output=True, timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise SshDropped(f"ssh timeout after {timeout_s}s") from e
+    if res.returncode == SSH_TRANSPORT_FAIL:
+        raise SshDropped((res.stderr or "ssh transport failure").strip())
+    if res.returncode != 0:
+        raise RuntimeError(f"remote command failed ({res.returncode}): {res.stderr.strip()}")
+    return res.stdout
+
+
+def monitor_remote(
+    pod_id: str,
+    ssh: Ssh,
+    key_override: str | None,
+    log_file: str,
+    pid_file: str,
+    exit_file: str,
+    *,
+    ready_timeout: int,
+    poll_interval: float,
+) -> int:
+    """Drive `run_monitor_loop` against a real pod: stream the detached run's log to our
+    stdout and reconnect (re-resolving ip/port) whenever the SSH link drops. Returns the
+    remote training exit code."""
+    state = {"ssh": ssh}
+
+    def poll_fn(offset: int) -> str:
+        return ssh_capture(state["ssh"], build_poll_cmd(log_file, pid_file, exit_file, offset))
+
+    def reconnect_fn() -> None:
+        state["ssh"] = wait_for_ssh(pod_id, key_override, ready_timeout)
+
+    def emit(content: str) -> None:
+        sys.stdout.write(content)
+        sys.stdout.flush()
+
+    return run_monitor_loop(
+        poll_fn=poll_fn,
+        on_content=emit,
+        reconnect_fn=reconnect_fn,
+        sleep_fn=time.sleep,
+        poll_interval=poll_interval,
+    )
+
+
 def rsync_up(ssh: Ssh, local_dir: Path, remote_dir: str) -> None:
     log(f"syncing {local_dir} -> {ssh.ip}:{remote_dir}")
     ssh_inline = (
@@ -242,6 +318,133 @@ def setup_env(ssh: Ssh, remote_dir: str, *, cpu: bool = False, python_bin: str =
     ssh_run(ssh, cmd)
 
 
+POLL_SENTINEL = "__RUNPOD_POLL__"
+
+
+@dataclass
+class PollResult:
+    """One poll of a detached run: new log bytes + liveness/completion status."""
+
+    content: str
+    size: int
+    exit_code: int | None
+    alive: bool
+
+
+def parse_poll_output(raw: str) -> PollResult:
+    """Split a poll response into streamable log content and the status sentinel.
+
+    The remote poll emits the new log bytes since the client's offset, then a final
+    `POLL_SENTINEL size=<N> exit=<code|none> alive=<0|1>` line. `exit=none` means the run
+    has not finished; any integer means it completed with that return code."""
+    head, _, tail = raw.rpartition(POLL_SENTINEL + " ")
+    if not tail:
+        # no sentinel (e.g. truncated read) — treat all as content, status unknown/alive
+        return PollResult(content=raw, size=0, exit_code=None, alive=True)
+    fields = dict(tok.split("=", 1) for tok in tail.split() if "=" in tok)
+    exit_raw = fields.get("exit", "none")
+    return PollResult(
+        content=head,
+        size=int(fields.get("size", "0")),
+        exit_code=None if exit_raw == "none" else int(exit_raw),
+        alive=fields.get("alive") == "1",
+    )
+
+
+class SshDropped(Exception):
+    """The SSH transport failed mid-poll (drop / reset / timeout) — retry after reconnect."""
+
+
+def run_monitor_loop(
+    poll_fn: PollFn,
+    on_content: ContentSink,
+    reconnect_fn: ReconnectFn,
+    sleep_fn: SleepFn,
+    poll_interval: float,
+) -> int:
+    """Poll a detached run to completion, surviving SSH drops, and return its exit code.
+
+    Each iteration polls from the current byte offset, emits the new log content, and
+    advances the offset by the reported size. A `SshDropped` from `poll_fn` is non-fatal:
+    call `reconnect_fn` (re-resolve the endpoint — ip/port can change) and retry from the
+    *same* offset, so no log is lost or duplicated across a disconnect. Returns once the
+    remote exit marker appears."""
+    offset = 0
+    while True:
+        try:
+            res = parse_poll_output(poll_fn(offset))
+        except SshDropped as e:
+            log(f"connection lost ({e}); reconnecting...")
+            reconnect_fn()
+            continue
+        if res.content:
+            on_content(res.content)
+        offset = max(offset, res.size)
+        if res.exit_code is not None:
+            return res.exit_code
+        sleep_fn(poll_interval)
+
+
+def marker_paths(log_file: str) -> tuple[str, str]:
+    """Derive the pid/exit marker paths as siblings of the remote log (`.pid` / `.exit`).
+
+    Co-locating them with the log keeps a detached run fully described by one base path,
+    so `--attach` can reconnect knowing only `--remote-log`."""
+    base = log_file[: -len(suffix)] if (suffix := Path(log_file).suffix) else log_file
+    return f"{base}.pid", f"{base}.exit"
+
+
+def build_poll_cmd(log_file: str, pid_file: str, exit_file: str, offset: int) -> str:
+    """Remote command for one poll: stream new log bytes past `offset`, then a sentinel.
+
+    A single SSH round-trip both advances the client's view of the log and reports
+    status. `wc -c` gives the current size; `tail -c +<offset+1>` emits only the bytes the
+    client hasn't seen (1-indexed, hence +1). The trailing sentinel carries the new size
+    (next offset), the exit code if the run has finished (`none` while running), and a
+    `kill -0` liveness check on the wrapper pid (distinguishes "still running" from
+    "process gone but no exit marker" = a crash)."""
+    return (
+        f"sz=$(wc -c < {log_file} 2>/dev/null || echo 0); "
+        f"if [ \"$sz\" -gt {offset} ]; then tail -c +{offset + 1} {log_file}; fi; "
+        f"echo \"{POLL_SENTINEL} size=$sz "
+        f"exit=$(cat {exit_file} 2>/dev/null || echo none) "
+        f"alive=$(kill -0 $(cat {pid_file} 2>/dev/null) 2>/dev/null && echo 1 || echo 0)\""
+    )
+
+
+def build_launch_cmd(
+    remote_dir: str,
+    python_bin_path: str,
+    train_args: str,
+    log_file: str,
+    pid_file: str,
+    exit_file: str,
+) -> str:
+    """Remote shell command that launches training *detached* from the SSH session.
+
+    `setsid` puts the run in its own session so closing/dropping the SSH channel does not
+    SIGHUP it — the training keeps going while the client is offline. The inner shell
+    records its own pid (a liveness handle) before training and the python exit code
+    after, so a reconnecting client can tell "running" from "done (rc=N)" purely from
+    files on the pod. A stale exit marker is removed first so it can't read as completion
+    of the new run. stdin/stdout/stderr of the backgrounded job are detached to /dev/null
+    (training output goes to `log_file`) so the launching SSH call returns immediately."""
+    inner = (
+        f"echo $$ > {pid_file}; "
+        f"{python_bin_path} {train_args} > {log_file} 2>&1; "
+        f"echo $? > {exit_file}"
+    )
+    return (
+        f"cd {remote_dir} && rm -f {exit_file} && "
+        f"setsid sh -c {_shquote(inner)} < /dev/null > /dev/null 2>&1 &"
+    )
+
+
+def _shquote(s: str) -> str:
+    """Single-quote a string for safe embedding as one POSIX shell word."""
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
 def train(ssh: Ssh, remote_dir: str, train_args: str, log_file: str) -> None:
     log(f"running training: {train_args}")
     # Run in foreground so output streams and the SSH session blocks until done;
@@ -251,6 +454,20 @@ def train(ssh: Ssh, remote_dir: str, train_args: str, log_file: str) -> None:
         f".venv/bin/python {train_args} 2>&1 | tee {log_file}"
     )
     ssh_run(ssh, cmd)
+
+
+def _do_pulls(ssh: Ssh, pull_specs: list[str]) -> None:
+    """Best-effort rsync of result files back. A missing artifact (e.g. after a failed
+    run) is warned, not fatal — it must not mask the real training exit code."""
+    for spec in pull_specs:
+        remote_path, _, local_path = spec.partition(":")
+        if not remote_path or not local_path:
+            log(f"WARNING: bad --pull spec (want REMOTE:LOCAL): {spec}")
+            continue
+        try:
+            rsync_down(ssh, remote_path, local_path)
+        except Exception as e:  # noqa: BLE001
+            log(f"WARNING: pull failed for {spec}: {e}")
 
 
 def main() -> int:
@@ -268,6 +485,7 @@ def main() -> int:
     ap.add_argument("--ready-timeout", type=int, default=600, help="seconds to wait for SSH after start")
     ap.add_argument("--start-retries", type=int, default=0, help="extra pod-start attempts on transient failure (e.g. host out of free GPUs)")
     ap.add_argument("--start-retry-delay", type=int, default=30, help="seconds between pod-start retries")
+    ap.add_argument("--poll-interval", type=float, default=15.0, help="seconds between detached-run status polls")
     ap.add_argument(
         "--pull",
         action="append",
@@ -275,6 +493,14 @@ def main() -> int:
         metavar="REMOTE:LOCAL",
         help="file to rsync back after training (repeatable)",
     )
+    ap.add_argument("--foreground", action="store_true",
+                    help="legacy mode: run training in the foreground over SSH (dies if the link "
+                         "drops). Default is detached: the pod runs the job under its own session "
+                         "(survives disconnects) and the client polls + auto-reconnects.")
+    ap.add_argument("--attach", action="store_true",
+                    help="reconnect to an already-launched detached run (same --remote-log): skip "
+                         "start/sync/install/launch, just resume monitoring, then pull + stop. Use "
+                         "after the client died or you disconnected.")
     ap.add_argument("--no-stop", action="store_true", help="leave the pod running when done")
     ap.add_argument("--no-sync", action="store_true", help="skip rsync (code already on pod)")
     ap.add_argument("--no-install", action="store_true", help="skip venv/install step")
@@ -286,33 +512,63 @@ def main() -> int:
                          "images need e.g. python3.12, as their python3 is below requires-python)")
     args = ap.parse_args()
 
-    if not args.local_dir.exists():
+    if not args.attach and not args.local_dir.exists():
         log(f"ERROR: local dir not found: {args.local_dir}")
         return 2
 
+    detached = not args.foreground
+    pid_file, exit_file = marker_paths(args.remote_log)
     started_ok = False
+    detached_interrupt = False
     try:
         start_pod(args.pod_id, retries=args.start_retries, retry_delay=args.start_retry_delay)
         ssh = wait_for_ssh(args.pod_id, args.ssh_key, args.ready_timeout)
         started_ok = True
 
-        if not args.no_sync:
-            rsync_up(ssh, args.local_dir, args.remote_dir)
-        if not args.no_install:
-            setup_env(ssh, args.remote_dir, cpu=args.cpu, python_bin=args.python_bin)
+        if args.foreground:
+            # legacy: stream in foreground, blocks until the run finishes.
+            if not args.no_sync:
+                rsync_up(ssh, args.local_dir, args.remote_dir)
+            if not args.no_install:
+                setup_env(ssh, args.remote_dir, cpu=args.cpu, python_bin=args.python_bin)
+            train(ssh, args.remote_dir, args.train, args.remote_log)
+            _do_pulls(ssh, args.pull)
+            log("training complete")
+            return 0
 
-        train(ssh, args.remote_dir, args.train, args.remote_log)
+        # detached client-server flow
+        if args.attach:
+            log(f"attaching to detached run (log {args.remote_log})...")
+        else:
+            if not args.no_sync:
+                rsync_up(ssh, args.local_dir, args.remote_dir)
+            if not args.no_install:
+                setup_env(ssh, args.remote_dir, cpu=args.cpu, python_bin=args.python_bin)
+            launch = build_launch_cmd(
+                args.remote_dir, ".venv/bin/python", args.train,
+                args.remote_log, pid_file, exit_file,
+            )
+            log(f"launching detached: {args.train}")
+            ssh_run(ssh, launch)
+            log(f"launched (survives disconnect). Reattach any time: "
+                f"python run_pod_training.py --pod-id {args.pod_id} --attach "
+                f"--remote-log {args.remote_log}{' --cpu' if args.cpu else ''}")
 
-        for spec in args.pull:
-            remote_path, _, local_path = spec.partition(":")
-            if not remote_path or not local_path:
-                log(f"WARNING: bad --pull spec (want REMOTE:LOCAL): {spec}")
-                continue
-            rsync_down(ssh, remote_path, local_path)
-
-        log("training complete")
-        return 0
+        rc = monitor_remote(
+            args.pod_id, ssh, args.ssh_key, args.remote_log, pid_file, exit_file,
+            ready_timeout=args.ready_timeout, poll_interval=args.poll_interval,
+        )
+        log(f"detached run finished (exit {rc}); pulling results")
+        ssh = resolve_ssh(args.pod_id, args.ssh_key)  # refresh endpoint for the pull
+        _do_pulls(ssh, args.pull)
+        return rc
     except KeyboardInterrupt:
+        if detached:
+            detached_interrupt = True
+            log("client detached — the run KEEPS GOING on the pod. "
+                f"Reattach: python run_pod_training.py --pod-id {args.pod_id} --attach "
+                f"--remote-log {args.remote_log}{' --cpu' if args.cpu else ''}")
+            return 130
         log("interrupted")
         return 130
     except Exception as e:  # noqa: BLE001 - report and still stop the pod
@@ -321,6 +577,8 @@ def main() -> int:
     finally:
         if args.no_stop:
             log("--no-stop set: leaving pod running")
+        elif detached_interrupt:
+            log("leaving pod running so the detached run can finish (use --attach to resume)")
         elif started_ok or pod_status(args.pod_id) == "RUNNING":
             stop_pod(args.pod_id)
 

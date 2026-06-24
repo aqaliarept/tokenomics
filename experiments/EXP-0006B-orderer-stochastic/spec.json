@@ -1,0 +1,36 @@
+{
+  "version": "orderer-stochastic-distillation-v1",
+  "date": "2026-06-24",
+  "driver": "tokenomics.train.orderer_improve --enriched --stochastic (M2 expert iteration; deterministic mean -> learned per-dim log_std + sampled deploy; producer fixed v4, orderer obs v2)",
+  "question": "EXP-0006A (clean) showed enriched v2 obs is only a partial lever: M2-v3-obs still misses the strict envelope on s6 (0.99) and s9 (0.96), and BOTH of those seeds' envelope-best is stock_aware+RANDOM -> the residual is routing diversity, not state. Does distilling a STOCHASTIC orderer (learn log_std by masked Gaussian NLL, deploy by sampling) recover that diversity and beat the strict random-inclusive envelope on all held-out seeds 6,7,8,9 with zero death?",
+  "params": {
+    "depth": 3,
+    "producer": "EXP-0004 v4 clone (fixed) — m2_inputs/d3_rung_dagger_v4.pt",
+    "orderer_obs_version": 2,
+    "search_teacher": "directed routing search, lookahead=12, K(samples)=12, candidates {even_split, proportional, obs_price}",
+    "dagger_iters": 2,
+    "train_topology_seeds": "0-5",
+    "label_seeds_per_topology": 3,
+    "held_out_seeds": "6,7,8,9",
+    "eval_seeds": 10,
+    "horizon": 100,
+    "epochs": 1500,
+    "lr": 3e-3,
+    "loss": "masked Gaussian NLL over decode-active orderer dims (fits mean + per-dim log_std); masked dims keep init",
+    "deploy": "sample a ~ Normal(mean, exp(log_std)), clip to +/-bound; per-episode RNG = env.action_space(agent).np_random (P2: order-independent per seed)",
+    "control": "identical to EXP-0006A (clean) M2-v3-obs except deterministic clip(mean) deploy -> learned-log_std sampled deploy; orderer log_std NOT clamped to the producer greedy value on save"
+  },
+  "configs": {
+    "topologies": "tokenomics.eval.scale.build_scale_config(seed, depth=3) — same fixed scale suite as EXP-0004/0005/0006A",
+    "observation": "docs/adr/0051-orderer-observation-economy-metrics.md (enriched v2 feature catalog)"
+  },
+  "compute": {"where": "runpod CPU pod 3joly6h2z0hboa (8 vCPU, runpod/base:0.7.0-ubuntu2004, python3.12, torch 2.12.1+cpu) via run_pod_training.py --cpu --python python3.12 (DETACHED client-server mode)", "wall_time": "~75 min (8 vCPU, eval-seeds 10)"},
+  "verdict": "ACCEPT (strict primary gate). M2-v3-stochastic beats the strict random-inclusive envelope on ALL held-out seeds 6,7,8,9 (1.026/1.086/1.057/1.022 @10 seeds; 1.032/1.085/1.053/1.019 @40-seed audit), zero death. Hard-cell met: s6 0.99->1.026 and s9 0.96->1.022 (s9 also > M2-v1 0.91). 40-eval-seed confidence audit RESOLVES the s9 mean-only caveat: all 4 clear at the lower 95% CI bound (s9 501.3 > env 498.3). Mean env 1.047 (< secondary 1.10, 'if feasible'; CI tightening does not move the mean). First policy in the EXP-0001->0006 arc to clear the strict envelope everywhere. Checkpoint md5 7be79ccbd90e, v2 fp 548120bd, 64 learned log_std dims.",
+  "gates": {
+    "primary": "M2-v3-stochastic envelope ratio > 1.00 on ALL held-out seeds 6,7,8,9 (mean +/- 95% CI over 10 stochastic eval seeds)",
+    "secondary": "mean envelope ratio >= 1.10",
+    "safety": "zero death on all 4",
+    "hard-cell": "s6 and s9 (the sa+random misses in EXP-0006A) must improve over M2-v3-obs (0.99, 0.96)"
+  },
+  "reproduce": "python run_pod_training.py --pod-id <id> --cpu --python python3.12 --train \"-u -m tokenomics.train.orderer_improve --depth 3 --prod-ckpt /workspace/tokenomics/m2_inputs/d3_rung_dagger_v4.pt --train-seeds 6 --held-out-seeds 4 --candidates even_split,proportional,obs_price --samples 12 --lookahead 12 --dagger-iters 2 --label-seeds 3 --horizon 100 --epochs 1500 --eval-seeds 10 --enriched --stochastic --save /workspace/tokenomics/m2_v3_obs_stochastic.pt --csv-out /workspace/tokenomics/m2_v3_obs_stochastic_heldout.csv\" --pull /workspace/tokenomics/m2_v3_obs_stochastic.pt:./experiments/EXP-0006B-orderer-stochastic/artifacts/m2_v3_obs_stochastic.pt --pull /workspace/tokenomics/m2_v3_obs_stochastic_heldout.csv:./experiments/EXP-0006B-orderer-stochastic/artifacts/m2_v3_obs_stochastic_heldout.csv"
+}

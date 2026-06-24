@@ -133,10 +133,56 @@ reuses the existing single-label pipeline, smallest new surface. TDD, +3 tests, 
       thread the flag; save **skips the orderer log_std clamp** (producer stays greedy-clamped);
       eval deploys via `load_order_actor` + `_stochastic_closure`. Tests:
       `tests/test_orderer_stochastic.py`.
-- [ ] **Cloud run** (Runpod, on "run cloud"): same M2-v3-obs recipe + `--stochastic`, eval the
-      sampled orderer over **more seeds** (sampling adds variance → tighter CIs) vs the strict
-      envelope on held-out 6,7,8,9. Accept gate: envelope ratio > 1.00 on **all 4** incl s9,
-      mean ≥ 1.10, zero death. Then write `experiments/EXP-0006B-orderer-stochastic/`.
+- [x] **Pre-cloud smoke (local, allowed)** — step-5 gates all PASS before spending cloud:
+      (a) tiny `orderer_improve --enriched --stochastic` runs end-to-end train→save→eval;
+      (b) saved ckpt `config_fingerprint` == **seed-0 v2** exactly (548120bd…), `version` 6;
+      (c) orderer `log_std` is **learned** on decode-active dims (~−1.9) while masked dims stay
+      at the −2.0 init — NLL fit the behavioral dims only, not the producer's greedy clamp;
+      (d) **P2** order-independence holds: seed 9 = `103±9` identical in `[9]` and `[6,7,8,9]`.
+- ✅ **Cloud run DONE — ACCEPT (strict)** (pod 3joly6h2z0hboa, 8 vCPU, ~75 min, DETACHED mode).
+      M2-v3-stochastic vs strict envelope, held-out 6,7,8,9 (eval-seeds 10): s6 **1.026**, s7
+      **1.086**, s8 **1.057**, s9 **1.022** — **beats the envelope on ALL 4, zero death**. First
+      policy in the EXP-0001→0006 arc to clear the strict envelope everywhere. Hard-cell met: the
+      two `sa+random` misses lift over the line (s6 0.99→1.026, s9 0.96→1.022; s9 > M2-v1 0.91).
+      Mean env 1.048 (< secondary 1.10 "if feasible"; s9 mean-only, lower CI marginal). Diversity
+      WAS the missing form (gains land on the random-dominated seeds; s7=sa+prop trades 1.10→1.086
+      but clears). 64 learned log_std dims (σ≤0.60), v2 fp, md5 7be79ccbd90e. Written:
+      `experiments/EXP-0006B-orderer-stochastic/` (spec/RESULT/summary.csv), README row.
+      **Promote M2-v3-stochastic as orderer champion.**
+- ✅ **Confidence audit DONE — s9 caveat RESOLVED** (local `--eval-only`, same ckpt, **40**
+      eval-seeds, CI halved). All 4 held-out clear the strict envelope at the **lower 95% CI
+      bound**: s6 484>473, s7 470>436, s8 556>533, **s9 501.3>498.3** (was mean-only @10 seeds).
+      Mean ratio 1.047 unchanged (CI tightening doesn't move the mean → secondary 1.10 still the
+      only unmet, optional, target). `artifacts/m2_v3_obs_stochastic_audit40.csv`; RESULT/spec/
+      README/memory amended. Per user call: **bank the win, skip elite-set margin-chasing**.
+
+## Champion regression gates (TDD, +4 tests, suite 287 + 1 opt-in)
+Pins the shipped EXP-0006B champion so a retrain/refactor can't silently swap a weaker or
+deterministic orderer. `tests/test_champion_regression.py`; `champion` marker registered,
+deselected by default (`addopts = -m 'not champion'`) so `pytest -q` stays fast, opt in with
+`pytest -m champion`. All skip if the LFS artifact is absent.
+- [x] **Provenance** (fast): version 6 + enriched-v2 fingerprint 548120bd + order_act 180.
+- [x] **Stochastic head** (fast): 64 dims grew above the masked init (σ≤0.605), ≥100 dims pinned
+      at init — a learned diversity head, not a collapsed deterministic mean.
+- [x] **P2 order-independence** (fast, ~13s): the champion scores a held-out topology
+      identically whether evaluated alone or after another in-process (per-episode env RNG).
+- [x] **Envelope bar** (slow `-m champion`, ~13 min): 40-seed eval, every held-out seed beats the
+      strict envelope at its lower 95% CI bound, zero death. Verified green (1 passed, exit 0).
+
+## run_pod_training.py — detached client-server rewrite (TDD, +6 tests, suite 284)
+The CLAUDE.md "foreground over SSH dies on disconnect" caveat is now resolved. The pod
+runs the job **detached** (`setsid`, own session) writing log + `.pid`/`.exit` markers;
+the client **polls and auto-reconnects** (re-resolves ip/port) on any link drop, finishing
+only when the remote exit marker appears. Ctrl-C just detaches (run keeps going); reconnect
+with `--attach`. Pure helpers TDD'd one slice at a time in `tests/test_run_pod_detached.py`:
+- [x] `build_launch_cmd` — detached `setsid` launch, records pid (liveness) + `$?` (exit)
+- [x] `parse_poll_output` — split streamed log bytes from the `__RUNPOD_POLL__ size/exit/alive` sentinel
+- [x] `build_poll_cmd` — one round-trip: `wc -c` size + `tail -c +offset` new bytes + sentinel
+- [x] `marker_paths` — derive `.pid`/`.exit` siblings from `--remote-log`
+- [x] `run_monitor_loop` — DI'd loop: reconnect on `SshDropped`, offset never regresses, no lost/dup content
+Integration glue (`ssh_capture` raises `SshDropped` on rc 255/timeout; `monitor_remote`).
+New CLI: `--foreground` (legacy), `--attach` (resume an already-launched run), `--poll-interval`.
+Default flow = detached+resilient; finally-stop is skipped on a detached Ctrl-C so the run survives.
 
 ### Review fixes (2 correctness bugs, +1 test, suite 278)
 Pre-cloud review of the enriched/stochastic paths caught two result-invalidating bugs:
