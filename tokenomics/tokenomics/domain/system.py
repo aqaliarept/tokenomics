@@ -44,6 +44,7 @@ from .orderer_view import (
     build_orderer_economy_view,
     build_product_stream_view,
 )
+from .producer_view import ProducerEntityView, build_producer_entity_view
 from .ordering_agent import OrderingAgent, OrderingAgentCommand, OrderingAgentView
 from .requests import InvestmentType, ReplenishmentRequest
 from .telemetry import EconomyTelemetry
@@ -273,6 +274,16 @@ class System:
         if self.state != SystemState.ORDERS_PLACEMENT:
             raise WrongStateError()
         return must_get(self.producing_agents, pid).view()
+
+    def producer_entity_view(self, pid: ProducerId) -> ProducerEntityView:
+        """The entity-factored, authoritative feature bundle for one producing agent's
+        decision (ADR-0053, EXP-0010A): capacity/product/input rows + recipe relations.
+        The env layer normalizes this into the entity producer observation."""
+        if self.state != SystemState.ORDERS_PLACEMENT:
+            raise WrongStateError()
+        return build_producer_entity_view(
+            must_get(self.producing_agents, pid), self.telemetry, self.process_sheets, self.orders
+        )
 
     def producing_agent_action(self, pid: ProducerId, cmd: ProducingAgentCommand) -> None:
         if self.state != SystemState.ORDERS_PLACEMENT:

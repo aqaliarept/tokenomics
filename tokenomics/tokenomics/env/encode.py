@@ -116,6 +116,147 @@ def _producer_mechanics(spec: EnvSpec, view: ProducingAgentView) -> list[float]:
     return out
 
 
+def _entity_global_block(spec: EnvSpec, g) -> list[float]:
+    """Producer-wide scalars (PRODUCER_GLOBAL_FEATURES). Cut-off price normalized like
+    the flat obs; inventory by inv_ref; the three investment-running flags raw."""
+    return [
+        _price(spec, g.cut_off_price),
+        g.inventory_units / spec.inv_ref,
+        g.inventory_limit / spec.inv_ref,
+        max(0, g.inventory_headroom) / spec.inv_ref,
+        g.outstanding_inbound_units / spec.inv_ref,
+        *g.active_investments,
+    ]
+
+
+def _entity_producer_mechanics(spec: EnvSpec, pid: str) -> list[float]:
+    """Producer-global action economics the capacity rows don't carry per-type
+    (ADR-0044): replenishment ceiling + per-unit cost, and inventory-expansion effect +
+    cost. Mirrors the flat `_producer_mechanics` tail. Without these, two scale seeds
+    with identical row shape but different replenish/expansion costs encode the SAME
+    producer obs while `decode_producing`/funding interpret the action differently, so an
+    entity producer can't learn the correct replenishment/expansion choices. Restoration
+    and upgrade cost are omitted here — already per targeted type in the capacity rows."""
+    m = spec.producer_mechanics[pid]
+    return [
+        spec.max_replenish[pid] / spec.inv_ref,
+        m.replenish_cost_per_unit / spec.token_ref,
+        m.inventory_expansion_increases / spec.inv_ref,
+        m.inventory_expansion_cost / spec.token_ref,
+    ]
+
+
+def _entity_capacity_row(spec: EnvSpec, r) -> list[float]:
+    """One capacity-type row (PRODUCER_CAP_ROW_FEATURES), led by its active mask."""
+    return [
+        1.0,  # active mask
+        r.owned,
+        r.current / spec.cap_ref,
+        r.max / spec.cap_ref,
+        r.headroom / spec.cap_ref,
+        r.ratio,
+        r.degradation / spec.cap_ref,
+        r.reserved / spec.cap_ref,
+        r.previous_requested_capacity / spec.cap_ref,
+        r.free / spec.cap_ref,
+        r.reserved_ratio,
+        r.restore_effect / spec.cap_ref,
+        r.restore_cost / spec.token_ref,
+        r.upgrade_effect / spec.cap_ref,
+        r.upgrade_cost / spec.token_ref,
+        r.demand_pressure / spec.cap_ref,
+    ]
+
+
+def _entity_product_row(spec: EnvSpec, r) -> list[float]:
+    """One declared-product row (PRODUCER_PRODUCT_ROW_FEATURES), led by its active mask.
+    Recipe-shape ints stay raw (clipped to OBS_CLIP), like the orderer product block;
+    makeable quantities normalize by inv_ref (input_makeable inf -> clipped)."""
+    return [
+        1.0,  # active mask
+        r.eligible,
+        r.open_demand_qty / spec.inv_ref,
+        r.open_demand_tokens / spec.token_ref,
+        float(r.product_depth),
+        float(r.recipe_input_count),
+        float(r.recipe_input_units),
+        float(r.recipe_capacity_type_count),
+        r.recent_routed_qty / spec.inv_ref,
+        r.recent_completed_qty / spec.inv_ref,
+        r.recent_rejected_qty / spec.inv_ref,
+        r.recent_completion_latency / ORDER_TTL,
+        r.active_reservation_qty / spec.inv_ref,
+        r.capacity_makeable_qty / spec.inv_ref,
+        r.input_makeable_qty / spec.inv_ref,
+        r.complete_qty_now / spec.inv_ref,
+        r.capacity_bottleneck_ratio,
+        r.input_bottleneck_ratio,
+        r.bottleneck_ratio,
+    ]
+
+
+def _entity_input_row(spec: EnvSpec, r) -> list[float]:
+    """One input-product row (PRODUCER_INPUT_ROW_FEATURES), led by its active mask."""
+    return [
+        1.0,  # active mask
+        r.inventory / spec.inv_ref,
+        r.outstanding_inbound / spec.inv_ref,
+        r.blocked_reservation_qty / spec.inv_ref,
+        r.downstream_demand_pressure / spec.inv_ref,
+    ]
+
+
+def encode_producing_entity(spec: EnvSpec, view, cycle_progress: float) -> np.ndarray:
+    """Entity-factored producer obs (ADR-0053, producer_obs_version 2). Emits
+    [globals, capacity rows, product rows, input rows, relation planes, cycle_progress].
+
+    It consumes the view's row-list order VERBATIM (does not re-sort by EnvSpec): a
+    permuted row list yields correspondingly permuted row slots, and the relation
+    planes — keyed by row position — permute with them. That is what makes the encoder
+    order-equivariant. Rows are zero-padded (mask 0) to the spec's fixed max counts so
+    the Box stays fixed width; relation planes are Q x T and Q x G, zero outside real
+    rows. cycle_progress is appended here, last, as the single trailing scalar."""
+    from .spaces import (
+        PRODUCER_CAP_ROW_FEATURES,
+        PRODUCER_INPUT_ROW_FEATURES,
+        PRODUCER_PRODUCT_ROW_FEATURES,
+    )
+
+    feats: list[float] = _entity_global_block(spec, view.globals)
+    feats.extend(_entity_producer_mechanics(spec, view.producer_id))
+
+    cap_rows = [_entity_capacity_row(spec, r) for r in view.capacity_rows]
+    _pad(feats, cap_rows, spec.num_types, PRODUCER_CAP_ROW_FEATURES)
+
+    prod_rows = [_entity_product_row(spec, r) for r in view.product_rows]
+    _pad(feats, prod_rows, spec.num_order_products, PRODUCER_PRODUCT_ROW_FEATURES)
+
+    in_rows = [_entity_input_row(spec, r) for r in view.input_rows]
+    _pad(feats, in_rows, spec.num_inputs, PRODUCER_INPUT_ROW_FEATURES)
+
+    # recipe-edge relation planes, indexed by row position; raw counts (clipped).
+    Q, T, G = spec.num_order_products, spec.num_types, spec.num_inputs
+    cap_plane = [0.0] * (Q * T)
+    for (xi, ti), c in view.relations.product_capacity_required.items():
+        cap_plane[xi * T + ti] = float(c)
+    feats.extend(cap_plane)
+    in_plane = [0.0] * (Q * G)
+    for (xi, gi), n in view.relations.product_input_required.items():
+        in_plane[xi * G + gi] = float(n)
+    feats.extend(in_plane)
+
+    feats.append(cycle_progress)
+    return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
+
+
+def _pad(feats: list[float], rows: list[list[float]], max_rows: int, width: int) -> None:
+    """Append real rows verbatim then zero-pad (mask 0) to max_rows x width."""
+    for row in rows:
+        feats.extend(row)
+    for _ in range(max_rows - len(rows)):
+        feats.extend([0.0] * width)
+
+
 def encode_ordering(
     spec: EnvSpec,
     incoming: dict[str, OrderInfo],

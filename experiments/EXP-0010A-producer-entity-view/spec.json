@@ -1,0 +1,41 @@
+{
+  "id": "EXP-0010A-producer-entity-view",
+  "date": "2026-06-25",
+  "driver": "TDD (tests/test_producer_view.py) — observation-contract slice, no training",
+  "adr": "docs/adr/0053-entity-factored-producer-orchestrator.md",
+  "question": "Can the flat producer observation be replaced by a domain-owned, entity-factored producer view (capacity-type rows, product rows, input-product rows, recipe-edge relations) behind a versioned, opt-in env encoder, passing row-order / product-relabel / capacity-relabel permutation gates and staying checkpoint-incompatible with flat_v1 — without touching the producer command or the production auction?",
+  "scope": "observation contract only; no learned/planning controller, no training, no cloud run. Reservation rows and requestor-side replenishment EMAs deferred. Planner = EXP-0010B, learned scorer = EXP-0010C, size-holdout = EXP-0010D.",
+  "deliverables": {
+    "domain": [
+      "ProducingAgent.requested_capacity_by_type (per-type ReqPrev, committed post-auction)",
+      "domain/metrics.py: capacity_demand_pressure, restore/upgrade effect+cost, downstream_demand_pressure, active_reservation_qty, blocked_reservation_qty",
+      "domain/producer_view.py: ProducerEntityView + build_producer_entity_view (ordered row lists, relations keyed by row position, no cycle progress)",
+      "System.producer_entity_view(pid) (ORDERS_PLACEMENT decision point)"
+    ],
+    "env": [
+      "EnvSpec.producer_obs_version (default 1=flat_v1, opt-in 2=entity) + producer_entity_obs_dim + PRODUCER_* width constants",
+      "encode_producing_entity(spec, view, cycle_progress): globals + padded/masked rows + relation planes + trailing cycle progress; order-equivariant (consumes view row order verbatim)",
+      "config_fingerprint / build_spec threaded with producer_obs_version (v1 fingerprints byte-identical to history; v2 distinguished)",
+      "TokenomicsAECEnv(entity_producer_obs=False) flag + observe() dispatch"
+    ]
+  },
+  "acceptance": {
+    "baseline_preserved": "command/auction untouched; full suite green; stock_aware white-box episode byte-identical with flag off vs on",
+    "permutation_gates": "row-order equivariance, product-relabeling, capacity-relabeling all pass on the encoder",
+    "versioned_contract": "config_fingerprint(v2) != (v1); producing_obs_dim differs; flat_v1 checkpoint dim != entity dim"
+  },
+  "tests": {
+    "file": "tokenomics/tests/test_producer_view.py",
+    "count": 24
+  },
+  "review_fixes": [
+    "reserved_ratio: divide reserved capacity by CURRENT usable capacity (Res/C), not max — a degraded producer's reservations block more of what it can use (producer_view.py).",
+    "producer action mechanics: entity globals now carry the 4 producer-global action economics the cap rows don't hold per-type (max_replenish, replenish_cost_per_unit, inventory_expansion increases+cost, ADR-0044) — PRODUCER_GLOBAL_FEATURES 8->12. Without them two configs differing only in replenish/expansion cost encoded identically while decode/funding act differently."
+  ],
+  "deviations": [
+    "Did NOT add requested_capacity_by_type to the positional ProducingAgentView dataclass: the view builder reads the ProducingAgent directly (mirroring orderer_view), so the positional dataclass is left untouched.",
+    "Relations carry the two non-degenerate recipe edges (product->capacity, product->input); the all-1 producer_owns/can_make/uses_input masks are implied by row existence + the per-row active mask, not stored.",
+    "Two flat globals intentionally dropped from the entity view (anti-goal): all-order-product open demand (_open_demand_features) and all-producer summary (_producer_summary, 2P). The view keeps only this producer's products/demand; cross-producer context, if needed, becomes a masked peer-producer row block in a later slice.",
+    "InputRow requestor-side replenishment EMAs deferred (no telemetry source; EconomyTelemetry tracks production/routing/demand only)."
+  ]
+}

@@ -155,6 +155,9 @@ class ProducingAgent:
         # producer state
         self.bids: list[Bid] = []
         self.requested_capacity: Capacity = 0
+        # per-type requested capacity (ReqPrev, ADR-0053): the entity producer view
+        # needs per-type pressure, not just the scalar total. Committed post-auction.
+        self.requested_capacity_by_type: dict[CapacityType, Capacity] = {}
         self.funds: Tokens = 0
         self.cut_off_price: CapacityUnitPrice = UNDEFINED_PRICE
         # inventory subsystem (ADR-0025): input-product stock + unit-count limit,
@@ -443,9 +446,12 @@ class ProducingAgent:
         # 4. atomic price-greedy auction over the remaining budget. A bid that
         # clears is `accepted` (tokens burnt) this cycle, whether it completes now
         # or reserves and waits.
+        requested_by_type: dict[CapacityType, Capacity] = {}
         self.bids.sort(key=lambda b: b.capacity_unit_price(), reverse=True)
         for bid in self.bids:
             requested += bid.total_capacity()
+            for t, c in bid.capacities.items():
+                requested_by_type[t] = requested_by_type.get(t, 0) + c
             if not self._fits(available, bid.capacities):
                 rejected.append(bid)
                 continue
@@ -466,6 +472,7 @@ class ProducingAgent:
         self.bids = []
         self.reservations = still
         self.requested_capacity = requested
+        self.requested_capacity_by_type = requested_by_type
         self.funds = funds
         self.cut_off_price = cut_off_price
         self.cmd_handled = False

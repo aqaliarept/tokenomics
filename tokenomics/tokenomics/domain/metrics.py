@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .common import Product
+from .common import CapacityType, Product
 from .config import ProcessSheet
 from .producing_agent import ProducingAgent
 
@@ -199,3 +199,70 @@ def recipe_capacity_type_count(sheet: ProcessSheet) -> int:
 def eligible_producer_count(x: Product, producers: Iterable[ProducingAgent]) -> int:
     """sum_p eligible(p, x) — how many producers declare x in `produces` (ADR-0028)."""
     return sum(1 for p in producers if x in p.produces)
+
+
+# --- entity-view per-row helpers (ADR-0053, EXP-0010A) ---
+def capacity_demand_pressure(
+    p: ProducingAgent, t: CapacityType, open_qty: dict[Product, int]
+) -> int:
+    """sum_x eligible[p,x] * open_qty[x] * R[x,t] — open-demand capacity load on type
+    t from the products this producer declares (ADR-0053 CapacityRow). Products not
+    in `produces`, or whose recipe doesn't use t, contribute 0."""
+    total = 0
+    for x, q in open_qty.items():
+        if x not in p.produces:
+            continue
+        total += q * p.sheets[x].require.get(t, 0)
+    return total
+
+
+def restore_effect(p: ProducingAgent, t: CapacityType) -> int:
+    """Capacity restoration recovers iff the producer's restoration targets t, else 0
+    (ADR-0053 CapacityRow)."""
+    return p.restoration.restores if p.restoration.type == t else 0
+
+
+def restore_cost(p: ProducingAgent, t: CapacityType) -> int:
+    """Fund target of the producer's restoration order iff it targets t, else 0;
+    unpriced (cost None) reads 0 (ADR-0053)."""
+    if p.restoration.type != t:
+        return 0
+    return p.restoration.cost or 0
+
+
+def upgrade_effect(p: ProducingAgent, t: CapacityType) -> int:
+    """Max-capacity increase iff the producer's upgrade targets t, else 0 (ADR-0053)."""
+    return p.upgrade.increases if p.upgrade.type == t else 0
+
+
+def upgrade_cost(p: ProducingAgent, t: CapacityType) -> int:
+    """Fund target of the producer's upgrade order iff it targets t, else 0; unpriced
+    reads 0 (ADR-0053)."""
+    if p.upgrade.type != t:
+        return 0
+    return p.upgrade.cost or 0
+
+
+def downstream_demand_pressure(
+    p: ProducingAgent, g: Product, open_qty: dict[Product, int]
+) -> int:
+    """sum_x eligible[p,x] * open_qty[x] * I[x,g] — how many units of input product g
+    this producer's declared open demand pulls (ADR-0053 InputRow)."""
+    total = 0
+    for x, q in open_qty.items():
+        if x not in p.produces:
+            continue
+        total += q * p.sheets[x].inputs.get(g, 0)
+    return total
+
+
+def active_reservation_qty(p: ProducingAgent, x: Product) -> int:
+    """sum over live reservations of bid.quantity for product x — composite units of
+    x that cleared the auction and are waiting on inputs (ADR-0053 ProductRow)."""
+    return sum(r.bid.quantity for r in p.reservations if r.bid.product == x)
+
+
+def blocked_reservation_qty(p: ProducingAgent, g: Product) -> int:
+    """sum over live reservations of bid.inputs[g] — units of input product g that
+    waiting reservations still need to assemble (ADR-0053 InputRow)."""
+    return sum(r.bid.inputs.get(g, 0) for r in p.reservations)

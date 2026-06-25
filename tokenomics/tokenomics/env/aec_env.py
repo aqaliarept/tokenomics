@@ -34,6 +34,7 @@ from .encode import (
     encode_ordering_enriched,
     encode_ordering_stream,
     encode_producing,
+    encode_producing_entity,
 )
 from .spaces import build_spec
 
@@ -83,6 +84,7 @@ class TokenomicsAECEnv(AECEnv):
         render_mode: str | None = None,
         enriched_orderer_obs: bool = False,
         product_stream_ordering: bool = False,
+        entity_producer_obs: bool = False,
     ) -> None:
         super().__init__()
         self.config = config or load_config(DEFAULT_CONFIG)
@@ -101,7 +103,16 @@ class TokenomicsAECEnv(AECEnv):
             orderer_obs_version = 2
         else:
             orderer_obs_version = 1
-        self.spec_ = build_spec(self.config, orderer_obs_version=orderer_obs_version)
+        # ADR-0053 / EXP-0010A: opt in to the entity-factored producer obs (rows +
+        # relations, version 2). Off by default so flat_v1 producer checkpoints keep
+        # their exact observation contract; the command/auction are untouched.
+        self.entity_producer_obs = entity_producer_obs
+        producer_obs_version = 2 if entity_producer_obs else 1
+        self.spec_ = build_spec(
+            self.config,
+            orderer_obs_version=orderer_obs_version,
+            producer_obs_version=producer_obs_version,
+        )
         self.horizon = horizon
         self.render_mode = render_mode
 
@@ -236,6 +247,8 @@ class TokenomicsAECEnv(AECEnv):
         cp = min(1.0, self.current_cycle / self.horizon)
         infos = self._producer_infos()
         if role == "prod":
+            if self.spec_.producer_obs_version >= 2:
+                return encode_producing_entity(self.spec_, self.system.producer_entity_view(did), cp)
             view = self.system.producing_agents[did].view()
             return encode_producing(self.spec_, view, infos, self._open_consumer_demand(), cp)
         if self.spec_.orderer_obs_version >= 3:

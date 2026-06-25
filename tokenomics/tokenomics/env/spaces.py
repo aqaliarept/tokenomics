@@ -64,6 +64,22 @@ STREAM_PRODUCER_FEATURES = ORDERER_PRODUCER_FEATURES + ORDERER_PP_FEATURES
 # cut-off price index within a producer row (it lives in the producer-global sub-block).
 STREAM_PRODUCER_CUTOFF_OFFSET = ORDERER_PRODUCER_CUTOFF_OFFSET
 
+# Entity-factored producer observation block widths (ADR-0053, producer_obs_version 2,
+# EXP-0010A). The encoder emits the domain ProducerEntityView as rows: producer-wide
+# globals, one row per owned capacity type, one per declared product, one per input
+# product, then the recipe-edge relation planes, then cycle progress. Each row leads
+# with an active-mask column (mask, not slot index, defines a real row — ADR-0053);
+# padded rows are all-zero with mask 0. Dim and encoder are tied by the dim-tie test.
+# cut-off, inv units/limit/headroom, outstanding, invest(3), then the 4 producer-global
+# action economics the cap rows don't carry per-type (ADR-0044): max-replenish,
+# replenish cost, inventory-expansion increases + cost.
+PRODUCER_GLOBAL_FEATURES = 12
+PRODUCER_CAP_ROW_FEATURES = 16  # mask + owned/cur/max/headroom/ratio/degr/reserved/
+#                                 prev_req/free/reserved_ratio/restore(2)/upgrade(2)/demand
+PRODUCER_PRODUCT_ROW_FEATURES = 19  # mask + eligible/demand(2)/recipe(4)/EMA(4)/resv/
+#                                     makeable(3)/bottleneck(3)
+PRODUCER_INPUT_ROW_FEATURES = 5  # mask + inventory/outstanding/blocked/downstream
+
 
 @dataclass
 class ProducerMechanics:
@@ -109,6 +125,10 @@ class EnvSpec:
     # config_fingerprint (which takes an explicit orderer_obs_version) so a v2 model
     # can't be mis-scored against a v1 economy.
     orderer_obs_version: int = 1
+    # 1 = legacy flat producer obs (encode_producing); 2 = entity-factored producer
+    # obs (ADR-0053, EXP-0010A). Opt-in so flat_v1 producer checkpoints stay valid;
+    # hashed into config_fingerprint so an entity checkpoint can't collide with a flat.
+    producer_obs_version: int = 1
 
     @property
     def num_producers(self) -> int:
@@ -143,6 +163,8 @@ class EnvSpec:
 
     @property
     def producing_obs_dim(self) -> int:
+        if self.producer_obs_version >= 2:
+            return self.producer_entity_obs_dim
         # ... 2*num_inputs (per-input inventory stock + outstanding inbound, ADR-0041)
         # ... + 2P (per-producer summary) + 2*num_order_products (open consumer
         # demand: quantity + tokens per product, #2) + producing_mechanics_len
@@ -151,6 +173,24 @@ class EnvSpec:
             2 * self.num_types + 1 + 3 + 2 * self.num_inputs + 3
             + 2 * self.num_producers + 2 * self.num_order_products
             + self.producing_mechanics_len + 1
+        )
+
+    @property
+    def producer_entity_obs_dim(self) -> int:
+        # ADR-0053 entity producer obs: globals + per-type capacity rows (padded to
+        # num_types) + per-product rows (padded to num_order_products, the upper bound
+        # on any producer's `produces`) + per-input rows (padded to num_inputs) + the
+        # two recipe-edge relation planes (product x capacity, product x input) + the
+        # trailing cycle-progress scalar. Mirror of encode_producing_entity (dim-tie).
+        Q, T, G = self.num_order_products, self.num_types, self.num_inputs
+        return (
+            PRODUCER_GLOBAL_FEATURES
+            + T * PRODUCER_CAP_ROW_FEATURES
+            + Q * PRODUCER_PRODUCT_ROW_FEATURES
+            + G * PRODUCER_INPUT_ROW_FEATURES
+            + Q * T  # product->capacity relation plane
+            + Q * G  # product->input relation plane
+            + 1
         )
 
     @property
@@ -269,7 +309,9 @@ def _canonical_economy(config: Configuration) -> str:
     )
 
 
-def config_fingerprint(config: Configuration, orderer_obs_version: int = 1) -> str:
+def config_fingerprint(
+    config: Configuration, orderer_obs_version: int = 1, producer_obs_version: int = 1
+) -> str:
     """Stable short hash identifying a config's *economy* (review P1, #7).
 
     Stamped into a checkpoint at save time so an eval can detect it is scoring a policy
@@ -286,8 +328,10 @@ def config_fingerprint(config: Configuration, orderer_obs_version: int = 1) -> s
     `orderer_obs_version` (EXP-0006A) is part of the contract: a v2 (enriched) orderer
     checkpoint and a v1 one on the *same* economy must not collide, so the spec is
     built at that version (changing ordering_obs_dim) and the version is hashed in."""
-    sp = build_spec(config, orderer_obs_version=orderer_obs_version)
-    canonical = repr((
+    sp = build_spec(
+        config, orderer_obs_version=orderer_obs_version, producer_obs_version=producer_obs_version
+    )
+    fields = [
         sorted(sp.producer_ids),
         sorted(sp.capacity_types),
         sorted(sp.order_products),
@@ -299,12 +343,20 @@ def config_fingerprint(config: Configuration, orderer_obs_version: int = 1) -> s
         sp.ordering_action_dim,
         sp.k,
         sp.orderer_obs_version,  # EXP-0006A: v1/v2 orderer obs contract
-        _canonical_economy(config),  # P1: same shape, different economy -> different fp
-    ))
+    ]
+    # ADR-0053 entity producer obs (v2) already changes producing_obs_dim above, so v1
+    # vs v2 fingerprints differ regardless. Only fold the version itself in for v2+ so
+    # legacy flat_v1 checkpoints keep their historical fingerprint (back-compat).
+    if sp.producer_obs_version >= 2:
+        fields.append(("producer_obs_version", sp.producer_obs_version))
+    fields.append(_canonical_economy(config))  # P1: same shape, different economy -> diff fp
+    canonical = repr(tuple(fields))
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
-def build_spec(config: Configuration, orderer_obs_version: int = 1) -> EnvSpec:
+def build_spec(
+    config: Configuration, orderer_obs_version: int = 1, producer_obs_version: int = 1
+) -> EnvSpec:
     producer_ids = sorted(p.id for p in config.producer_configs)
     capacity_types = sorted({t for p in config.producer_configs for t in p.capacities})
     type_index = {t: i for i, t in enumerate(capacity_types)}
@@ -386,4 +438,5 @@ def build_spec(config: Configuration, orderer_obs_version: int = 1) -> EnvSpec:
         inv_ref=inv_ref,
         k=k,
         orderer_obs_version=orderer_obs_version,
+        producer_obs_version=producer_obs_version,
     )
