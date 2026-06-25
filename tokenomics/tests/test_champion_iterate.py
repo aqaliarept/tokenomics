@@ -24,6 +24,9 @@ from tokenomics.train.champion_iterate import (
     ChampionRegistry,
     GateDecision,
     PreflightResult,
+    _default_train_fn,
+    _distill_teacher,
+    _explicit_teacher_keys,
     _parse_teacher,
     champion_iterate,
     check_checkpoint,
@@ -376,6 +379,81 @@ def test_parse_teacher_overrides_only_named_keys():
     assert t["samples"] == 24
     assert t["lookahead"] == 8
     assert t["candidates"] == ["even_split", "proportional", "obs_price"]
+
+
+def test_parse_teacher_reads_elite_set_knobs():
+    """EXP-0008 elite-set distillation is configured through the teacher spec: `--teacher`
+    can set the elite breadth (K) and tolerance so the CLI sweeps elite distillation without
+    a new flag for each knob."""
+    t = _parse_teacher("elite_k=8,elite_eps=0.1")
+    assert t["elite_k"] == 8
+    assert t["elite_eps"] == 0.1
+
+
+def test_distill_elite_set_enables_an_elite_teacher_with_its_default_tolerance():
+    """`--distill elite_set` turns a plain (argmax, K=1) teacher into an elite teacher with
+    the EXP-0008 family defaults (K>1, the wider 0.1 tolerance) — while `stochastic_mle`
+    stays the EXP-0006B single-argmax distillation (K=1)."""
+    base = _parse_teacher("")  # defaults: argmax, elite_k=1
+    assert _distill_teacher("stochastic_mle", base)["elite_k"] == 1
+    elite = _distill_teacher("elite_set", base)
+    assert elite["elite_k"] > 1
+    assert elite["elite_eps"] == 0.1   # family default tolerance
+
+
+def test_distill_elite_set_preserves_explicit_overrides():
+    """A tolerance-only sweep (`--distill elite_set --teacher elite_eps=0.2`) must run at the
+    requested tolerance: enabling the elite family applies its defaults only to knobs the user
+    did NOT set, so an explicit elite_eps (or elite_k) is kept and the recorded teacher
+    matches what was asked for."""
+    spec = "elite_eps=0.2"
+    t = _distill_teacher("elite_set", _parse_teacher(spec),
+                         explicit=_explicit_teacher_keys(spec))
+    assert t["elite_k"] > 1        # K still defaulted on (not provided)
+    assert t["elite_eps"] == 0.2   # explicit tolerance preserved, not overwritten
+
+    spec2 = "elite_k=3"
+    t2 = _distill_teacher("elite_set", _parse_teacher(spec2),
+                          explicit=_explicit_teacher_keys(spec2))
+    assert t2["elite_k"] == 3      # explicit K preserved
+    assert t2["elite_eps"] == 0.1  # tolerance defaulted on (not provided)
+
+
+def test_default_train_fn_forwards_elite_knobs_to_the_trainer(monkeypatch):
+    """The production adapter maps the teacher's elite knobs onto `run_orderer_improve`, so an
+    `elite_set` teacher actually distills over the elite set (not just the argmax). Patched so
+    the mapping is asserted cloud-free (real training is Runpod-only, CLAUDE.md)."""
+    import tokenomics.train.orderer_improve as oi
+
+    seen = {}
+
+    def fake_run(**kw):
+        seen.update(kw)
+        return []
+
+    monkeypatch.setattr(oi, "run_orderer_improve", fake_run)
+    teacher = _parse_teacher("elite_k=5,elite_eps=0.2")
+    _default_train_fn(_registry(), Path("/tmp/cand.pt"), repo_root=Path("/tmp"),
+                      teacher=teacher, eval_seeds=2, log=lambda *a, **k: None)
+
+    assert seen["elite_k"] == 5
+    assert seen["elite_eps"] == 0.2
+    assert seen["stochastic"] is True  # elite spread only realized when the std deploys
+
+
+def test_default_train_fn_skips_the_redundant_train_step_eval(monkeypatch):
+    """The driver scores candidate AND champion itself (gate, identical conditions), so the
+    train step must not also eval the candidate: `_default_train_fn` passes eval_seeds=0 to
+    the trainer (skip the internal eval) regardless of the gate's eval-seed count — avoiding a
+    wasted second candidate eval (~the slow held-out pass)."""
+    import tokenomics.train.orderer_improve as oi
+
+    seen = {}
+    monkeypatch.setattr(oi, "run_orderer_improve", lambda **kw: seen.update(kw) or [])
+    _default_train_fn(_registry(), Path("/tmp/cand.pt"), repo_root=Path("/tmp"),
+                      teacher=_parse_teacher(""), eval_seeds=40, log=lambda *a, **k: None)
+
+    assert seen["eval_seeds"] == 0  # train step skips its own eval; gate eval is canonical
 
 
 def test_registry_load_rejects_a_missing_required_field(tmp_path):

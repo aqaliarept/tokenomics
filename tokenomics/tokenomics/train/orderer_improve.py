@@ -47,7 +47,7 @@ from ..eval.baselines import (
 )
 from ..eval.orderer_oracle import ENVELOPE_COMBOS as _ENVELOPE_COMBOS
 from ..eval.orderer_oracle import _agent_done
-from ..eval.orderer_oracle import _search_best_pol
+from ..eval.orderer_oracle import _search_elite_pols
 from ..eval.runner import evaluate
 from ..eval.scale import build_scale_config
 
@@ -167,6 +167,8 @@ def collect_orderer_samples(
     tag: str = "",
     enriched_orderer_obs: bool = False,
     product_stream: bool = False,
+    elite_k: int = 1,
+    elite_eps: float = 0.05,
     log=None,
 ) -> list[OrdererSample]:
     """Drive episodes (producer fixed at `prod`) and record orderer transitions labeled
@@ -175,7 +177,14 @@ def collect_orderer_samples(
     drives (visits the clone's state distribution) while the search still provides the
     label (relabel). Reproducible — the search RNG is seeded by (seed, cycle). The search
     is silent and slow, so `log` (if given) streams per-episode progress — the label-gen
-    phase otherwise produces no output for ~minutes (search is single-threaded)."""
+    phase otherwise produces no output for ~minutes (search is single-threaded).
+
+    `elite_k>1` (EXP-0008 elite-set distillation): instead of one label per orderer state
+    (the argmax routing), emit one sample per *elite* routing — every candidate within
+    `elite_eps` of the best, capped at `elite_k`. The best elite still drives (a stable
+    central state distribution); the extra near-optimal labels widen the masked Gaussian's
+    fitted centroid+spread instead of collapsing a tie to one arbitrary winner. `elite_k=1`
+    (default) is exactly the EXP-0006B argmax behavior (`_select_elite` top-1 = argmax)."""
     from .smoke_ppo import ordering_action_mask
 
     out: list[OrdererSample] = []
@@ -190,16 +199,17 @@ def collect_orderer_samples(
         max_iter = env.horizon * len(env.possible_agents) * 3 + 100
         adim = env.spec_.ordering_action_dim
         cur = -1
-        label_pol: Policy = next(iter(base_candidates.values()))
+        first = next(iter(base_candidates.values()))
+        elite_pols: list[Policy] = [first]
         for agent in env.agent_iter(max_iter=max_iter):
             if _agent_done(env, agent):
                 env.step(None)
                 continue
             if env.current_cycle != cur:
                 cur = env.current_cycle
-                label_pol, _ = _search_best_pol(
+                elite_pols = [pol for pol, _ in _search_elite_pols(
                     env, prod, base_candidates, n_samples, sample_scale,
-                    lookahead, s, cur, adim)
+                    lookahead, s, cur, adim, eps=elite_eps, k=elite_k)]
             role, did = env._role[agent]
             if role == "prod":
                 env.step(prod(env, agent))
@@ -207,9 +217,10 @@ def collect_orderer_samples(
             obs = np.asarray(env.observe(agent), dtype=np.float32)
             oview = env.system.ordering_agents[did].view(env.system.producer_infos)
             mask = ordering_action_mask(env.spec_, oview)
-            label = np.asarray(label_pol(env, agent), dtype=np.float32)
-            out.append(OrdererSample(obs, label, mask))
-            drive = student_order if student_order is not None else label_pol
+            for pol in elite_pols:  # one sample per elite routing (elite_k=1 ⇒ argmax only)
+                label = np.asarray(pol(env, agent), dtype=np.float32)
+                out.append(OrdererSample(obs, label, mask))
+            drive = student_order if student_order is not None else elite_pols[0]
             env.step(drive(env, agent))
         if log is not None:
             log(f"  label-gen {tag} episode {si + 1}/{len(seed_list)} (seed {s}): "
@@ -286,6 +297,8 @@ def dagger_orderer(
     enriched_orderer_obs: bool = False,
     product_stream: bool = False,
     stochastic: bool = False,
+    elite_k: int = 1,
+    elite_eps: float = 0.05,
     log=print,
 ):
     """Expert-iterate a fresh orderer `GaussianActor` toward the search oracle, over one
@@ -296,7 +309,12 @@ def dagger_orderer(
     `stochastic=True` (EXP-0006B): fit the per-dim `log_std` too (masked Gaussian NLL) so
     the deployed orderer samples — distilling the teacher's routing diversity instead of
     one mean. The DAgger relabel still rolls the *greedy* mean forward (a stable, central
-    state distribution); only the saved/deployed policy samples."""
+    state distribution); only the saved/deployed policy samples.
+
+    `elite_k>1` (EXP-0008): label each state with the whole within-`elite_eps` elite set
+    (capped at `elite_k`), not just the argmax — the masked Gaussian then fits the elite
+    centroid+spread. Pairs with `stochastic=True` (the elite spread is only realized when
+    the std deploys by sampling)."""
     import torch
 
     from .smoke_ppo import GaussianActor
@@ -307,7 +325,7 @@ def dagger_orderer(
             c, prod, candidates, n_samples=n_samples, sample_scale=sample_scale,
             lookahead=lookahead, seeds=seeds, horizon=horizon,
             enriched_orderer_obs=enriched_orderer_obs, product_stream=product_stream,
-            tag=f"round0 topo{i}", log=log)
+            elite_k=elite_k, elite_eps=elite_eps, tag=f"round0 topo{i}", log=log)
         for i, c in enumerate(cfg_list)
     ]
 
@@ -330,7 +348,8 @@ def dagger_orderer(
                     c, prod, candidates, n_samples=n_samples, sample_scale=sample_scale,
                     lookahead=lookahead, seeds=seeds, horizon=horizon,
                     student_order=student, enriched_orderer_obs=enriched_orderer_obs,
-                    product_stream=product_stream, tag=f"round{it+1} topo{i}", log=log)
+                    product_stream=product_stream, elite_k=elite_k, elite_eps=elite_eps,
+                    tag=f"round{it+1} topo{i}", log=log)
     return order
 
 
@@ -444,6 +463,8 @@ def run_orderer_improve(
     enriched_orderer_obs: bool = False,
     product_stream: bool = False,
     stochastic: bool = False,
+    elite_k: int = 1,
+    elite_eps: float = 0.05,
     log=print,
 ) -> list[dict]:
     """EXP-0005 Stage 2 driver: expert-iterate the orderer toward the search oracle with
@@ -451,7 +472,11 @@ def run_orderer_improve(
     held-out topologies. Returns the eval rows. Train/held-out topology seeds are the
     contiguous `range(train_seeds)` / `range(train_seeds, +held_out_seeds)` by default, or
     explicit `train_seed_list` / `held_out_seed_list` (M2-v2: widen coverage without
-    overlapping the held-out suite — a non-contiguous split)."""
+    overlapping the held-out suite — a non-contiguous split).
+
+    `elite_k>1` (EXP-0008): distill over the per-state elite routing set (within `elite_eps`
+    of best, capped at `elite_k`) instead of the single argmax — the elite-set candidate
+    family. Saved-checkpoint schema is unchanged, so the champion-iteration gate is reused."""
     import torch
 
     prod_actor, bound = _load_v4_producer(prod_ckpt)
@@ -481,7 +506,7 @@ def run_orderer_improve(
         dagger_iters=dagger_iters, seeds=range(label_seeds), horizon=horizon,
         epochs=epochs, lr=lr, seed=seed,
         enriched_orderer_obs=enriched_orderer_obs, product_stream=product_stream,
-        stochastic=stochastic, log=log)
+        stochastic=stochastic, elite_k=elite_k, elite_eps=elite_eps, log=log)
 
     from .smoke_ppo import save_policies
 
@@ -497,6 +522,13 @@ def run_orderer_improve(
     save_policies(prod_actor, order, bound, save, config=cfg0,
                   orderer_obs_version=obs_version)
     log(f"saved M2 (v4 producer + learned orderer) -> {save}")
+
+    # eval_seeds<=0: the caller scores the saved checkpoint itself (the champion-iteration
+    # driver re-evals candidate AND champion under identical conditions), so skip the
+    # redundant internal eval rather than pay for a second candidate eval.
+    if eval_seeds <= 0:
+        log("eval_seeds<=0: skipping internal held-out eval (caller scores the checkpoint)")
+        return []
 
     rows = eval_m2(save, depth=depth, seeds=held, eval_seeds=eval_seeds, horizon=horizon,
                    enriched_orderer_obs=enriched_orderer_obs, product_stream=product_stream,
@@ -545,6 +577,12 @@ def main() -> None:
                     help="EXP-0006B M2-v3-stochastic: distill a learned per-dim log_std "
                          "(masked Gaussian NLL) and deploy by sampling, preserving the "
                          "teacher's routing diversity instead of one deterministic mean")
+    ap.add_argument("--elite-k", type=int, default=1,
+                    help="EXP-0008 elite-set distillation: label each state with the whole "
+                         "within-tolerance elite routing set (capped at K) instead of the "
+                         "single argmax (1 = EXP-0006B behavior). Pair with --stochastic")
+    ap.add_argument("--elite-eps", type=float, default=0.05,
+                    help="elite tolerance: keep routings scoring >= (1-eps)*best (EXP-0008)")
     ap.add_argument("--product-stream", action="store_true",
                     help="EXP-0007A: train/score the product-stream orderer obs "
                          "(orderer_obs_version 3, ADR-0052) — one ordering agent per "
@@ -583,7 +621,7 @@ def main() -> None:
         eval_seeds=args.eval_seeds, save=args.save, csv_out=args.csv_out,
         train_seed_list=train_seed_list, held_out_seed_list=held_out_seed_list,
         enriched_orderer_obs=args.enriched, product_stream=args.product_stream,
-        stochastic=args.stochastic,
+        stochastic=args.stochastic, elite_k=args.elite_k, elite_eps=args.elite_eps,
     )
 
 

@@ -160,6 +160,23 @@ def mpc_orderer_episode(
     return env.episode_stats, choice_counts
 
 
+def _select_elite(
+    scored: list[tuple[str, Policy, float]], *, eps: float, k: int
+) -> list[tuple[str, Policy, float]]:
+    """Elite-set selection (EXP-0008): from per-cycle scored routings `(name, pol, units)`,
+    keep every routing within `eps` of the best (`units >= (1-eps)*best`), sorted best-first
+    and capped at the top `k`. Always returns >= 1 entry (the argmax) for non-empty input —
+    a decisive cell yields ~1 elite, a tie-heavy random-dominated cell yields many. Pure
+    over the scores so the selection is unit-testable without rollouts."""
+    if not scored:
+        return []
+    ranked = sorted(scored, key=lambda c: c[2], reverse=True)
+    best = ranked[0][2]
+    cutoff = (1.0 - eps) * best
+    elite = [c for c in ranked if c[2] >= cutoff]
+    return elite[:k]
+
+
 def _search_best_pol(
     env: TokenomicsAECEnv,
     prod: Policy,
@@ -176,17 +193,59 @@ def _search_best_pol(
     `lookahead`-cycle rollout from `env`, return (winning policy, whether a *sampled*
     routing won). Reproducible — sample RNG seeded by (seed, cycle). Shared by the
     measurement episode and the Stage 2 label generator (`train.orderer_improve`)."""
+    scored = _score_candidates(
+        env, prod, base_candidates, n_samples, sample_scale, lookahead, seed, cur, adim)
+    best_name, best_pol, _ = max(scored, key=lambda c: c[2])  # first max wins ties
+    return best_pol, best_name.startswith("s")
+
+
+def _score_candidates(
+    env: TokenomicsAECEnv,
+    prod: Policy,
+    base_candidates: dict[str, Policy],
+    n_samples: int,
+    sample_scale: float,
+    lookahead: int,
+    seed: int,
+    cur: int,
+    adim: int,
+) -> list[tuple[str, Policy, float]]:
+    """Score the named baselines + `n_samples` freshly-sampled fixed routings by a
+    `lookahead`-cycle rollout from `env` (EXP-0005 Stage 1d). Returns `(name, pol, units)`
+    per candidate. Sample RNG seeded by (seed, cycle) for reproducibility — shared by the
+    argmax (`_search_best_pol`) and the EXP-0008 elite (`_search_elite_pols`) searches."""
     rng = np.random.default_rng((seed + 1) * 100003 + cur)
     cands: list[tuple[str, Policy]] = list(base_candidates.items())
     for j in range(n_samples):
         vec = (rng.standard_normal(adim) * sample_scale).astype(np.float32)
         cands.append((f"s{j}", _const_policy(vec)))
-    best_name, best_units, best_pol = None, -1, next(iter(base_candidates.values()))
-    for name, cand in cands:
-        units = _rollout_units(copy.deepcopy(env), prod, cand, lookahead)
-        if units > best_units:
-            best_units, best_name, best_pol = units, name, cand
-    return best_pol, bool(best_name and best_name.startswith("s"))
+    return [
+        (name, pol, float(_rollout_units(copy.deepcopy(env), prod, pol, lookahead)))
+        for name, pol in cands
+    ]
+
+
+def _search_elite_pols(
+    env: TokenomicsAECEnv,
+    prod: Policy,
+    base_candidates: dict[str, Policy],
+    n_samples: int,
+    sample_scale: float,
+    lookahead: int,
+    seed: int,
+    cur: int,
+    adim: int,
+    *,
+    eps: float,
+    k: int,
+) -> list[tuple[Policy, float]]:
+    """Elite-set teacher (EXP-0008): like `_search_best_pol` but return the whole within-eps
+    elite (best-first, capped at K) as `(pol, units)` instead of one winner — the multiple
+    near-optimal routings EXP-0008 distills over. Top entry is the argmax winner, so this
+    only *adds* labels, never changes the chosen best."""
+    scored = _score_candidates(
+        env, prod, base_candidates, n_samples, sample_scale, lookahead, seed, cur, adim)
+    return [(pol, units) for _, pol, units in _select_elite(scored, eps=eps, k=k)]
 
 
 def search_orderer_episode(

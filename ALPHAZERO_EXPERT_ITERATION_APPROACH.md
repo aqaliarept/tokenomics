@@ -485,7 +485,7 @@ driver can reproduce an EXP-0006B-style candidate run on the stable ordering-age
 contract and record a valid experiment without manual stitching
 ```
 
-### EXP-0008: Elite-Set Or Mixture Distillation
+### EXP-0008: Elite-Set Or Mixture Distillation — DONE, REJECT (elite-set, K=6 ε=0.1)
 
 Purpose:
 
@@ -493,19 +493,40 @@ Purpose:
 Improve margin beyond M2-v3-stochastic, especially on random-dominated cells.
 ```
 
-Only pursue if we want mean ratio closer to `1.10` or if champion iteration stalls.
+Work done:
 
-Work:
+- elite teacher: `orderer_oracle._search_elite_pols` / `_select_elite` keep the per-state
+  within-`ε` elite routing set (capped at `K`), not just the argmax
+- `orderer_improve` relabels each state with the elite set (one sample per elite action,
+  `--elite-k/--elite-eps`); the existing masked Gaussian NLL then fits the elite
+  centroid + spread. Checkpoint schema unchanged → the champion gate is reused as-is
+- driven through `champion_iterate --distill elite_set` (CPU Runpod, 40 eval seeds)
 
-- collect multiple high-scoring teacher actions per state
-- train mixture/elite-set objective
-- compare against M2-v3-stochastic
-
-Accept:
+Result (`experiments/EXP-0008-elite-set-distillation/`):
 
 ```text
-beats current champion on held-out mean without losing any strict-envelope cell
+PROMOTE_RECOMMENDED=false. Candidate valid (zero death, clears strict envelope on all 4
+held-out: 1.041/1.097/1.048/1.035) but held-out mean 511.7 < champion 513.4, and hard
+cell s9 regressed (516.0 < 524.5).
 ```
+
+The finding is the per-seed split: elite-set **helps** the `proportional`-dominated cells
+(s6 +2.0, s7 +6.4) and **loses** the `stock_aware+random` cells (s8 −6.7, s9 −8.5) — the
+*opposite* of the hypothesis that it would lift the random-dominated cells. EXP-0006B's
+learned `log_std` around the argmax already supplies the useful routing diversity; adding an
+elite **centroid** target shifts the mean off-argmax and over-spreads, washing out the
+high-value random-cell routings. **Elite-set is not the margin lever at these settings; the
+champion stays M2-v3-stochastic.**
+
+Accept (was):
+
+```text
+beats current champion on held-out mean without losing any strict-envelope cell  -> NOT MET
+```
+
+Not ruled out (cheap follow-up, not pursued): a **tighter** elite (small `ε`≈0.02 or
+`elite_k=2`, true near-ties only) might keep the s6/s7 gains without the s8/s9 regression —
+audit at `--eval-seeds 10` first, promote-audit at 40 only on a candidate that wins.
 
 ### EXP-0009: Value-Guided Planner
 

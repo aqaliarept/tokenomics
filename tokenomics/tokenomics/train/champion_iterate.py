@@ -273,9 +273,33 @@ def preflight(registry: ChampionRegistry, *, repo_root: "str | Path") -> Preflig
     return check_checkpoint(ckpt, registry)
 
 
-# Default teacher (the L12/K12 routing search EXP-0006B/0007A distilled from).
+# Default teacher (the L12/K12 routing search EXP-0006B/0007A distilled from). `elite_k=1`
+# = EXP-0006B single-argmax distillation; `--distill elite_set` raises it (EXP-0008).
 _DEFAULT_TEACHER = {"samples": 12, "lookahead": 12,
-                    "candidates": ["even_split", "proportional", "obs_price"]}
+                    "candidates": ["even_split", "proportional", "obs_price"],
+                    "elite_k": 1, "elite_eps": 0.05}
+
+# EXP-0008 `--distill elite_set` family defaults: keep the top routings within 10% of the
+# best, capped at 6. Applied only to knobs the user did NOT set on `--teacher`, so explicit
+# overrides win (`_distill_teacher` + `_explicit_teacher_keys`).
+_ELITE_SET_K = 6
+_ELITE_SET_EPS = 0.1
+
+
+def _distill_teacher(distill: str, teacher: dict, *, explicit=frozenset()) -> dict:
+    """Apply the `--distill` candidate family on top of a parsed teacher (EXP-0008).
+    `stochastic_mle` (EXP-0006B) leaves the single-argmax teacher (`elite_k=1`) untouched;
+    `elite_set` turns it into an elite teacher (`elite_k>1`, wider tolerance) so the fit
+    distills over the per-state elite set. The family defaults apply only to knobs absent
+    from `explicit` (the `--teacher` keys the user actually set), so an explicit
+    `--teacher elite_eps=…` / `elite_k=…` is preserved rather than clobbered."""
+    t = dict(teacher)
+    if distill == "elite_set":
+        if "elite_k" not in explicit:
+            t["elite_k"] = _ELITE_SET_K
+        if "elite_eps" not in explicit:
+            t["elite_eps"] = _ELITE_SET_EPS
+    return t
 
 
 def _default_train_fn(
@@ -285,7 +309,11 @@ def _default_train_fn(
     """Production trainer: distill a candidate orderer on the registry's contract via the
     existing expert-iteration driver (`orderer_improve.run_orderer_improve`) — producer
     fixed at v4, search-teacher relabel, stochastic deploy. A real run is Runpod-only
-    (CLAUDE.md); this is the thin pass-through the orchestration wires by default."""
+    (CLAUDE.md); this is the thin pass-through the orchestration wires by default.
+
+    Passes `eval_seeds=0` so the trainer only trains+saves: the driver re-evals candidate
+    AND champion itself (the gate, under identical conditions, at `eval_seeds`), so a
+    train-step candidate eval would just be a wasted second held-out pass."""
     from .orderer_improve import run_orderer_improve
 
     run_orderer_improve(
@@ -295,10 +323,12 @@ def _default_train_fn(
         candidates=teacher["candidates"], n_samples=teacher["samples"],
         sample_scale=1.0, lookahead=teacher["lookahead"], dagger_iters=2,
         label_seeds=3, horizon=100, epochs=1500, lr=3e-3, seed=0,
-        log_std_save=None, eval_seeds=eval_seeds, save=str(candidate_ckpt),
+        log_std_save=None, eval_seeds=0, save=str(candidate_ckpt),
         held_out_seed_list=registry.held_out_topology_seeds,
         enriched_orderer_obs=(registry.orderer_obs_version == 2),
-        product_stream=registry.product_stream, stochastic=True, log=log,
+        product_stream=registry.product_stream, stochastic=True,
+        elite_k=teacher.get("elite_k", 1), elite_eps=teacher.get("elite_eps", 0.05),
+        log=log,
     )
 
 
@@ -384,11 +414,20 @@ def _parse_teacher(spec: str) -> dict:
             continue
         k, _, v = tok.partition("=")
         k = k.strip()
-        if k in ("samples", "lookahead"):
+        if k in ("samples", "lookahead", "elite_k"):
             t[k] = int(v)
+        elif k == "elite_eps":
+            t[k] = float(v)
         elif k == "candidates":
             t[k] = v.split("|")
     return t
+
+
+def _explicit_teacher_keys(spec: str) -> set[str]:
+    """The teacher knobs the user actually set on `--teacher` (key names present in `spec`),
+    so `_distill_teacher` can distinguish "not provided" (apply the family default) from
+    "provided" (preserve), instead of guessing from the value (EXP-0008 P2 fix)."""
+    return {tok.partition("=")[0].strip() for tok in spec.split(",") if tok.strip()}
 
 
 def main() -> None:
@@ -403,7 +442,9 @@ def main() -> None:
     ap.add_argument("--teacher", default="samples=12,lookahead=12",
                     help="search teacher spec, e.g. samples=12,lookahead=12")
     ap.add_argument("--distill", default="stochastic_mle",
-                    choices=["stochastic_mle"], help="candidate family (EXP-0007B: stochastic)")
+                    choices=["stochastic_mle", "elite_set"],
+                    help="candidate family: stochastic_mle (EXP-0006B single-argmax) or "
+                         "elite_set (EXP-0008: distill over the per-state elite routing set)")
     ap.add_argument("--eval-seeds", type=int, default=None,
                     help="held-out eval episode seeds (default: registry eval_episode_seeds)")
     args = ap.parse_args()
@@ -411,8 +452,9 @@ def main() -> None:
     registry_path = Path(args.registry)
     repo_root = Path(args.repo_root) if args.repo_root else registry_path.resolve().parent
     decision = champion_iterate(
-        registry_path, args.out_dir, repo_root=repo_root,
-        eval_seeds=args.eval_seeds, teacher=_parse_teacher(args.teacher),
+        registry_path, args.out_dir, repo_root=repo_root, eval_seeds=args.eval_seeds,
+        teacher=_distill_teacher(args.distill, _parse_teacher(args.teacher),
+                                 explicit=_explicit_teacher_keys(args.teacher)),
     )
     raise SystemExit(0 if decision.promote else 1)
 
