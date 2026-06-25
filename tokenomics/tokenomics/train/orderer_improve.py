@@ -106,6 +106,7 @@ def collect_orderer_samples(
     student_order: "Policy | None" = None,
     tag: str = "",
     enriched_orderer_obs: bool = False,
+    product_stream: bool = False,
     log=None,
 ) -> list[OrdererSample]:
     """Drive episodes (producer fixed at `prod`) and record orderer transitions labeled
@@ -121,7 +122,8 @@ def collect_orderer_samples(
     seed_list = list(seeds)
     for si, s in enumerate(seed_list):
         env = TokenomicsAECEnv(config=config, horizon=horizon,
-                               enriched_orderer_obs=enriched_orderer_obs)
+                               enriched_orderer_obs=enriched_orderer_obs,
+                               product_stream_ordering=product_stream)
         env.reset(seed=s)
         for a in env.possible_agents:
             env.action_space(a).seed(s)
@@ -217,6 +219,7 @@ def dagger_orderer(
     seed: int = 0,
     log_std_init: float = -2.0,
     enriched_orderer_obs: bool = False,
+    product_stream: bool = False,
     stochastic: bool = False,
     log=print,
 ):
@@ -238,7 +241,8 @@ def dagger_orderer(
         collect_orderer_samples(
             c, prod, candidates, n_samples=n_samples, sample_scale=sample_scale,
             lookahead=lookahead, seeds=seeds, horizon=horizon,
-            enriched_orderer_obs=enriched_orderer_obs, tag=f"round0 topo{i}", log=log)
+            enriched_orderer_obs=enriched_orderer_obs, product_stream=product_stream,
+            tag=f"round0 topo{i}", log=log)
         for i, c in enumerate(cfg_list)
     ]
 
@@ -258,7 +262,7 @@ def dagger_orderer(
                     c, prod, candidates, n_samples=n_samples, sample_scale=sample_scale,
                     lookahead=lookahead, seeds=seeds, horizon=horizon,
                     student_order=student, enriched_orderer_obs=enriched_orderer_obs,
-                    tag=f"round{it+1} topo{i}", log=log)
+                    product_stream=product_stream, tag=f"round{it+1} topo{i}", log=log)
     return order
 
 
@@ -287,6 +291,7 @@ def eval_m2(
     eval_seeds: int = 5,
     horizon: int = 100,
     enriched_orderer_obs: bool = False,
+    product_stream: bool = False,
     stochastic: bool = False,
     log=print,
 ) -> list[dict]:
@@ -311,15 +316,21 @@ def eval_m2(
         cfg = build_scale_config(s, depth=depth)
         rng = range(eval_seeds)
         m2 = evaluate(m2_prod, m2_order, seeds=rng, horizon=horizon, config=cfg,
-                      enriched_orderer_obs=enriched_orderer_obs)
+                      enriched_orderer_obs=enriched_orderer_obs,
+                      product_stream=product_stream)
         m2_cu, m2_sd = m2["consumer_completed_units"]
+        # Score the bars in the SAME agent layout as the candidate: a stream-mode M2
+        # must be measured against stream-mode baselines. Deterministic baselines are
+        # grouping-invariant (parity, ADR-0052), but `random` ordering consumes the
+        # action-space RNG over a different set/order of agents when keyed by
+        # (source, product), so a legacy-mode envelope would be a different bar.
         m0 = evaluate(PRODUCING_BASELINES["stock_aware"], ORDERING_BASELINES["proportional"],
-                      seeds=rng, horizon=horizon, config=cfg)
+                      seeds=rng, horizon=horizon, config=cfg, product_stream=product_stream)
         m0_cu = m0["consumer_completed_units"][0]
         env_best_cu, env_best_name = -1.0, ""
         for name, (pp, oo) in _ENVELOPE_COMBOS.items():
             m = evaluate(PRODUCING_BASELINES[pp], ORDERING_BASELINES[oo],
-                         seeds=rng, horizon=horizon, config=cfg)
+                         seeds=rng, horizon=horizon, config=cfg, product_stream=product_stream)
             if m["consumer_completed_units"][0] > env_best_cu:
                 env_best_cu, env_best_name = m["consumer_completed_units"][0], name
         r_m0 = m2_cu / m0_cu if m0_cu else float("nan")
@@ -363,6 +374,7 @@ def run_orderer_improve(
     train_seed_list: "list[int] | None" = None,
     held_out_seed_list: "list[int] | None" = None,
     enriched_orderer_obs: bool = False,
+    product_stream: bool = False,
     stochastic: bool = False,
     log=print,
 ) -> list[dict]:
@@ -383,7 +395,8 @@ def run_orderer_improve(
 
     cfg0 = build_scale_config(train_ids[0], depth=depth)
     probe = TokenomicsAECEnv(config=cfg0, horizon=1,
-                             enriched_orderer_obs=enriched_orderer_obs)
+                             enriched_orderer_obs=enriched_orderer_obs,
+                             product_stream_ordering=product_stream)
     order_obs_dim = probe.observation_space(probe._order_agents[0]).shape[0]
     order_act_dim = probe.spec_.ordering_action_dim
 
@@ -396,7 +409,8 @@ def run_orderer_improve(
         n_samples=n_samples, sample_scale=sample_scale, lookahead=lookahead,
         dagger_iters=dagger_iters, seeds=range(label_seeds), horizon=horizon,
         epochs=epochs, lr=lr, seed=seed,
-        enriched_orderer_obs=enriched_orderer_obs, stochastic=stochastic, log=log)
+        enriched_orderer_obs=enriched_orderer_obs, product_stream=product_stream,
+        stochastic=stochastic, log=log)
 
     from .smoke_ppo import save_policies
 
@@ -408,12 +422,14 @@ def run_orderer_improve(
             prod_actor.log_std.fill_(log_std_save)
             if not stochastic:
                 order.log_std.fill_(log_std_save)
+    obs_version = 3 if product_stream else (2 if enriched_orderer_obs else 1)
     save_policies(prod_actor, order, bound, save, config=cfg0,
-                  orderer_obs_version=2 if enriched_orderer_obs else 1)
+                  orderer_obs_version=obs_version)
     log(f"saved M2 (v4 producer + learned orderer) -> {save}")
 
     rows = eval_m2(save, depth=depth, seeds=held, eval_seeds=eval_seeds, horizon=horizon,
-                   enriched_orderer_obs=enriched_orderer_obs, stochastic=stochastic, log=log)
+                   enriched_orderer_obs=enriched_orderer_obs, product_stream=product_stream,
+                   stochastic=stochastic, log=log)
     if csv_out and rows:
         import csv
 
@@ -458,6 +474,10 @@ def main() -> None:
                     help="EXP-0006B M2-v3-stochastic: distill a learned per-dim log_std "
                          "(masked Gaussian NLL) and deploy by sampling, preserving the "
                          "teacher's routing diversity instead of one deterministic mean")
+    ap.add_argument("--product-stream", action="store_true",
+                    help="EXP-0007A: train/score the product-stream orderer obs "
+                         "(orderer_obs_version 3, ADR-0052) — one ordering agent per "
+                         "(source, product), obs scales with producers not products")
     ap.add_argument("--eval-only", action="store_true",
                     help="skip training: load --save and score it vs M0 + envelope on the held-out "
                          "seeds (regenerate the eval CSV from an existing checkpoint)")
@@ -471,7 +491,8 @@ def main() -> None:
                 else list(range(args.train_seeds, args.train_seeds + args.held_out_seeds)))
         rows = eval_m2(args.save, depth=args.depth, seeds=held,
                        eval_seeds=args.eval_seeds, horizon=args.horizon,
-                       enriched_orderer_obs=args.enriched, stochastic=args.stochastic)
+                       enriched_orderer_obs=args.enriched,
+                       product_stream=args.product_stream, stochastic=args.stochastic)
         if args.csv_out and rows:
             import csv
 
@@ -490,7 +511,8 @@ def main() -> None:
         epochs=args.epochs, lr=args.lr, seed=args.seed, log_std_save=args.log_std_save,
         eval_seeds=args.eval_seeds, save=args.save, csv_out=args.csv_out,
         train_seed_list=train_seed_list, held_out_seed_list=held_out_seed_list,
-        enriched_orderer_obs=args.enriched, stochastic=args.stochastic,
+        enriched_orderer_obs=args.enriched, product_stream=args.product_stream,
+        stochastic=args.stochastic,
     )
 
 

@@ -15,7 +15,14 @@ from gymnasium import spaces
 from pettingzoo import AECEnv
 from pettingzoo.utils import AgentSelector
 
-from ..domain import ScheduledConsumer, ScriptedConsumer, build_system, load_config
+from ..domain import (
+    ScheduledConsumer,
+    ScriptedConsumer,
+    build_system,
+    load_config,
+    product_stream_agents,
+)
+from ..domain.common import stream_id
 from ..domain.config import Configuration
 from ..domain.consumer import Consumer, ScheduleEntry
 from ..domain.producing_agent import ProducerInfo
@@ -25,6 +32,7 @@ from .encode import (
     encode_global,
     encode_ordering,
     encode_ordering_enriched,
+    encode_ordering_stream,
     encode_producing,
 )
 from .spaces import build_spec
@@ -74,18 +82,34 @@ class TokenomicsAECEnv(AECEnv):
         horizon: int = 100,
         render_mode: str | None = None,
         enriched_orderer_obs: bool = False,
+        product_stream_ordering: bool = False,
     ) -> None:
         super().__init__()
         self.config = config or load_config(DEFAULT_CONFIG)
         self.config.validate()
+        # ADR-0052 / EXP-0007A: opt-in product-stream ordering agents (one per
+        # (source, product)). Off by default so legacy checkpoints keep their exact
+        # agent layout + observation contract.
+        self.product_stream_ordering = product_stream_ordering
         # EXP-0006A: opt in to the enriched (capacity-aware) ordering obs. Off by
         # default so M2-v1 / v1 checkpoints keep their exact observation contract.
-        self.spec_ = build_spec(self.config, orderer_obs_version=2 if enriched_orderer_obs else 1)
+        # EXP-0007A: product-stream agents use the simplified per-stream obs (v3,
+        # ADR-0052); it supersedes the enriched flag since the obs is per-stream.
+        if product_stream_ordering:
+            orderer_obs_version = 3
+        elif enriched_orderer_obs:
+            orderer_obs_version = 2
+        else:
+            orderer_obs_version = 1
+        self.spec_ = build_spec(self.config, orderer_obs_version=orderer_obs_version)
         self.horizon = horizon
         self.render_mode = render_mode
 
         prod_ids = self.spec_.producer_ids
-        order_ids = [c.id for c in self.config.consumers] + list(prod_ids)
+        if product_stream_ordering:
+            order_ids = [stream_id(src, prod) for src, prod in product_stream_agents(self.config)]
+        else:
+            order_ids = [c.id for c in self.config.consumers] + list(prod_ids)
         self._prod_agents = [f"prod_{pid}" for pid in prod_ids]
         self._order_agents = [f"order_{aid}" for aid in order_ids]
         self.possible_agents = self._prod_agents + self._order_agents
@@ -144,7 +168,10 @@ class TokenomicsAECEnv(AECEnv):
         return consumers
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> None:
-        self.system = build_system(self.config, self._build_consumers(seed))
+        self.system = build_system(
+            self.config, self._build_consumers(seed),
+            product_stream_ordering=self.product_stream_ordering,
+        )
         self.current_cycle = 0
         self.agents = self.possible_agents[:]
         self.rewards = {a: 0.0 for a in self.agents}
@@ -211,6 +238,8 @@ class TokenomicsAECEnv(AECEnv):
         if role == "prod":
             view = self.system.producing_agents[did].view()
             return encode_producing(self.spec_, view, infos, self._open_consumer_demand(), cp)
+        if self.spec_.orderer_obs_version >= 3:
+            return encode_ordering_stream(self.spec_, self.system.product_stream_view(did), cp)
         if self.spec_.orderer_obs_version >= 2:
             return encode_ordering_enriched(self.spec_, self.system.orderer_economy_view(did), cp)
         incoming = self.system.ordering_agents[did].incoming

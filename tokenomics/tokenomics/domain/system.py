@@ -23,6 +23,7 @@ from .common import (
     from_producer_id,
     is_nan,
     must_get,
+    stream_id,
 )
 from .config import Configuration
 from .consumer import Consumer
@@ -37,7 +38,12 @@ from .order import (
     ReplenishmentRequestRejected,
     Score,
 )
-from .orderer_view import OrdererEconomyView, build_orderer_economy_view
+from .orderer_view import (
+    OrdererEconomyView,
+    ProductStreamView,
+    build_orderer_economy_view,
+    build_product_stream_view,
+)
 from .ordering_agent import OrderingAgent, OrderingAgentCommand, OrderingAgentView
 from .requests import InvestmentType, ReplenishmentRequest
 from .telemetry import EconomyTelemetry
@@ -168,9 +174,39 @@ def distribute_investment_fund(orders: dict[OrderId, Order], investment_fund: To
             remaining -= grant
 
 
+def product_stream_agents(config: Configuration) -> list[tuple[str, int]]:
+    """Restricted product-stream coverage (ADR-0052): the (source, product) pairs a
+    source can actually order, in deterministic order. Single source of truth for
+    System (agent creation + placement) and the env (`possible_agents`).
+
+    - consumer source: each product in its pool (the products it requests).
+    - producer source: replenishment input products for everything it `produces`,
+      plus its restoration / upgrade / inventory-expansion requirement products.
+    """
+    streams: list[tuple[str, int]] = []
+    for c in config.consumers:
+        for product in sorted(set(c.product_pool)):
+            streams.append((c.id, product))
+    for p in config.producer_configs:
+        products: set[int] = set()
+        for made in p.produces:
+            products.update(config.inputs_of(made))
+        products.add(p.restoration.require)
+        products.add(p.upgrade.require)
+        if p.inventory_expansion is not None:
+            products.add(p.inventory_expansion.require)
+        for product in sorted(products):
+            streams.append((p.id, product))
+    return streams
+
+
 class System:
     def __init__(
-        self, id_gen: OrderIdGenerator, config: Configuration, consumers: dict[ConsumerId, Consumer]
+        self,
+        id_gen: OrderIdGenerator,
+        config: Configuration,
+        consumers: dict[ConsumerId, Consumer],
+        product_stream_ordering: bool = False,
     ) -> None:
         self.state = SystemState.ORDERS_PLACEMENT
         self.id_gen = id_gen
@@ -195,12 +231,24 @@ class System:
         self.telemetry = EconomyTelemetry()
 
         self.producer_infos: dict[ProducerId, ProducerInfo] = self._snapshot_producer_infos()
-        for c in consumers.values():
-            aid = from_consumer_id(c.id())
-            self.ordering_agents[aid] = OrderingAgent(aid)
-        for prod_id in self.producing_agents:
-            aid = from_producer_id(prod_id)
-            self.ordering_agents[aid] = OrderingAgent(aid)
+        # ADR-0052: product-stream mode keys ordering agents by (source, product) so
+        # one agent never multiplexes products; legacy mode keys them by source.
+        self.product_stream_ordering = product_stream_ordering
+        # aid -> the fixed product a stream agent serves (ADR-0052); lets an idle
+        # stream still build a well-defined product-stream view.
+        self.stream_products: dict[OrderingAgentId, int] = {}
+        if product_stream_ordering:
+            for source, product in product_stream_agents(config):
+                aid = stream_id(source, product)
+                self.ordering_agents[aid] = OrderingAgent(aid)
+                self.stream_products[aid] = product
+        else:
+            for c in consumers.values():
+                aid = from_consumer_id(c.id())
+                self.ordering_agents[aid] = OrderingAgent(aid)
+            for prod_id in self.producing_agents:
+                aid = from_producer_id(prod_id)
+                self.ordering_agents[aid] = OrderingAgent(aid)
 
         self.start_cycle()
 
@@ -253,6 +301,17 @@ class System:
             incoming, self.producing_agents, self.telemetry, self.process_sheets, self.orders
         )
 
+    def product_stream_view(self, aid: OrderingAgentId) -> ProductStreamView:
+        """The product-stream feature bundle for one stream ordering agent (ADR-0052).
+        The agent's fixed product comes from `stream_products`, so an idle stream still
+        yields a well-defined view. The env layer normalizes this into the obs."""
+        agent = must_get(self.ordering_agents, aid)
+        incoming = {oid: self.orders[oid] for oid in agent.incoming}
+        return build_product_stream_view(
+            self.stream_products[aid], incoming, self.producing_agents,
+            self.telemetry, self.process_sheets, self.orders,
+        )
+
     def ordering_agent_action(self, aid: OrderingAgentId, cmd: OrderingAgentCommand) -> None:
         if self.state != SystemState.ORDERING:
             raise WrongStateError()
@@ -297,7 +356,7 @@ class System:
         for order in self.orders.values():
             if order.requires_funding():
                 continue  # expired this cycle (unfunded) -> rejected in complete_cycle
-            aid = order.agent_id()
+            aid = order.stream_agent_id() if self.product_stream_ordering else order.agent_id()
             must_get(self.ordering_agents, aid).place_order(order.info())
         self.state = SystemState.ORDERING
 

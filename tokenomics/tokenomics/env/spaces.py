@@ -52,6 +52,18 @@ ORDERER_PRODUCER_CUTOFF_OFFSET = 8  # cut-off price's index within that block
 # (_enriched_producer_block: total_cur, total_max, headroom, min/mean ratio, requested,
 #  reserved, total_load, [8] cut_off, ...). Guarded by the obs_price v1==v2 test.
 
+# Product-stream orderer observation block widths (EXP-0007A, orderer_obs_version 3,
+# ADR-0052). A stream agent holds a single fixed product, so the obs drops the product
+# one-hot, carries the product features once (not per slot), and collapses the
+# producer-product grid from K*P to P. The width scales with producers (P rows) and
+# backlog (K), never with the product vocabulary Q — the key simplification.
+STREAM_PRODUCT_FEATURES = ORDERER_PRODUCT_FEATURES  # once per stream (fixed product)
+STREAM_SLOT_SCALARS = 9  # active, tokens, qty, tokens/unit, age, ttl, type(3) — NO product
+# per producer row: global producer block + producer-product block for the fixed product.
+STREAM_PRODUCER_FEATURES = ORDERER_PRODUCER_FEATURES + ORDERER_PP_FEATURES
+# cut-off price index within a producer row (it lives in the producer-global sub-block).
+STREAM_PRODUCER_CUTOFF_OFFSET = ORDERER_PRODUCER_CUTOFF_OFFSET
+
 
 @dataclass
 class ProducerMechanics:
@@ -143,12 +155,22 @@ class EnvSpec:
 
     @property
     def ordering_obs_dim(self) -> int:
+        if self.orderer_obs_version >= 3:
+            return self._ordering_obs_dim_stream
         if self.orderer_obs_version >= 2:
             return self._ordering_obs_dim_enriched
         # v1: per slot: active, tokens, quantity (no capacity, ADR-0029) + a product
         # one-hot (B9 observability); plus one cut-off price per producer and the
         # cycle-progress scalar.
         return self.k * (3 + self.num_order_products) + self.num_producers + 1
+
+    @property
+    def _ordering_obs_dim_stream(self) -> int:
+        # EXP-0007A product-stream obs (ADR-0052): product features once + K backlog
+        # slots (no product one-hot) + one producer row per producer + cycle progress.
+        # Mirror of encode_ordering_stream (test ties them). No Q dependence.
+        P, K = self.num_producers, self.k
+        return STREAM_PRODUCT_FEATURES + K * STREAM_SLOT_SCALARS + P * STREAM_PRODUCER_FEATURES + 1
 
     def ordering_price_indices(self) -> list[int]:
         """Indices of the P producer cut-off prices within the ordering obs, for the
@@ -158,6 +180,10 @@ class EnvSpec:
         them through the per-producer block. Keeps the search candidate fixed across the
         EXP-0006A/B v1->v2 A/B."""
         P, K, Q = self.num_producers, self.k, self.num_order_products
+        if self.orderer_obs_version >= 3:
+            head = STREAM_PRODUCT_FEATURES + K * STREAM_SLOT_SCALARS  # before producer rows
+            return [head + j * STREAM_PRODUCER_FEATURES + STREAM_PRODUCER_CUTOFF_OFFSET
+                    for j in range(P)]
         if self.orderer_obs_version >= 2:
             slot_block = K * (ORDERER_SLOT_SCALARS + Q + ORDERER_PRODUCT_FEATURES
                               + P * ORDERER_PP_FEATURES)

@@ -22,6 +22,7 @@ from .common import (
     Tokens,
     from_consumer_id,
     from_producer_id,
+    stream_id,
 )
 from .config import ProcessSheet
 from .requests import ConsumerRequest, InvestmentRequest, ReplenishmentRequest
@@ -201,6 +202,12 @@ class Order:
             return from_producer_id(self.replenishment_request.producer_id)
         assert self.consumer_request is not None
         return from_consumer_id(self.consumer_request.consumer_id)
+
+    def stream_agent_id(self) -> OrderingAgentId:
+        """Product-stream ordering-agent id (ADR-0052): the source's per-product
+        stream this order routes to. Source is the same as `agent_id`; the product
+        disambiguates which stream agent holds it."""
+        return stream_id(self.agent_id(), self.product)
 
     # --- sub-order outcomes reported by producers ---
     def sub_accepted(self, quantity: int, tokens: Tokens) -> None:

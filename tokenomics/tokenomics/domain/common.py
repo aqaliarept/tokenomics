@@ -53,6 +53,13 @@ def from_consumer_id(cid: ConsumerId) -> OrderingAgentId:
     return cid
 
 
+def stream_id(source_id: str, product: Product) -> OrderingAgentId:
+    """Product-stream ordering-agent id (ADR-0052): one agent per (source, product)
+    so a single agent never multiplexes products. `source_id` is the raw consumer
+    or producer id (identity-mapped from `from_consumer_id`/`from_producer_id`)."""
+    return f"{source_id}__{product}"
+
+
 class NotFoundError(Exception):
     """Mirror of domain.ErrNotFound."""
 

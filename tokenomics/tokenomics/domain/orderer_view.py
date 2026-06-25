@@ -107,6 +107,22 @@ class OrdererEconomyView:
     producer_products: dict[tuple[OrderId, ProducerId], ProducerProductStats]
 
 
+@dataclass
+class ProductStreamView:
+    """Authoritative feature bundle for one *product-stream* ordering agent (EXP-0007A,
+    ADR-0052). The agent holds a single fixed product, so unlike OrdererEconomyView the
+    product appears once (not per slot) and the producer-product facts collapse from a
+    slot x producer grid to one row per producer (computed against the stream's total
+    open backlog). Pure domain: the env only normalizes it."""
+
+    product: Product
+    product_stats: ProductStats
+    backlog: list[OrderSlotStats]
+    producers: dict[ProducerId, ProducerStats]
+    # per producer, for the stream's fixed product.
+    producer_products: dict[ProducerId, ProducerProductStats]
+
+
 def _order_type(order: Order) -> tuple[float, float, float]:
     if order.consumer_request is not None:
         return (1.0, 0.0, 0.0)
@@ -242,5 +258,37 @@ def build_orderer_economy_view(
         order_slots=slots,
         producers=producer_stats,
         products=product_stats,
+        producer_products=producer_products,
+    )
+
+
+def build_product_stream_view(
+    product: Product,
+    incoming: dict[OrderId, Order],
+    producers: dict[ProducerId, ProducingAgent],
+    telemetry: EconomyTelemetry,
+    sheets: dict[Product, ProcessSheet],
+    all_orders: dict[OrderId, Order],
+) -> ProductStreamView:
+    """Assemble the view for one product-stream ordering agent (ADR-0052). All
+    `incoming` orders share `product`. Quantity-dependent producer-product facts use
+    the stream's total open backlog quantity, so the view has one row per producer
+    rather than a per-slot grid. An idle stream (empty `incoming`) still reports every
+    producer row so the obs is well-defined when the agent's turn comes up empty."""
+    producer_ids = sorted(producers)
+    ordered = [incoming[oid] for oid in sorted(incoming)]
+    backlog = [_order_slot(o, producer_ids, producers) for o in ordered]
+    backlog_qty = sum(o.unresolved_quantity() for o in ordered)
+    product_stats = _product_stats(product, producers, telemetry, sheets, all_orders)
+    producer_stats = {pid: _producer_stats(producers[pid], telemetry) for pid in producer_ids}
+    producer_products = {
+        pid: _producer_product_stats(producers[pid], product, backlog_qty, telemetry)
+        for pid in producer_ids
+    }
+    return ProductStreamView(
+        product=product,
+        product_stats=product_stats,
+        backlog=backlog,
+        producers=producer_stats,
         producer_products=producer_products,
     )

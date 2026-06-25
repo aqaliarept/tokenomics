@@ -15,8 +15,15 @@ v4 producer + M2-v3-stochastic orderer + v2 enriched obs
   > strict random-inclusive baseline envelope
 ```
 
-The next practical goal is not another one-off experiment. It is an automated
-champion-iteration loop:
+The next practical goal is not another one-off experiment. It is a two-step
+infrastructure move:
+
+```text
+EXP-0007A: simplify the ordering-agent contract with stable product-stream agents
+EXP-0007B: automate champion iteration on that stable contract
+```
+
+The automated loop should then be:
 
 ```text
 champion -> collect champion states -> search/planner improves them ->
@@ -161,19 +168,24 @@ Future planner upgrades:
 - elite-set / mixture teacher labels
 - CEM routing search
 - value-guided search
-- joint producer-orderer search only after a producer-side headroom audit
+- producer-side constrained planner with learned local scores
+- joint producer-orderer search only after producer size-holdout gates pass
 
 ## Automation Target
 
-Add a champion-iteration driver. It should orchestrate existing pieces rather than
-replace them.
+Add a champion-iteration driver after EXP-0007A proves the product-stream ordering
+contract preserves behavior. The driver should orchestrate existing pieces rather
+than replace them.
+
+Do not anchor the first automation implementation to the old mixed-product ordering
+contract unless it is only a temporary compatibility adapter.
 
 Proposed command:
 
 ```bash
 python -m tokenomics.train.champion_iterate \
   --registry champion.json \
-  --out-dir experiments/EXP-0007-champion-iteration-r1 \
+  --out-dir experiments/EXP-0007B-champion-iteration-r1 \
   --teacher samples=12,lookahead=12 \
   --distill stochastic_mle \
   --eval-seeds 40
@@ -257,7 +269,7 @@ Record:
 - final episode outcome
 - route/product/producer identifiers needed for diagnostics
 
-For EXP-0007 orderer iteration, the producer remains fixed to v4 and only orderer
+For EXP-0007B orderer iteration, the producer remains fixed to v4 and only orderer
 states need planner relabeling.
 
 ### 3. Planner Relabeling
@@ -424,12 +436,38 @@ runner rather than hand-managing SSH sessions.
 
 ## Next Experiments
 
-### EXP-0007: Champion Iteration Driver
+### EXP-0007A: Product-Stream Ordering Refactor
 
 Purpose:
 
 ```text
-Automate one full champion -> candidate -> gate -> record loop.
+Reduce mixed-product slot complexity by moving to stable source-product ordering
+agents while preserving baseline behavior.
+```
+
+This is a domain/interface refactor, not a new training objective. See:
+
+```text
+docs/adr/0052-stable-product-stream-ordering-agents.md
+```
+
+Accept:
+
+```text
+baseline behavior preserved; PettingZoo/API/lifecycle tests pass; observation/action
+contract is simpler and versioned
+```
+
+Only retrain the champion on the new product-stream contract after this parity gate
+passes.
+
+### EXP-0007B: Champion Iteration Driver
+
+Purpose:
+
+```text
+Automate one full champion -> candidate -> gate -> record loop after the
+product-stream ordering contract is stable.
 ```
 
 Work:
@@ -443,8 +481,8 @@ Work:
 Accept:
 
 ```text
-driver can reproduce an EXP-0006B-style candidate run and record a valid experiment
-without manual stitching
+driver can reproduce an EXP-0006B-style candidate run on the stable ordering-agent
+contract and record a valid experiment without manual stitching
 ```
 
 ### EXP-0008: Elite-Set Or Mixture Distillation
@@ -489,25 +527,116 @@ Accept:
 value-guided planner matches or beats rollout-only teacher at lower compute
 ```
 
-### EXP-0010: Producer-Side Headroom Audit
+### EXP-0010A: Producer Entity View
 
 Purpose:
 
 ```text
-Check whether producer-side or joint coordination headroom remains after the
-stochastic orderer champion.
+Give the single producer orchestrator a product/capacity/entity view that is less
+dependent on arbitrary product IDs, capacity IDs, and row permutations.
+```
+
+The producer should remain one coordinated agent because products compete for shared
+capacity, inventory, and investment state. Do not split producers into independent
+product/input stream agents. See:
+
+```text
+docs/adr/0053-entity-factored-producer-orchestrator.md
 ```
 
 Work:
 
-- keep M2-v3-stochastic orderer fixed
-- run producer search/teacher probes
-- compare v4 producer to producer-improved search
+- add a domain-owned producer entity view
+- encode capacity-type rows, product rows, input-product rows, reservation/backlog
+  rows, and relation masks
+- keep the existing producer command and production auction unchanged
+- add schema/fingerprint versioning for the new producer contract
+- add product/capacity relabeling and row-order permutation gates
+- replay or clone existing `stock_aware` / v4 behavior through the new contract
+- correct requested-load metrics as previous/most-recent auction pressure, not
+  future current-cycle bids
+- gate all makeability and bottleneck fields by producer-product eligibility
 
 Accept:
 
 ```text
-producer-side search improves over v4 under the champion orderer
+baseline producer behavior preserved; product/capacity relabeling gates pass;
+row-order invariance/equivariance gates pass; checkpoint compatibility is versioned
+```
+
+### EXP-0010B: Deterministic Producer Planner
+
+Purpose:
+
+```text
+Build a scalable producer controller that uses the entity view but does not depend
+on a learned neural allocator for feasibility.
+```
+
+Work:
+
+- implement transparent local scores for product urgency, input value, capacity
+  bottleneck value, and investment ROI
+- implement a deterministic planner/decoder that enforces inventory, funding,
+  capacity, recipe, and running-investment constraints
+- emit the existing `ProducingAgentCommand`
+- compare against v4 under the current stochastic orderer champion
+- run row-order, product-relabeling, capacity-relabeling, and synthetic size tests
+
+Accept:
+
+```text
+planner preserves or improves v4 behavior, never violates producer constraints, and
+runs on larger synthetic product/capacity counts
+```
+
+### EXP-0010C: Learned Local Producer Scorer
+
+Purpose:
+
+```text
+Learn local economic scores inside the deterministic planner instead of training a
+monolithic producer allocator.
+```
+
+Work:
+
+- keep the deterministic planner responsible for feasibility
+- train shared local row/edge scorers from planner/search/rollout data
+- score product urgency, input replenishment value, capacity bottleneck value, and
+  investment ROI
+- use sparse product-capacity and product-input relations rather than dense
+  all-product interactions by default
+- compare against deterministic planner and v4 under the current stochastic orderer
+
+Accept:
+
+```text
+learned scorer improves held-out mean without strict-envelope, feasibility, death,
+or permutation regressions
+```
+
+### EXP-0010D: Producer Size-Holdout Audit
+
+Purpose:
+
+```text
+Test the actual train-small/run-large claim for producers.
+```
+
+Work:
+
+- train on small generated topologies
+- evaluate on larger product/capacity counts such as `8`, `16`, `64`, and `400`
+  where runtime permits
+- require row-order, product-relabeling, and capacity-relabeling gates at each size
+- report runtime and memory scaling separately from reward quality
+
+Accept:
+
+```text
+small-topology training transfers to larger producer problems without feasibility,
+death, relabeling, or strict-envelope regressions
 ```
 
 Only if accepted should we open joint producer-orderer training.
@@ -523,7 +652,7 @@ topology gates:
 - topology-randomized training
 - held-out and permutation gates
 - no promotion on train-topology gains alone
-- likely graph/entity architecture before broad random-depth claims
+- producer planner/scorer size-holdout evidence before broad random-depth claims
 
 Joint search means the planner chooses producer and orderer actions as a coordinated
 pair from the same state. It is more expensive and mixes two problems, so it is a
@@ -549,7 +678,16 @@ Practical improvements before scaling:
 
 Do not restart from-scratch PPO.
 
-Do not pursue joint producer-orderer training before a producer-side headroom audit.
+Do not pursue joint producer-orderer training before the producer entity view,
+deterministic planner, learned-scorer audit, and size-holdout evidence.
+
+Do not split a producer into independent product/input producer agents. Products
+compete through shared producer capacity, inventory, and investment state; the
+producer remains the orchestrator.
+
+Do not treat a larger producer tensor plus a bigger neural network as the path to
+train-on-4/run-on-400 generalization. Global feasibility belongs in the planner;
+learning should supply local scores.
 
 Do not promote a model because it beats M0 only; the strict envelope is now the
 standard.

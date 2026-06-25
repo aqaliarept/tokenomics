@@ -15,15 +15,24 @@ from .system import (
     SequentialOrderIdGenerator,
     System,
     SystemState,
+    product_stream_agents,
 )
 
 
-def build_system(config: Configuration, consumers: dict | None = None) -> System:
+def build_system(
+    config: Configuration,
+    consumers: dict | None = None,
+    product_stream_ordering: bool = False,
+) -> System:
     """Construct a System with a fresh id generator. If `consumers` is None,
-    ScriptedConsumers are built from config.consumers."""
+    ScriptedConsumers are built from config.consumers. `product_stream_ordering`
+    keys ordering agents by (source, product) per ADR-0052."""
     if consumers is None:
         consumers = {c.id: ScriptedConsumer(c.id, c.product) for c in config.consumers}
-    return System(SequentialOrderIdGenerator(), config, consumers)
+    return System(
+        SequentialOrderIdGenerator(), config, consumers,
+        product_stream_ordering=product_stream_ordering,
+    )
 
 
 __all__ = [
@@ -42,4 +51,5 @@ __all__ = [
     "SequentialOrderIdGenerator",
     "load_config",
     "build_system",
+    "product_stream_agents",
 ]

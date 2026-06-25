@@ -1,0 +1,37 @@
+{
+  "version": "product-stream-orderer-distillation-v1",
+  "date": "2026-06-24",
+  "driver": "tokenomics.train.orderer_improve --product-stream --stochastic (M2 expert iteration; product-stream obs v3, ADR-0052; learned per-dim log_std + sampled deploy; producer fixed v4)",
+  "question": "EXP-0006B promoted a stochastic orderer on the source-keyed enriched obs (v2). ADR-0052 refactors ordering agents to one per (source, product) stream and serves a dedicated product_stream obs (v3) whose width scales with producers, not the product vocabulary, and carries no product id/one-hot. Does re-distilling the stochastic orderer on the v3 product-stream contract preserve (or beat) the EXP-0006B champion on held-out seeds 6,7,8,9 with zero death — i.e. is the simpler, relabel-invariant representation at least behaviour-neutral before EXP-0007B automation targets it?",
+  "params": {
+    "depth": 3,
+    "producer": "EXP-0004 v4 clone (fixed) — m2_inputs/d3_rung_dagger_v4.pt",
+    "orderer_obs_version": 3,
+    "ordering_agents": "one per (source, product) stream (ADR-0052); phase1->scale yields restricted coverage (consumer pool + producer replenishment/restoration/upgrade/inventory inputs)",
+    "search_teacher": "directed routing search, lookahead=12, K(samples)=12, candidates {even_split, proportional, obs_price}",
+    "dagger_iters": 2,
+    "train_topology_seeds": "0-5",
+    "label_seeds_per_topology": 3,
+    "held_out_seeds": "6,7,8,9",
+    "eval_seeds": 10,
+    "horizon": 100,
+    "epochs": 1500,
+    "lr": 3e-3,
+    "loss": "masked Gaussian NLL over decode-active orderer dims (fits mean + per-dim log_std); masked dims keep init",
+    "deploy": "sample a ~ Normal(mean, exp(log_std)), clip to +/-bound; per-episode RNG = env.action_space(agent).np_random",
+    "control": "identical recipe to EXP-0006B except orderer_obs_version 2 (source-keyed enriched) -> orderer_obs_version 3 (product-stream, ADR-0052); action contract (k x P logits + eligibility mask) unchanged"
+  },
+  "configs": {
+    "topologies": "tokenomics.eval.scale.build_scale_config(seed, depth=3) — same fixed scale suite as EXP-0004/0005/0006A/0006B",
+    "observation": "docs/adr/0052-stable-product-stream-ordering-agents.md (product_stream_v1 = orderer_obs_version 3): product features (9, no id/one-hot) + K backlog slots (9 each) + P producer rows (31 each) + cycle progress; width independent of product count"
+  },
+  "compute": {"where": "runpod CPU pod p4qtszbyh6jwz2 (8 vCPU, runpod/base:0.7.0-ubuntu2004, python3.12, torch 2.12.1+cpu) via run_pod_training.py --cpu --python python3.12 (DETACHED client-server)", "wall_time": "~2h (8 vCPU, eval-seeds 10; label-gen dominates)"},
+  "verdict": "ACCEPT (behaviour-neutral-or-better). Authoritative numbers are the corrected STREAM-layout re-eval (review P2 fix: bars scored in the candidate's agent layout, not legacy — `random` consumes action-space RNG over the stream-keyed agent set). Re-distilling the stochastic orderer on the v3 product-stream contract clears the strict random-inclusive envelope on ALL held-out seeds 6,7,8,9 (own-layout env-ratio 1.045/1.086/1.056/1.038 @10 eval seeds), zero death. Vs the EXP-0006B v2 champion's own-layout ratios (1.026/1.086/1.057/1.022): v3 >= v2 on s6 (1.045>1.026) and s9 (1.038>1.022, the historically hard seed), tied on s7 (1.086) and s8 (1.056 vs 1.057). Mean env-ratio 1.056 (v2 1.048; both < secondary 1.10). The simpler, relabel-invariant, product-count-independent representation clears the strict envelope everywhere with zero death -> safe to make the EXP-0007B automation target. NOTE: cross-experiment absolute units are not directly comparable (cloud-vs-local domain float drift, ~0.1%, flips borderline auction acceptances); deterministic-baseline parity is bit-identical legacy-vs-stream at depth-3 scale (0 episode mismatches). Checkpoint v3 fp distinct from v1/v2; 32 focused tests green incl. 2 P2 regression guards. m2_stream_stochastic.pt.",
+  "gates": {
+    "primary": "M2-stream-stochastic envelope ratio > 1.00 on ALL held-out seeds 6,7,8,9 (mean +/- 95% CI over 10 stochastic eval seeds), i.e. matches EXP-0006B's strict-envelope clearance on the new contract",
+    "secondary": "no regression vs EXP-0006B champion (m2_v3_obs_stochastic) per-seed consumer units",
+    "safety": "zero death on all 4",
+    "behaviour-neutral": "the simpler relabel-invariant v3 contract is at least as good as v2 before EXP-0007B automation targets it"
+  },
+  "reproduce": "python run_pod_training.py --pod-id <id> --cpu --python python3.12 --train \"-u -m tokenomics.train.orderer_improve --depth 3 --prod-ckpt /workspace/tokenomics/m2_inputs/d3_rung_dagger_v4.pt --train-seeds 6 --held-out-seeds 4 --candidates even_split,proportional,obs_price --samples 12 --lookahead 12 --dagger-iters 2 --label-seeds 3 --horizon 100 --epochs 1500 --eval-seeds 10 --product-stream --stochastic --save /workspace/tokenomics/m2_stream_stochastic.pt --csv-out /workspace/tokenomics/m2_stream_stochastic_heldout.csv\" --pull /workspace/tokenomics/m2_stream_stochastic.pt:./experiments/EXP-0007A-product-stream-ordering/artifacts/m2_stream_stochastic.pt --pull /workspace/tokenomics/m2_stream_stochastic_heldout.csv:./experiments/EXP-0007A-product-stream-ordering/artifacts/m2_stream_stochastic_heldout.csv"
+}

@@ -10,13 +10,14 @@ import numpy as np
 
 from ..domain.common import Product, Tokens, is_nan
 from ..domain.order import ORDER_TTL, OrderInfo
-from ..domain.orderer_view import OrdererEconomyView
+from ..domain.orderer_view import OrdererEconomyView, ProductStreamView
 from ..domain.producing_agent import ProducerInfo, ProducingAgentView
 from .spaces import (
     OBS_CLIP,
     ORDERER_PP_FEATURES,
     ORDERER_PRODUCT_FEATURES,
     ORDERER_SLOT_SCALARS,
+    STREAM_SLOT_SCALARS,
     EnvSpec,
 )
 
@@ -141,6 +142,44 @@ def encode_ordering(
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
 
 
+def _product_features(spec: EnvSpec, pf) -> list[float]:
+    """Product features (ORDERER_PRODUCT_FEATURES): open demand + recent history +
+    static recipe-graph shape. No product id/one-hot — relabel-invariant by design."""
+    return [
+        pf.open_demand_quantity / spec.inv_ref,
+        pf.open_demand_tokens / spec.token_ref,
+        pf.recent_average_cycle_demand / spec.inv_ref,
+        pf.recent_rejected_quantity / spec.inv_ref,
+        float(pf.product_depth),
+        float(pf.recipe_input_count),
+        float(pf.recipe_input_units),
+        float(pf.recipe_capacity_type_count),
+        pf.eligible_producer_count / spec.num_producers,
+    ]
+
+
+def _pp_features(spec: EnvSpec, pp) -> list[float]:
+    """One (order/stream, producer) cell (ORDERER_PP_FEATURES): makeability /
+    bottleneck / recent throughput / latency for the product against this producer."""
+    return [
+        pp.eligible,
+        pp.accept_qty_now / spec.inv_ref,
+        pp.complete_qty_now / spec.inv_ref,
+        pp.makeable_qty_now / spec.inv_ref,
+        pp.capacity_bottleneck_ratio,
+        pp.input_bottleneck_ratio,
+        pp.bottleneck_ratio,
+        pp.slot_makeability,
+        pp.recent_routed_qty / spec.inv_ref,
+        pp.recent_completed_qty / spec.inv_ref,
+        pp.recent_rejected_qty / spec.inv_ref,
+        pp.recent_success_rate,
+        pp.recent_throughput / spec.inv_ref,
+        pp.recent_completion_latency / ORDER_TTL,
+        pp.recent_failure_latency / ORDER_TTL,
+    ]
+
+
 def _enriched_slot_block(spec: EnvSpec, slot, view: OrdererEconomyView) -> list[float]:
     """One order slot: scalar header + product one-hot + product features + the
     producer-product grid. Widths mirror spaces.ORDERER_* (test D2 ties them)."""
@@ -159,34 +198,10 @@ def _enriched_slot_block(spec: EnvSpec, slot, view: OrdererEconomyView) -> list[
     onehot[spec.order_product_index[slot.product]] = 1.0
     out.extend(onehot)
     # product features (ORDERER_PRODUCT_FEATURES)
-    pf = view.products[slot.product]
-    out.append(pf.open_demand_quantity / spec.inv_ref)
-    out.append(pf.open_demand_tokens / spec.token_ref)
-    out.append(pf.recent_average_cycle_demand / spec.inv_ref)
-    out.append(pf.recent_rejected_quantity / spec.inv_ref)
-    out.append(float(pf.product_depth))
-    out.append(float(pf.recipe_input_count))
-    out.append(float(pf.recipe_input_units))
-    out.append(float(pf.recipe_capacity_type_count))
-    out.append(pf.eligible_producer_count / spec.num_producers)
+    out.extend(_product_features(spec, view.products[slot.product]))
     # producer-product grid (num_producers * ORDERER_PP_FEATURES)
     for pid in spec.producer_ids:
-        pp = view.producer_products[(slot.order_id, pid)]
-        out.append(pp.eligible)
-        out.append(pp.accept_qty_now / spec.inv_ref)
-        out.append(pp.complete_qty_now / spec.inv_ref)
-        out.append(pp.makeable_qty_now / spec.inv_ref)
-        out.append(pp.capacity_bottleneck_ratio)
-        out.append(pp.input_bottleneck_ratio)
-        out.append(pp.bottleneck_ratio)
-        out.append(pp.slot_makeability)
-        out.append(pp.recent_routed_qty / spec.inv_ref)
-        out.append(pp.recent_completed_qty / spec.inv_ref)
-        out.append(pp.recent_rejected_qty / spec.inv_ref)
-        out.append(pp.recent_success_rate)
-        out.append(pp.recent_throughput / spec.inv_ref)
-        out.append(pp.recent_completion_latency / ORDER_TTL)
-        out.append(pp.recent_failure_latency / ORDER_TTL)
+        out.extend(_pp_features(spec, view.producer_products[(slot.order_id, pid)]))
     return out
 
 
@@ -230,6 +245,46 @@ def encode_ordering_enriched(
             feats.extend([0.0] * slot_width)
     for pid in spec.producer_ids:
         feats.extend(_enriched_producer_block(spec, view.producers[pid]))
+    feats.append(cycle_progress)
+    return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
+
+
+def _stream_slot_block(spec: EnvSpec, slot) -> list[float]:
+    """One backlog slot of a product stream (STREAM_SLOT_SCALARS). Same scalar header
+    as the enriched slot but WITHOUT the product one-hot or the eligible-producer
+    count — the product is fixed for the stream and eligibility lives in producer
+    rows, so neither belongs per slot (ADR-0052)."""
+    return [
+        1.0,  # active
+        slot.available_tokens / spec.token_ref,
+        slot.unresolved_quantity / spec.inv_ref,
+        slot.tokens_per_unit / spec.token_ref,
+        slot.order_age / ORDER_TTL,
+        slot.ttl_remaining / ORDER_TTL,
+        *slot.order_type,  # one_hot(consumer, replenishment, investment)
+    ]
+
+
+def encode_ordering_stream(
+    spec: EnvSpec, view: ProductStreamView, cycle_progress: float
+) -> np.ndarray:
+    """Product-stream orderer obs (EXP-0007A, orderer_obs_version 3, ADR-0052).
+
+    The agent serves a single fixed product, so the vector carries the product
+    features once, then K backlog slots (no product one-hot), then one row per
+    producer (global producer block + producer-product block for the fixed product),
+    then cycle progress. Width scales with producers and backlog, never with the
+    product vocabulary. The domain owns the facts; this only normalizes + clips."""
+    feats: list[float] = []
+    feats.extend(_product_features(spec, view.product_stats))
+    for k in range(spec.k):
+        if k < len(view.backlog):
+            feats.extend(_stream_slot_block(spec, view.backlog[k]))
+        else:
+            feats.extend([0.0] * STREAM_SLOT_SCALARS)
+    for pid in spec.producer_ids:
+        feats.extend(_enriched_producer_block(spec, view.producers[pid]))
+        feats.extend(_pp_features(spec, view.producer_products[pid]))
     feats.append(cycle_progress)
     return np.clip(np.asarray(feats, dtype=np.float32), 0.0, OBS_CLIP)
 
