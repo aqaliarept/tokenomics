@@ -39,8 +39,14 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..env import TokenomicsAECEnv
-from ..eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
+from ..eval.baselines import (
+    ORDERING_BASELINES,
+    PRODUCING_BASELINES,
+    Policy,
+    ordering_obs_price_from_state,
+)
 from ..eval.orderer_oracle import ENVELOPE_COMBOS as _ENVELOPE_COMBOS
+from ..eval.orderer_oracle import _agent_done
 from ..eval.orderer_oracle import _search_best_pol
 from ..eval.runner import evaluate
 from ..eval.scale import build_scale_config
@@ -61,6 +67,13 @@ def _greedy_closure(actor, bound: float) -> Policy:
     """Wrap a GaussianActor as the deployed greedy `Policy` (clip(mean), ADR-0026)."""
     import torch
 
+    mean_fn = _numpy_mlp_mean_fn(actor)
+    if mean_fn is not None:
+        def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+            return np.clip(mean_fn(env.observe(agent)), -bound, bound).astype(np.float32)
+
+        return pol
+
     def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
         o = torch.as_tensor(env.observe(agent), dtype=torch.float32)
         with torch.no_grad():
@@ -68,6 +81,41 @@ def _greedy_closure(actor, bound: float) -> Policy:
         return np.clip(mean, -bound, bound).astype(np.float32)
 
     return pol
+
+
+def _numpy_mlp_mean_fn(actor):
+    """Fast single-observation inference for this module's tiny `mlp` actors.
+
+    Search rollouts call the fixed producer/orderer policies tens of thousands of
+    times with batch size 1. NumPy avoids PyTorch's per-call module overhead there;
+    training still uses the original torch modules. Unknown actor layers fall back
+    to the torch path in `_greedy_closure`/`_stochastic_closure`.
+    """
+    import torch
+
+    ops = []
+    for layer in actor.actor:
+        if isinstance(layer, torch.nn.Linear):
+            ops.append((
+                "linear",
+                layer.weight.detach().cpu().numpy().astype(np.float32, copy=True),
+                layer.bias.detach().cpu().numpy().astype(np.float32, copy=True),
+            ))
+        elif isinstance(layer, torch.nn.Tanh):
+            ops.append(("tanh",))
+        else:
+            return None
+
+    def mean(obs: np.ndarray) -> np.ndarray:
+        x = np.asarray(obs, dtype=np.float32)
+        for op in ops:
+            if op[0] == "linear":
+                x = op[1] @ x + op[2]
+            else:
+                x = np.tanh(x).astype(np.float32, copy=False)
+        return x
+
+    return mean
 
 
 def _stochastic_closure(actor, bound: float) -> Policy:
@@ -80,6 +128,18 @@ def _stochastic_closure(actor, bound: float) -> Policy:
     (topology, episode) seed scores identically regardless of evaluation order, instead
     of a single closure-scoped RNG leaking state across seeds."""
     import torch
+
+    mean_fn = _numpy_mlp_mean_fn(actor)
+    std_np = actor.log_std.detach().cpu().numpy().astype(np.float32, copy=True)
+    std_np = np.exp(std_np).astype(np.float32, copy=False)
+    if mean_fn is not None:
+        def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+            mean = mean_fn(env.observe(agent))
+            noise = env.action_space(agent).np_random.standard_normal(mean.shape)
+            a = mean + noise.astype(np.float32) * std_np
+            return np.clip(a, -bound, bound).astype(np.float32)
+
+        return pol
 
     def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
         o = torch.as_tensor(env.observe(agent), dtype=torch.float32)
@@ -132,8 +192,7 @@ def collect_orderer_samples(
         cur = -1
         label_pol: Policy = next(iter(base_candidates.values()))
         for agent in env.agent_iter(max_iter=max_iter):
-            _, _, term, trunc, _ = env.last()
-            if term or trunc:
+            if _agent_done(env, agent):
                 env.step(None)
                 continue
             if env.current_cycle != cur:
@@ -160,7 +219,7 @@ def collect_orderer_samples(
 
 def _fit_orderer_clone(
     actor, samples: list[OrdererSample], bound: float, *, epochs: int, lr: float,
-    stochastic: bool = False,
+    stochastic: bool = False, log=None, log_every: int = 0,
 ) -> float:
     """Masked fit of the orderer to the search-oracle labels. Only the decode-active dims
     (`ordering_action_mask`: eligible producers of multi-eligible slots) carry gradient —
@@ -173,7 +232,11 @@ def _fit_orderer_clone(
     mean *and* the per-dim `log_std`, so the std absorbs the per-cycle spread of the
     teacher's labels — distilling routing *diversity* rather than collapsing it into one
     mean (the EXP-0006A seed-9 residual). The std is then deployed by sampling, not
-    clamped."""
+    clamped.
+
+    `log`/`log_every`: when both are set, emit a `fit epoch e/epochs loss …` line every
+    `log_every` epochs (and at the end) so a long detached fit is visibly alive instead of
+    running 1500 epochs silently. Default (`log=None`) stays silent for existing callers."""
     import torch
 
     X = torch.as_tensor(np.stack([s.obs for s in samples]), dtype=torch.float32)
@@ -184,7 +247,7 @@ def _fit_orderer_clone(
     params = list(actor.actor.parameters()) + ([actor.log_std] if stochastic else [])
     opt = torch.optim.Adam(params, lr=lr)
     loss = torch.tensor(0.0)
-    for _ in range(epochs):
+    for e in range(epochs):
         opt.zero_grad()
         out = actor.actor(X)
         if stochastic:
@@ -197,6 +260,8 @@ def _fit_orderer_clone(
             loss = (((out - Y) ** 2) * M).sum() / M.sum().clamp_min(1.0)
         loss.backward()
         opt.step()
+        if log is not None and log_every > 0 and ((e + 1) % log_every == 0 or e + 1 == epochs):
+            log(f"    fit epoch {e + 1}/{epochs}  loss {float(loss.detach()):.4f}")
     return float(loss.detach())
 
 
@@ -251,8 +316,11 @@ def dagger_orderer(
         torch.manual_seed(seed)  # refit from a fixed init on the grown dataset
         order = GaussianActor(order_obs_dim, order_act_dim, log_std_init=log_std_init)
         flat = [s for smp in samples_by_cfg for s in smp]
+        log(f"orderer-dagger round {it}: fitting {epochs} epochs on {len(flat)} rows "
+            f"({len(cfg_list)} topos)...")
         loss = _fit_orderer_clone(order, flat, bound, epochs=epochs, lr=lr,
-                                  stochastic=stochastic)
+                                  stochastic=stochastic, log=log,
+                                  log_every=max(1, epochs // 8))
         log(f"orderer-dagger round {it}: masked_mse {loss:.4f} ({len(flat)} rows, "
             f"{len(cfg_list)} topos)")
         if it < dagger_iters - 1:
@@ -401,7 +469,10 @@ def run_orderer_improve(
     order_act_dim = probe.spec_.ordering_action_dim
 
     train_cfgs = [build_scale_config(s, depth=depth) for s in train_ids]
-    cand = {name: ORDERING_BASELINES[name] for name in candidates}
+    cand = {
+        name: (ordering_obs_price_from_state if name == "obs_price" else ORDERING_BASELINES[name])
+        for name in candidates
+    }
     log(f"=== orderer expert-iteration (M2)  depth={depth}  train_seeds={train_ids}  held_out={held}  "
         f"oracle: lookahead={lookahead} K={n_samples} cand={candidates}  dagger_iters={dagger_iters} ===")
     order = dagger_orderer(

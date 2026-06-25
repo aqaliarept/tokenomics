@@ -1,0 +1,41 @@
+{
+  "driver": "tokenomics.train.champion_iterate (EXP-0007B)",
+  "registry": {
+    "champion_id": "m2_stream_stochastic",
+    "checkpoint": "m2_inputs/m2_stream_stochastic.pt",
+    "orderer_obs_version": 3,
+    "checkpoint_version": 6,
+    "held_out_topology_seeds": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "producer": "v4",
+    "producer_checkpoint": "m2_inputs/d3_rung_dagger_v4.pt",
+    "product_stream": true,
+    "depth": 3,
+    "hard_cells": [
+      6,
+      9
+    ],
+    "eval_episode_seeds": 40,
+    "strict_envelope": true,
+    "primary_metric": "consumer_completed_units",
+    "max_death_rate": 0.0
+  },
+  "promote_recommended": false,
+  "gate_reasons": [
+    "held-out mean 515.7 does not beat champion 515.7"
+  ],
+  "eval_seeds": 10,
+  "teacher": {
+    "samples": 12,
+    "lookahead": 12,
+    "candidates": [
+      "even_split",
+      "proportional",
+      "obs_price"
+    ]
+  }
+}

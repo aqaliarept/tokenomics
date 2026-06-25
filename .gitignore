@@ -15,3 +15,6 @@ boundary_runs/
 parallel_runs/
 tokenomics/boundary_runs/
 tokenomics/parallel_runs/
+
+# local mirror of a detached pod run's remote log (run_pod_training poller)
+*.live.log

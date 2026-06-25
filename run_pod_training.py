@@ -216,6 +216,47 @@ def ssh_capture(ssh: Ssh, remote_cmd: str, *, timeout_s: int = 30) -> str:
     return res.stdout
 
 
+def default_local_log(remote_log: str) -> str:
+    """Local mirror path for a detached run, derived from the remote log's basename: the
+    `.live.log` suffix the repo .gitignore excludes, in the cwd (so every run is watchable
+    on disk by default without curating a tracked file)."""
+    return f"{Path(remote_log).stem}.live.log"
+
+
+def make_content_sink(local_log: str | None) -> Callable[[str], None]:
+    """An `on_content` callback that streams the detached run's new log bytes to stdout and,
+    when `local_log` is set, mirrors the same bytes to a local file — so a long detached run
+    is observable via `tail -f` locally, not only by re-SSHing the pod. The mirror is
+    truncated up front so a fresh run never appends to a prior run's stale log; the monitor
+    loop's offset never regresses, so per-poll appends never duplicate content.
+
+    The mirror is OPTIONAL and created AFTER the remote job has launched, so any IO failure
+    (read-only cwd, unwritable parent, full disk) is degraded to a warning and disables the
+    mirror — it must never raise, or `main()`'s except-handler would stop the pod and kill a
+    live remote run."""
+    state = {"path": local_log}
+    if local_log:
+        try:
+            Path(local_log).parent.mkdir(parents=True, exist_ok=True)
+            open(local_log, "w").close()  # truncate any prior run's mirror
+        except OSError as e:
+            log(f"WARNING: local log mirror disabled (cannot create {local_log}): {e}")
+            state["path"] = None
+
+    def sink(content: str) -> None:
+        sys.stdout.write(content)
+        sys.stdout.flush()
+        if state["path"]:
+            try:
+                with open(state["path"], "a") as f:
+                    f.write(content)
+            except OSError as e:
+                log(f"WARNING: local log mirror disabled (write failed on {state['path']}): {e}")
+                state["path"] = None
+
+    return sink
+
+
 def monitor_remote(
     pod_id: str,
     ssh: Ssh,
@@ -226,10 +267,11 @@ def monitor_remote(
     *,
     ready_timeout: int,
     poll_interval: float,
+    local_log: str | None = None,
 ) -> int:
     """Drive `run_monitor_loop` against a real pod: stream the detached run's log to our
-    stdout and reconnect (re-resolving ip/port) whenever the SSH link drops. Returns the
-    remote training exit code."""
+    stdout (and mirror it to `local_log` if set) and reconnect (re-resolving ip/port)
+    whenever the SSH link drops. Returns the remote training exit code."""
     state = {"ssh": ssh}
 
     def poll_fn(offset: int) -> str:
@@ -238,13 +280,9 @@ def monitor_remote(
     def reconnect_fn() -> None:
         state["ssh"] = wait_for_ssh(pod_id, key_override, ready_timeout)
 
-    def emit(content: str) -> None:
-        sys.stdout.write(content)
-        sys.stdout.flush()
-
     return run_monitor_loop(
         poll_fn=poll_fn,
-        on_content=emit,
+        on_content=make_content_sink(local_log),
         reconnect_fn=reconnect_fn,
         sleep_fn=time.sleep,
         poll_interval=poll_interval,
@@ -486,6 +524,12 @@ def main() -> int:
     ap.add_argument("--start-retries", type=int, default=0, help="extra pod-start attempts on transient failure (e.g. host out of free GPUs)")
     ap.add_argument("--start-retry-delay", type=int, default=30, help="seconds between pod-start retries")
     ap.add_argument("--poll-interval", type=float, default=15.0, help="seconds between detached-run status polls")
+    ap.add_argument("--local-log", default=None,
+                    help="local file to mirror the detached run's log into for `tail -f` "
+                         "observability (default: <remote-log-basename>.live.log in the cwd, "
+                         "which the repo .gitignore excludes)")
+    ap.add_argument("--no-local-log", action="store_true",
+                    help="disable the local log mirror (stdout streaming only)")
     ap.add_argument(
         "--pull",
         action="append",
@@ -518,6 +562,7 @@ def main() -> int:
 
     detached = not args.foreground
     pid_file, exit_file = marker_paths(args.remote_log)
+    local_log = None if args.no_local_log else (args.local_log or default_local_log(args.remote_log))
     started_ok = False
     detached_interrupt = False
     try:
@@ -554,9 +599,12 @@ def main() -> int:
                 f"python run_pod_training.py --pod-id {args.pod_id} --attach "
                 f"--remote-log {args.remote_log}{' --cpu' if args.cpu else ''}")
 
+        if local_log:
+            log(f"mirroring remote log -> {local_log} (tail -f for live progress)")
         rc = monitor_remote(
             args.pod_id, ssh, args.ssh_key, args.remote_log, pid_file, exit_file,
             ready_timeout=args.ready_timeout, poll_interval=args.poll_interval,
+            local_log=local_log,
         )
         log(f"detached run finished (exit {rc}); pulling results")
         ssh = resolve_ssh(args.pod_id, args.ssh_key)  # refresh endpoint for the pull

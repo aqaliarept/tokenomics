@@ -80,6 +80,28 @@ def test_stochastic_fit_learns_log_std_from_label_spread():
     assert std[1] == pytest.approx(np.exp(-2.0), abs=1e-4)
 
 
+def test_fit_emits_periodic_progress_when_logging_enabled():
+    """Observability: with a `log` sink and `log_every`, the fit emits progress lines every
+    `log_every` epochs (and at the end) instead of running 1500 epochs silently — so a long
+    detached run visibly shows it is alive during the otherwise output-free fit phase. With
+    no `log` (the default) it stays silent, preserving existing callers."""
+    actor = GaussianActor(obs_dim=2, act_dim=2, log_std_init=-2.0)
+    obs = np.zeros(2, dtype=np.float32)
+    samples = [
+        OrdererSample(obs.copy(),
+                      np.array([0.2, 0.0], dtype=np.float32),
+                      np.array([1.0, 0.0], dtype=np.float32))
+        for _ in range(4)
+    ]
+    lines: list[str] = []
+    _fit_orderer_clone(actor, samples, bound=1.0, epochs=12, lr=1e-2,
+                       log=lines.append, log_every=4)
+
+    assert len(lines) >= 2                       # not silent
+    assert all("epoch" in ln.lower() for ln in lines)
+    assert any("/12" in ln for ln in lines)      # shows progress against the total
+
+
 def test_stochastic_closure_samples_within_bound_varies_and_is_seed_reproducible():
     """Deploy = sample a~Normal(mean, std), clipped to ±bound (vs greedy clip(mean)).
     With a non-trivial std the action varies call to call (that is the diversity we are

@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
-from ..env.spaces import ACTION_LOGIT_BOUND, EnvSpec
+from ..domain.common import is_nan
+from ..env.spaces import ACTION_LOGIT_BOUND, OBS_CLIP, EnvSpec
 
 if TYPE_CHECKING:
     from ..env import TokenomicsAECEnv
@@ -71,6 +72,12 @@ def decide_producing_obs(
     return act
 
 
+def _ordering_obs_price_action(spec: EnvSpec, prices: np.ndarray) -> np.ndarray:
+    logits = np.where(prices > 0.0, -prices, -ACTION_LOGIT_BOUND).astype(np.float32)
+    mat = np.tile(logits, (spec.k, 1))
+    return np.clip(mat, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND).astype(np.float32).flatten()
+
+
 def decide_ordering_obs(spec: EnvSpec, obs: np.ndarray) -> np.ndarray:
     """Obs-only ordering router: the ordering obs hides producer capacity (ADR-0029),
     so the only routing signal available is each producer's cut-off price. Route
@@ -85,9 +92,7 @@ def decide_ordering_obs(spec: EnvSpec, obs: np.ndarray) -> np.ndarray:
     # yet" (UNDEFINED -> 0 in encode), not "cheapest" — often a producer that cannot
     # produce (capacity hidden, ADR-0029). Park unproven producers at the floor so a
     # proven cheap one always wins; at cold start all-0 collapses to an even split.
-    logits = np.where(prices > 0.0, -prices, -ACTION_LOGIT_BOUND).astype(np.float32)
-    mat = np.tile(logits, (spec.k, 1))
-    return np.clip(mat, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND).astype(np.float32).flatten()
+    return _ordering_obs_price_action(spec, prices)
 
 
 def producing_obs_stock_aware(threshold: float = 0.6, stock_target: int = 3) -> Policy:
@@ -108,6 +113,26 @@ def ordering_obs_price(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     """Observation-compatible ordering baseline: routes by observed cut-off price
     (no capacity/throughput, unlike the white-box `ordering_proportional`)."""
     return decide_ordering_obs(env.spec_, env.observe(agent))
+
+
+def ordering_obs_price_from_state(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """Fast search equivalent of `ordering_obs_price`.
+
+    Ordering observations encode only the latest producer cut-off prices for this
+    baseline. During ordering, `system.producer_infos` is the same snapshot used by
+    `env.observe()`, so the action is identical without constructing the full
+    product-stream/enriched observation. Keep `ORDERING_BASELINES["obs_price"]`
+    observation-only; use this only in search internals.
+    """
+    prices = np.asarray([
+        0.0 if is_nan(env.system.producer_infos[pid].cut_off_price)
+        else np.clip(
+            env.system.producer_infos[pid].cut_off_price / env.spec_.price_ref,
+            0.0, OBS_CLIP,
+        )
+        for pid in env.spec_.producer_ids
+    ], dtype=np.float32)
+    return _ordering_obs_price_action(env.spec_, prices)
 
 
 def _producing(

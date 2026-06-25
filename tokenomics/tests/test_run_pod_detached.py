@@ -95,6 +95,42 @@ def test_marker_paths_derive_pid_and_exit_from_log() -> None:
     assert exit2 == "/workspace/runs/exp0006b.exit"
 
 
+def test_default_local_log_derives_live_log_from_remote_basename() -> None:
+    # every detached run gets a local mirror named after the remote log's basename, with
+    # the `.live.log` suffix the repo .gitignore already excludes
+    assert rpt.default_local_log("/workspace/champion_iterate_r1.log") == "champion_iterate_r1.live.log"
+    assert rpt.default_local_log("/workspace/runs/exp0006b") == "exp0006b.live.log"
+
+
+def test_content_sink_mirrors_to_local_file_and_truncates_stale(tmp_path) -> None:
+    # local observability: streamed chunks land on disk so a detached run is watchable via
+    # `tail -f` without re-SSHing; a fresh run starts clean, not appended to a stale mirror
+    p = tmp_path / "run.live.log"
+    p.write_text("STALE FROM A PRIOR RUN\n")
+    sink = rpt.make_content_sink(str(p))
+    sink("chunk one\n")
+    sink("chunk two\n")
+    assert p.read_text() == "chunk one\nchunk two\n"
+
+
+def test_content_sink_without_local_log_is_stdout_only(tmp_path, capsys) -> None:
+    # local_log=None disables mirroring (stdout still streams) and must not raise
+    sink = rpt.make_content_sink(None)
+    sink("hello\n")
+    assert capsys.readouterr().out == "hello\n"
+
+
+def test_content_sink_degrades_to_stdout_on_io_error(tmp_path, capsys) -> None:
+    # the mirror is OPTIONAL observability created AFTER the detached job has launched — an
+    # unwritable path (read-only cwd, bad parent, full disk) must degrade to a warning, never
+    # raise, or main()'s except-handler would stop the pod and kill a live remote run.
+    bad = tmp_path / "a-file" / "run.live.log"  # parent is a regular file -> cannot create
+    (tmp_path / "a-file").write_text("x")
+    sink = rpt.make_content_sink(str(bad))  # setup failure must not raise
+    sink("training continues\n")            # streaming must not raise
+    assert "training continues\n" in capsys.readouterr().out
+
+
 def test_monitor_loop_reconnects_on_drop_and_returns_exit_code() -> None:
     # poll responses in order: running, DROP (raises), running-again, then done(exit=0).
     responses = [

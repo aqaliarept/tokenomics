@@ -28,7 +28,12 @@ import statistics
 
 import numpy as np
 
-from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
+from .baselines import (
+    ORDERING_BASELINES,
+    PRODUCING_BASELINES,
+    Policy,
+    ordering_obs_price_from_state,
+)
 from .scale import build_scale_config
 from ..env import TokenomicsAECEnv
 from ..train.smoke_ppo import staged_config
@@ -45,6 +50,16 @@ ENVELOPE_COMBOS = {
     "stock_aware+random": ("stock_aware", "random"),
     "random+random": ("random", "random"),
 }
+
+
+def _agent_done(env: TokenomicsAECEnv, agent: str) -> bool:
+    """Termination check for hot rollout loops.
+
+    `AECEnv.last()` constructs the current observation. The search rollouts only need
+    done flags before choosing a policy action, so using the flags directly avoids
+    building and then discarding thousands of product-stream observations.
+    """
+    return env.terminations[agent] or env.truncations[agent]
 
 
 def _envelope_units(cfg, eval_seeds: int, horizon: int) -> tuple[float, str]:
@@ -99,8 +114,7 @@ def _rollout_units(
     start_units = env.episode_stats["consumer_completed_units"]
     max_iter = env.horizon * len(env.possible_agents) * 3 + 100
     for agent in env.agent_iter(max_iter=max_iter):
-        _, _, term, trunc, _ = env.last()
-        if term or trunc:
+        if _agent_done(env, agent):
             env.step(None)
             continue
         if env.current_cycle - start_cycle >= lookahead:
@@ -129,8 +143,7 @@ def mpc_orderer_episode(
     cur = -1
     order_pol: Policy = next(iter(candidates.values()))
     for agent in env.agent_iter(max_iter=max_iter):
-        _, _, term, trunc, _ = env.last()
-        if term or trunc:
+        if _agent_done(env, agent):
             env.step(None)
             continue
         if env.current_cycle != cur:
@@ -202,8 +215,7 @@ def search_orderer_episode(
     order_pol: Policy = next(iter(base_candidates.values()))
     sample_wins = 0
     for agent in env.agent_iter(max_iter=max_iter):
-        _, _, term, trunc, _ = env.last()
-        if term or trunc:
+        if _agent_done(env, agent):
             env.step(None)
             continue
         if env.current_cycle != cur:
@@ -222,8 +234,7 @@ def _baseline_units(env: TokenomicsAECEnv, prod: Policy, order: Policy, seed: in
         env.action_space(a).seed(seed)
     max_iter = env.horizon * len(env.possible_agents) * 3 + 100
     for agent in env.agent_iter(max_iter=max_iter):
-        _, _, term, trunc, _ = env.last()
-        if term or trunc:
+        if _agent_done(env, agent):
             env.step(None)
             continue
         role = env._role[agent][0]
@@ -250,7 +261,10 @@ def orderer_oracle(
 ) -> None:
     prod = _load_prod_closure(prod_ckpt) if prod_ckpt else PRODUCING_BASELINES[prod_name]
     prod_label = prod_ckpt if prod_ckpt else prod_name
-    cand = {name: ORDERING_BASELINES[name] for name in candidates}
+    cand = {
+        name: (ordering_obs_price_from_state if name == "obs_price" else ORDERING_BASELINES[name])
+        for name in candidates
+    }
     base_ord = ORDERING_BASELINES[base_order]
     mode = f"search(samples={n_samples},scale={sample_scale})" if n_samples > 0 else "switch"
 
