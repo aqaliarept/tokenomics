@@ -43,6 +43,42 @@ def test_value_model_fit_tracks_targets():
     assert v_hi > v_lo
 
 
+def test_value_model_fits_large_offset_target_without_mean_collapse():
+    """Regression for the EXP-0009 value mean-collapse: with raw (un-standardized) inputs and a
+    large-offset target, the tanh MLP dead-gradients to predicting the mean (pred variance ~0).
+    The diagnostic showed the target carries real linear signal (OLS R^2~0.70), so the model
+    must standardize inputs+targets and actually track the target — predictions must vary with
+    it (high-target state scores well above a low-target one, and the spread is a real fraction
+    of the target std, not a collapsed near-constant)."""
+    from tokenomics.train.value_model import ValueModel, ValueSample, fit_value_model
+
+    rng = np.random.default_rng(0)
+    state_dim = 128
+    z = rng.standard_normal((600, state_dim)).astype(np.float32)
+    # faithful to global_state: per-dim scales spanning 1e-2..1e3, ~30% dead (constant) dims,
+    # large offsets. Raw inputs saturate the tanh first layer and dead-gradient the net to the
+    # mean (verified: pred_std=0, MSE=target variance — exactly the EXP-0009 depth-3 collapse).
+    scale = (10.0 ** rng.uniform(-2, 3, state_dim)).astype(np.float32)
+    scale[rng.random(state_dim) < 0.3] = 0.0
+    offset = rng.uniform(-100, 100, state_dim).astype(np.float32)
+    states = z * scale + offset
+    w = rng.standard_normal(state_dim).astype(np.float32)
+    targets = (32.0 + (z @ w) / np.sqrt(state_dim) * 12.0).astype(np.float32)  # mean~32 std~12
+    samples = [ValueSample(states[i], float(targets[i])) for i in range(len(states))]
+    tgt_std = float(targets.std())
+
+    model = ValueModel(state_dim)
+    fit_value_model(model, samples, epochs=1500, lr=1e-2)
+
+    import torch
+
+    with torch.no_grad():
+        preds = model(torch.as_tensor(states)).numpy()
+    assert preds.std() > 0.3 * tgt_std            # not mean-collapsed
+    corr = float(np.corrcoef(preds, targets)[0, 1])
+    assert corr > 0.9                             # tracks the target
+
+
 def _cfg_prod_order():
     """Tiny depth-2 topology + fixed (stock_aware, proportional) policies for collection /
     planner tests — small enough to run the search locally per the compute rule."""

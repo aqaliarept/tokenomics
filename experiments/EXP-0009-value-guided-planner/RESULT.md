@@ -66,6 +66,34 @@ targets; sanity-check target variance) and re-run — does a non-trivial `V` lif
 agreement and let a *shorter* `short` (1–2) or *longer effective window* hold units? (b) only
 then re-test the original EXP-0009 promise (extend planning horizon at fixed compute).
 
+## Step-3 follow-up — value mean-collapse diagnosed (local, no cloud)
+
+The flat MSE above had two layers; a cheap local diagnostic (collection-only, depth-3, v4
+producer, `window=9`) separated them:
+
+1. **Optimization collapse = a normalization bug (fixed).** Raw `global_state` dims span
+   1e-2..1e3 with large offsets and ~36/193 dead (constant) dims; with the tanh MLP and raw
+   targets (mean ≈ 32) the net dead-gradients to predicting the mean (`pred_std=0.0000`, MSE =
+   target variance — exactly the run). Standardizing inputs + target inside `ValueModel`
+   (`set_norm`, applied in `fit_value_model`) removes it: in-sample `pred_std≈12.5` tracks the
+   target. Regression-tested (`test_value_model_fits_large_offset_target_without_mean_collapse`).
+
+2. **The deeper wall = no cross-topology generalization (lever stop).** With the collapse
+   fixed, the model **memorizes train** (train R²=1.0, MSE≈0) but **fails held-out**: trained on
+   topologies 0–5, evaluated on 6–9, **held-out R² is negative for every model** — ridge at all
+   λ (−0.10 → −6.6) and every MLP config (−2.5 → −3.4); best held-out corr ≈ **0.15–0.18**. The
+   first diagnostic's OLS R²=0.70 was **in-sample** memorization. Held-out corr ≈ 0.15 matches
+   the planner's ranking agreement 0.13–0.24 — the same wall from two angles.
+
+**Conclusion (step 3):** units-to-go from `global_state` does **not transfer across topologies**
+at this data scale (6 train economies). The normalization fix is kept (correct, tested), but the
+learned value carries no held-out signal — so the EXP-0009 horizon-extension promise is **not
+achievable here without a different setup** (far more train topologies, or a topology-conditioned
+/ within-deployment value). The **compute lever still stands** (short rollout is outcome-
+sufficient → planner usable as a cheaper teacher), but **do not spend cloud rescuing the value
+lever blindly → proceed to EXP-0010A.** (Same overfit-to-operating-point pattern as the
+generalization wall elsewhere in the arc.)
+
 ## Artifacts
 - `summary.csv` — the held-out table above (per-seed units, cycles, agreement).
 - Producer held fixed: `m2_inputs/d3_rung_dagger_v4.pt` (EXP-0004 v4 champion clone).

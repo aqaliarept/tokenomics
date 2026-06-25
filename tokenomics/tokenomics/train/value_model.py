@@ -61,9 +61,30 @@ class ValueModel(nn.Module):
             nn.Linear(hidden, hidden), nn.Tanh(),
             nn.Linear(hidden, 1),
         )
+        # Standardization buffers (EXP-0009 step-3 diagnostic): raw `global_state` dims span
+        # 1e-2..1e3 with large offsets and ~30% dead dims, which saturate the tanh first layer
+        # and dead-gradient the net to predicting the mean (pred_std=0). The net operates on
+        # standardized inputs and de-normalizes its output, so the deployed `value_closure`
+        # still returns unit-scale estimates. Identity by default; set by `fit_value_model`.
+        self.register_buffer("in_mean", torch.zeros(state_dim))
+        self.register_buffer("in_std", torch.ones(state_dim))
+        self.register_buffer("out_mean", torch.zeros(()))
+        self.register_buffer("out_std", torch.ones(()))
+
+    def set_norm(self, states: torch.Tensor, targets: torch.Tensor) -> None:
+        """Fit the standardization stats from the training data. Dead dims (std≈0) keep std=1
+        so centering maps them to 0 (no divide-by-zero); the output is standardized too so the
+        net learns a zero-mean unit-variance target."""
+        self.in_mean = states.mean(0)
+        std = states.std(0)
+        std[std < 1e-8] = 1.0
+        self.in_std = std
+        self.out_mean = targets.mean()
+        self.out_std = targets.std().clamp_min(1e-8)
 
     def forward(self, state: torch.Tensor) -> torch.Tensor:
-        return self.net(state).squeeze(-1)
+        z = (state - self.in_mean) / self.in_std
+        return self.net(z).squeeze(-1) * self.out_std + self.out_mean
 
 
 def collect_value_samples(
@@ -123,6 +144,7 @@ def fit_value_model(
     final loss. `log`/`log_every` stream progress for long detached fits (silent by default)."""
     X = torch.as_tensor(np.stack([s.state for s in samples]), dtype=torch.float32)
     Y = torch.as_tensor(np.asarray([s.target for s in samples]), dtype=torch.float32)
+    model.set_norm(X, Y)  # standardize inputs+target so the tanh net does not mean-collapse
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss = torch.tensor(0.0)
     for e in range(epochs):

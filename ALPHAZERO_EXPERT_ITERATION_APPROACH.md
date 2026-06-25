@@ -582,9 +582,18 @@ within 0.15% on the other 2 (s8 −0.4, s9 −0.8) — ratios 1.008 / 1.012 / 0.
 mean **+2.15 units (+0.4%)** at **3.82× fewer simulated cycles** (4455 vs ~17010). But `V` collapsed to ≈mean
 (fit MSE plateaued at 146.6 instantly; ranking agreement only 0.13–0.24) → the savings come
 from a 3-cycle rollout already being outcome-sufficient at depth-3, not from the learned tail.
-Usable as a cheaper teacher now; the value model needs input/target normalization before it can
-claim to extend the planning horizon (the original EXP-0009 promise). Review fix landed:
-terminal-state value tail zeroed (no phantom score at death/horizon).
+Usable as a cheaper teacher now. Review fix landed: terminal-state value tail zeroed (no phantom
+score at death/horizon).
+
+Step-3 diagnostic (local, no cloud) settled the value lever. The collapse had two layers:
+(1) **optimization** — raw `global_state` (dims 1e-2..1e3, ~36/193 dead) saturates the tanh net
+→ mean-collapse (`pred_std=0`, MSE=variance); fixed by standardizing inputs+targets in
+`ValueModel` (`set_norm`), regression-tested. (2) **the wall** — no cross-topology generalization:
+trained on topologies 0–5, **held-out R² is negative for every model incl. linear ridge**
+(−0.10 → −6.6), held-out corr ≈ 0.15 ≈ the planner's 0.13–0.24 ranking agreement; the earlier
+in-sample R²=0.70 was memorization (train R²=1.0). Units-to-go from `global_state` doesn't transfer
+at 6 train economies → **stop the value lever (don't rescue blindly), proceed to EXP-0010A.** The
+compute lever (short-rollout teacher) stands.
 
 ### EXP-0010A: Producer Entity View
 
