@@ -548,6 +548,44 @@ Accept:
 value-guided planner matches or beats rollout-only teacher at lower compute
 ```
 
+Machinery landed (TDD, 2026-06-25): the planner scored every candidate routing by a full
+`lookahead`-cycle deepcopy rollout (`orderer_oracle._score_candidates`). EXP-0009 replaces the
+rollout tail with a learned value: roll only `short` cycles under a candidate, then add
+`V(global_state)` for the remaining window. The value model reads the existing versioned system
+state (`env.global_state()`, the centralized-critic input) — **no new state contract**.
+
+New pieces (all unit-tested, `tests/test_value_planner.py`):
+
+- `train.value_model`: `ValueModel` (MLP over `global_state_dim`), `collect_value_samples`
+  (per-cycle `(state, units over next W cycles)` targets), `fit_value_model` (MSE),
+  `value_closure`, and `run_value_planner_eval` (the accept harness) + CLI `main`.
+- `eval.orderer_oracle`: `_rollout_window(...)→(score, cycles)`, value-aware
+  `_score_candidates_valued`, the single `planner_orderer_episode(..., value_fn=None)` driver
+  (`value_fn=None, window=lookahead` reproduces the rollout-only teacher; set + short window =
+  value-guided), and the `ranking_agreement_episode` offline diagnostic. `_score_candidates`
+  was refactored onto a shared `_candidate_list` so both scorers see identical candidates.
+
+Local tracer (depth-2, K=3, lookahead=4 short=1): value-guided **matched** rollout-only units
+(58.0 = 58.0) at **50 vs 170 simulated cycles** (~3.4× fewer), 0.90 ranking agreement — the lever
+works in miniature. The real depth-3 accept run is Runpod-only (CLAUDE.md):
+
+```bash
+python -m tokenomics.train.value_model --depth 3 --prod-ckpt <v4.pt> \
+  --train-seeds 0,1,2,3,4,5 --held-out-seeds 6,7,8,9 \
+  --lookahead 12 --short 3 --samples 12 --csv-out heldout.csv
+```
+
+Result (Runpod CPU, depth-3, held-out 6–9) — see `experiments/EXP-0009-value-guided-planner/`:
+**ACCEPT the compute lever; win is short-rollout sufficiency, NOT the learned value.**
+Value-guided units beat the rollout-only teacher on 2/4 held-out (s6 +3.8, s7 +6.0) and tie
+within 0.15% on the other 2 (s8 −0.4, s9 −0.8) — ratios 1.008 / 1.012 / 0.999 / 0.999, held-out
+mean **+2.15 units (+0.4%)** at **3.82× fewer simulated cycles** (4455 vs ~17010). But `V` collapsed to ≈mean
+(fit MSE plateaued at 146.6 instantly; ranking agreement only 0.13–0.24) → the savings come
+from a 3-cycle rollout already being outcome-sufficient at depth-3, not from the learned tail.
+Usable as a cheaper teacher now; the value model needs input/target normalization before it can
+claim to extend the planning horizon (the original EXP-0009 promise). Review fix landed:
+terminal-state value tail zeroed (no phantom score at death/horizon).
+
 ### EXP-0010A: Producer Entity View
 
 Purpose:

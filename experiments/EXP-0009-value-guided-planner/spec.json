@@ -1,0 +1,42 @@
+{
+  "id": "EXP-0009-value-guided-planner",
+  "date": "2026-06-25",
+  "driver": "tokenomics.train.value_model (run_value_planner_eval)",
+  "question": "Can a learned value V(global_state)->units-to-go replace the orderer search teacher's full lookahead-cycle rollout tail with a short rollout + terminal value, matching/beating the rollout-only teacher's consumer units at strictly fewer simulated cycles?",
+  "state_representation": "env.global_state() (centralized-critic system state, ADR-0004) — no new state contract",
+  "fixed_continuation": {
+    "producer": "v4",
+    "producer_checkpoint": "m2_inputs/d3_rung_dagger_v4.pt",
+    "order": "proportional",
+    "depth": 3
+  },
+  "teacher": {
+    "candidates": ["even_split", "proportional", "obs_price"],
+    "samples": 12,
+    "sample_scale": 1.0,
+    "lookahead": 12,
+    "short": 3,
+    "value_window": 9
+  },
+  "value_model": {
+    "kind": "MLP(state->128->128->1, Tanh)",
+    "hidden": 128,
+    "epochs": 1500,
+    "lr": 0.01,
+    "final_mse": 146.601,
+    "n_rows": 1200
+  },
+  "label_gen": {
+    "train_seeds": [0, 1, 2, 3, 4, 5],
+    "label_seeds": 2,
+    "horizon": 100
+  },
+  "eval": {
+    "held_out_seeds": [6, 7, 8, 9],
+    "eval_seeds": 5,
+    "primary_metric": "consumer_completed_units",
+    "compute_metric": "simulated_cycles"
+  },
+  "accept_criterion": "value-guided units >= rollout-only units at strictly fewer simulated cycles (offline ranking agreement = diagnostic only)",
+  "compute": {"pod": "runpod CPU (runpod/base, python3.12)", "infra_rule": "real run off-box per CLAUDE.md"}
+}
