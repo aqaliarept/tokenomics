@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 
 from ..domain.common import is_nan
+from ..domain.producer_planner import plan_producer_command
+from ..domain.producing_agent import ProducingAgentCommand
 from ..env.spaces import ACTION_LOGIT_BOUND, OBS_CLIP, EnvSpec
 
 if TYPE_CHECKING:
@@ -207,6 +209,44 @@ def producing_stock_aware(threshold: float = 0.6, stock_target: int = 3) -> Poli
     return policy
 
 
+def _action_from_producing_command(
+    spec: EnvSpec, pid: str, cmd: ProducingAgentCommand
+) -> np.ndarray:
+    """Map a domain command back into the env's raw Box action contract."""
+    act = np.zeros(spec.producing_action_dim, dtype=np.float32)
+    max_r = max(1, spec.max_replenish[pid])
+    for product, qty in cmd.replenishments.items():
+        if product in spec.input_index and qty > 0:
+            act[spec.input_index[product]] = min(1.0, qty / max_r) * ACTION_LOGIT_BOUND
+    if cmd.do_restoration:
+        act[spec.num_inputs + 0] = ACTION_LOGIT_BOUND
+    if cmd.do_upgrade:
+        act[spec.num_inputs + 1] = ACTION_LOGIT_BOUND
+    if cmd.do_inventory_expansion:
+        act[spec.num_inputs + 2] = ACTION_LOGIT_BOUND
+    return act
+
+
+def producing_entity_planner(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """EXP-0010B deterministic producer planner.
+
+    White-box adapter: reads the domain-owned ProducerEntityView, plans a
+    ProducingAgentCommand, then emits the existing raw env action. No learned actor
+    and no producer command/auction changes.
+    """
+    _, pid = env._role[agent]
+    mechanics = env.spec_.producer_mechanics[pid]
+    cmd = plan_producer_command(
+        env.system.producer_entity_view(pid),
+        max_replenish=env.spec_.max_replenish[pid],
+        replenish_cost_per_unit=mechanics.replenish_cost_per_unit,
+        funding_budget=env.system.investment_fund,
+        inventory_expansion_increases=mechanics.inventory_expansion_increases,
+        inventory_expansion_cost=mechanics.inventory_expansion_cost,
+    )
+    return _action_from_producing_command(env.spec_, pid, cmd)
+
+
 # --- ordering policies: raw logit vector of length k*P ---
 def ordering_even_split(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     # zero logits -> uniform softmax over each order's eligible producers
@@ -254,6 +294,7 @@ PRODUCING_BASELINES: dict[str, Policy] = {
     "always_both": producing_always_both,
     "restore_when_low": producing_restore_when_low(0.6),
     "stock_aware": producing_stock_aware(0.6),
+    "entity_planner": producing_entity_planner,
     # observation-compatible bar (NEXT STEPS stage 1): obs-only, no env.system.
     "obs_stock_aware": producing_obs_stock_aware(0.6),
     "random": random_action,

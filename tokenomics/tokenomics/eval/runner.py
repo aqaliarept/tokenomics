@@ -83,11 +83,13 @@ def evaluate(
     config: Configuration | None = None,
     enriched_orderer_obs: bool = False,
     product_stream: bool = False,
+    entity_producer_obs: bool = False,
 ) -> Aggregated:
     runs = [run_episode(
                 TokenomicsAECEnv(config=config, horizon=horizon,
                                  enriched_orderer_obs=enriched_orderer_obs,
-                                 product_stream_ordering=product_stream),
+                                 product_stream_ordering=product_stream,
+                                 entity_producer_obs=entity_producer_obs),
                 prod_policy, order_policy, s)
             for s in seeds]
 

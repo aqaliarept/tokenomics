@@ -1,0 +1,39 @@
+{
+  "id": "EXP-0010B-deterministic-producer-planner",
+  "date": "2026-06-25",
+  "driver": "TDD (tests/test_producer_planner.py) plus local champion-orderer smoke comparison; no training",
+  "adr": "docs/adr/0053-entity-factored-producer-orchestrator.md",
+  "question": "Can a transparent deterministic producer planner consume ProducerEntityView rows, emit the existing ProducingAgentCommand through the existing env action contract, preserve local feasibility constraints, pass row-order/product-relabel/capacity-relabel/size gates, and avoid regressing a small held-out smoke check against the current v4 producer under the stochastic product-stream champion orderer?",
+  "scope": "deterministic controller only; no learned scorer, no producer command or production auction changes, no champion promotion, no cloud 40-seed audit.",
+  "deliverables": {
+    "domain": [
+      "domain/producer_planner.py: ProducerLocalScores, score_producer_entity_view, plan_producer_command",
+      "Transparent local scores for product urgency, input value, restoration ROI, upgrade ROI, and inventory-expansion value",
+      "Conservative command gates for replenishment headroom, per-cycle max replenish, optional local funding budget, and already-running investment streams",
+      "Input-pipeline priming via DEFAULT_INPUT_STOCK_TARGET=3 so upstream composite producers replenish before downstream replenishment orders exist"
+    ],
+    "env_eval": [
+      "eval.baselines.PRODUCING_BASELINES['entity_planner'] adapter: ProducerEntityView -> ProducingAgentCommand -> existing raw Box action",
+      "eval.runner.evaluate(entity_producer_obs=False) flag threaded for standard local audits"
+    ]
+  },
+  "acceptance": {
+    "constraints": "planner tests verify no replenishment beyond headroom/funding and no restart of running investment streams",
+    "permutation_gates": "row-order invariant command; product relabel equivariant replenishment ids; capacity relabel invariant toggles",
+    "size_gate": "runs a depth-4, 8-products-per-layer synthetic topology without shape-specific code",
+    "local_v4_smoke": "held-out topology seeds 6,7,8,9, eval seed 0, stochastic product-stream champion orderer: v4 mean 542.5 units, entity_planner mean 542.5 units, zero death for both"
+  },
+  "tests": {
+    "file": "tokenomics/tests/test_producer_planner.py",
+    "count": 10
+  },
+  "reproduce": {
+    "unit": "cd tokenomics && ../.venv/bin/python -m pytest -q tests/test_producer_planner.py tests/test_eval.py tests/test_producer_view.py tests/test_env_api.py",
+    "smoke": "cd tokenomics && ../.venv/bin/python - <<'PY'\nfrom statistics import mean\nfrom tokenomics.env import TokenomicsAECEnv\nfrom tokenomics.eval.runner import run_episode\nfrom tokenomics.eval.scale import build_scale_config\nfrom tokenomics.eval.baselines import PRODUCING_BASELINES\nfrom tokenomics.train.smoke_ppo import load_policies, load_order_actor\nfrom tokenomics.train.orderer_improve import _stochastic_closure\nckpt = 'm2_inputs/m2_stream_stochastic.pt'\nv4_prod, _ = load_policies(ckpt)\norder_actor, bound = load_order_actor(ckpt)\nchamp_order = _stochastic_closure(order_actor, bound)\nplanner = PRODUCING_BASELINES['entity_planner']\nrows = []\nfor cseed in [6,7,8,9]:\n    cfg = build_scale_config(cseed, depth=3)\n    v4 = run_episode(TokenomicsAECEnv(config=cfg, horizon=100, product_stream_ordering=True), v4_prod, champ_order, seed=0)\n    ep = run_episode(TokenomicsAECEnv(config=cfg, horizon=100, product_stream_ordering=True, entity_producer_obs=True), planner, champ_order, seed=0)\n    rows.append((cseed, v4['consumer_completed_units'], ep['consumer_completed_units'], v4['dead'], ep['dead']))\nfor row in rows:\n    print(','.join(map(str, row)))\nprint('means', mean(r[1] for r in rows), mean(r[2] for r in rows))\nPY"
+  },
+  "deviations": [
+    "The full 40-eval-seed champion audit was not run locally; this record includes a one-episode held-out smoke comparison only.",
+    "Funding is enforced conservatively when a local budget is supplied; the authoritative shared producer-first fund allocator remains in System.start_ordering.",
+    "Inventory expansion economics are supplied by the planner caller/spec adapter because EXP-0010A kept those mechanics in the env spec rather than the domain ProducerEntityView."
+  ]
+}
