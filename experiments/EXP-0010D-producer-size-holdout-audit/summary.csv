@@ -1,0 +1,5 @@
+products_per_layer,producers_per_layer,depth,seed,horizon,consumer_completed_units,dead,cycles,elapsed_sec,peak_kib,row_order,product_relabel,capacity_relabel
+8,4,3,0,8,13.0,False,8,0.32867952398373745,211.8779296875,True,True,True
+16,4,3,0,8,14.0,False,8,0.6614864250004757,325.828125,True,True,True
+64,4,3,0,8,1.0,False,8,1.9238178759987932,1650.4189453125,True,True,True
+400,4,3,0,1,0.0,False,1,3.8625429369858466,49041.5869140625,True,True,True

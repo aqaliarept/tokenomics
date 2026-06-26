@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .common import Product
+from .common import CapacityType, Product
 from .producer_view import ProducerEntityView
 from .producing_agent import ProducingAgentCommand
 
@@ -30,6 +30,7 @@ class ProducerLocalScores:
 
     product_urgency: dict[Product, float] = field(default_factory=dict)
     input_value: dict[Product, float] = field(default_factory=dict)
+    capacity_bottleneck_value: dict[CapacityType, float] = field(default_factory=dict)
     restoration_roi: float = 0.0
     upgrade_roi: float = 0.0
     inventory_expansion_value: float = 0.0
@@ -52,11 +53,15 @@ def score_producer_entity_view(
         if value > 0:
             input_value[r.input_product] = float(value)
 
+    capacity_bottleneck_value = {}
     restoration_roi = 0.0
     upgrade_roi = 0.0
     for r in view.capacity_rows:
         pressure = max(r.demand_pressure, r.previous_requested_capacity)
         shortage = max(0, pressure - r.free)
+        bottleneck = max(0.0, 1.0 - r.ratio) + shortage / max(1, r.current)
+        if bottleneck > 0.0:
+            capacity_bottleneck_value[r.capacity_type] = float(bottleneck)
         restore_need = max(0.0, 1.0 - r.ratio) + shortage / max(1, r.current)
         if r.restore_effect > 0:
             restoration_roi = max(
@@ -76,6 +81,7 @@ def score_producer_entity_view(
     return ProducerLocalScores(
         product_urgency=product_urgency,
         input_value=input_value,
+        capacity_bottleneck_value=capacity_bottleneck_value,
         restoration_roi=restoration_roi,
         upgrade_roi=upgrade_roi,
         inventory_expansion_value=inventory_expansion_value,
@@ -88,6 +94,7 @@ def plan_producer_command(
     max_replenish: int,
     replenish_cost_per_unit: int | float | None = None,
     funding_budget: int | float | None = None,
+    scores: ProducerLocalScores | None = None,
     restore_threshold: float = 0.60,
     inventory_expansion_increases: int = 0,
     inventory_expansion_cost: int | float = 0,
@@ -95,11 +102,15 @@ def plan_producer_command(
 ) -> ProducingAgentCommand:
     """Plan one producer command from the entity view.
 
-    `funding_budget` is optional because the current system fund is shared across
-    producers. When supplied, the planner spends it conservatively in the domain's
-    priority order: restoration, replenishment, upgrade, then inventory expansion.
+    `scores` may be supplied by a learned local scorer (EXP-0010C). The planner still
+    owns feasibility: inventory headroom, funding, replenish ceilings, and running
+    investment locks. `funding_budget` is optional because the current system fund is
+    shared across producers. When supplied, the planner spends it conservatively in the
+    domain's priority order: restoration, replenishment, upgrade, then inventory
+    expansion.
     """
-    scores = score_producer_entity_view(view, input_stock_target=input_stock_target)
+    if scores is None:
+        scores = score_producer_entity_view(view, input_stock_target=input_stock_target)
     remaining_budget = None if funding_budget is None else float(max(0, funding_budget))
 
     restore = False
@@ -165,7 +176,7 @@ def _plan_replenishments(
     if headroom <= 0:
         return {}
 
-    wants: list[tuple[float, Product, int]] = []
+    wants: list[tuple[float, int, Product]] = []
     for r in view.input_rows:
         target = max(
             input_stock_target,
@@ -174,21 +185,37 @@ def _plan_replenishments(
         have = r.inventory + r.outstanding_inbound
         want = min(max_replenish, max(0, target - have))
         if want > 0:
-            wants.append((scores.input_value.get(r.input_product, 0.0), r.input_product, want))
+            wants.append((scores.input_value.get(r.input_product, 0.0), want, r.input_product))
     if not wants:
         return {}
 
-    # Spend by local value. Product id is only a final deterministic tie-breaker; ties
-    # with scarce headroom are economically identical under this local view.
-    wants.sort(key=lambda x: (-x[0], x[1]))
+    # Spend by local value and local need. For exact ties, allocate the same integer
+    # quantity to every tied input; if the remaining headroom cannot do that, leave it
+    # unspent rather than selecting an arbitrary subset by product id or row order.
+    wants.sort(key=lambda x: (-x[0], -x[1]))
     out: dict[Product, int] = {}
     remaining = headroom
-    for _, product, want in wants:
+    i = 0
+    while i < len(wants) and remaining > 0:
+        value, want, _product = wants[i]
+        j = i + 1
+        while j < len(wants) and wants[j][0] == value and wants[j][1] == want:
+            j += 1
+        group = wants[i:j]
         if remaining <= 0:
             break
-        qty = min(want, remaining)
-        out[product] = qty
-        remaining -= qty
+        if remaining >= want * len(group):
+            qty = want
+        else:
+            qty = remaining // len(group)
+        if qty <= 0:
+            break
+        for _value, _want, product in group:
+            out[product] = qty
+        remaining -= qty * len(group)
+        if qty < want:
+            break
+        i = j
     return out
 
 

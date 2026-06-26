@@ -67,12 +67,22 @@ def config_to_dict(cfg: Configuration) -> dict:
         ],
     }
 
-# product id = level*10 + index; capacity type = "capacity-{level}".
+# product id = level*stride + index; capacity type = "capacity-{level}". Widths <=10
+# keep the historical stride=10 so existing experiment fixtures/results do not drift.
 _MAINT = 0  # the layer-0 primal product every restoration/upgrade/expansion requires
 
 
-def _pid(level: int, idx: int) -> int:
-    return level * 10 + idx
+def _stride_for_width(width: int) -> int:
+    if width <= 10:
+        return 10
+    stride = 10
+    while stride <= width:
+        stride *= 10
+    return stride
+
+
+def _pid(level: int, idx: int, stride: int = 10) -> int:
+    return level * stride + idx
 
 
 def build_scale_config(
@@ -93,6 +103,7 @@ def build_scale_config(
     so deeper-chain and stress findings remain reproducible."""
     rng = random.Random(seed)
     W = products_per_layer
+    stride = _stride_for_width(W)
 
     # --- recipe DAG (FIXED, seed-independent → fixes num_inputs / num_order_products) ---
     sheets: list[ProcessSheet] = []
@@ -101,20 +112,20 @@ def build_scale_config(
         for j in range(W):
             require = {cap_type: rng.randint(2, 6) if level else rng.randint(2, 4)}
             if level == 0:
-                sheets.append(ProcessSheet(product=_pid(0, j), require=require))
+                sheets.append(ProcessSheet(product=_pid(0, j, stride), require=require))
             else:
                 # consume the same-index product one level down (every lower product is
                 # used as an input exactly once → input set is fixed across seeds).
                 sheets.append(ProcessSheet(
-                    product=_pid(level, j), require=require,
-                    inputs={_pid(level - 1, j): 1},
+                    product=_pid(level, j, stride), require=require,
+                    inputs={_pid(level - 1, j, stride): 1},
                 ))
 
     # --- producers: producers_per_layer per level, all declare their level's products ---
     producers: list[ProducingAgentConfig] = []
     for level in range(depth):
         cap_type = f"capacity-{level}"
-        level_products = frozenset(_pid(level, j) for j in range(W))
+        level_products = frozenset(_pid(level, j, stride) for j in range(W))
         for k in range(producers_per_layer):
             # strong vs marginal within a level (feasible-topology variation); the
             # first producer is always strong so every product stays makeable.
@@ -144,7 +155,7 @@ def build_scale_config(
 
     # --- consumers: demand the finished top layer with episode-seeded demand (B9) ---
     top = depth - 1
-    top_pool = tuple(_pid(top, j) for j in range(W))
+    top_pool = tuple(_pid(top, j, stride) for j in range(W))
     consumers = [
         ConsumerConfig(id=f"c{i}", product=top_pool[0], products=top_pool,
                        quantity_min=1, quantity_max=rng.randint(2, 3))
@@ -178,9 +189,10 @@ def permute_scale_config(
     fighting slot memorization. Pure: relabel + re-validate, no mechanics touched."""
     pp = list(product_perm)
     qp = list(producer_perm)
+    stride = _stride_for_width(len(pp))
 
     def map_prod(pid: int) -> int:
-        return (pid // 10) * 10 + pp[pid % 10]
+        return (pid // stride) * stride + pp[pid % stride]
 
     def map_producer(pid: str) -> str:
         level, k = pid[1:].split("_")

@@ -1,0 +1,39 @@
+{
+  "id": "EXP-0010C-learned-producer-scorer",
+  "date": "2026-06-25",
+  "driver": "TDD (tests/test_producer_scorer.py) plus local held-out smoke",
+  "question": "Can a learned local producer scorer supply product/input/capacity/investment scores inside the deterministic EXP-0010B planner, preserving feasibility and permutation behavior while improving the deterministic planner or v4 under the current stochastic product-stream champion orderer?",
+  "scope": "learned scorer contract and local training/eval plumbing only; no production auction or command changes; no strict-envelope promotion audit",
+  "implementation": {
+    "planner": "plan_producer_command accepts optional ProducerLocalScores; the planner still enforces headroom, funding, replenish ceilings, and running investment locks",
+    "scorer": "tokenomics.train.producer_scorer.ProducerScoreModel uses shared global/capacity/product/input row encoders plus sparse product-capacity and product-input relation pooling",
+    "training": "collect_producer_score_samples records rollout ProducerEntityView states and local score labels; fit_producer_score_model trains by supervised MSE",
+    "deployment": "producing_entity_planner_from_scorer adapts any scorer closure to the existing producer Box action contract",
+    "checkpoint": "save_producer_score_model/load_producer_score_model provide a versioned scorer artifact format"
+  },
+  "gates": {
+    "unit": "tests/test_producer_scorer.py",
+    "adjacent": "tests/test_producer_planner.py tests/test_eval.py tests/test_producer_view.py tests/test_env_api.py",
+    "permutation": "row-order invariant public scores when rows and sparse relations are permuted together",
+    "feasibility": "learned or external scores cannot exceed planner headroom constraints"
+  },
+  "smoke": {
+    "checkpoint": "tokenomics/m2_inputs/m2_stream_stochastic.pt",
+    "held_out_topology_seeds": [6, 7, 8, 9],
+    "eval_seed": 0,
+    "horizon": 100,
+    "orderer": "current stochastic product-stream champion",
+    "training_slice": "tiny default-topology p4 input-stock label grid; 16 samples; 60 epochs; lr 0.03",
+    "means": {
+      "v4_units": 542.5,
+      "deterministic_planner_units": 542.5,
+      "learned_scorer_units": 357.75
+    },
+    "death_rate": {
+      "v4": 0.0,
+      "deterministic_planner": 0.0,
+      "learned_scorer": 0.0
+    }
+  },
+  "verdict": "ACCEPT infrastructure, REJECT controller promotion"
+}

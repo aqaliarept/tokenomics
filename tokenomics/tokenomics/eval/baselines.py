@@ -247,6 +247,32 @@ def producing_entity_planner(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     return _action_from_producing_command(env.spec_, pid, cmd)
 
 
+def producing_entity_planner_from_scorer(scorer) -> Policy:
+    """Build an EXP-0010C producer policy from a local scorer closure.
+
+    The closure receives the domain `ProducerEntityView` and returns
+    `ProducerLocalScores`; this adapter keeps feasibility and raw action encoding in
+    the existing deterministic planner path.
+    """
+
+    def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        _, pid = env._role[agent]
+        view = env.system.producer_entity_view(pid)
+        mechanics = env.spec_.producer_mechanics[pid]
+        cmd = plan_producer_command(
+            view,
+            max_replenish=env.spec_.max_replenish[pid],
+            replenish_cost_per_unit=mechanics.replenish_cost_per_unit,
+            funding_budget=env.system.investment_fund,
+            scores=scorer(view),
+            inventory_expansion_increases=mechanics.inventory_expansion_increases,
+            inventory_expansion_cost=mechanics.inventory_expansion_cost,
+        )
+        return _action_from_producing_command(env.spec_, pid, cmd)
+
+    return policy
+
+
 # --- ordering policies: raw logit vector of length k*P ---
 def ordering_even_split(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     # zero logits -> uniform softmax over each order's eligible producers

@@ -1,0 +1,30 @@
+{
+  "id": "EXP-0010D-producer-size-holdout-audit",
+  "date": "2026-06-26",
+  "driver": "tokenomics.eval.producer_size_holdout audit helpers plus local smoke",
+  "question": "Does the accepted entity-factored producer controller transfer to larger product/capacity row counts without feasibility, death, row-order, product-relabel, or capacity-relabel regressions, while reporting runtime/memory scaling separately from reward quality?",
+  "scope": "producer size-holdout audit for the accepted deterministic EXP-0010B planner. EXP-0010C learned scorer was not promoted, so this is not a learned small-train/large-run promotion audit.",
+  "implementation": {
+    "audit_module": "tokenomics.eval.producer_size_holdout",
+    "scale_generator_fix": "build_scale_config keeps historical product id stride=10 for widths <=10 and uses wider per-level strides for widths >10, enabling 16/64/400 product-per-layer stress cases without duplicate product ids",
+    "controller": "PRODUCING_BASELINES['entity_planner']",
+    "orderer": "ORDERING_BASELINES['proportional']",
+    "gates": "producer_size_gates checks row-order, product-relabel, and capacity-relabel command gates on the selected composite producer",
+    "metrics": "ProducerSizeAuditRow reports consumer_completed_units/dead/cycles separately from elapsed_sec/peak_kib"
+  },
+  "local_audit": {
+    "seed": 0,
+    "depth": 3,
+    "producers_per_layer": 4,
+    "num_consumers": 3,
+    "sizes": [8, 16, 64, 400],
+    "horizon": {
+      "8": 8,
+      "16": 8,
+      "64": 8,
+      "400": 1
+    },
+    "result": "row-order, product-relabel, and capacity-relabel gates pass at every tested size after replacing product-id tie-breaking with fair equal-group replenishment allocation; no death in local smoke"
+  },
+  "verdict": "ACCEPT local deterministic size-transfer gates; no learned-scorer promotion"
+}
