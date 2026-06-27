@@ -1,0 +1,5 @@
+products_per_layer,topology_seed,eval_seeds,horizon,checkpoint_compatible,checkpoint_completed_units,checkpoint_dead_rate,entity_completed_units,entity_dead_rate,checkpoint_prod_obs,target_prod_obs,checkpoint_prod_act,target_prod_act,checkpoint_order_obs,target_order_obs,checkpoint_order_act,target_order_act
+4,0,1,8,True,34,0.0,15,0.0,89,89,11,11,517,517,180,180
+8,0,1,8,False,nan,nan,13,0.0,89,129,11,19,517,625,180,324
+16,0,1,8,False,nan,nan,14,0.0,89,209,11,35,517,841,180,612
+64,0,1,8,False,nan,nan,1,0.0,89,689,11,131,517,2137,180,2340

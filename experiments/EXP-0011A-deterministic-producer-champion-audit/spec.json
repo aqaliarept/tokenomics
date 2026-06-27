@@ -1,0 +1,32 @@
+{
+  "id": "EXP-0011A-deterministic-producer-champion-audit",
+  "date": "2026-06-26",
+  "driver": "tokenomics.eval.producer_champion_audit",
+  "question": "Can the deterministic entity-factored producer planner replace the v4 producer in the current product-stream stochastic champion stack, without per-topology regression, death, or strict-envelope regression?",
+  "scope": "producer replacement audit only; no orderer retraining, no learned scorer, no champion overwrite",
+  "checkpoint": "tokenomics/m2_inputs/m2_stream_stochastic.pt",
+  "controller": {
+    "champion": "v4 producer from checkpoint + stochastic product-stream orderer from checkpoint",
+    "candidate": "PRODUCING_BASELINES['entity_planner'] + the same stochastic product-stream orderer"
+  },
+  "held_out_topology_seeds": [6, 7, 8, 9],
+  "horizon": 100,
+  "audits": {
+    "summary_csv": {
+      "eval_seeds": 10,
+      "includes_strict_envelope": true,
+      "result": "candidate beats champion mean and strict-envelope mean on all four topologies, zero death"
+    },
+    "audit40_vs_champion_csv": {
+      "eval_seeds": 40,
+      "includes_strict_envelope": false,
+      "result": "candidate is zero-death and positive on seeds 7/8/9, but regresses seed 6 by 1.125 consumer units on the mean"
+    }
+  },
+  "promotion_gate": {
+    "death_rate": "candidate must be zero death on every held-out topology",
+    "champion_regression": "candidate mean must be >= champion mean on every held-out topology",
+    "strict_envelope": "candidate must clear strict envelope; checked at 10 eval seeds only in this local run"
+  },
+  "verdict": "REJECT producer replacement promotion; keep v4 producer in champion stack"
+}

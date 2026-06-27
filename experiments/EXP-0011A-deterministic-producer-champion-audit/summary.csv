@@ -1,0 +1,5 @@
+topology_seed,eval_seeds,horizon,champion_completed_units,champion_ci95,entity_completed_units,entity_ci95,champion_dead_rate,entity_dead_rate,envelope_completed_units,envelope_name,entity_vs_champion_delta,entity_vs_champion_ratio,entity_vs_envelope_ratio
+6,10,100,494.9,7.568,495.5,8.139,0.0,0.0,473.8,stock_aware+random,0.6,1.0012,1.0458
+7,10,100,475.4,10.889,492.5,8.953,0.0,0.0,437.7,stock_aware+proportional,17.1,1.036,1.1252
+8,10,100,567.6,12.285,571.3,14.881,0.0,0.0,537.3,stock_aware+random,3.7,1.0065,1.0633
+9,10,100,523.6,14.074,529.4,15.268,0.0,0.0,504.4,stock_aware+random,5.8,1.0111,1.0496
