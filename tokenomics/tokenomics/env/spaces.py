@@ -135,6 +135,22 @@ class EnvSpec:
         return len(self.producer_ids)
 
     @property
+    def k_stream(self) -> int:
+        # Corrected per-stream backlog bound (PRODUCT_AGNOSTIC O0). A product-stream
+        # agent (ADR-0052) serves ONE (source, product) stream. It is keyed by
+        # (source, product), NOT by order type, so the stream holds up to ORDER_LIFETIME
+        # replenishment orders (the TTL window) PLUS the producer's gated investment
+        # orders whose means-of-production product is that same product — and there are
+        # INVESTMENT_STREAMS independently-gated investment types. So the bound is
+        # ORDER_LIFETIME + INVESTMENT_STREAMS: enough to give every order a controllable
+        # decode slot (no uniform-routing fallback for overflow), yet still a CONSTANT —
+        # it does NOT inherit the global legacy `k`'s ORDER_LIFETIME*max_rel term, so it
+        # never leaks producer input-product width into the orderer contract (the
+        # ADR-0052 goal). Exposed as a corrected versioned contract (orderer_obs_version
+        # 4); v3 keeps `k` so its checkpoints stay loadable.
+        return ORDER_LIFETIME + INVESTMENT_STREAMS if self.orderer_obs_version >= 4 else self.k
+
+    @property
     def num_types(self) -> int:
         return len(self.capacity_types)
 
@@ -209,7 +225,7 @@ class EnvSpec:
         # EXP-0007A product-stream obs (ADR-0052): product features once + K backlog
         # slots (no product one-hot) + one producer row per producer + cycle progress.
         # Mirror of encode_ordering_stream (test ties them). No Q dependence.
-        P, K = self.num_producers, self.k
+        P, K = self.num_producers, self.k_stream
         return STREAM_PRODUCT_FEATURES + K * STREAM_SLOT_SCALARS + P * STREAM_PRODUCER_FEATURES + 1
 
     def ordering_price_indices(self) -> list[int]:
@@ -219,7 +235,7 @@ class EnvSpec:
         of version: v1 stores them contiguously after the K slots; v2 (enriched) strides
         them through the per-producer block. Keeps the search candidate fixed across the
         EXP-0006A/B v1->v2 A/B."""
-        P, K, Q = self.num_producers, self.k, self.num_order_products
+        P, K, Q = self.num_producers, self.k_stream, self.num_order_products
         if self.orderer_obs_version >= 3:
             head = STREAM_PRODUCT_FEATURES + K * STREAM_SLOT_SCALARS  # before producer rows
             return [head + j * STREAM_PRODUCER_FEATURES + STREAM_PRODUCER_CUTOFF_OFFSET
@@ -246,7 +262,9 @@ class EnvSpec:
 
     @property
     def ordering_action_dim(self) -> int:
-        return self.k * self.num_producers
+        # k_stream == k for v1/v2/v3 (back-compat); only the corrected v4 stream
+        # contract narrows it to the per-stream bound (PRODUCT_AGNOSTIC O0).
+        return self.k_stream * self.num_producers
 
     @property
     def producing_action_dim(self) -> int:

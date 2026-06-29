@@ -18,13 +18,8 @@ import numpy as np
 
 from ..domain.ordering_agent import OrderingAgentCommand, OrderingAgentView, SubOrder
 from ..domain.producing_agent import ProducingAgentCommand, ProducingAgentView
+from .allocator import allocate_suborders
 from .spaces import ACTION_LOGIT_BOUND, EnvSpec
-
-
-def _softmax(x: np.ndarray) -> np.ndarray:
-    z = x - np.max(x)
-    e = np.exp(z)
-    return e / np.sum(e)
 
 
 def _allocate_int(proportions: np.ndarray, budget: int) -> list[int]:
@@ -46,27 +41,18 @@ def _allocate_int(proportions: np.ndarray, budget: int) -> list[int]:
 def decode_ordering(
     spec: EnvSpec, action: np.ndarray, view: OrderingAgentView
 ) -> OrderingAgentCommand:
-    action = np.asarray(action, dtype=np.float64).reshape(spec.k, spec.num_producers)
+    # k_stream == k for v1/v2/v3; v4 narrows the backlog bound to per-stream (O0).
+    action = np.asarray(action, dtype=np.float64).reshape(spec.k_stream, spec.num_producers)
+    ids = spec.producer_ids
     orders: dict[str, list[SubOrder]] = {}
     for k, oid in enumerate(sorted(view.incoming)):
         oi = view.incoming[oid]
-        eligible = sorted(view.eligible[oid].keys())
-        idx = [spec.producer_ids.index(pid) for pid in eligible]
-        if k < spec.k:
-            props = _softmax(action[k, idx])
-        else:
-            # More orders than slots: even split so every order is still addressed.
-            props = np.full(len(idx), 1.0 / len(idx))
-        quantities = _allocate_int(props, oi.quantity)
-        # tokens follow the realized integer quantities (zero-quantity -> zero tokens)
-        q_props = np.asarray(quantities, dtype=np.float64) / oi.quantity
-        tokens = _allocate_int(q_props, oi.tokens)
-        subs = [
-            SubOrder(pid, q, tok)
-            for pid, q, tok in zip(eligible, quantities, tokens)
-            if q > 0
-        ]
-        orders[oid] = subs
+        mask = np.array([pid in view.eligible[oid] for pid in ids])
+        # The slot's per-producer logits are the candidate scores; orders beyond the
+        # backlog bound have no slot, so score uniformly (-> even split) to stay
+        # addressed. The masked allocator (O1) owns eligibility + conservation.
+        scores = action[k] if k < spec.k_stream else np.zeros(len(ids))
+        orders[oid] = allocate_suborders(ids, scores, mask, oi.quantity, oi.tokens)
     return OrderingAgentCommand(orders)
 
 

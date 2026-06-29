@@ -76,7 +76,7 @@ def decide_producing_obs(
 
 def _ordering_obs_price_action(spec: EnvSpec, prices: np.ndarray) -> np.ndarray:
     logits = np.where(prices > 0.0, -prices, -ACTION_LOGIT_BOUND).astype(np.float32)
-    mat = np.tile(logits, (spec.k, 1))
+    mat = np.tile(logits, (spec.k_stream, 1))  # k_stream == k except corrected v4 (O0)
     return np.clip(mat, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND).astype(np.float32).flatten()
 
 
@@ -287,9 +287,9 @@ def ordering_proportional(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     sp = env.spec_
     _, aid = env._role[agent]
     view = env.system.ordering_agents[aid].view(env.system.producer_infos)
-    mat = np.zeros((sp.k, sp.num_producers), dtype=np.float32)
+    mat = np.zeros((sp.k_stream, sp.num_producers), dtype=np.float32)  # corrected v4 bound (O0)
     for k, oid in enumerate(sorted(view.incoming)):
-        if k >= sp.k:
+        if k >= sp.k_stream:
             break
         oi = view.incoming[oid]
         # OrderInfo no longer carries capacity (ADR-0029); a white-box baseline

@@ -84,6 +84,7 @@ class TokenomicsAECEnv(AECEnv):
         render_mode: str | None = None,
         enriched_orderer_obs: bool = False,
         product_stream_ordering: bool = False,
+        corrected_stream_k: bool = False,
         entity_producer_obs: bool = False,
     ) -> None:
         super().__init__()
@@ -93,12 +94,16 @@ class TokenomicsAECEnv(AECEnv):
         # (source, product)). Off by default so legacy checkpoints keep their exact
         # agent layout + observation contract.
         self.product_stream_ordering = product_stream_ordering
+        # PRODUCT_AGNOSTIC O0: opt in to the corrected product-stream contract (v4),
+        # whose backlog bound is per-stream (k_stream) instead of the global legacy k.
+        # Requires product_stream_ordering; off by default so v3 checkpoints stay valid.
+        self.corrected_stream_k = corrected_stream_k
         # EXP-0006A: opt in to the enriched (capacity-aware) ordering obs. Off by
         # default so M2-v1 / v1 checkpoints keep their exact observation contract.
         # EXP-0007A: product-stream agents use the simplified per-stream obs (v3,
         # ADR-0052); it supersedes the enriched flag since the obs is per-stream.
         if product_stream_ordering:
-            orderer_obs_version = 3
+            orderer_obs_version = 4 if corrected_stream_k else 3
         elif enriched_orderer_obs:
             orderer_obs_version = 2
         else:

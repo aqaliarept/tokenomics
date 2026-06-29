@@ -418,7 +418,7 @@ def encode_ordering_stream(
     product vocabulary. The domain owns the facts; this only normalizes + clips."""
     feats: list[float] = []
     feats.extend(_product_features(spec, view.product_stats))
-    for k in range(spec.k):
+    for k in range(spec.k_stream):  # k_stream == k for v3; corrected per-stream bound at v4 (O0)
         if k < len(view.backlog):
             feats.extend(_stream_slot_block(spec, view.backlog[k]))
         else:

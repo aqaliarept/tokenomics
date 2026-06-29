@@ -1,0 +1,22 @@
+{
+  "id": "EXP-0012-portable-orderer-scorer",
+  "question": "Does the portable orderer scorer+allocator (O2: OrdererScoreModel -> allocate_suborders) match or beat the proportional baseline on held-out scale topologies, distilled from the proportional throughput teacher?",
+  "adr": "0054",
+  "plan": "PRODUCT_AGNOSTIC.md O2 (value step)",
+  "method": {
+    "model": "tokenomics.train.orderer_scorer.OrdererScoreModel (shared per-producer-row scorer, no ids)",
+    "deploy": "scorer_ordering_policy -> per-producer scores tiled across k_stream slots -> decode_ordering -> allocate_suborders (masked, conserved)",
+    "teacher": "per-producer log(makeable_qty_now) (proportional throughput signal), masked MSE distillation",
+    "producer_fixed": "stock_aware",
+    "env": "product_stream_ordering=True, corrected_stream_k=True (v4)",
+    "train_topologies": "build_scale_config seeds 0-5, depth 3",
+    "held_out": "seeds 6-9, depth 3 (varied economics; producer count constant at this depth)",
+    "iters": 400,
+    "eval_seeds": 5,
+    "horizon": 100
+  },
+  "command": "python run_pod_training.py --pod-id <id> --cpu --python python3.12 --train \"-u -m tokenomics.train.orderer_scorer --depth 3 --train-seeds 0-5 --eval-seeds-list 6-9 --iters 400 --eval-seeds 5 --horizon 100 --save /workspace/orderer_scorer.pt\" --pull /workspace/orderer_scorer.pt:... --pull /workspace/train.log:...",
+  "metric": "consumer_completed_units ratio vs proportional baseline (per held-out seed); mean + min ratio",
+  "pass": "scorer+allocator loads/runs on all held-out topologies (versatility, already proven by contract gates) AND mean ratio vs proportional >= 1.0 with no death (value).",
+  "notes": "Versatility (variable P, relabel, row-permutation) proven locally in tests/test_orderer_scorer.py. This run measures VALUE vs the deterministic baseline. Producer-count transfer (different P) is a follow-up: depth fixed here keeps P constant across held-out seeds."
+}
