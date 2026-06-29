@@ -1,0 +1,5 @@
+seed,producers,joint_units,bar_units,ratio,dead,bar_dead,relabel_match
+6,12,500.4,466.2,1.0734,0.0,0.0,True
+7,12,502.4,482.0,1.0423,0.0,0.0,True
+8,12,600.6,512.2,1.1726,0.0,0.0,True
+9,12,554.6,482.8,1.1487,0.0,0.0,True

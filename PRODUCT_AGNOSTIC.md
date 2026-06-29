@@ -1292,7 +1292,14 @@ C0. Independent portable modules:
 - then orderer = portable scorer/allocator with deterministic producer,
 - pass each side independently before joint evaluation.
 
-C1. Portable stack smoke:
+C1. Portable stack smoke: **DONE** — both portable modules run jointly (EXP-0014). The
+producer scorer/planner (EXP-0013) and orderer scorer/allocator (EXP-0012) coexist in
+one env (`entity_producer_obs` + corrected v4 product-stream ordering, orthogonal flags),
+reusing both distilled checkpoints unchanged. On held-out depth-3 seeds 6–9 the joint
+stack **beats** the deterministic `entity_planner + proportional` bar (mean ratio
+**1.109**, min **1.042**, zero death), and every seed is **byte-identical under a
+capacity relabel** (4/4). Lift is orderer-driven (orderer beats `proportional` ~1.28×;
+producer ties the planner). Local eval. New: `tokenomics.eval.joint_stack`.
 
 - producer scorer/planner + orderer scorer/allocator,
 - eval on train-size and relabeled train-size,

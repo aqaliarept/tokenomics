@@ -1,0 +1,20 @@
+{
+  "id": "EXP-0014-portable-stack-smoke",
+  "question": "Do the two portable modules — producer ProducerScoreModel -> plan_producer_command and orderer OrdererScoreModel -> allocate_suborders — COEXIST in one env and hold value when run jointly (the full portable stack), with no feasibility failure and no relabel mismatch?",
+  "adr": "0053, 0054",
+  "plan": "PRODUCT_AGNOSTIC.md combined ladder C1 (portable stack smoke)",
+  "method": {
+    "stack": "producer = scorer/planner (EXP-0013 v2 gate-head checkpoint); orderer = scorer/allocator (EXP-0012 checkpoint). No re-train: both distilled checkpoints reused unchanged.",
+    "env": "TokenomicsAECEnv(entity_producer_obs=True, product_stream_ordering=True, corrected_stream_k=True) — the entity producer view (v2) and the corrected v4 product-stream ordering are orthogonal flags; this is the first env that turns both on at once.",
+    "deploy": "scorer_producing_policy -> producing_entity_planner_from_scorer -> plan_producer_command (planner owns producer feasibility) AND scorer_ordering_policy -> decode_ordering -> allocate_suborders (allocator owns orderer eligibility + conservation). Each learned policy reads its own white-box view off env.system.",
+    "bar": "deterministic entity_planner + proportional on the SAME joint env (apples-to-apples).",
+    "train_topologies": "n/a (reused checkpoints; producer distilled on scale seeds 0-5 depth 3, orderer on seeds 0-5 depth 3)",
+    "held_out": "build_scale_config seeds 6-9, depth 3 (P=12) — train-size topology family, unseen seeds",
+    "eval_seeds": 5,
+    "horizon": 100
+  },
+  "command": "python -m tokenomics.eval.joint_stack --producer-ckpt experiments/EXP-0013-portable-producer-scorer/artifacts/producer_scorer.pt --orderer-ckpt experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt --depth 3 --seeds 6-9 --eval-seeds 5 --horizon 100",
+  "metric": "Per held-out seed: joint-stack mean consumer_completed_units / (entity_planner+proportional) units, both death rates (value); AND per seed a capacity-type-relabel gate = the joint episode is byte-identical under a pure capacity rename (no relabel mismatch). Contract feasibility/conservation proven in tests/test_joint_stack.py.",
+  "pass": "Joint stack loads + runs both portable modules in one env with no feasibility failure (test) AND mean value ratio vs entity_planner+proportional >= ~1.0 with joint death <= bar death AND the relabel gate is byte-identical on every seed (test + driver).",
+  "notes": "Local eval only (HARD RULE: this is evaluation of existing checkpoints, no training). C1 is the gateway to the combined ladder (C2 size transfer, C3 out-of-family). The value lift over the deterministic bar is orderer-driven (EXP-0012 orderer beats proportional ~1.28x at depth 3; the producer scorer ties entity_planner per EXP-0013), so the joint ratio sits below the orderer-alone number because the bar pairs the strong entity_planner producer. Out-of-family recipe transfer (P2/O3 open axis) is NOT covered here."
+}
