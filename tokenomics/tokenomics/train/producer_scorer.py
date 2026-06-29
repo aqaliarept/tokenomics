@@ -9,8 +9,13 @@ from __future__ import annotations
 
 import copy
 import math
+import os
 from dataclasses import dataclass
 from typing import Iterable
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 import torch
 from torch import nn
@@ -22,7 +27,9 @@ from ..domain.producer_view import ProducerEntityView
 from ..env import TokenomicsAECEnv
 from ..eval.baselines import Policy
 
-PRODUCER_SCORER_CHECKPOINT_VERSION = 1
+# v2: investment heads emit BCE-trained gate logits (was v1 ROI-MSE regression) + the
+# checkpoint carries per-gate probability thresholds (EXP-0013).
+PRODUCER_SCORER_CHECKPOINT_VERSION = 2
 
 
 @dataclass
@@ -43,6 +50,28 @@ class ProducerScoreTensors:
     restoration_roi: torch.Tensor
     upgrade_roi: torch.Tensor
     inventory_expansion_value: torch.Tensor
+
+
+@dataclass
+class _ProducerScoreBatch:
+    """Training-only tensor batch for views with the same sparse relation layout."""
+
+    global_x: torch.Tensor
+    capacity_x: torch.Tensor
+    product_x: torch.Tensor
+    input_x: torch.Tensor
+    product_capacity_weight: torch.Tensor
+    product_input_weight: torch.Tensor
+    product_target: torch.Tensor
+    input_target: torch.Tensor
+    capacity_target: torch.Tensor
+    restoration_target: torch.Tensor
+    upgrade_target: torch.Tensor
+    inventory_target: torch.Tensor
+
+    @property
+    def size(self) -> int:
+        return int(self.global_x.shape[0])
 
 
 _GLOBAL_DIM = 8
@@ -72,6 +101,14 @@ class ProducerScoreModel(nn.Module):
     def __init__(self, hidden: int = 64) -> None:
         super().__init__()
         self.hidden = hidden
+        # Investment gates (upgrade / inventory expansion) are LEARNED BINARY DECISIONS,
+        # not thresholded ROI regressions: the heads emit logits trained with BCE against
+        # the planner's actual gate booleans, and deployment fires a gate when its
+        # probability clears a per-gate threshold calibrated post-fit on command agreement
+        # (EXP-0013). Restoration stays planner-owned (the planner ignores learned
+        # restoration scores), so it gets no learned gate. Defaults = 0.5 (argmax).
+        self.upgrade_threshold = 0.5
+        self.inventory_expansion_threshold = 0.5
         self.global_encoder = _mlp(_GLOBAL_DIM, hidden)
         self.capacity_encoder = _mlp(_CAPACITY_DIM, hidden)
         self.product_encoder = _mlp(_PRODUCT_DIM, hidden)
@@ -213,11 +250,17 @@ def fit_producer_score_model(
     """Fit a local scorer to `ProducerLocalScores` labels with full-batch MSE."""
     if not samples:
         raise ValueError("fit_producer_score_model requires at least one sample")
+    device = next(model.parameters()).device
+    batches = _prepare_score_batches(samples, device)
+    total_samples = sum(batch.size for batch in batches)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
-    loss = torch.zeros(())
+    loss = torch.zeros((), device=device)
     for epoch in range(epochs):
         opt.zero_grad()
-        loss = torch.stack([_sample_loss(model.forward_view(s.view), s.view, s.target) for s in samples]).mean()
+        loss_sum = torch.zeros((), device=device)
+        for batch in batches:
+            loss_sum = loss_sum + _batch_loss(model, batch)
+        loss = loss_sum / total_samples
         loss.backward()
         opt.step()
         if log is not None and log_every > 0 and ((epoch + 1) % log_every == 0 or epoch + 1 == epochs):
@@ -225,11 +268,46 @@ def fit_producer_score_model(
     return float(loss.detach())
 
 
-def score_with_model(model: ProducerScoreModel, view: ProducerEntityView) -> ProducerLocalScores:
-    """Run a fitted scorer and map row-aligned tensors back to domain score ids."""
-    model.eval()
-    with torch.no_grad():
+def producer_gate_probs(model: ProducerScoreModel, view: ProducerEntityView) -> dict[str, float]:
+    """Sigmoid gate probabilities for the two learned investment decisions.
+
+    The upgrade / inventory-expansion heads emit logits (BCE-trained against the planner's
+    gate booleans); this exposes their probabilities for calibration and command-level
+    eval. Restoration is planner-owned and has no learned gate."""
+    if model.training:
+        model.eval()
+    with torch.inference_mode():
         out = model.forward_view(view)
+    return {
+        "upgrade": _sigmoid(out.upgrade_roi),
+        "inventory_expansion": _sigmoid(out.inventory_expansion_value),
+    }
+
+
+def score_with_model(
+    model: ProducerScoreModel,
+    view: ProducerEntityView,
+    upgrade_threshold: float | None = None,
+    inventory_expansion_threshold: float | None = None,
+) -> ProducerLocalScores:
+    """Run a fitted scorer and map row-aligned tensors back to domain score ids.
+
+    Replenishment scores (`product_urgency`, `input_value`, `capacity_bottleneck_value`)
+    are learned regressions, unchanged. The investment decisions are LEARNED BINARY GATES:
+    each head's logit becomes a probability, and the gate emits a `> 0` "do it" score iff
+    that probability clears its threshold (per-gate, calibrated; defaults to the model's).
+    This stops the deterministic planner reading regression noise as a spend signal
+    (EXP-0013). Restoration is left 0.0 — the planner owns it and ignores this field."""
+    if model.training:
+        model.eval()
+    with torch.inference_mode():
+        out = model.forward_view(view)
+    up_thr = model.upgrade_threshold if upgrade_threshold is None else upgrade_threshold
+    inv_thr = (
+        model.inventory_expansion_threshold
+        if inventory_expansion_threshold is None
+        else inventory_expansion_threshold
+    )
     return ProducerLocalScores(
         product_urgency=_score_map(
             (r.product for r in view.product_rows), out.product_urgency
@@ -240,10 +318,244 @@ def score_with_model(model: ProducerScoreModel, view: ProducerEntityView) -> Pro
         capacity_bottleneck_value=_score_map(
             (r.capacity_type for r in view.capacity_rows), out.capacity_bottleneck_value
         ),
-        restoration_roi=_nonnegative_scalar(out.restoration_roi),
-        upgrade_roi=_nonnegative_scalar(out.upgrade_roi),
-        inventory_expansion_value=_nonnegative_scalar(out.inventory_expansion_value),
+        restoration_roi=0.0,
+        upgrade_roi=1.0 if _sigmoid(out.upgrade_roi) >= up_thr else 0.0,
+        inventory_expansion_value=(
+            1.0 if _sigmoid(out.inventory_expansion_value) >= inv_thr else 0.0
+        ),
     )
+
+
+def eval_producer_scorer(
+    model: ProducerScoreModel,
+    depth: int,
+    seeds,
+    eval_seeds: int,
+    horizon: int,
+    log=lambda *a, **k: None,
+) -> list[dict]:
+    """Score the learned scorer+planner producing policy against the deterministic
+    `entity_planner` teacher on held-out scale topologies (which vary producer count via
+    depth) — the P1 fidelity + producer-count transfer check. Orderer fixed to
+    `proportional`. Producer scores clone the planner's own labels, so the bar is the
+    planner itself: ratio ~1.0 means the learned scorer reproduces the planner's value,
+    and running at an unseen producer count proves the id-free contract transfers."""
+    from ..env.aec_env import TokenomicsAECEnv
+    from ..eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from ..eval.runner import run_episode
+    from ..eval.scale import build_scale_config
+
+    learned = scorer_producing_policy(model)
+    planner = PRODUCING_BASELINES["entity_planner"]
+    order_pol = ORDERING_BASELINES["proportional"]
+    rows: list[dict] = []
+    for seed in seeds:
+        cfg = build_scale_config(seed, depth=depth)
+
+        def mean_units_dead(prod_pol) -> tuple[float, float]:
+            tot = 0.0
+            dead = 0
+            for es in range(eval_seeds):
+                env = TokenomicsAECEnv(config=cfg, horizon=horizon, entity_producer_obs=True)
+                stats = run_episode(env, prod_pol, order_pol, seed=es)
+                tot += stats["consumer_completed_units"]
+                dead += int(bool(stats["dead"]))
+            return tot / eval_seeds, dead / eval_seeds
+
+        learned_u, learned_dead = mean_units_dead(learned)
+        planner_u, planner_dead = mean_units_dead(planner)
+        P = TokenomicsAECEnv(config=cfg, horizon=1).spec_.num_producers
+        ratio = learned_u / planner_u if planner_u else float("nan")
+        cmd = producer_command_agreement(model, cfg, [0], horizon)
+        rows.append(
+            {
+                "depth": depth,
+                "seed": seed,
+                "producers": P,
+                "scorer_units": round(learned_u, 2),
+                "planner_units": round(planner_u, 2),
+                "ratio": round(ratio, 4),
+                "dead": round(learned_dead, 4),
+                "planner_dead": round(planner_dead, 4),
+                "upgrade_fp_rate": round(cmd["upgrade_fp_rate"], 4),
+                "inventory_fp_rate": round(cmd["inventory_expansion_fp_rate"], 4),
+                "replen_mismatch_rate": round(cmd["replenishment_mismatch_rate"], 4),
+            }
+        )
+        log(
+            f"depth {depth} seed {seed} (P={P}): scorer {learned_u:.1f} (dead {learned_dead:.2f}) "
+            f"vs planner {planner_u:.1f} (dead {planner_dead:.2f}) -> {ratio:.3f}  "
+            f"[up_fp {cmd['upgrade_fp_rate']:.3f} inv_fp {cmd['inventory_expansion_fp_rate']:.3f} "
+            f"replen_mm {cmd['replenishment_mismatch_rate']:.3f}]"
+        )
+    return rows
+
+
+def producer_command_agreement(
+    model: ProducerScoreModel,
+    cfg: Configuration,
+    seeds,
+    horizon: int,
+) -> dict[str, float]:
+    """Command-level fidelity of the learned scorer vs the planner (EXP-0013 step 4).
+
+    Drives the teacher's own trajectory and, at every producer decision, plans both the
+    teacher command (default planner scores) and the learned command (scorer scores) with
+    the *same* env feasibility params, then tallies investment false-positive / -negative
+    rates and replenishment mismatch. A units ratio can look fine while false investment
+    spend is huge; this surfaces it directly. Returns rates in `[0, 1]` plus `n`."""
+    from ..domain.producer_planner import plan_producer_command
+    from ..eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+
+    teacher = PRODUCING_BASELINES["entity_planner"]
+    order_pol = ORDERING_BASELINES["proportional"]
+    tally = {"n": 0, "up_fp": 0, "up_fn": 0, "inv_fp": 0, "inv_fn": 0, "replen_mismatch": 0}
+    for seed in seeds:
+        env = TokenomicsAECEnv(config=cfg, horizon=horizon, entity_producer_obs=True)
+        env.reset(seed=seed)
+        for agent in env.agent_iter(max_iter=horizon * len(env.possible_agents) * 3 + 100):
+            _, _, term, trunc, _ = env.last()
+            if term or trunc:
+                env.step(None)
+                continue
+            role, pid = env._role[agent]
+            if role != "prod":
+                env.step(order_pol(env, agent))
+                continue
+            view = env.system.producer_entity_view(pid)
+            mechanics = env.spec_.producer_mechanics[pid]
+            params = dict(
+                max_replenish=env.spec_.max_replenish[pid],
+                replenish_cost_per_unit=mechanics.replenish_cost_per_unit,
+                funding_budget=env.system.investment_fund,
+                inventory_expansion_increases=mechanics.inventory_expansion_increases,
+                inventory_expansion_cost=mechanics.inventory_expansion_cost,
+            )
+            teacher_cmd = plan_producer_command(view, **params)
+            learned_cmd = plan_producer_command(view, scores=score_with_model(model, view), **params)
+            tally["n"] += 1
+            tally["up_fp"] += int(learned_cmd.do_upgrade and not teacher_cmd.do_upgrade)
+            tally["up_fn"] += int(teacher_cmd.do_upgrade and not learned_cmd.do_upgrade)
+            tally["inv_fp"] += int(
+                learned_cmd.do_inventory_expansion and not teacher_cmd.do_inventory_expansion
+            )
+            tally["inv_fn"] += int(
+                teacher_cmd.do_inventory_expansion and not learned_cmd.do_inventory_expansion
+            )
+            tally["replen_mismatch"] += int(learned_cmd.replenishments != teacher_cmd.replenishments)
+            env.step(teacher(env, agent))
+    n = max(1, tally["n"])
+    return {
+        "n": tally["n"],
+        "upgrade_fp_rate": tally["up_fp"] / n,
+        "upgrade_fn_rate": tally["up_fn"] / n,
+        "inventory_expansion_fp_rate": tally["inv_fp"] / n,
+        "inventory_expansion_fn_rate": tally["inv_fn"] / n,
+        "replenishment_mismatch_rate": tally["replen_mismatch"] / n,
+    }
+
+
+def distill_producer_scorer(
+    depth: int,
+    train_seeds,
+    eval_seeds_list,
+    epochs: int,
+    lr: float,
+    eval_seeds: int,
+    horizon: int,
+    save: str | None = None,
+    hidden: int = 64,
+    eval_depths=None,
+    gate_thresholds: dict[str, float] | None = None,
+    log=print,
+) -> tuple[ProducerScoreModel, list[dict]]:
+    """One wrapped distill: collect planner-labeled samples over `train_seeds` (at `depth`),
+    fit the shared scorer, optionally save a versioned checkpoint, then eval value vs the
+    planner on held-out `eval_seeds_list` across every depth in `eval_depths` (default:
+    `[depth]`). Smaller eval depths have fewer producers than the training topology, so they
+    are genuinely unseen producer counts — that is the P1 producer-count transfer check. The
+    cloud entrypoint for the producer P1 run."""
+    from ..eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from ..eval.scale import build_scale_config
+
+    teacher = PRODUCING_BASELINES["entity_planner"]
+    order_pol = ORDERING_BASELINES["proportional"]
+    train_seeds = list(train_seeds)
+    samples: list[ProducerScoreSample] = []
+    for seed in train_seeds:
+        cfg = build_scale_config(seed, depth=depth)
+        samples += collect_producer_score_samples(
+            cfg, teacher, order_pol, seeds=[0], horizon=horizon
+        )
+    log(f"collected {len(samples)} producer score samples over {len(train_seeds)} topologies")
+    model = ProducerScoreModel(hidden=hidden)
+    fit_producer_score_model(model, samples, epochs=epochs, lr=lr, log=log, log_every=max(1, epochs // 10))
+    thresholds = calibrate_gate_thresholds(model, samples) if gate_thresholds is None else gate_thresholds
+    model.upgrade_threshold = float(thresholds["upgrade"])
+    model.inventory_expansion_threshold = float(thresholds["inventory_expansion"])
+    log(
+        f"{'calibrated' if gate_thresholds is None else 'fixed'} gate thresholds -> "
+        f"upgrade {model.upgrade_threshold:.2f}  inventory {model.inventory_expansion_threshold:.2f}"
+    )
+    if save:
+        save_producer_score_model(model, save)
+        log(f"saved producer scorer -> {save}")
+    eval_depths = [depth] if eval_depths is None else list(eval_depths)
+    rows: list[dict] = []
+    for d in eval_depths:
+        rows += eval_producer_scorer(model, d, eval_seeds_list, eval_seeds, horizon, log=log)
+    return model, rows
+
+
+_DEFAULT_GATE_THRESHOLDS = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+
+
+def calibrate_gate_thresholds(
+    model: ProducerScoreModel,
+    samples: list[ProducerScoreSample],
+    candidates: Iterable[float] = _DEFAULT_GATE_THRESHOLDS,
+) -> dict[str, float]:
+    """Pick each investment gate's probability threshold by command agreement with the
+    planner on labeled states (EXP-0013).
+
+    For each gate independently, choose the threshold maximizing agreement between
+    `prob >= threshold` and the planner's own gate boolean (`teacher roi > 0`). The other
+    planner feasibility gates (budget, active-investment locks) are identical for the
+    learned and teacher policies on the same view, so they cancel — score-gate agreement
+    here equals command agreement on that investment. Ties resolve to the threshold
+    closest to 0.5 (least biased). Returns `{"upgrade": ..., "inventory_expansion": ...}`.
+    """
+    candidates = sorted(set(float(c) for c in candidates))
+    # entries: (gate_probs_dict, upgrade_bool, inventory_bool)
+    probs = [
+        (
+            producer_gate_probs(model, s.view),
+            s.target.upgrade_roi > 0.0,
+            s.target.inventory_expansion_value > 0.0,
+        )
+        for s in samples
+    ]
+    return {
+        "upgrade": _best_gate_threshold(probs, "upgrade", 1, candidates),
+        "inventory_expansion": _best_gate_threshold(probs, "inventory_expansion", 2, candidates),
+    }
+
+
+def _best_gate_threshold(probs, key: str, label_idx: int, candidates) -> float:
+    """Threshold with max planner-gate agreement; tie -> nearest 0.5 (EXP-0013)."""
+    best_t, best_agree = 0.5, -1
+    for t in candidates:
+        agree = sum(int((entry[0][key] >= t) == entry[label_idx]) for entry in probs)
+        if agree > best_agree or (agree == best_agree and abs(t - 0.5) < abs(best_t - 0.5)):
+            best_t, best_agree = t, agree
+    return best_t
+
+
+def scorer_producing_policy(model: ProducerScoreModel) -> Policy:
+    """Wrap a fitted scorer as a producing policy through the deterministic planner."""
+    from ..eval.baselines import producing_entity_planner_from_scorer
+
+    return producing_entity_planner_from_scorer(lambda view: score_with_model(model, view))
 
 
 def save_producer_score_model(model: ProducerScoreModel, path) -> None:
@@ -252,6 +564,8 @@ def save_producer_score_model(model: ProducerScoreModel, path) -> None:
         {
             "version": PRODUCER_SCORER_CHECKPOINT_VERSION,
             "hidden": model.hidden,
+            "upgrade_threshold": float(model.upgrade_threshold),
+            "inventory_expansion_threshold": float(model.inventory_expansion_threshold),
             "state_dict": model.state_dict(),
         },
         path,
@@ -268,28 +582,258 @@ def load_producer_score_model(path) -> ProducerScoreModel:
         )
     model = ProducerScoreModel(hidden=int(ckpt["hidden"]))
     model.load_state_dict(ckpt["state_dict"])
+    model.upgrade_threshold = float(ckpt.get("upgrade_threshold", 0.5))
+    model.inventory_expansion_threshold = float(ckpt.get("inventory_expansion_threshold", 0.5))
     model.eval()
     return model
 
 
-def _sample_loss(out: ProducerScoreTensors, view: ProducerEntityView, target: ProducerLocalScores) -> torch.Tensor:
-    device = out.inventory_expansion_value.device
-    parts = [
-        _mse(out.product_urgency, [target.product_urgency.get(r.product, 0.0) for r in view.product_rows], device),
-        _mse(out.input_value, [target.input_value.get(r.input_product, 0.0) for r in view.input_rows], device),
-        _mse(
-            out.capacity_bottleneck_value,
-            [target.capacity_bottleneck_value.get(r.capacity_type, 0.0) for r in view.capacity_rows],
+def _prepare_score_batches(samples: list[ProducerScoreSample], device) -> list[_ProducerScoreBatch]:
+    groups: dict[tuple, list[ProducerScoreSample]] = {}
+    for sample in samples:
+        groups.setdefault(_batch_key(sample.view), []).append(sample)
+    return [_make_score_batch(group, device) for group in groups.values()]
+
+
+def _batch_key(view: ProducerEntityView) -> tuple:
+    return (
+        len(view.capacity_rows),
+        len(view.product_rows),
+        len(view.input_rows),
+        tuple(sorted(view.relations.product_capacity_required.items())),
+        tuple(sorted(view.relations.product_input_required.items())),
+    )
+
+
+def _make_score_batch(samples: list[ProducerScoreSample], device) -> _ProducerScoreBatch:
+    first = samples[0].view
+    n_capacity = len(first.capacity_rows)
+    n_product = len(first.product_rows)
+    n_input = len(first.input_rows)
+    return _ProducerScoreBatch(
+        global_x=_tensor([_global_features(s.view) for s in samples], device),
+        capacity_x=_row_tensor(
+            samples, n_capacity, _CAPACITY_DIM, _capacity_features, "capacity_rows", device
+        ),
+        product_x=_row_tensor(
+            samples, n_product, _PRODUCT_DIM, _product_features, "product_rows", device
+        ),
+        input_x=_row_tensor(
+            samples, n_input, _INPUT_DIM, _input_features, "input_rows", device
+        ),
+        product_capacity_weight=_relation_weight(
+            first.relations.product_capacity_required, n_product, n_capacity, device
+        ),
+        product_input_weight=_relation_weight(
+            first.relations.product_input_required, n_product, n_input, device
+        ),
+        product_target=_target_tensor(
+            samples,
+            n_product,
+            "product_rows",
+            lambda sample, row: sample.target.product_urgency.get(row.product, 0.0),
             device,
         ),
-        (out.restoration_roi - torch.as_tensor(target.restoration_roi, dtype=torch.float32, device=device)) ** 2,
-        (out.upgrade_roi - torch.as_tensor(target.upgrade_roi, dtype=torch.float32, device=device)) ** 2,
-        (
-            out.inventory_expansion_value
-            - torch.as_tensor(target.inventory_expansion_value, dtype=torch.float32, device=device)
-        ) ** 2,
+        input_target=_target_tensor(
+            samples,
+            n_input,
+            "input_rows",
+            lambda sample, row: sample.target.input_value.get(row.input_product, 0.0),
+            device,
+        ),
+        capacity_target=_target_tensor(
+            samples,
+            n_capacity,
+            "capacity_rows",
+            lambda sample, row: sample.target.capacity_bottleneck_value.get(
+                row.capacity_type, 0.0
+            ),
+            device,
+        ),
+        # Investment gates are binary: label = whether the planner's own gate fires
+        # (its score-gate is `roi > 0`). The heads are BCE-trained against these booleans,
+        # not the ROI magnitude (EXP-0013). Restoration is planner-owned -> no target.
+        restoration_target=torch.zeros(len(samples), dtype=torch.float32, device=device),
+        upgrade_target=torch.as_tensor(
+            [float(s.target.upgrade_roi > 0.0) for s in samples], dtype=torch.float32, device=device
+        ),
+        inventory_target=torch.as_tensor(
+            [float(s.target.inventory_expansion_value > 0.0) for s in samples],
+            dtype=torch.float32, device=device,
+        ),
+    )
+
+
+def _row_tensor(
+    samples: list[ProducerScoreSample],
+    n_rows: int,
+    dim: int,
+    feature_fn,
+    attr: str,
+    device,
+) -> torch.Tensor:
+    if n_rows == 0:
+        return torch.empty((len(samples), 0, dim), dtype=torch.float32, device=device)
+    return torch.as_tensor(
+        [[feature_fn(row) for row in getattr(sample.view, attr)] for sample in samples],
+        dtype=torch.float32,
+        device=device,
+    )
+
+
+def _target_tensor(samples: list[ProducerScoreSample], n_rows: int, attr: str, value_fn, device) -> torch.Tensor:
+    if n_rows == 0:
+        return torch.empty((len(samples), 0), dtype=torch.float32, device=device)
+    return torch.as_tensor(
+        [[value_fn(sample, row) for row in getattr(sample.view, attr)] for sample in samples],
+        dtype=torch.float32,
+        device=device,
+    )
+
+
+def _relation_weight(edges: dict[tuple[int, int], int], n_src: int, n_dst: int, device) -> torch.Tensor:
+    weights = torch.zeros((n_src, n_dst), dtype=torch.float32, device=device)
+    for (src, dst), amount in edges.items():
+        if 0 <= src < n_src and 0 <= dst < n_dst:
+            weights[src, dst] = weights[src, dst] + _edge_weight(amount)
+    return weights
+
+
+def _batch_loss(model: ProducerScoreModel, batch: _ProducerScoreBatch) -> torch.Tensor:
+    out = _forward_batch(model, batch)
+    zeros = torch.zeros(batch.size, dtype=torch.float32, device=batch.global_x.device)
+    bce = nn.functional.binary_cross_entropy_with_logits
+    parts = [
+        _row_mse(out.product_urgency, batch.product_target, zeros),
+        _row_mse(out.input_value, batch.input_target, zeros),
+        _row_mse(out.capacity_bottleneck_value, batch.capacity_target, zeros),
+        # learned binary investment gates: BCE on the planner's gate booleans (EXP-0013).
+        bce(out.upgrade_roi, batch.upgrade_target, reduction="none"),
+        bce(out.inventory_expansion_value, batch.inventory_target, reduction="none"),
     ]
-    return torch.stack(parts).mean()
+    return torch.stack(parts, dim=1).mean(dim=1).sum()
+
+
+def _forward_batch(model: ProducerScoreModel, batch: _ProducerScoreBatch) -> ProducerScoreTensors:
+    hidden = model.hidden
+    device = batch.global_x.device
+    n = batch.size
+    g = model.global_encoder(batch.global_x)
+    cap_h = _encode_batched_rows(batch.capacity_x, hidden, model.capacity_encoder)
+    prod_h = _encode_batched_rows(batch.product_x, hidden, model.product_encoder)
+    input_h = _encode_batched_rows(batch.input_x, hidden, model.input_encoder)
+
+    prod_cap_ctx = _forward_batch_relation_context(batch.product_capacity_weight, cap_h, n, hidden, device)
+    prod_input_ctx = _forward_batch_relation_context(batch.product_input_weight, input_h, n, hidden, device)
+    input_prod_ctx = _reverse_batch_relation_context(batch.product_input_weight, prod_h, n, hidden, device)
+    cap_prod_ctx = _reverse_batch_relation_context(batch.product_capacity_weight, prod_h, n, hidden, device)
+
+    n_product = prod_h.shape[1]
+    if n_product:
+        product_scores = model.product_head(torch.cat([
+            prod_h,
+            prod_cap_ctx,
+            prod_input_ctx,
+            _expand_batch(g, n_product),
+        ], dim=2)).squeeze(-1)
+    else:
+        product_scores = torch.empty((n, 0), device=device)
+
+    n_input = input_h.shape[1]
+    if n_input:
+        input_scores = model.input_head(torch.cat([
+            input_h,
+            input_prod_ctx,
+            _expand_batch(g, n_input),
+        ], dim=2)).squeeze(-1)
+    else:
+        input_scores = torch.empty((n, 0), device=device)
+
+    n_capacity = cap_h.shape[1]
+    if n_capacity:
+        cap_context = torch.cat([
+            cap_h,
+            cap_prod_ctx,
+            _expand_batch(g, n_capacity),
+        ], dim=2)
+        cap_scores = model.capacity_head(cap_context).squeeze(-1)
+        investment = model.investment_head(cap_context)
+        restoration = investment[:, :, 0].max(dim=1).values
+        upgrade = investment[:, :, 1].max(dim=1).values
+    else:
+        cap_scores = torch.empty((n, 0), device=device)
+        restoration = torch.zeros(n, device=device)
+        upgrade = torch.zeros(n, device=device)
+
+    inventory = model.inventory_head(torch.cat([
+        g,
+        _mean_batch_or_zero(prod_h, hidden, device),
+        _mean_batch_or_zero(input_h, hidden, device),
+    ], dim=1)).squeeze(-1)
+
+    return ProducerScoreTensors(
+        product_urgency=product_scores,
+        input_value=input_scores,
+        capacity_bottleneck_value=cap_scores,
+        restoration_roi=restoration,
+        upgrade_roi=upgrade,
+        inventory_expansion_value=inventory,
+    )
+
+
+def _encode_batched_rows(rows: torch.Tensor, hidden: int, encoder: nn.Module) -> torch.Tensor:
+    n, n_rows, dim = rows.shape
+    if n_rows == 0:
+        return torch.empty((n, 0, hidden), dtype=rows.dtype, device=rows.device)
+    return encoder(rows.reshape(n * n_rows, dim)).reshape(n, n_rows, hidden)
+
+
+def _forward_batch_relation_context(
+    weights: torch.Tensor,
+    dst_h: torch.Tensor,
+    n: int,
+    hidden: int,
+    device,
+) -> torch.Tensor:
+    n_src = weights.shape[0]
+    if n_src == 0:
+        return torch.empty((n, 0, hidden), device=device)
+    if dst_h.shape[1] == 0:
+        return torch.zeros((n, n_src, hidden), device=device)
+    ctx = torch.einsum("sd,ndh->nsh", weights, dst_h)
+    return ctx / weights.sum(dim=1).clamp_min(1.0).view(1, n_src, 1)
+
+
+def _reverse_batch_relation_context(
+    weights: torch.Tensor,
+    src_h: torch.Tensor,
+    n: int,
+    hidden: int,
+    device,
+) -> torch.Tensor:
+    n_dst = weights.shape[1]
+    if n_dst == 0:
+        return torch.empty((n, 0, hidden), device=device)
+    if src_h.shape[1] == 0:
+        return torch.zeros((n, n_dst, hidden), device=device)
+    ctx = torch.einsum("sd,nsh->ndh", weights, src_h)
+    return ctx / weights.sum(dim=0).clamp_min(1.0).view(1, n_dst, 1)
+
+
+def _expand_batch(rows: torch.Tensor, n_rows: int) -> torch.Tensor:
+    return rows.unsqueeze(1).expand(-1, n_rows, -1)
+
+
+def _mean_batch_or_zero(rows: torch.Tensor, hidden: int, device) -> torch.Tensor:
+    if rows.shape[1] == 0:
+        return torch.zeros((rows.shape[0], hidden), device=device)
+    return rows.mean(dim=1)
+
+
+def _row_mse(pred: torch.Tensor, target: torch.Tensor, empty_value: torch.Tensor) -> torch.Tensor:
+    if target.shape[1] == 0:
+        return empty_value
+    return ((pred - target) ** 2).mean(dim=1)
 
 
 def _mse(pred: torch.Tensor, values: list[float], device) -> torch.Tensor:
@@ -305,6 +849,11 @@ def _score_map(keys: Iterable[Product | CapacityType], scores: torch.Tensor) -> 
 
 def _nonnegative_scalar(value: torch.Tensor) -> float:
     return max(0.0, float(value.detach().cpu()))
+
+
+def _sigmoid(value: torch.Tensor) -> float:
+    """Gate logit -> probability (EXP-0013 learned binary investment gates)."""
+    return 1.0 / (1.0 + math.exp(-float(value.detach().cpu())))
 
 
 def _tensor(rows: list[list[float]], device) -> torch.Tensor:
@@ -425,3 +974,68 @@ def _input_features(r) -> list[float]:
         _qty(r.blocked_reservation_qty),
         _qty(r.downstream_demand_pressure),
     ]
+
+
+def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--depth", type=int, default=3)
+    ap.add_argument("--train-seeds", type=str, default="0-5", help="scale seeds for distillation, e.g. 0-5")
+    ap.add_argument("--eval-seeds-list", type=str, default="6-9", help="held-out scale seeds for value/transfer")
+    ap.add_argument("--epochs", type=int, default=300)
+    ap.add_argument("--lr", type=float, default=1e-2)
+    ap.add_argument("--eval-seeds", type=int, default=5, help="episodes per held-out topology")
+    ap.add_argument("--horizon", type=int, default=100)
+    ap.add_argument("--hidden", type=int, default=64)
+    ap.add_argument("--torch-threads", type=int, default=1,
+                    help="CPU torch threads for tiny per-view MLPs; default 1 avoids threadpool overhead.")
+    ap.add_argument("--eval-depths", type=str, default=None,
+                    help="depths to eval the distilled scorer at (e.g. 1-3); smaller "
+                         "depths = unseen producer counts. Default: just --depth.")
+    ap.add_argument("--upgrade-threshold", type=float, default=None,
+                    help="fix the upgrade gate probability threshold instead of calibrating "
+                         "it on training command agreement (EXP-0013).")
+    ap.add_argument("--inventory-threshold", type=float, default=None,
+                    help="fix the inventory-expansion gate threshold (EXP-0013).")
+    ap.add_argument("--save", type=str, default=None)
+    args = ap.parse_args()
+    if args.torch_threads > 0:
+        torch.set_num_threads(args.torch_threads)
+
+    def _range(s: str):
+        a, b = s.split("-")
+        return range(int(a), int(b) + 1)
+
+    gate_thresholds = None
+    if args.upgrade_threshold is not None and args.inventory_threshold is not None:
+        gate_thresholds = {
+            "upgrade": args.upgrade_threshold,
+            "inventory_expansion": args.inventory_threshold,
+        }
+
+    eval_depths = list(_range(args.eval_depths)) if args.eval_depths else None
+    _, rows = distill_producer_scorer(
+        depth=args.depth, train_seeds=_range(args.train_seeds),
+        eval_seeds_list=_range(args.eval_seeds_list), epochs=args.epochs, lr=args.lr,
+        eval_seeds=args.eval_seeds, horizon=args.horizon, save=args.save, hidden=args.hidden,
+        eval_depths=eval_depths, gate_thresholds=gate_thresholds,
+    )
+    cols = ("depth,seed,producers,scorer_units,planner_units,ratio,dead,planner_dead,"
+            "upgrade_fp_rate,inventory_fp_rate,replen_mismatch_rate")
+    print("\n" + cols)
+    for r in rows:
+        print(f"{r['depth']},{r['seed']},{r['producers']},{r['scorer_units']},"
+              f"{r['planner_units']},{r['ratio']},{r['dead']},{r['planner_dead']},"
+              f"{r['upgrade_fp_rate']},{r['inventory_fp_rate']},{r['replen_mismatch_rate']}")
+    ratios = [r["ratio"] for r in rows]
+    max_dead = max(r["dead"] for r in rows)
+    max_up_fp = max(r["upgrade_fp_rate"] for r in rows)
+    max_inv_fp = max(r["inventory_fp_rate"] for r in rows)
+    print(f"\nmean ratio vs planner: {sum(ratios)/len(ratios):.4f}; min {min(ratios):.4f}; "
+          f"max scorer dead-rate {max_dead:.3f}; max upgrade-FP {max_up_fp:.3f}; "
+          f"max inventory-FP {max_inv_fp:.3f}; producer counts {sorted({r['producers'] for r in rows})}")
+
+
+if __name__ == "__main__":
+    main()

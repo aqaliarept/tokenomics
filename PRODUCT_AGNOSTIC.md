@@ -1162,7 +1162,16 @@ P0. Deterministic planner parity:
 - pass: feasible commands, relabel gates pass, no major regression vs current
   deterministic baseline.
 
-P1. Supervised local scorer clone:
+P1. Supervised local scorer clone: **DONE** — contract (local TDD) + value + producer-count
+transfer (EXP-0013). v2 gate-head distill (seeds 0–5, depth 3) reproduces the
+`entity_planner` on held-out 6–9 at depths 1/2/3 (P=4/8/12): mean ratio **1.0029**, min
+**1.0000**, zero death, investment false-positive rates ≈0; the depth-3 checkpoint runs
+unchanged at the unseen P=4/8. Replenishment is a learned regression; investment decisions
+(upgrade, inventory-expansion) are learned **binary gates** — logits BCE-trained against
+the planner's gate booleans, fired by per-gate thresholds calibrated on command agreement
+(saved in checkpoint v2). Restoration stays planner-owned. The v1 MSE-ROI heads
+PARTIAL-failed at depth-3 (0.773) by reading regression noise as hard spend toggles; the
+gate heads + `producer_command_agreement` FP eval fixed and proved it. ADR-0053.
 
 - train scorer on small topologies using deterministic planner labels,
 - evaluate scorer+planner on same size, relabeled same size, and larger sizes,

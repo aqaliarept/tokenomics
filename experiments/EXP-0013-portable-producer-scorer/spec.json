@@ -1,0 +1,23 @@
+{
+  "id": "EXP-0013-portable-producer-scorer",
+  "question": "Does the portable producer scorer+planner (P1: ProducerScoreModel -> plan_producer_command) reproduce the deterministic entity_planner's value on held-out scale topologies when distilled from the planner's own local-score labels, and load/run unchanged at unseen producer counts?",
+  "adr": "0053",
+  "plan": "PRODUCT_AGNOSTIC.md producer ladder P1 (supervised local scorer clone, value + producer-count transfer)",
+  "method": {
+    "model": "tokenomics.train.producer_scorer.ProducerScoreModel (shared row/edge scorer over ProducerEntityView, no product/capacity ids, sparse recipe edges). Replenishment scores are learned regressions (MSE); investment decisions are learned BINARY GATES (upgrade, inventory_expansion) emitting logits trained with BCE against the planner's gate booleans. Checkpoint v2.",
+    "deploy": "scorer_producing_policy -> producing_entity_planner_from_scorer -> plan_producer_command (planner owns inventory/funding/recipe/running-investment feasibility AND restoration, which it decides deterministically). A gate fires iff its probability clears a per-gate threshold calibrated post-fit on training command agreement (saved in checkpoint metadata).",
+    "teacher": "replenishment: score_producer_entity_view local scores (MSE). investment gates: the planner's own command booleans (BCE). Restoration: planner-owned, no learned gate.",
+    "orderer_fixed": "proportional",
+    "env": "entity_producer_obs=True",
+    "train_topologies": "build_scale_config seeds 0-5, depth 3",
+    "held_out": "seeds 6-9, depth 3 (varied economics; producer count constant at this depth)",
+    "epochs": 300,
+    "lr": 0.01,
+    "eval_seeds": 5,
+    "horizon": 100
+  },
+  "command": "python run_pod_training.py --pod-id <id> --cpu --python python3.12 --train \"-u -m tokenomics.train.producer_scorer --depth 3 --train-seeds 0-5 --eval-seeds-list 6-9 --epochs 300 --lr 0.01 --eval-seeds 5 --horizon 100 --eval-depths 1-3 --save /workspace/producer_scorer.pt\" --pull /workspace/producer_scorer.pt:./experiments/EXP-0013-portable-producer-scorer/artifacts/producer_scorer.pt",
+  "metric": "Per (eval-depth, held-out seed): consumer_completed_units ratio vs entity_planner + learned/planner death rates (value, averaged over --eval-seeds episodes), AND command-level fidelity vs the teacher on the seed-0 trajectory for that topology: upgrade false-positive rate, inventory-expansion false-positive rate, replenishment mismatch rate. Command FP rates are the diagnostic that caught the v1 regression (units were low because false investment spend was huge while the units ratio alone looked plausible).",
+  "pass": "scorer+planner loads/runs on all held-out topologies (proven in tests/test_producer_scorer.py) AND mean ratio vs entity_planner >= ~1.0 with learned death <= planner death AND investment false-positive rates near zero (the gate heads must not over-fire). Producer-count transfer measured IN-FLOW via --eval-depths 1-3: the one distilled (depth-3, P=12) checkpoint evaluated at depth 1 (P=4) / depth 2 (P=8) — unseen producer counts — with no shape change, never regressing the planner.",
+  "notes": "v1 (MSE ROI-regression heads + 0-threshold gates) PARTIAL-failed at depth 3: clean transfer at P=4/8 (ratio 1.000/0.998) but 0.773 at P=12, caused by tiny-positive regression noise the planner read as hard 'spend' toggles (upgrade FP 11442/24000, inventory FP 6875/24000). FIX (this run): investment decisions are learned BINARY GATES — BCE-trained against the planner's gate booleans, deployed via per-gate probability thresholds calibrated on training command agreement and saved in checkpoint metadata. Replenishment scoring unchanged (5/24000 mismatch). Restoration stays planner-owned (deterministic, ~0 mismatch — no learned gate). Checkpoint v2 (v1 rejected by the version gate). DAgger on learned rollouts (step 5) deferred unless gates still drift. Producer portable path is structurally MORE agnostic than the orderer (no fixed-width action head; fully shared row/edge encoders). Deterministic entity_planner size-holdout (P-1/P0) covered by eval/producer_size_holdout.py (EXP-0010D). Out-of-family recipe (P2) and scarcity (P3) remain separate."
+}
