@@ -289,6 +289,8 @@ def score_with_model(
     view: ProducerEntityView,
     upgrade_threshold: float | None = None,
     inventory_expansion_threshold: float | None = None,
+    *,
+    planner_gates: bool = False,
 ) -> ProducerLocalScores:
     """Run a fitted scorer and map row-aligned tensors back to domain score ids.
 
@@ -297,7 +299,13 @@ def score_with_model(
     each head's logit becomes a probability, and the gate emits a `> 0` "do it" score iff
     that probability clears its threshold (per-gate, calibrated; defaults to the model's).
     This stops the deterministic planner reading regression noise as a spend signal
-    (EXP-0013). Restoration is left 0.0 — the planner owns it and ignores this field."""
+    (EXP-0013). Restoration is left 0.0 — the planner owns it and ignores this field.
+
+    `planner_gates=True` hands the upgrade / inventory-expansion gate decisions back to
+    the deterministic planner (`score_producer_entity_view`) while keeping the learned
+    continuous scores. The learned investment gates generalize poorly out-of-family
+    (EXP-0017); planner-owned gates recover the bar there until gate training covers those
+    states. The continuous heads are untouched."""
     if model.training:
         model.eval()
     with torch.inference_mode():
@@ -308,6 +316,13 @@ def score_with_model(
         if inventory_expansion_threshold is None
         else inventory_expansion_threshold
     )
+    if planner_gates:
+        planner = score_producer_entity_view(view)
+        upgrade_gate = planner.upgrade_roi
+        inventory_gate = planner.inventory_expansion_value
+    else:
+        upgrade_gate = 1.0 if _sigmoid(out.upgrade_roi) >= up_thr else 0.0
+        inventory_gate = 1.0 if _sigmoid(out.inventory_expansion_value) >= inv_thr else 0.0
     return ProducerLocalScores(
         product_urgency=_score_map(
             (r.product for r in view.product_rows), out.product_urgency
@@ -319,10 +334,8 @@ def score_with_model(
             (r.capacity_type for r in view.capacity_rows), out.capacity_bottleneck_value
         ),
         restoration_roi=0.0,
-        upgrade_roi=1.0 if _sigmoid(out.upgrade_roi) >= up_thr else 0.0,
-        inventory_expansion_value=(
-            1.0 if _sigmoid(out.inventory_expansion_value) >= inv_thr else 0.0
-        ),
+        upgrade_roi=upgrade_gate,
+        inventory_expansion_value=inventory_gate,
     )
 
 
@@ -551,11 +564,25 @@ def _best_gate_threshold(probs, key: str, label_idx: int, candidates) -> float:
     return best_t
 
 
-def scorer_producing_policy(model: ProducerScoreModel) -> Policy:
-    """Wrap a fitted scorer as a producing policy through the deterministic planner."""
+def scorer_producing_policy(
+    model: ProducerScoreModel,
+    *,
+    planner_gates: bool = False,
+    replenish_tie_rel_tol: float = 0.0,
+) -> Policy:
+    """Wrap a fitted scorer as a producing policy through the deterministic planner.
+
+    `planner_gates=True` deploys the P2/C3 mode: learned continuous/ranking scores with
+    the upgrade / inventory-expansion gates owned by the deterministic planner (EXP-0017).
+    `replenish_tie_rel_tol` lets the planner split scarce headroom evenly across inputs
+    whose learned values are near-equal (fork/join paired inputs). Same checkpoint, same
+    schema contract — only the producer policy adapter differs."""
     from ..eval.baselines import producing_entity_planner_from_scorer
 
-    return producing_entity_planner_from_scorer(lambda view: score_with_model(model, view))
+    return producing_entity_planner_from_scorer(
+        lambda view: score_with_model(model, view, planner_gates=planner_gates),
+        replenish_tie_rel_tol=replenish_tie_rel_tol,
+    )
 
 
 def save_producer_score_model(model: ProducerScoreModel, path) -> None:

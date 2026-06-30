@@ -247,12 +247,14 @@ def producing_entity_planner(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     return _action_from_producing_command(env.spec_, pid, cmd)
 
 
-def producing_entity_planner_from_scorer(scorer) -> Policy:
+def producing_entity_planner_from_scorer(scorer, *, replenish_tie_rel_tol: float = 0.0) -> Policy:
     """Build an EXP-0010C producer policy from a local scorer closure.
 
     The closure receives the domain `ProducerEntityView` and returns
     `ProducerLocalScores`; this adapter keeps feasibility and raw action encoding in
-    the existing deterministic planner path.
+    the existing deterministic planner path. `replenish_tie_rel_tol` lets the planner
+    treat near-equal learned input values as tied and split scarce headroom evenly
+    (fork/join paired inputs, EXP-0017); 0.0 keeps exact-tie behavior.
     """
 
     def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
@@ -267,6 +269,7 @@ def producing_entity_planner_from_scorer(scorer) -> Policy:
             scores=scorer(view),
             inventory_expansion_increases=mechanics.inventory_expansion_increases,
             inventory_expansion_cost=mechanics.inventory_expansion_cost,
+            replenish_tie_rel_tol=replenish_tie_rel_tol,
         )
         return _action_from_producing_command(env.spec_, pid, cmd)
 

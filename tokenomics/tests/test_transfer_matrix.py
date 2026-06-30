@@ -56,6 +56,66 @@ def test_portable_stack_without_checkpoint_is_contract_failure_not_policy() -> N
     assert row["consumer_completed_units"] is None
 
 
+def test_planner_gated_producer_is_a_distinct_policy_mode_not_a_new_schema() -> None:
+    """The planner-gated producer (EXP-0017 P2/C3 deployment) is the SAME checkpoint and
+    schema as `portable_scorer` — only the producer policy adapter differs (learned
+    continuous scores, planner-owned investment gates). The matrix must expose it as a
+    separate kind with a `producer_policy_mode` flag, never by silently flipping
+    `portable_scorer`, and its contract flags must stay identical (it loads/runs wherever
+    the plain portable producer does)."""
+    import pytest
+
+    pytest.importorskip("torch")
+    from tokenomics.train.producer_scorer import ProducerScoreModel
+
+    model = ProducerScoreModel(hidden=16)
+    target = _target()
+
+    learned = evaluate_stack_on_target(
+        StackSpec("portable_producer+proportional", "portable_scorer", "proportional"),
+        target, eval_seeds=1, horizon=20, producer_model=model)
+    gated = evaluate_stack_on_target(
+        StackSpec("portable_producer_planner_gates+proportional",
+                  "portable_scorer_planner_gates", "proportional"),
+        target, eval_seeds=1, horizon=20, producer_model=model)
+
+    assert learned["producer_policy_mode"] == "learned_gates"
+    assert gated["producer_policy_mode"] == "planner_gates"
+    # policy-mode distinction, NOT a load/schema distinction: same contract flags.
+    assert gated["producer_schema_loads"] is True
+    assert gated["producer_contract_compatible"] is True
+    assert gated["runs_episode"] is True
+    assert gated["failure_class"] == "none"
+
+
+def test_planner_gated_tie_tolerance_defaults_to_zero_and_is_tunable_per_row() -> None:
+    """Tie tolerance is an ablation knob, not a shipped behavior: the planner-gated
+    producer deploys at tol 0.0 by default (planner gates are the validated fix; tie
+    tolerance is non-monotonic across seeds). The runner records the tolerance each row
+    ran with so EXP-0018 rows can be labeled by it, and it is overridable per run."""
+    import pytest
+
+    pytest.importorskip("torch")
+    from tokenomics.train.producer_scorer import ProducerScoreModel
+
+    model = ProducerScoreModel(hidden=16)
+    target = _target()
+    gated = StackSpec("portable_producer_planner_gates+proportional",
+                      "portable_scorer_planner_gates", "proportional")
+
+    default = evaluate_stack_on_target(gated, target, eval_seeds=1, horizon=20,
+                                       producer_model=model)
+    tuned = evaluate_stack_on_target(gated, target, eval_seeds=1, horizon=20,
+                                     producer_model=model, planner_gate_tie_rel_tol=0.05)
+    learned = evaluate_stack_on_target(
+        StackSpec("portable_producer+proportional", "portable_scorer", "proportional"),
+        target, eval_seeds=1, horizon=20, producer_model=model)
+
+    assert default["producer_tie_rel_tol"] == 0.0     # shipped default
+    assert tuned["producer_tie_rel_tol"] == 0.05      # ablation override flows into the row
+    assert learned["producer_tie_rel_tol"] == 0.0     # learned-gate mode keeps exact ties
+
+
 def test_loaded_but_runtime_incompatible_model_is_a_contract_failure_row() -> None:
     # A checkpoint that "loads" (model object exists) but blows up against this target
     # at episode time must NOT raise out of the runner — it must become an explicit

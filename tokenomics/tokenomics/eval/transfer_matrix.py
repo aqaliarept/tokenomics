@@ -52,15 +52,49 @@ def _target_dims(cfg: Configuration) -> tuple[int, int, int]:
     return products, producers, caps
 
 
-def _resolve_producer(kind: str, model: object | None) -> tuple[Policy | None, bool]:
+# Deployment default for the planner-gated producer mode. Planner-owned investment gates
+# are the validated EXP-0017 fix; the replenishment tie tolerance is NOT shipped on
+# (default 0.0 = exact ties) because it is non-monotonic across fork/join seeds — it
+# helps s9 but hurts s8, with the s8 loss outweighing the s9 gain by mean ratio. It stays
+# a tunable ablation knob (CLI `--tie-rel-tol`, labeled per row), not a default behavior.
+PLANNER_GATE_TIE_REL_TOL = 0.0
+
+
+def producer_policy_mode(kind: str) -> str:
+    """Which investment-gate ownership a producer kind deploys, for the matrix CSV.
+
+    Same checkpoint + schema for both portable kinds; only the policy adapter differs
+    (`learned_gates` = learned BCE gates; `planner_gates` = planner-owned gates + tie
+    tolerance, the EXP-0017 P2/C3 deployment-safe mode). Deterministic/legacy kinds are
+    `n/a`."""
+    if kind == "portable_scorer":
+        return "learned_gates"
+    if kind == "portable_scorer_planner_gates":
+        return "planner_gates"
+    return "n/a"
+
+
+def _resolve_producer(
+    kind: str, model: object | None, tie_rel_tol: float = PLANNER_GATE_TIE_REL_TOL
+) -> tuple[Policy | None, bool]:
     if kind in PRODUCING_BASELINES:
         return PRODUCING_BASELINES[kind], True
-    if kind == "portable_scorer":
+    if kind in ("portable_scorer", "portable_scorer_planner_gates"):
         if model is None:
             return None, False
         from ..train.producer_scorer import scorer_producing_policy
-        return scorer_producing_policy(model), True
+        planner_gates = kind == "portable_scorer_planner_gates"
+        return scorer_producing_policy(
+            model,
+            planner_gates=planner_gates,
+            replenish_tie_rel_tol=tie_rel_tol if planner_gates else 0.0,
+        ), True
     return None, False
+
+
+def _row_tie_rel_tol(kind: str, tie_rel_tol: float) -> float:
+    """The replenishment tie tolerance a row ran with (0.0 unless planner-gated)."""
+    return tie_rel_tol if kind == "portable_scorer_planner_gates" else 0.0
 
 
 def _resolve_orderer(kind: str, model: object | None) -> tuple[Policy | None, bool]:
@@ -76,16 +110,23 @@ def _resolve_orderer(kind: str, model: object | None) -> tuple[Policy | None, bo
 
 def evaluate_stack_on_target(stack: StackSpec, target: TargetTopology, eval_seeds: int = 5,
                              horizon: int = 100, *, producer_model: object | None = None,
-                             orderer_model: object | None = None) -> dict:
+                             orderer_model: object | None = None,
+                             planner_gate_tie_rel_tol: float = PLANNER_GATE_TIE_REL_TOL) -> dict:
     """One matrix row: resolve the stack's policies, record schema/contract flags, and
-    (if both sides load) average value over `eval_seeds` episodes on the joint env."""
+    (if both sides load) average value over `eval_seeds` episodes on the joint env.
+
+    `planner_gate_tie_rel_tol` tunes the replenishment tie tolerance for the planner-gated
+    producer kind only (an ablation knob; the row records what it ran with)."""
     products, producers, caps = _target_dims(target.config)
-    prod_pol, prod_loads = _resolve_producer(stack.producer_kind, producer_model)
+    prod_pol, prod_loads = _resolve_producer(stack.producer_kind, producer_model,
+                                             planner_gate_tie_rel_tol)
     order_pol, order_loads = _resolve_orderer(stack.orderer_kind, orderer_model)
 
     row: dict = {
         "model_id": stack.model_id,
         "producer_kind": stack.producer_kind,
+        "producer_policy_mode": producer_policy_mode(stack.producer_kind),
+        "producer_tie_rel_tol": _row_tie_rel_tol(stack.producer_kind, planner_gate_tie_rel_tol),
         "orderer_kind": stack.orderer_kind,
         "train_topology": stack.train_topology,
         "target_topology": target.name,
@@ -152,10 +193,14 @@ def transfer_matrix(stacks: list[StackSpec], targets: list[TargetTopology],
                     eval_seeds: int = 5, horizon: int = 100, *,
                     producer_model: object | None = None,
                     orderer_model: object | None = None,
+                    planner_gate_tie_rel_tol: float = PLANNER_GATE_TIE_REL_TOL,
                     log=lambda *a, **k: None) -> list[dict]:
     """The full matrix: every stack x target cell, each row carrying its value ratio vs
     the practical `entity_planner + proportional` baseline measured on the SAME target
-    (so contract failures and value failures stay separable per row)."""
+    (so contract failures and value failures stay separable per row).
+
+    `planner_gate_tie_rel_tol` tunes the planner-gated producer's replenishment tie
+    tolerance (ablation knob; each row is labeled with the value it ran)."""
     rows: list[dict] = []
     for target in targets:
         base = evaluate_stack_on_target(PRACTICAL_BASELINE, target, eval_seeds, horizon)
@@ -163,7 +208,8 @@ def transfer_matrix(stacks: list[StackSpec], targets: list[TargetTopology],
         for stack in stacks:
             row = evaluate_stack_on_target(stack, target, eval_seeds, horizon,
                                            producer_model=producer_model,
-                                           orderer_model=orderer_model)
+                                           orderer_model=orderer_model,
+                                           planner_gate_tie_rel_tol=planner_gate_tie_rel_tol)
             row["baseline_family"] = "practical"
             row["baseline_model_id"] = PRACTICAL_BASELINE.model_id
             row["baseline_consumer_completed_units"] = base_cu
@@ -184,7 +230,8 @@ def transfer_matrix(stacks: list[StackSpec], targets: list[TargetTopology],
 
 # Canonical column order = PRODUCT_AGNOSTIC "Evaluation Output" + "Baseline columns".
 CSV_COLUMNS = [
-    "model_id", "producer_kind", "orderer_kind", "train_topology", "target_topology",
+    "model_id", "producer_kind", "producer_policy_mode", "producer_tie_rel_tol",
+    "orderer_kind", "train_topology", "target_topology",
     "target_products", "target_producers", "target_capacity_types", "target_depth",
     "producer_schema_loads", "orderer_schema_loads",
     "producer_contract_compatible", "orderer_contract_compatible",
@@ -218,10 +265,17 @@ DEFAULT_STACKS = [
     StackSpec("stock_aware+proportional", "stock_aware", "proportional", "none"),
     StackSpec("portable_producer+proportional", "portable_scorer", "proportional",
               "scale d3 P12"),
+    # Planner-gated producer mode (EXP-0017 fix): same checkpoint, planner-owned
+    # investment gates + tie-tolerant replenishment. Kept alongside the learned-gate rows
+    # so the original behavior stays a regression/diagnosis bar, not overwritten.
+    StackSpec("portable_producer_planner_gates+proportional",
+              "portable_scorer_planner_gates", "proportional", "scale d3 P12"),
     StackSpec("stock_aware+portable_orderer", "stock_aware", "portable_scorer",
               "scale d3 P12"),
     StackSpec("portable_producer+portable_orderer", "portable_scorer", "portable_scorer",
               "scale d3 P12"),
+    StackSpec("portable_producer_planner_gates+portable_orderer",
+              "portable_scorer_planner_gates", "portable_scorer", "scale d3 P12"),
 ]
 
 
@@ -296,6 +350,10 @@ def main() -> None:
                     help="use the C3 fork/join multi-input targets (one per seed) instead "
                          "of the scale-family targets (ordered plan step 6)")
     ap.add_argument("--inputs-per-product", type=int, default=2)
+    ap.add_argument("--tie-rel-tol", type=float, default=PLANNER_GATE_TIE_REL_TOL,
+                    help="planner-gated producer's replenishment tie tolerance (ablation "
+                         "knob; default 0.0 = exact ties. Non-monotonic across fork/join "
+                         "seeds, so it ships off; rows are labeled with the value used).")
     args = ap.parse_args()
 
     prod = ord_ = None
@@ -317,7 +375,8 @@ def main() -> None:
                                          product_width=args.product_width,
                                          producer_width=args.producer_width)
     rows = transfer_matrix(DEFAULT_STACKS, targets, args.eval_seeds, args.horizon,
-                           producer_model=prod, orderer_model=ord_, log=print)
+                           producer_model=prod, orderer_model=ord_,
+                           planner_gate_tie_rel_tol=args.tie_rel_tol, log=print)
     write_matrix_csv(rows, args.out)
     print(f"\nwrote {len(rows)} rows -> {args.out}")
 

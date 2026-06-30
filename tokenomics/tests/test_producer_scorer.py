@@ -333,6 +333,74 @@ def test_distill_producer_scorer_collects_fits_saves_and_evals(tmp_path):
     load_producer_score_model(save)  # reloads through the version gate
 
 
+def test_scorer_policy_routes_planner_gate_decision_through_the_env_action():
+    """The deployable producer policy must honor `planner_gates`: with the learned gates
+    pinned off but the deterministic planner wanting the inventory expansion, the emitted
+    env action sets the inventory-expansion toggle (it would stay off under learned gates).
+    Same checkpoint, planner-owned investment gate — the P2/C3 deployment mode."""
+    import pytest
+
+    torch = pytest.importorskip("torch")
+    from tokenomics.env import TokenomicsAECEnv
+    from tokenomics.train.producer_scorer import ProducerScoreModel, scorer_producing_policy
+
+    torch.manual_seed(0)
+    model = ProducerScoreModel(hidden=16)
+    model.upgrade_threshold = 1.0  # learned investment gates can never fire
+    model.inventory_expansion_threshold = 1.0
+
+    env = TokenomicsAECEnv(horizon=10, entity_producer_obs=True)
+    env.reset(seed=0)
+    agent = "prod_p4"
+    pid = env._role[agent][1]
+    # exhaust headroom so the planner's inventory-expansion gate would fire.
+    p4 = env.system.producing_agents[pid]
+    p4.inventory[11] = p4.inventory_limit
+
+    learned = scorer_producing_policy(model)(env, agent)
+    gated = scorer_producing_policy(model, planner_gates=True, replenish_tie_rel_tol=0.02)(env, agent)
+
+    inv_slot = env.spec_.num_inputs + 2  # inventory-expansion toggle in the Box action
+    assert env.action_space(agent).contains(gated)
+    assert gated[inv_slot] > learned[inv_slot]
+
+
+def test_planner_gates_override_learned_investment_gates_with_planner_decisions():
+    """Out-of-family the learned investment gates generalize poorly (EXP-0017), so the
+    deployment can hand the upgrade / inventory-expansion gate decisions back to the
+    deterministic planner while keeping the learned continuous scores. With the learned
+    gates pinned off, a view the planner would expand inventory on still gets a positive
+    inventory-expansion gate, and the continuous scores are untouched."""
+    import pytest
+
+    torch = pytest.importorskip("torch")
+    from dataclasses import replace
+
+    from tokenomics.domain.producer_planner import score_producer_entity_view
+    from tokenomics.train.producer_scorer import ProducerScoreModel, score_with_model
+
+    torch.manual_seed(0)
+    model = ProducerScoreModel(hidden=16)
+    model.upgrade_threshold = 1.0  # learned gates can never fire
+    model.inventory_expansion_threshold = 1.0
+    # headroom exhausted + missing inputs -> the deterministic planner wants to expand.
+    view = _p4_view_with_input_stock(inv11=0, inv20=0)
+    view = replace(view, globals=replace(view.globals, inventory_headroom=0))
+    planner = score_producer_entity_view(view)
+    assert planner.inventory_expansion_value > 0.0  # precondition: planner would expand
+
+    learned = score_with_model(model, view)  # learned gates -> off
+    gated = score_with_model(model, view, planner_gates=True)
+
+    assert learned.inventory_expansion_value == 0.0
+    assert gated.inventory_expansion_value == planner.inventory_expansion_value
+    assert gated.upgrade_roi == planner.upgrade_roi
+    # continuous scores stay the learned heads, unaffected by gate ownership.
+    assert gated.input_value == learned.input_value
+    assert gated.product_urgency == learned.product_urgency
+    assert gated.capacity_bottleneck_value == learned.capacity_bottleneck_value
+
+
 def test_score_with_model_emits_binary_gate_scores_by_threshold():
     """Investment decisions are learned BINARY GATES, not thresholded ROI regressions: a
     head's logit -> probability, and the deterministic planner sees a clean `1.0`/`0.0`

@@ -99,6 +99,7 @@ def plan_producer_command(
     inventory_expansion_increases: int = 0,
     inventory_expansion_cost: int | float = 0,
     input_stock_target: int = DEFAULT_INPUT_STOCK_TARGET,
+    replenish_tie_rel_tol: float = 0.0,
 ) -> ProducingAgentCommand:
     """Plan one producer command from the entity view.
 
@@ -132,6 +133,7 @@ def plan_producer_command(
         replenish_cost_per_unit=replenish_cost_per_unit,
         funding_budget=remaining_budget,
         input_stock_target=input_stock_target,
+        tie_rel_tol=replenish_tie_rel_tol,
     )
     if remaining_budget is not None and replenish_cost_per_unit:
         remaining_budget -= sum(replenishments.values()) * float(replenish_cost_per_unit)
@@ -167,6 +169,7 @@ def _plan_replenishments(
     replenish_cost_per_unit: int | float | None,
     funding_budget: float | None,
     input_stock_target: int,
+    tie_rel_tol: float = 0.0,
 ) -> dict[Product, int]:
     headroom = max(0, view.globals.inventory_headroom)
     if headroom <= 0 or max_replenish <= 0:
@@ -189,9 +192,12 @@ def _plan_replenishments(
     if not wants:
         return {}
 
-    # Spend by local value and local need. For exact ties, allocate the same integer
-    # quantity to every tied input; if the remaining headroom cannot do that, leave it
-    # unspent rather than selecting an arbitrary subset by product id or row order.
+    # Spend by local value and local need. Inputs with (near-)equal value and equal need
+    # are treated as tied and get the same integer quantity; if the remaining headroom
+    # cannot do that, leave it unspent rather than selecting an arbitrary subset by product
+    # id or row order. `tie_rel_tol` widens "equal value" to a relative band so a learned
+    # scorer's near-equal noise (e.g. 14.502 vs 14.498) still splits evenly on fork/join
+    # paired inputs (EXP-0017); 0.0 keeps the deterministic planner's exact-tie behavior.
     wants.sort(key=lambda x: (-x[0], -x[1]))
     out: dict[Product, int] = {}
     remaining = headroom
@@ -199,7 +205,7 @@ def _plan_replenishments(
     while i < len(wants) and remaining > 0:
         value, want, _product = wants[i]
         j = i + 1
-        while j < len(wants) and wants[j][0] == value and wants[j][1] == want:
+        while j < len(wants) and _near_equal(wants[j][0], value, tie_rel_tol) and wants[j][1] == want:
             j += 1
         group = wants[i:j]
         if remaining <= 0:
@@ -217,6 +223,17 @@ def _plan_replenishments(
             break
         i = j
     return out
+
+
+def _near_equal(value: float, leader: float, rel_tol: float) -> bool:
+    """Whether `value` is tied with the group `leader` within a relative tolerance.
+
+    `rel_tol == 0.0` reduces to exact equality (the deterministic planner's behavior).
+    The band is relative to the larger magnitude so it scales with score size.
+    """
+    if value == leader:
+        return True
+    return abs(value - leader) <= rel_tol * max(abs(value), abs(leader), 1.0)
 
 
 def _spendable(budget: float | None, cost: int | float) -> bool:

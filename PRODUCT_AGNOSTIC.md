@@ -1501,7 +1501,8 @@ so producer-alone rows are now a required gate before any final portability clai
    - Keep the producer-alone caveat explicit in the commit/experiment notes so later
      fixes compare against a known baseline rather than rewriting the evidence.
 
-6. **Fix the producer-side out-of-family policy gap surfaced by EXP-0017.**
+6. **Fix the producer-side out-of-family policy gap surfaced by EXP-0017.** — **CODE
+   DONE (local TDD); cloud rerun = step 7.**
    - Diagnosis on fork/join s8/s9: the portable producer contract holds, but
      producer-alone value under `proportional` regresses because learned investment
      gates generalize poorly out-of-family. On s8, replacing only the learned
@@ -1511,11 +1512,46 @@ so producer-alone rows are now a required gate before any final portability clai
    - Immediate robust path: keep upgrade and inventory-expansion gates planner-owned
      for P2/C3 deployment, and let the learned producer scorer own continuous/ranking
      scores only until gate training covers fork/join, shared-capacity, scarcity, and
-     running-investment states.
+     running-investment states. — **landed:** `score_with_model(model, view,
+     planner_gates=True)` sources the upgrade / inventory-expansion gates from the
+     deterministic `score_producer_entity_view` while keeping the learned continuous
+     heads; `scorer_producing_policy(model, planner_gates=True, replenish_tie_rel_tol=…)`
+     deploys it. Same checkpoint, same schema — only the policy adapter differs. Exposed
+     in `transfer_matrix` as the distinct producer kind `portable_scorer_planner_gates`
+     (no silent flip of `portable_scorer`) with a `producer_policy_mode` =
+     `learned_gates | planner_gates` CSV column; `DEFAULT_STACKS` now carries
+     `portable_producer_planner_gates+proportional` and
+     `…+portable_orderer` alongside the original learned-gate rows (kept as regression
+     bars). Gated by `tests/test_producer_scorer.py` + `tests/test_transfer_matrix.py`.
    - Secondary fix: make replenishment allocation tie-tolerant for near-equal input
      scores. Fork/join recipes need balanced paired inputs; learned `input_value`
      noise can break the planner's exact-tie split and overfill one input while
-     starving its mate.
+     starving its mate. — **landed but ships OFF (`tol=0.0`).** `plan_producer_command(…,
+     replenish_tie_rel_tol=…)` widens the planner's exact-tie group to a relative band
+     (`0.0` = unchanged deterministic behavior). A local ablation over fork/join s8/s9
+     (planner-gated producer, `proportional` orderer) showed the tolerance is **not
+     monotonic**: it helps s9 (0.955→0.992 at tol≥0.01) but hurts s8 (1.005→0.946 at
+     0.02), the s8 loss outweighing the s9 gain by mean ratio. So it stays a **tunable
+     ablation knob** — `transfer_matrix --tie-rel-tol`, each row labeled by
+     `producer_tie_rel_tol` — not a shipped default (`PLANNER_GATE_TIE_REL_TOL = 0.0`).
+     Gated by `tests/test_producer_planner.py`
+     (`test_planner_splits_headroom_evenly_for_near_equal_input_scores`,
+     `test_tie_tolerance_does_not_merge_clearly_different_input_scores`) and
+     `tests/test_transfer_matrix.py`
+     (`test_planner_gated_tie_tolerance_defaults_to_zero_and_is_tunable_per_row`).
+   - **Acceptance smoke (local, fork/join s8/s9, producer-alone under `proportional`, at
+     the SHIPPED default `tol=0.0`):** planner-gated producer recovers s8 0.450→**1.005**
+     (clears the bar) and s9 0.826→**0.955** (still below), vs the learned-gate regression
+     (0.450 / 0.826); joint stack unchanged-strong (2.83 / 2.97), zero contract failures,
+     zero death. (At the `tol=0.02` ablation point the split shifts to s8 0.946 / s9
+     0.992 — the non-monotonicity that keeps tie tolerance off by default; see the
+     secondary-fix note above.) **Status: producer policy gap MATERIALLY REDUCED, not
+     fully closed** — s9 sits at 0.955 producer-alone, so the "no producer-alone seed
+     below 1.0" gate is not strictly cleared at any single tolerance. Final P2/C3
+     producer-side closure needs training coverage (fork/join, shared-capacity, scarcity,
+     running-investment states) or a better replenishment/investment treatment that
+     clears **both** s8 and s9 without a seed-specific tradeoff. The full EXP-0018 writeup
+     + multi-seed (6–9) rerun is step 7 (NOT done).
 
 7. **Rerun EXP-0017 as the producer-fix acceptance gate.**
    - Reuse the same fork/join seeds 6-9, same checkpoints, same `transfer_matrix`

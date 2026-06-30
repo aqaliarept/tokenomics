@@ -133,6 +133,59 @@ def test_planner_scores_are_transparent_and_local():
     assert scores.inventory_expansion_value > 0.0
 
 
+def test_planner_splits_headroom_evenly_for_near_equal_input_scores():
+    """Fork/join recipes need balanced paired inputs. A learned scorer emits near-equal
+    but non-identical input values; with a relative tie tolerance the planner treats them
+    as tied and splits scarce headroom evenly, instead of overfilling the marginally
+    higher one and starving its mate (EXP-0017 producer-side fix)."""
+    from tokenomics.domain.producer_planner import (
+        ProducerLocalScores,
+        plan_producer_command,
+    )
+
+    cfg = load_config(DEFAULT_CONFIG)
+    system = build_system(cfg)
+    view = system.producer_entity_view("p4")  # product 30 joins inputs 11 and 20.
+    view = replace(view, globals=replace(view.globals, inventory_headroom=4))
+    scores = ProducerLocalScores(input_value={11: 14.502, 20: 14.498})
+
+    cmd = plan_producer_command(
+        view,
+        max_replenish=10,
+        funding_budget=None,
+        scores=scores,
+        replenish_tie_rel_tol=0.02,
+    )
+
+    assert cmd.replenishments == {11: 2, 20: 2}
+
+
+def test_tie_tolerance_does_not_merge_clearly_different_input_scores():
+    """The tolerance only smooths near-equal noise. Inputs whose values differ well
+    beyond the band stay strictly ordered: the higher-valued input takes its full need
+    before any headroom spills to the lower one."""
+    from tokenomics.domain.producer_planner import (
+        ProducerLocalScores,
+        plan_producer_command,
+    )
+
+    cfg = load_config(DEFAULT_CONFIG)
+    system = build_system(cfg)
+    view = system.producer_entity_view("p4")
+    view = replace(view, globals=replace(view.globals, inventory_headroom=3))
+    scores = ProducerLocalScores(input_value={11: 20.0, 20: 16.0})  # 20% apart >> 2%
+
+    cmd = plan_producer_command(
+        view,
+        max_replenish=10,
+        funding_budget=None,
+        scores=scores,
+        replenish_tie_rel_tol=0.02,
+    )
+
+    assert cmd.replenishments == {11: 3}
+
+
 def test_planner_is_invariant_to_entity_row_order():
     """Reordering capacity/product/input rows should not change the producer-level
     command; relation planes are already row-position-gated by 10A."""
