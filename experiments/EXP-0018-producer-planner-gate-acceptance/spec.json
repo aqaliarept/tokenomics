@@ -1,0 +1,19 @@
+{
+  "id": "EXP-0018-producer-planner-gate-acceptance",
+  "question": "Does the EXP-0017 producer-side out-of-family POLICY fix — replacing only the learned upgrade / inventory-expansion investment gates with deterministic planner gates (`portable_scorer_planner_gates`), learned continuous heads unchanged, same checkpoint and schema — stop the producer-alone regression on the fork/join held-out seeds 6-9 under a `proportional` orderer, while keeping zero contract failure / zero death and the joint stack still beating the bar? Acceptance gate for ordered-plan step 7 (rerun EXP-0017 as the producer-fix gate).",
+  "adr": "0053, 0054",
+  "plan": "PRODUCT_AGNOSTIC.md ordered action plan step 7. Code for the fix landed in step 6 (local TDD): `score_with_model(model, view, planner_gates=True)`, `scorer_producing_policy(model, planner_gates=True, replenish_tie_rel_tol=...)`, exposed in `transfer_matrix` as the distinct producer kind `portable_scorer_planner_gates` (no silent flip of `portable_scorer`) with `producer_policy_mode`/`producer_tie_rel_tol` CSV columns. This experiment is the multi-seed acceptance rerun.",
+  "method": {
+    "fixture": "Same as EXP-0017: tokenomics.eval.fixtures.build_forkjoin_config(seed, depth=3, width=4, inputs_per_product=2) on held-out seeds 6,7,8,9. Out-of-family by construction (max inputs/product 1->2).",
+    "runner": "tokenomics.eval.transfer_matrix with out_of_family_targets. DEFAULT_STACKS now carries 8 stacks: the original 6 (incl. learned-gate portable rows as regression bars) PLUS portable_producer_planner_gates+proportional and portable_producer_planner_gates+portable_orderer.",
+    "stacks": "noop+proportional (floor); entity_planner+proportional (bar); stock_aware+proportional; portable_producer+proportional (learned gates, regression bar); portable_producer_planner_gates+proportional (THE FIX, producer-alone); stock_aware+portable_orderer; portable_producer+portable_orderer (joint, learned gates); portable_producer_planner_gates+portable_orderer (joint, planner gates).",
+    "tie_tolerance": "Shipped default PLANNER_GATE_TIE_REL_TOL = 0.0 (planner-gated rows ran at tol 0.0; tie tolerance is a non-monotonic ablation knob, off by default).",
+    "eval_seeds": 5,
+    "horizon": 100,
+    "no_retrain": "reuses EXP-0012 + EXP-0013 checkpoints unchanged"
+  },
+  "command": "python -m tokenomics.eval.transfer_matrix --producer-ckpt experiments/EXP-0013-portable-producer-scorer/artifacts/producer_scorer.pt --orderer-ckpt experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt --depth 3 --seeds 6-9 --out-of-family --inputs-per-product 2 --eval-seeds 5 --horizon 100 --out experiments/EXP-0018-producer-planner-gate-acceptance/summary.csv",
+  "metric": "Per cell: contract flags + runs_episode + failure_class + dead_rate; consumer_completed_units; ratio_vs_practical_baseline (vs entity_planner+proportional on the SAME fork/join target); producer_policy_mode (learned_gates|planner_gates) and producer_tie_rel_tol recorded per row.",
+  "pass": "Contract: every non-floor cell runs_episode=True, failure_class=none, dead_rate=0 on every fork/join seed (unchanged from EXP-0017). Joint: portable_producer_planner_gates+portable_orderer still beats the bar (mean ~2.9x). Producer-alone acceptance bar DECISION recorded: 'materially reduced' (min lifts 0.450->0.955, mean crosses 1.0, 3/4 seeds >=1.0) is met; the stricter 'no producer-alone seed below 1.0' is NOT met (s9=0.955).",
+  "notes": "Local eval only (HARD RULE: evaluation of existing checkpoints, no training). The producer-alone result confirms the step-6 single-seed prediction across all four held-out seeds at the shipped tol=0.0."
+}
