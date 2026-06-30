@@ -237,6 +237,44 @@ def default_targets(depth: int, seeds: list[int]) -> list[TargetTopology]:
     return targets
 
 
+def size_transfer_targets(seed: int, *, depth: int = 3,
+                          product_width: int = 8, producer_width: int = 8) -> list[TargetTopology]:
+    """C2 size-transfer axis (ordered plan step 4): off ONE base seed, widen the product
+    count, the producer count, then both — relative to the train family (width 4). Depth
+    (and so capacity-type count) is held fixed so a contract/scaling failure on a wider
+    target stays separable from the train-size rows. The portable scorers are id-free, so
+    the SAME checkpoints are expected to load and run unchanged on every entry here."""
+    return [
+        TargetTopology(
+            f"scale-d{depth}-s{seed}-prodW{product_width}",
+            build_scale_config(seed, depth=depth, products_per_layer=product_width), depth),
+        TargetTopology(
+            f"scale-d{depth}-s{seed}-agentW{producer_width}",
+            build_scale_config(seed, depth=depth, producers_per_layer=producer_width), depth),
+        TargetTopology(
+            f"scale-d{depth}-s{seed}-prodW{product_width}-agentW{producer_width}",
+            build_scale_config(seed, depth=depth, products_per_layer=product_width,
+                               producers_per_layer=producer_width), depth),
+    ]
+
+
+def out_of_family_targets(seeds: list[int], *, depth: int = 3, width: int = 4,
+                          inputs_per_product: int = 2) -> list[TargetTopology]:
+    """C3 out-of-family axis (ordered plan step 6): one fork/join, multi-input target per
+    seed. These leave the layered single-input scale family (every composite product joins
+    `inputs_per_product` lower products), so a contract failure here is attributable to the
+    recipe DAG, not product/producer count. The id-free scorers are expected to load and
+    run unchanged — that is exactly the dominant open transfer claim under test."""
+    from .fixtures import build_forkjoin_config
+    return [
+        TargetTopology(
+            f"forkjoin-d{depth}-w{width}-in{inputs_per_product}-s{s}",
+            build_forkjoin_config(s, depth=depth, width=width,
+                                  inputs_per_product=inputs_per_product), depth)
+        for s in seeds
+    ]
+
+
 def main() -> None:
     """Emit the C-1 verification matrix CSV from available artifacts (local eval)."""
     import argparse
@@ -249,6 +287,15 @@ def main() -> None:
     ap.add_argument("--eval-seeds", type=int, default=5)
     ap.add_argument("--horizon", type=int, default=100)
     ap.add_argument("--out", default="transfer_matrix.csv")
+    ap.add_argument("--size-transfer", action="store_true",
+                    help="append C2 size-transfer targets (larger product/producer/both) "
+                         "off the first seed (ordered plan step 4)")
+    ap.add_argument("--product-width", type=int, default=8)
+    ap.add_argument("--producer-width", type=int, default=8)
+    ap.add_argument("--out-of-family", action="store_true",
+                    help="use the C3 fork/join multi-input targets (one per seed) instead "
+                         "of the scale-family targets (ordered plan step 6)")
+    ap.add_argument("--inputs-per-product", type=int, default=2)
     args = ap.parse_args()
 
     prod = ord_ = None
@@ -260,7 +307,15 @@ def main() -> None:
         ord_ = load_scorer(args.orderer_ckpt)
 
     seeds = _parse_seeds(args.seeds)
-    targets = default_targets(args.depth, seeds)
+    if args.out_of_family:
+        targets = out_of_family_targets(seeds, depth=args.depth,
+                                        inputs_per_product=args.inputs_per_product)
+    else:
+        targets = default_targets(args.depth, seeds)
+    if args.size_transfer:
+        targets += size_transfer_targets(seeds[0], depth=args.depth,
+                                         product_width=args.product_width,
+                                         producer_width=args.producer_width)
     rows = transfer_matrix(DEFAULT_STACKS, targets, args.eval_seeds, args.horizon,
                            producer_model=prod, orderer_model=ord_, log=print)
     write_matrix_csv(rows, args.out)

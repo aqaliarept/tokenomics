@@ -1,0 +1,19 @@
+{
+  "id": "EXP-0017-out-of-family-recipe",
+  "question": "Do the portable producer (EXP-0013) and orderer (EXP-0012) checkpoints, UNRETRAINED, load and run on an OUT-OF-FAMILY recipe DAG — a fork/join, multi-input economy that leaves the layered single-input scale family they were distilled on — and keep value, with contract/run/death/value separated (C3, the dominant open transfer claim; ordered plan steps 5-6, recipe axis)?",
+  "adr": "0053, 0054",
+  "plan": "PRODUCT_AGNOSTIC.md ordered action plan step 5 (add reusable out-of-family fixtures) + step 6 (close the shared out-of-family recipe axis: producer-only, orderer-only, joint-stack rows on the new fixtures). Reuses the transfer_matrix runner; the fork/join fixture is the recipe axis.",
+  "method": {
+    "fixture": "tokenomics.eval.fixtures.build_forkjoin_config(seed, depth=3, width=4, inputs_per_product=2): each level-l composite product (l>=1) JOINS 2 distinct lower products (indices j, j+1 mod width), so every lower product FORKS to several upper products. Breaks the scale family's single-input same-index chain (max inputs/product 1 -> 2). Capacity stays one type per level (recipe DAG is the axis here; shared-capacity is a later fixture). Validates as a real, feasible economy.",
+    "runner": "tokenomics.eval.transfer_matrix with out_of_family_targets(seeds, depth, inputs_per_product): one fork/join target per held-out seed. Same DEFAULT_STACKS, same joint_stack_env.",
+    "stacks": "noop+proportional (floor); entity_planner+proportional (practical bar); stock_aware+proportional; portable_producer+proportional (C0 prod); stock_aware+portable_orderer (C0 ord); portable_producer+portable_orderer (full stack).",
+    "targets": "forkjoin-d3-w4-in2 on held-out seeds 6,7,8,9.",
+    "eval_seeds": 5,
+    "horizon": 100,
+    "no_retrain": "reuses EXP-0012 + EXP-0013 checkpoints unchanged"
+  },
+  "command": "python -m tokenomics.eval.transfer_matrix --producer-ckpt experiments/EXP-0013-portable-producer-scorer/artifacts/producer_scorer.pt --orderer-ckpt experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt --depth 3 --seeds 6-9 --out-of-family --inputs-per-product 2 --eval-seeds 5 --horizon 100 --out experiments/EXP-0017-out-of-family-recipe/summary.csv",
+  "metric": "Per cell: schema_loads + contract_compatible flags, runs_episode, failure_class (CONTRACT vs none), consumer_completed_units, dead_rate, ratio_vs_practical_baseline (vs entity_planner+proportional on the SAME fork/join target). The contract axis = do the id-free scorers run at all on a different DAG; the policy axis = value vs the bar.",
+  "pass": "Contract: every portable cell runs_episode=True with failure_class=none on every fork/join seed (the id-free contract transfers to multi-input recipes). Floor noop=0 (nontrivial). Value: report separately — the full portable stack should not regress the bar; a producer-alone regression is a POLICY finding, not a contract failure.",
+  "notes": "Local eval only (HARD RULE). FIRST out-of-family axis = recipe DAG via fork/join multi-input. NOT covered: shared capacity types across levels, deeper joins (inputs_per_product>2), uneven-strength competing producers as a separate axis, and the scarcity/degenerate fixtures (step 5 remainder). Those are added by widening fixtures, no new runner code. Gated by tests/test_fixtures.py + tests/test_transfer_matrix.py::test_out_of_family_targets_are_multi_input_and_runnable."
+}

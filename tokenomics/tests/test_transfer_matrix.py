@@ -15,6 +15,8 @@ from tokenomics.eval.transfer_matrix import (
     StackSpec,
     TargetTopology,
     evaluate_stack_on_target,
+    out_of_family_targets,
+    size_transfer_targets,
     transfer_matrix,
     write_matrix_csv,
 )
@@ -91,6 +93,58 @@ def test_transfer_matrix_attaches_practical_baseline_ratio() -> None:
     sa = next(r for r in rows if r["model_id"] == "stock_aware+proportional")
     assert sa["ratio_vs_practical_baseline"] == approx(
         sa["consumer_completed_units"] / ep["baseline_consumer_completed_units"], rel=1e-6)
+
+
+def test_size_transfer_targets_widen_product_and_producer_axes() -> None:
+    # C2 size transfer (ordered plan step 4): off ONE base seed, build larger-product,
+    # larger-producer, and larger-both targets. Dims must scale on the widened axis only
+    # (depth fixed) so a contract/scaling failure stays separable from the train-size rows.
+    targets = size_transfer_targets(seed=6, depth=3, product_width=8, producer_width=8)
+    by_name = {t.name: t for t in targets}
+    assert len(targets) == 3
+
+    prod = by_name["scale-d3-s6-prodW8"]
+    # product-width 8 at depth 3 -> 24 products, producers stay 12 (4/level), caps = depth
+    pp, ppr, pc = (len(prod.config.process_sheets),
+                   len(prod.config.producer_configs),
+                   len({t for s in prod.config.process_sheets for t in s.require}))
+    assert (pp, ppr, pc, prod.depth) == (24, 12, 3, 3)
+
+    agent = by_name["scale-d3-s6-agentW8"]
+    ap, apr, ac = (len(agent.config.process_sheets),
+                   len(agent.config.producer_configs),
+                   len({t for s in agent.config.process_sheets for t in s.require}))
+    assert (ap, apr, ac) == (12, 24, 3)  # products fixed, producers doubled
+
+    both = by_name["scale-d3-s6-prodW8-agentW8"]
+    bp, bpr = len(both.config.process_sheets), len(both.config.producer_configs)
+    assert (bp, bpr) == (24, 24)
+
+    # a deterministic stack must actually run on a widened target (contract-compatible)
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, prod, eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+    assert row["failure_class"] == "none"
+    assert row["target_products"] == 24
+    assert row["consumer_completed_units"] > 0
+
+
+def test_out_of_family_targets_are_multi_input_and_runnable() -> None:
+    # C3 out-of-family (ordered plan step 6): the fork/join targets must leave the layered
+    # single-input scale family (>=1 multi-input product) AND still run a deterministic
+    # stack, so a contract failure here is attributable to the recipe axis, not a broken
+    # fixture.
+    targets = out_of_family_targets(seeds=[6, 7], depth=3, width=4, inputs_per_product=2)
+    assert len(targets) == 2
+    t = targets[0]
+    assert "forkjoin" in t.name
+    assert max(len(ps.inputs) for ps in t.config.process_sheets) == 2  # genuinely join
+
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, t, eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+    assert row["failure_class"] == "none"
+    assert row["consumer_completed_units"] > 0
 
 
 def test_write_matrix_csv_round_trips_columns_and_values(tmp_path) -> None:

@@ -1,0 +1,18 @@
+{
+  "id": "EXP-0016-size-transfer",
+  "question": "Do the portable producer (EXP-0013) and orderer (EXP-0012) checkpoints, UNRETRAINED, load and run on larger topologies than they were distilled on — more products, more producers, both — and keep their value lift, with contract/run/death/value reported separately from scaling (C2, ordered plan step 4)?",
+  "adr": "0053, 0054",
+  "plan": "PRODUCT_AGNOSTIC.md ordered action plan step 4 (C2 size transfer with the EXP-0014 harness). Reuses the EXP-0015 transfer_matrix runner by widening targets only — no new policy code, no retrain.",
+  "method": {
+    "runner": "tokenomics.eval.transfer_matrix with size_transfer_targets(seed, depth, product_width, producer_width): off ONE base seed (6), build larger-product (products_per_layer 4->8 => P_products 12->24), larger-producer (producers_per_layer 4->8 => P_producers 12->24), and larger-both targets. Depth (=capacity-type count) held fixed at 3 so a contract/scaling failure on a wider target stays separable from the train-size rows. The same DEFAULT_STACKS run on every target via joint_stack_env.",
+    "stacks": "noop+proportional (floor); entity_planner+proportional (practical bar = ratio denominator); stock_aware+proportional; portable_producer+proportional (C0 prod, EXP-0013 ckpt); stock_aware+portable_orderer (C0 ord, EXP-0012 ckpt); portable_producer+portable_orderer (C1 full stack).",
+    "targets": "base scale-d3-s6 (in-family reference) + scale-d3-s6-relabel + three C2 size directions: prodW8 (24 products), agentW8 (24 producers), prodW8-agentW8 (24 products + 24 producers).",
+    "eval_seeds": 5,
+    "horizon": 100,
+    "no_retrain": "reuses EXP-0012 + EXP-0013 checkpoints unchanged"
+  },
+  "command": "python -m tokenomics.eval.transfer_matrix --producer-ckpt experiments/EXP-0013-portable-producer-scorer/artifacts/producer_scorer.pt --orderer-ckpt experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt --depth 3 --seeds 6 --size-transfer --product-width 8 --producer-width 8 --eval-seeds 5 --horizon 100 --out experiments/EXP-0016-size-transfer/summary.csv",
+  "metric": "Per size cell: producer/orderer schema_loads + contract_compatible flags, runs_episode, failure_class (CONTRACT vs none), consumer_completed_units, dead_rate, ratio_vs_practical_baseline (vs entity_planner+proportional on the SAME wider target). Floor (noop) proves each wider target is nontrivial; the portable cells prove the id-free contract scales.",
+  "pass": "Every portable cell on every size direction runs_episode=True with failure_class=none (no contract failure from widening); floor noop=0 units (target nontrivial); the portable stack does not regress the planner bar on any size direction; zero death for every non-floor stack.",
+  "notes": "Local eval only (HARD RULE: evaluation of existing checkpoints, no training). Out-of-family recipe targets (P2/O3/C3) are NOT covered here — same layered DAG family, only product/producer counts widen. Gated by tests/test_transfer_matrix.py::test_size_transfer_targets_widen_product_and_producer_axes."
+}

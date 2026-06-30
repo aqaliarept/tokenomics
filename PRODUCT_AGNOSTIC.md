@@ -1440,17 +1440,18 @@ The corrected product-stream orderer contract is accepted only if:
 
 ## Ordered Action Plan
 
-This is the current close-out order for the product-agnostic ladder. The ordering
-prioritizes the document's stated first deliverable, then uses cheap checkpoint
-evals before opening new training or broad ablations.
+This is the current close-out order for the product-agnostic ladder. The next priority is
+to lock the verified baseline evidence, then fix the producer-side EXP-0017 policy gap
+before expanding to harder C3/P3 fixtures. The joint stack can hide this producer issue,
+so producer-alone rows are now a required gate before any final portability claim.
 
-1. **Reconcile status documentation.**
-   - Write up P0 as PASS using the existing deterministic planner relabel,
-     row-permutation, and EXP-0010D size-holdout evidence.
-   - Write up C0 as effectively PASS from P1 with deterministic orderer and O2 with
-     deterministic producer, while naming any missing apples-to-apples rows.
-   - Keep O0/O2/O3 wording consistent: EXP-0012 satisfies the fresh v4 orderer
-     artifact; O3 still owes only the out-of-family recipe axis.
+1. **Reconcile status documentation.** — **DONE.**
+   - P0 written as PASS using existing deterministic planner relabel, row-permutation,
+     and EXP-0010D size-holdout evidence.
+   - C0 written as effectively PASS from P1 with deterministic orderer and O2 with
+     deterministic producer; missing apples-to-apples rows folded into the matrix.
+   - O0/O2/O3 wording reconciled: EXP-0012 satisfies the fresh v4 orderer artifact;
+     O3 still owes only remaining out-of-family recipe axes.
 
 2. **Build the verification matrix CSV (C-1 first deliverable).** — **DONE (EXP-0015).**
    - Add a reusable runner that emits the columns listed in "Evaluation Output":
@@ -1471,65 +1472,111 @@ evals before opening new training or broad ablations.
      portable/deterministic). Legacy incompatibility shows once a flat ckpt is pointed
      at an off-size target (a later rung).
 
-3. **Run P-1 and O-1 dynamic baseline audits through the matrix.**
+3. **Run C2 size transfer with the EXP-0014 harness.** — **DONE (EXP-0016).**
+   - Reuse the EXP-0012 and EXP-0013 checkpoints with no retrain. — done; same ckpts,
+     `transfer_matrix` + new `size_transfer_targets`, no policy code changed.
+   - Evaluate larger product count, larger producer count, and larger product plus
+     producer count targets. — done: `prodW8` (24 products), `agentW8` (24 producers),
+     `prodW8-agentW8` (24/24), off base seed 6, depth fixed 3.
+   - Report load/run/death/value separately from scaling metrics so contract,
+     policy, and runtime failures stay distinct. — done: every portable cell
+     `runs_episode=True`/`failure_class=none` (zero contract failures), floor `noop`=0
+     (targets nontrivial), zero death, full stack ties/beats the planner bar on all
+     three directions (prodW8 1.286 / agentW8 1.063 / both 1.147). C3 (out-of-family)
+     still open.
+
+4. **Record the first out-of-family recipe probe.** — **PARTIAL C3 DONE (EXP-0017).**
+   - Fork/join + multi-input fixture added via
+     `eval/fixtures.py::build_forkjoin_config`; same checkpoints run unretrained.
+   - Contract PASS: all portable cells run with `failure_class=none`, zero death.
+   - Joint value PASS: full portable stack beats the planner bar (mean 2.86x,
+     min 2.64x), but producer-alone under `proportional` regresses on s8/s9.
+   - Treat EXP-0017 as baseline evidence, not final C3 closure: shared-capacity,
+     deeper joins, uneven strengths, scarcity, and degenerate fixtures still remain.
+
+5. **Land the verified baseline slice before changing policy behavior.**
+   - Commit the current verified work as a stable checkpoint: orderer O0-O3, producer
+     P0/P1, C0/C1, EXP-0015 matrix, EXP-0016 size transfer, EXP-0017 fork/join, docs,
+     tests, and review fixes.
+   - Keep the producer-alone caveat explicit in the commit/experiment notes so later
+     fixes compare against a known baseline rather than rewriting the evidence.
+
+6. **Fix the producer-side out-of-family policy gap surfaced by EXP-0017.**
+   - Diagnosis on fork/join s8/s9: the portable producer contract holds, but
+     producer-alone value under `proportional` regresses because learned investment
+     gates generalize poorly out-of-family. On s8, replacing only the learned
+     upgrade/inventory gates with deterministic planner gates recovers the bar
+     (`35.2 -> 78.6` units; `0.450x -> 1.005x`), while keeping learned gates stays
+     bad even with planner replenishment scores.
+   - Immediate robust path: keep upgrade and inventory-expansion gates planner-owned
+     for P2/C3 deployment, and let the learned producer scorer own continuous/ranking
+     scores only until gate training covers fork/join, shared-capacity, scarcity, and
+     running-investment states.
+   - Secondary fix: make replenishment allocation tie-tolerant for near-equal input
+     scores. Fork/join recipes need balanced paired inputs; learned `input_value`
+     noise can break the planner's exact-tie split and overfill one input while
+     starving its mate.
+
+7. **Rerun EXP-0017 as the producer-fix acceptance gate.**
+   - Reuse the same fork/join seeds 6-9, same checkpoints, same `transfer_matrix`
+     stacks, and same `entity_planner + proportional` bar.
+   - Required: zero contract failures, zero death, joint stack still passes, and
+     `portable_producer + proportional` no longer regresses below the bar on s8/s9.
+   - If the planner-gated producer passes, update EXP-0017 with a follow-up row or
+     open a small EXP-0018 that records the policy-behavior fix separately.
+
+8. **Run P-1 and O-1 dynamic baseline audits through the matrix.**
    - Producer side: compare `entity_planner`, portable scorer/planner, and
      shape-compatible legacy producers under proportional or another deterministic
      orderer.
    - Orderer side: compare `proportional`, portable scorer/allocator, and
      shape-compatible legacy orderers under `stock_aware` or `entity_planner`.
    - Include same-shape relabels, numeric perturbations, larger product counts, and
-     larger producer counts before adding new fixture families.
+     larger producer counts; keep contract failures distinct from policy failures.
 
-4. **Run C2 size transfer with the EXP-0014 harness.**
-   - Reuse the EXP-0012 and EXP-0013 checkpoints with no retrain.
-   - Evaluate larger product count, larger producer count, and larger product plus
-     producer count targets.
-   - Report load/run/death/value separately from scaling metrics so contract,
-     policy, and runtime failures stay distinct.
-
-5. **Add reusable out-of-family, scarcity, and degenerate fixtures.**
-   - Out-of-family: fork/join DAGs, multi-input products, shared capacity types, and
-     competing producers with uneven strengths.
+9. **Add remaining reusable out-of-family, scarcity, and degenerate fixtures.**
+   - Out-of-family: shared capacity types, deeper joins, and a dedicated uneven-strength
+     producer axis. Fork/join + multi-input is already covered by EXP-0017.
    - Scarcity: low inventory headroom, low funding, degraded capacity, high backlog,
      and already-running investments.
    - Degenerate: zero eligible alternatives, one eligible producer, no backlog, no
      input products, no inventory expansion, and mostly padded rows.
 
-6. **Close the shared out-of-family recipe axis (P2, O3 remainder, C3).**
-   - Run producer-only, orderer-only, and joint-stack matrix rows on the new
-     out-of-family fixtures.
-   - Treat this as the dominant open transfer claim: no final portability claim
-     should be promoted until fork/join, shared-capacity, multi-input, and uneven
-     strength rows are reported.
-   - Classify every miss as schema/load, decoder/allocator contract, policy quality,
-     or scaling.
+10. **Close the remaining shared out-of-family recipe axes (P2, O3 remainder, C3).**
+    - Run producer-only, orderer-only, and joint-stack matrix rows on shared-capacity,
+      deeper-join, and uneven-strength fixtures.
+    - Classify every miss as schema/load, decoder/allocator contract, producer policy
+      quality, orderer policy quality, or scaling.
+    - Do not promote a final portability claim until producer-alone and orderer-alone
+      rows both pass on the covered C3 fixtures; joint success alone is insufficient.
 
-7. **Run P3 stress and scarcity.**
-   - Evaluate the producer scorer/planner under low headroom, low funding, high
-     backlog, high degradation, and running-investment conditions.
-   - Compare against `entity_planner`, `stock_aware`, and the best available simple
-     fallback; report invalid command rate, investment false positives, value, and
-     death.
+11. **Run P3 stress and scarcity.**
+    - Evaluate the producer scorer/planner under low headroom, low funding, high
+      backlog, high degradation, and running-investment conditions.
+    - Compare against `entity_planner`, `stock_aware`, and the best available simple
+      fallback; report invalid command rate, investment false positives, value, and
+      death.
 
-8. **Tighten portable checkpoint schema gates.**
-   - Move portable load acceptance toward feature names, row/entity types,
-     relation/edge types, normalization version, decoder/planner version, and
-     architecture version.
-   - Keep the full config fingerprint as audit metadata rather than the primary
-     portable load gate.
-   - Add negative tests proving real schema/semantics changes reject cleanly while
-     product count, producer count, and relabel changes do not.
+12. **Tighten portable checkpoint schema gates.**
+    - Move portable load acceptance toward feature names, row/entity types,
+      relation/edge types, normalization version, decoder/planner version, and
+      architecture version.
+    - Keep the full config fingerprint as audit metadata rather than the primary
+      portable load gate.
+    - Add negative tests proving real schema/semantics changes reject cleanly while
+      product count, producer count, and relabel changes do not.
 
-9. **Run targeted ablations after the matrix and fixtures exist.**
-   - Prioritize the ablations that answer portability questions directly: flat MLP
-     vs row scorer, dense planes vs sparse edges, augmentation on/off,
-     learned-direct allocation vs scorer plus deterministic allocator, and
-     fingerprint gate vs schema-version gate.
-   - Run only on representative matrix cells so ablation cost stays bounded.
+13. **Run targeted ablations after the matrix and fixtures exist.**
+    - Prioritize the ablations that answer portability questions directly: flat MLP
+      vs row scorer, dense planes vs sparse edges, augmentation on/off,
+      learned-direct allocation vs scorer plus deterministic allocator, and
+      fingerprint gate vs schema-version gate.
+    - Run only on representative matrix cells so ablation cost stays bounded.
 
-10. **Promote or narrow the final claim.**
-    - If C2 and C3 pass, promote the portable stack as product-agnostic within the
-      covered schema family and list remaining stress/ablation caveats.
-    - If out-of-family or scarcity fails, narrow the claim to layered scale
-      topologies and record the next training-strength or architecture fix before
-      claiming general recipe transfer.
+14. **Promote or narrow the final claim.**
+    - If C2, C3, and P3 pass with independent producer/orderer rows, promote the
+      portable stack as product-agnostic within the covered schema family and list
+      remaining stress/ablation caveats.
+    - If producer-alone out-of-family or scarcity fails, narrow the claim to the
+      passing topology family and record the next training-strength or architecture fix
+      before claiming general recipe transfer.
