@@ -279,6 +279,36 @@ DEFAULT_STACKS = [
 ]
 
 
+# P-1 producer audit (ordered plan step 8): hold the orderer fixed at the deterministic
+# `proportional` baseline and vary ONLY the producer — floor, the practical `entity_planner`
+# bar, the deterministic `stock_aware` bar, and BOTH portable producer policy modes (learned
+# vs planner gates). So any value spread on a target is attributable to the producer.
+# Shape-compatible legacy flat producers are unwired (no checkpoint) and contract-
+# incompatible off-size, so they are recorded as omitted in the writeup, not run here.
+PRODUCER_AUDIT_STACKS = [
+    StackSpec("noop+proportional", "noop", "proportional", "none"),
+    StackSpec("entity_planner+proportional", "entity_planner", "proportional", "none"),
+    StackSpec("stock_aware+proportional", "stock_aware", "proportional", "none"),
+    StackSpec("portable_producer+proportional", "portable_scorer", "proportional",
+              "scale d3 P12"),
+    StackSpec("portable_producer_planner_gates+proportional",
+              "portable_scorer_planner_gates", "proportional", "scale d3 P12"),
+]
+
+# O-1 orderer audit (ordered plan step 8): hold the producer fixed at the deterministic
+# `stock_aware` baseline and vary ONLY the orderer across the deterministic orderer
+# baselines and the portable scorer/allocator. The `noop` floor row keeps the nontriviality
+# check; legacy product-stream orderers are same-shape references only (unwired here).
+ORDERER_AUDIT_STACKS = [
+    StackSpec("noop+proportional", "noop", "proportional", "none"),
+    StackSpec("stock_aware+even_split", "stock_aware", "even_split", "none"),
+    StackSpec("stock_aware+proportional", "stock_aware", "proportional", "none"),
+    StackSpec("stock_aware+obs_price", "stock_aware", "obs_price", "none"),
+    StackSpec("stock_aware+portable_orderer", "stock_aware", "portable_scorer",
+              "scale d3 P12"),
+]
+
+
 def default_targets(depth: int, seeds: list[int]) -> list[TargetTopology]:
     """Train-size held-out scale seeds + one capacity-relabel target (the same-shape
     relabel axis). Size/out-of-family targets belong to later ladder rungs (C2/C3)."""
@@ -310,6 +340,52 @@ def size_transfer_targets(seed: int, *, depth: int = 3,
             build_scale_config(seed, depth=depth, products_per_layer=product_width,
                                producers_per_layer=producer_width), depth),
     ]
+
+
+def numeric_perturbation_targets(seed: int, *, depth: int = 3) -> list[TargetTopology]:
+    """P-1/O-1 same-shape NUMERIC perturbation axis (ordered plan step 8): single-axis,
+    dims-preserving transforms off `build_scale_config(seed)` — harsher degradation,
+    unseen demand quantity, leaner producers, dearer investment costs (reusing
+    `eval.generalization`). None adds or removes a product, producer, or capacity type, so
+    a value change on these targets is a POLICY-quality signal, never a contract one (every
+    portable cell stays loadable). One numeric axis per target keeps a failure attributable."""
+    from .generalization import (perturb_costs, perturb_degradation,
+                                 perturb_producer_capacity, perturb_quantity)
+    base = build_scale_config(seed, depth=depth)
+    qmax = max(c.quantity_max for c in base.consumers) + 3
+    variants = {
+        "degr2x": perturb_degradation(base, 2.0),
+        f"qty{qmax}": perturb_quantity(base, qmax),
+        "lean0.7": perturb_producer_capacity(base, 0.7),
+        "cost1.5x": perturb_costs(base, 1.5),
+    }
+    return [TargetTopology(f"scale-d{depth}-s{seed}-{tag}", cfg, depth)
+            for tag, cfg in variants.items()]
+
+
+def producer_permutation_targets(seed: int, *, depth: int = 3, width: int = 4,
+                                 n_perms: int = 1, perm_seed: int = 0) -> list[TargetTopology]:
+    """Same-shape PRODUCER-ROW permutation axis (O-1 equivariance check, ordered plan
+    step 8): relabel which sorted producer slot holds which config without changing the
+    economy (`permute_scale_config`, product slots fixed). Dims, capacity-type set, and
+    `produces` are preserved, so a correct row-equivariant orderer/producer must reproduce
+    the base seed's value up to deterministic tolerance — a mismatch is an equivariance
+    failure, never a contract one."""
+    import random
+
+    from .scale import permute_scale_config
+    base = build_scale_config(seed, depth=depth, products_per_layer=width,
+                              producers_per_layer=width)
+    rng = random.Random(perm_seed)
+    out: list[TargetTopology] = []
+    for i in range(n_perms):
+        qp = list(range(width))
+        rng.shuffle(qp)
+        out.append(TargetTopology(
+            f"scale-d{depth}-s{seed}-permP{i}",
+            permute_scale_config(base, product_perm=list(range(width)), producer_perm=qp),
+            depth))
+    return out
 
 
 def out_of_family_targets(seeds: list[int], *, depth: int = 3, width: int = 4,
@@ -346,6 +422,12 @@ def main() -> None:
                          "off the first seed (ordered plan step 4)")
     ap.add_argument("--product-width", type=int, default=8)
     ap.add_argument("--producer-width", type=int, default=8)
+    ap.add_argument("--audit", choices=["producer", "orderer"], default=None,
+                    help="run the P-1 (producer) or O-1 (orderer) dynamic baseline audit "
+                         "(ordered plan step 8): pick the matching audit stack set and "
+                         "assemble the step-8 target sweep — held-out seeds + same-shape "
+                         "relabel + numeric perturbations + larger product/producer (plus "
+                         "a producer-row permutation for the orderer audit).")
     ap.add_argument("--out-of-family", action="store_true",
                     help="use the C3 fork/join multi-input targets (one per seed) instead "
                          "of the scale-family targets (ordered plan step 6)")
@@ -365,6 +447,27 @@ def main() -> None:
         ord_ = load_scorer(args.orderer_ckpt)
 
     seeds = _parse_seeds(args.seeds)
+    if args.audit:
+        # P-1/O-1 step-8 sweep: held-out seeds + same-shape relabel (default_targets),
+        # same-shape numeric perturbations, and larger product/producer (size transfer),
+        # off the first seed. The orderer audit adds a producer-row permutation
+        # (equivariance). One self-contained sweep so contract vs policy stays separable.
+        stacks = PRODUCER_AUDIT_STACKS if args.audit == "producer" else ORDERER_AUDIT_STACKS
+        s0 = seeds[0]
+        targets = default_targets(args.depth, seeds)
+        targets += numeric_perturbation_targets(s0, depth=args.depth)
+        targets += size_transfer_targets(s0, depth=args.depth,
+                                         product_width=args.product_width,
+                                         producer_width=args.producer_width)
+        if args.audit == "orderer":
+            targets += producer_permutation_targets(s0, depth=args.depth)
+        rows = transfer_matrix(stacks, targets, args.eval_seeds, args.horizon,
+                               producer_model=prod, orderer_model=ord_,
+                               planner_gate_tie_rel_tol=args.tie_rel_tol, log=print)
+        write_matrix_csv(rows, args.out)
+        print(f"\nwrote {len(rows)} rows -> {args.out}")
+        return
+
     if args.out_of_family:
         targets = out_of_family_targets(seeds, depth=args.depth,
                                         inputs_per_product=args.inputs_per_product)

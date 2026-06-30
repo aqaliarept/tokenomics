@@ -1579,14 +1579,44 @@ so producer-alone rows are now a required gate before any final portability clai
      patch. That is a producer training/fidelity item (steps 8-12 / future EXP), distinct
      from this gate. EXP-0018 recorded separately (kept EXP-0017 as baseline evidence).
 
-8. **Run P-1 and O-1 dynamic baseline audits through the matrix.**
+8. **Run P-1 and O-1 dynamic baseline audits through the matrix.** — **DONE (EXP-0019,
+   local eval).**
    - Producer side: compare `entity_planner`, learned-gate portable scorer,
      planner-gated portable scorer, and shape-compatible legacy producers under
-     `proportional` or another deterministic orderer.
+     `proportional` or another deterministic orderer. — done via the new
+     `transfer_matrix --audit producer` mode + `PRODUCER_AUDIT_STACKS` (orderer fixed
+     `proportional`). Legacy flat producers omitted (no checkpoint wired;
+     contract-incompatible off-size — recorded, not run).
    - Orderer side: compare `proportional`, portable scorer/allocator, and
-     shape-compatible legacy orderers under `stock_aware` or `entity_planner`.
+     shape-compatible legacy orderers under `stock_aware` or `entity_planner`. — done via
+     `--audit orderer` + `ORDERER_AUDIT_STACKS` (producer fixed `stock_aware`; orderers
+     `even_split`/`proportional`/`obs_price`/portable). Legacy product-stream orderers
+     omitted (same-shape references only, unwired).
    - Include same-shape relabels, numeric perturbations, larger product counts, and
-     larger producer counts; keep contract failures distinct from policy failures.
+     larger producer counts; keep contract failures distinct from policy failures. — done:
+     two reusable same-shape target generators added (`numeric_perturbation_targets`
+     reusing `eval.generalization`; `producer_permutation_targets` reusing
+     `permute_scale_config`), TDD'd in `tests/test_transfer_matrix.py`.
+   - **Result** (`experiments/EXP-0019-dynamic-baseline-audit/`): **both audits clean —
+     zero contract failures**, floor `noop`=0 (targets nontrivial), contract vs policy
+     stays separable on every cell. **Producer** (orderer `proportional`): learned-gate
+     portable **ties/beats the planner bar on every in-family target** (mean **1.012**,
+     min **1.000**) → the EXP-0017/0018 producer-alone regression is **out-of-family
+     (fork/join) specific, not a general weakness**; planner-gated mirror (mean 1.001,
+     min 0.975 on doubly-widened `prodW8-agentW8`) trades a little in-family upside for the
+     out-of-family robustness it was built for; `stock_aware` 0.93. **Orderer** (producer
+     `stock_aware`): the portable scorer/allocator **beats every deterministic orderer on
+     all 13 targets** (mean **1.088**, min 0.990, zero death; lever strengthens on `prodW8`
+     to 1.256), `proportional` is the best deterministic (0.93), `obs_price` weak (0.58,
+     partial death on 6 targets). **Equivariance**: capacity relabel byte-identical for all
+     stacks; under the **producer-row permutation** the portable orderer is **exactly
+     invariant** (501.2→501.2) while every deterministic orderer shifts (the domain auction
+     ties-break by producer id) — the O-1 producer-permutation gate met by the portable
+     orderer, missed by the baselines.
+   - **Takeaway for next steps**: no schema/contract work owed on these axes. The only
+     producer-side gap is the out-of-family one (already materially-reduced via EXP-0018
+     planner gates; strict s9 closure = producer training coverage, steps 9–12); the
+     orderer side has no open gap on the step-8 axes.
 
 9. **Add the remaining reusable fixture families before chasing s9.**
    - Out-of-family: shared capacity types, deeper joins, and a dedicated uneven-strength

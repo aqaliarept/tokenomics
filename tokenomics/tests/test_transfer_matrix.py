@@ -15,7 +15,9 @@ from tokenomics.eval.transfer_matrix import (
     StackSpec,
     TargetTopology,
     evaluate_stack_on_target,
+    numeric_perturbation_targets,
     out_of_family_targets,
+    producer_permutation_targets,
     size_transfer_targets,
     transfer_matrix,
     write_matrix_csv,
@@ -189,6 +191,54 @@ def test_size_transfer_targets_widen_product_and_producer_axes() -> None:
     assert row["consumer_completed_units"] > 0
 
 
+def test_numeric_perturbation_targets_preserve_dims_and_run() -> None:
+    # P-1/O-1 step-8 "same-shape numeric perturbations": each target changes only numeric
+    # values (degradation, demand quantity, capacity, cost) off one base seed, so dims are
+    # identical to the base and a value change is a POLICY signal, never a contract one.
+    base = build_scale_config(6, depth=3)
+    base_dims = (len(base.process_sheets), len(base.producer_configs),
+                 len({t for s in base.process_sheets for t in s.require}))
+
+    targets = numeric_perturbation_targets(seed=6, depth=3)
+    assert len(targets) >= 3  # at least degradation, quantity, capacity axes
+    names = {t.name for t in targets}
+    assert all("s6" in n for n in names)
+
+    for t in targets:
+        dims = (len(t.config.process_sheets), len(t.config.producer_configs),
+                len({s_t for s in t.config.process_sheets for s_t in s.require}))
+        assert dims == base_dims  # dims-preserving: same shape, only numbers moved
+
+    # a deterministic stack must actually run on a perturbed target (contract-compatible)
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, targets[0], eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+    assert row["failure_class"] == "none"
+
+
+def test_producer_permutation_targets_relabel_rows_without_changing_economy() -> None:
+    # O-1 step-8 producer-row equivariance axis: permuting which sorted producer slot holds
+    # which config must not change dims (same-shape relabel) and must stay runnable, so a
+    # value mismatch vs the base seed reads as an equivariance failure, not a contract one.
+    base = build_scale_config(6, depth=3)
+    base_dims = (len(base.process_sheets), len(base.producer_configs),
+                 len({t for s in base.process_sheets for t in s.require}))
+
+    targets = producer_permutation_targets(seed=6, depth=3, n_perms=2)
+    assert len(targets) == 2
+    assert all("perm" in t.name for t in targets)
+
+    for t in targets:
+        dims = (len(t.config.process_sheets), len(t.config.producer_configs),
+                len({s_t for s in t.config.process_sheets for s_t in s.require}))
+        assert dims == base_dims
+
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, targets[0], eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+    assert row["failure_class"] == "none"
+
+
 def test_out_of_family_targets_are_multi_input_and_runnable() -> None:
     # C3 out-of-family (ordered plan step 6): the fork/join targets must leave the layered
     # single-input scale family (>=1 multi-input product) AND still run a deterministic
@@ -205,6 +255,31 @@ def test_out_of_family_targets_are_multi_input_and_runnable() -> None:
     assert row["runs_episode"] is True
     assert row["failure_class"] == "none"
     assert row["consumer_completed_units"] > 0
+
+
+def test_producer_audit_stacks_hold_orderer_fixed_and_vary_producer() -> None:
+    # P-1 (step 8): the producer-side audit must hold the orderer fixed (a deterministic
+    # baseline) and vary ONLY the producer across entity_planner, the deterministic
+    # stock_aware bar, and both portable producer policy modes (learned vs planner gates),
+    # so any value spread is attributable to the producer.
+    from tokenomics.eval.transfer_matrix import PRODUCER_AUDIT_STACKS
+
+    assert {s.orderer_kind for s in PRODUCER_AUDIT_STACKS} == {"proportional"}
+    producer_kinds = {s.producer_kind for s in PRODUCER_AUDIT_STACKS}
+    assert {"entity_planner", "portable_scorer", "portable_scorer_planner_gates"} <= producer_kinds
+    assert "noop" in producer_kinds  # nontriviality floor
+
+
+def test_orderer_audit_stacks_hold_producer_fixed_and_vary_orderer() -> None:
+    # O-1 (step 8): the orderer-side audit must hold the producer fixed (a deterministic
+    # baseline) and vary ONLY the orderer across the deterministic orderer baselines and
+    # the portable scorer/allocator.
+    from tokenomics.eval.transfer_matrix import ORDERER_AUDIT_STACKS
+
+    varied = [s for s in ORDERER_AUDIT_STACKS if s.producer_kind != "noop"]
+    assert {s.producer_kind for s in varied} == {"stock_aware"}
+    orderer_kinds = {s.orderer_kind for s in varied}
+    assert {"proportional", "portable_scorer"} <= orderer_kinds
 
 
 def test_write_matrix_csv_round_trips_columns_and_values(tmp_path) -> None:
