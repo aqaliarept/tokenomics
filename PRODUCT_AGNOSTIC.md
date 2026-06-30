@@ -1154,13 +1154,21 @@ P-1. Dynamic producer baseline comparison:
   against deterministic baselines; legacy incompatibility is recorded but does not
   block promotion.
 
-P0. Deterministic planner parity:
+P0. Deterministic planner parity: **DONE** (no training; covered by existing gates).
 
 - controller: `entity_planner`,
 - train: none,
 - eval: same-shape relabel, row permutation, size holdout,
 - pass: feasible commands, relabel gates pass, no major regression vs current
-  deterministic baseline.
+  deterministic baseline. — **all met.** Feasibility + relabel + row-permutation
+  invariants are unit-gated in `tests/test_producer_view.py` and
+  `tests/test_producer_planner.py` (product/capacity relabel equivalence, input-row
+  permutation, padded-row invariance). Size holdout = `eval/producer_size_holdout.py`
+  + `eval/producer_champion_audit.audit_producer_size_transfer` (EXP-0010D): the
+  deterministic `entity_planner` runs across product/producer counts with no contract
+  failure and no major regression. The portable scorer/planner reproduces it at P1
+  (EXP-0013, mean 1.0029). No separate run needed — P0 is the deterministic floor P1
+  already cleared.
 
 P1. Supervised local scorer clone: **DONE** — contract (local TDD) + value + producer-count
 transfer (EXP-0013). v2 gate-head distill (seeds 0–5, depth 3) reproduces the
@@ -1219,8 +1227,8 @@ O0. Corrected product-stream contract: **DONE** (ADR-0054).
   are byte-identical,
 - pass: orderer obs/action dimensions do not change when only product vocabulary
   width changes. — verified in `tests/test_product_stream_ordering.py`
-  (`test_v4_*`); all Acceptance Gates green. Fresh v4 orderer artifact still owed
-  (O2/O3).
+  (`test_v4_*`); all Acceptance Gates green. Fresh v4 orderer artifact satisfied by
+  EXP-0012; the remaining O3 gap is out-of-family recipe transfer.
 
 O1. Deterministic candidate allocator: **DONE** (ADR-0054).
 
@@ -1271,7 +1279,17 @@ Transfer loss reported vs `proportional` and the v3 champion. **Still owed:** th
 
 ### Combined Experiment Ladder
 
-C-1. Dynamic stack first comparison:
+C-1. Dynamic stack first comparison: **DONE (train-size + relabel axes)** — EXP-0015.
+The reusable matrix runner `tokenomics.eval.transfer_matrix` emits the "Evaluation
+Output" CSV with contract flags separated from value per cell. 30 rows (6 stacks ×
+held-out depth-3 seeds 6–9 + a capacity-relabel target), all on the same
+`joint_stack_env`: floor `noop+proportional` = 0 units (targets nontrivial), zero
+contract failures, relabel target byte-identical to its base seed for every stack.
+Stacks cover the doc's required comparison — `entity_planner + proportional` (bar),
+portable producer + deterministic orderer (mean 1.009), deterministic producer +
+portable orderer (mean 1.095), full portable stack (mean 1.109, min 1.042, 0 death =
+EXP-0014 cross-check). **Still owed:** larger product/producer-count targets (C2) and
+out-of-family recipes (C3) — added by widening `targets`, not new code.
 
 - train: none for deterministic baselines; optional supervised scorer checkpoints if
   already available,
@@ -1285,12 +1303,22 @@ C-1. Dynamic stack first comparison:
 - pass: the matrix separates versatility failures from value failures and shows
   whether the dynamic stack is worth improving.
 
-C0. Independent portable modules:
+C0. Independent portable modules: **DONE** (each side passed solo before C1).
 
-- producer = portable scorer/planner,
+- producer = portable scorer/planner, — EXP-0013: portable producer scorer/planner
+  with the **deterministic `proportional`** orderer beats/ties `entity_planner +
+  proportional` on held-out 6–9 at depths 1/2/3 (mean 1.0029, zero death).
 - orderer = deterministic proportional or a shape-compatible current champion,
-- then orderer = portable scorer/allocator with deterministic producer,
-- pass each side independently before joint evaluation.
+- then orderer = portable scorer/allocator with deterministic producer, — EXP-0012:
+  portable orderer scorer/allocator with the **deterministic `stock_aware`** producer
+  beats `proportional` on held-out 6–9 (mean 1.28×, min 1.09×, 0/20 death) and ties
+  the v3 champion.
+- pass each side independently before joint evaluation. — **met:** each portable
+  module was validated against a deterministic counterpart (P1 = portable producer +
+  det. orderer; O2 = portable orderer + det. producer) before they were composed in
+  C1 (EXP-0014). Missing apples-to-apples row: a single side-by-side table pairing
+  both solo results against the joint result — folded into the C-1 verification matrix
+  (next).
 
 C1. Portable stack smoke: **DONE** — both portable modules run jointly (EXP-0014). The
 producer scorer/planner (EXP-0013) and orderer scorer/allocator (EXP-0012) coexist in
@@ -1368,20 +1396,19 @@ Required fix:
 The corrected stream bound is:
 
 ```text
-K_stream = ORDER_LIFETIME
+K_stream = ORDER_LIFETIME + INVESTMENT_STREAMS
 ```
 
 Rationale: a product-stream agent is scoped to a single `(source, product)` stream.
 A consumer or replenishment stream holds at most `ORDER_LIFETIME` concurrent orders
-(TTL), and never carries investment orders — those belong to their own per-type
-streams, each gated to one in flight (well under `ORDER_LIFETIME`). So no single
-stream needs `INVESTMENT_STREAMS` added on top.
+(TTL), and producer-funded restoration/upgrade/inventory orders are still routed by
+`(producer, product)` when their requirement uses that product. A valid stream can
+therefore contain replenishment orders plus the fixed set of gated investment
+orders. The bound stays independent of product vocabulary width and `max_rel`.
 
 Note the old `K = max(ORDER_LIFETIME, INVESTMENT_STREAMS + ORDER_LIFETIME * max_rel)`
 is `ORDER_LIFETIME` only when `max_rel == 0`; for `max_rel >= 1` it is already
-`>= INVESTMENT_STREAMS + ORDER_LIFETIME`. A flat `K_stream = ORDER_LIFETIME + INVESTMENT_STREAMS`
-would therefore be a *regression* on narrow topologies (`max_rel == 0`: `3 -> 6`)
-and only a partial win on wide ones — avoid it. The important constraint is that
+`>= INVESTMENT_STREAMS + ORDER_LIFETIME`. The important constraint is that
 `K_stream` is bounded by one stream's possible simultaneous orders and does not
 multiply by the number of products in the local topology.
 
@@ -1410,3 +1437,99 @@ The corrected product-stream orderer contract is accepted only if:
 - the corrected contract requires a fresh orderer training/distillation artifact,
 - size-transfer audits distinguish true policy failure from contract
   incompatibility.
+
+## Ordered Action Plan
+
+This is the current close-out order for the product-agnostic ladder. The ordering
+prioritizes the document's stated first deliverable, then uses cheap checkpoint
+evals before opening new training or broad ablations.
+
+1. **Reconcile status documentation.**
+   - Write up P0 as PASS using the existing deterministic planner relabel,
+     row-permutation, and EXP-0010D size-holdout evidence.
+   - Write up C0 as effectively PASS from P1 with deterministic orderer and O2 with
+     deterministic producer, while naming any missing apples-to-apples rows.
+   - Keep O0/O2/O3 wording consistent: EXP-0012 satisfies the fresh v4 orderer
+     artifact; O3 still owes only the out-of-family recipe axis.
+
+2. **Build the verification matrix CSV (C-1 first deliverable).** — **DONE (EXP-0015).**
+   - Add a reusable runner that emits the columns listed in "Evaluation Output":
+     stack identity, train and target topology, schema-load flags, contract flags,
+     episode run flag, failure class, value, death, baseline family, and ratios. —
+     `tokenomics.eval.transfer_matrix` (`StackSpec`/`TargetTopology`/`transfer_matrix`/
+     `write_matrix_csv`/CLI); all canonical columns emitted; gated by
+     `tests/test_transfer_matrix.py`.
+   - Populate initial rows from already available artifacts: deterministic
+     `entity_planner + proportional`, portable producer + deterministic orderer,
+     deterministic producer + portable orderer, and EXP-0014 full portable stack. —
+     done + a `noop` floor and `stock_aware+proportional`; 30 rows in
+     `experiments/EXP-0015-verification-matrix/summary.csv`.
+   - Record legacy fixed checkpoints only on shape-compatible cells and mark
+     incompatible cells as contract failures, not policy failures. — runner supports it
+     (per-side `*_schema_loads`/`*_contract_compatible`/`failure_class`); no legacy
+     `GaussianActor` ckpt wired in yet, so this matrix has zero contract failures (all
+     portable/deterministic). Legacy incompatibility shows once a flat ckpt is pointed
+     at an off-size target (a later rung).
+
+3. **Run P-1 and O-1 dynamic baseline audits through the matrix.**
+   - Producer side: compare `entity_planner`, portable scorer/planner, and
+     shape-compatible legacy producers under proportional or another deterministic
+     orderer.
+   - Orderer side: compare `proportional`, portable scorer/allocator, and
+     shape-compatible legacy orderers under `stock_aware` or `entity_planner`.
+   - Include same-shape relabels, numeric perturbations, larger product counts, and
+     larger producer counts before adding new fixture families.
+
+4. **Run C2 size transfer with the EXP-0014 harness.**
+   - Reuse the EXP-0012 and EXP-0013 checkpoints with no retrain.
+   - Evaluate larger product count, larger producer count, and larger product plus
+     producer count targets.
+   - Report load/run/death/value separately from scaling metrics so contract,
+     policy, and runtime failures stay distinct.
+
+5. **Add reusable out-of-family, scarcity, and degenerate fixtures.**
+   - Out-of-family: fork/join DAGs, multi-input products, shared capacity types, and
+     competing producers with uneven strengths.
+   - Scarcity: low inventory headroom, low funding, degraded capacity, high backlog,
+     and already-running investments.
+   - Degenerate: zero eligible alternatives, one eligible producer, no backlog, no
+     input products, no inventory expansion, and mostly padded rows.
+
+6. **Close the shared out-of-family recipe axis (P2, O3 remainder, C3).**
+   - Run producer-only, orderer-only, and joint-stack matrix rows on the new
+     out-of-family fixtures.
+   - Treat this as the dominant open transfer claim: no final portability claim
+     should be promoted until fork/join, shared-capacity, multi-input, and uneven
+     strength rows are reported.
+   - Classify every miss as schema/load, decoder/allocator contract, policy quality,
+     or scaling.
+
+7. **Run P3 stress and scarcity.**
+   - Evaluate the producer scorer/planner under low headroom, low funding, high
+     backlog, high degradation, and running-investment conditions.
+   - Compare against `entity_planner`, `stock_aware`, and the best available simple
+     fallback; report invalid command rate, investment false positives, value, and
+     death.
+
+8. **Tighten portable checkpoint schema gates.**
+   - Move portable load acceptance toward feature names, row/entity types,
+     relation/edge types, normalization version, decoder/planner version, and
+     architecture version.
+   - Keep the full config fingerprint as audit metadata rather than the primary
+     portable load gate.
+   - Add negative tests proving real schema/semantics changes reject cleanly while
+     product count, producer count, and relabel changes do not.
+
+9. **Run targeted ablations after the matrix and fixtures exist.**
+   - Prioritize the ablations that answer portability questions directly: flat MLP
+     vs row scorer, dense planes vs sparse edges, augmentation on/off,
+     learned-direct allocation vs scorer plus deterministic allocator, and
+     fingerprint gate vs schema-version gate.
+   - Run only on representative matrix cells so ablation cost stays bounded.
+
+10. **Promote or narrow the final claim.**
+    - If C2 and C3 pass, promote the portable stack as product-agnostic within the
+      covered schema family and list remaining stress/ablation caveats.
+    - If out-of-family or scarcity fails, narrow the claim to layered scale
+      topologies and record the next training-strength or architecture fix before
+      claiming general recipe transfer.

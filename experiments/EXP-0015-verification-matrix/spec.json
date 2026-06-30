@@ -1,0 +1,18 @@
+{
+  "id": "EXP-0015-verification-matrix",
+  "question": "Can a single reusable runner emit the PRODUCT_AGNOSTIC 'Evaluation Output' compatibility-and-behavior matrix from the already-available artifacts, separating contract failure from policy quality per cell — the doc's stated FIRST deliverable (C-1)?",
+  "adr": "0053, 0054",
+  "plan": "PRODUCT_AGNOSTIC.md ordered action plan step 2 (build the verification matrix CSV); combined ladder C-1; also supplies the missing apples-to-apples C0 row.",
+  "method": {
+    "runner": "tokenomics.eval.transfer_matrix — StackSpec x TargetTopology -> one row; transfer_matrix(...) emits the full matrix; write_matrix_csv emits the canonical columns. Every stack runs on the SAME joint env (joint_stack_env: entity_producer_obs + corrected v4 product-stream ordering) so deterministic bars and portable modules are apples-to-apples.",
+    "stacks": "noop+proportional (floor); entity_planner+proportional (practical bar = ratio denominator); stock_aware+proportional; portable_producer+proportional (C0 producer side, EXP-0013 ckpt); stock_aware+portable_orderer (C0 orderer side, EXP-0012 ckpt); portable_producer+portable_orderer (C1 full stack, EXP-0014).",
+    "targets": "train-size held-out scale seeds 6-9 at depth 3 (P=12) + one capacity-relabel target (scale-d3-s6-relabel) for the same-shape relabel axis. Size/out-of-family targets are later rungs (C2 step 4 / C3 step 6).",
+    "eval_seeds": 5,
+    "horizon": 100,
+    "no_retrain": "reuses EXP-0012 + EXP-0013 checkpoints unchanged"
+  },
+  "command": "python -m tokenomics.eval.transfer_matrix --producer-ckpt experiments/EXP-0013-portable-producer-scorer/artifacts/producer_scorer.pt --orderer-ckpt experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt --depth 3 --seeds 6-9 --eval-seeds 5 --horizon 100 --out experiments/EXP-0015-verification-matrix/summary.csv",
+  "metric": "Per cell: producer/orderer schema_loads + contract_compatible flags, runs_episode, failure_class, consumer_completed_units, dead_rate, and ratio_vs_practical_baseline (vs entity_planner+proportional on the SAME target). Floor (noop) proves the target is nontrivial; the relabel target proves same-shape equivariance (value-identical here — the matrix records aggregate value; full byte-identical incl. cycles is EXP-0014's joint_stack.relabel_gate).",
+  "pass": "The matrix runner emits the canonical CSV columns (contract test); a loaded-but-incompatible checkpoint becomes a contract-failure row instead of raising (contract test); the floor reads 0 units; every runnable cell records value separately from contract flags; the relabel target is value-identical to its base seed for every stack; portable cells reproduce EXP-0012/0013/0014 numbers.",
+  "notes": "Local eval only (HARD RULE: evaluation of existing checkpoints, no training). No legacy fixed-contract checkpoint included here, so all rows are contract-compatible (zero contract failures) — legacy-incompatible cells appear once a flat GaussianActor ckpt is pointed at an off-size target (later rung). Out-of-family recipe targets (P2/O3/C3) are NOT covered."
+}
