@@ -257,6 +257,137 @@ def test_out_of_family_targets_are_multi_input_and_runnable() -> None:
     assert row["consumer_completed_units"] > 0
 
 
+def test_shared_capacity_targets_share_types_across_levels_and_run() -> None:
+    # Step 10 broad C3 axis: the shared-capacity fixture leaves the scale family on the
+    # CAPACITY axis (levels share types -> fewer cap types than depth), staying single-input.
+    # A contract failure here is attributable to capacity sharing, not the recipe DAG.
+    from tokenomics.eval.transfer_matrix import shared_capacity_targets
+
+    targets = shared_capacity_targets(seeds=[6, 7], depth=3, width=4)
+    assert len(targets) == 2
+    t = targets[0]
+    assert "sharedcap" in t.name
+    caps = len({ct for s in t.config.process_sheets for ct in s.require})
+    assert caps < 3  # fewer capacity types than levels: levels share
+
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, t, eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+    assert row["failure_class"] == "none"
+    assert row["consumer_completed_units"] > 0
+
+
+def test_deep_join_targets_are_deeper_and_wider_than_forkjoin_and_run() -> None:
+    # Step 10 broad C3 axis: deeper joins push BOTH recipe axes past the step-6 fork/join
+    # probe (depth 5, 3-input joins). A failure here exercises recipe-graph depth/width.
+    from tokenomics.eval.transfer_matrix import deep_join_targets
+
+    targets = deep_join_targets(seeds=[6], depth=5, width=4, inputs_per_product=3)
+    assert len(targets) == 1
+    t = targets[0]
+    assert "deepjoin" in t.name
+    assert t.depth == 5
+    assert max(len(ps.inputs) for ps in t.config.process_sheets) == 3  # wider join
+
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, t, eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+    assert row["failure_class"] == "none"
+
+
+def test_uneven_strength_targets_force_concentration_and_run() -> None:
+    # Step 10 broad P3 axis: one dominant producer per level, the rest weak (guaranteed
+    # extreme within-level capacity spread), so routing/investment must concentrate. A
+    # value drop here is a producer/orderer policy signal, never a contract one.
+    from tokenomics.eval.transfer_matrix import uneven_strength_targets
+
+    targets = uneven_strength_targets(seeds=[6, 7], depth=3, width=4)
+    assert len(targets) == 2
+    t = targets[0]
+    assert "uneven" in t.name
+    caps = [next(iter(p.capacities.values())) for p in t.config.producer_configs]
+    assert max(caps) / min(caps) >= 8  # genuinely uneven strengths
+
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, t, eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+    assert row["failure_class"] == "none"
+
+
+def test_scarcity_targets_are_dims_preserving_stress_axes_and_run() -> None:
+    # Step 10 scarcity axis: the five single-axis stress variants off one base seed, each
+    # dims-preserving (so a portable checkpoint loads unchanged) -> a value drop is a
+    # scarcity/stress-behavior signal, not a contract one.
+    from tokenomics.eval.transfer_matrix import scarcity_targets
+
+    base = build_scale_config(6, depth=3)
+    base_dims = (len(base.process_sheets), len(base.producer_configs),
+                 len({t for s in base.process_sheets for t in s.require}))
+
+    targets = scarcity_targets(seed=6, depth=3)
+    assert len(targets) == 5
+    names = {t.name for t in targets}
+    for axis in ("low_funding", "low_inventory", "high_backlog", "degraded",
+                 "running_investment"):
+        assert any(axis in n for n in names), axis
+    for t in targets:
+        dims = (len(t.config.process_sheets), len(t.config.producer_configs),
+                len({s_t for s in t.config.process_sheets for s_t in s.require}))
+        assert dims == base_dims  # dims-preserving
+
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, targets[0], eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+    assert row["failure_class"] == "none"
+
+
+def test_degenerate_targets_cover_edge_economies_and_run() -> None:
+    # Step 10 degenerate axis: edge economies at the boundary of the id-free contract
+    # (single eligible producer, all-primal, no inventory expansion, no backlog, minimal).
+    # Each must still RUN a deterministic stack so a later portable failure is attributable.
+    from tokenomics.eval.transfer_matrix import degenerate_targets
+
+    targets = degenerate_targets(seed=6, depth=3, width=4)
+    assert len(targets) == 5
+    names = {t.name for t in targets}
+    for edge in ("single_producer", "primal_only", "no_inventory_expansion",
+                 "no_backlog", "minimal"):
+        assert any(edge in n for n in names), edge
+    # primal_only is a depth-1 economy: its carried depth must reflect that, not the default
+    primal = next(t for t in targets if "primal_only" in t.name)
+    assert primal.depth == 1
+
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    for t in targets:  # every degenerate edge must be a runnable, valid economy
+        row = evaluate_stack_on_target(stack, t, eval_seeds=1, horizon=20)
+        assert row["runs_episode"] is True, t.name
+        assert row["failure_class"] == "none", t.name
+
+
+def test_fixture_matrix_targets_assemble_all_families_with_unique_names() -> None:
+    # Step 10 broad C3/P3 sweep: one umbrella that gathers every reusable fixture family —
+    # the per-seed builder families (shared-capacity, deep-join, uneven-strength) across all
+    # seeds, plus the dims-preserving suite families (scarcity, degenerate) off the first
+    # seed (like size-transfer). Names must be unique so no two cells collide in the CSV.
+    from tokenomics.eval.transfer_matrix import fixture_matrix_targets
+
+    targets = fixture_matrix_targets(seeds=[6, 7], depth=3, width=4)
+    names = [t.name for t in targets]
+    assert len(names) == len(set(names))  # no collisions
+
+    families = ("sharedcap", "deepjoin", "uneven", "scarcity", "degen")
+    for fam in families:
+        assert any(fam in n for n in names), fam
+    # builder families span both seeds; suite families ride the first seed only
+    assert sum("sharedcap" in n for n in names) == 2
+    assert sum("scarcity" in n for n in names) == 5   # one base seed, five axes
+    assert sum("degen" in n for n in names) == 5
+
+    stack = StackSpec("entity_planner+proportional", "entity_planner", "proportional")
+    row = evaluate_stack_on_target(stack, targets[0], eval_seeds=1, horizon=20)
+    assert row["runs_episode"] is True
+
+
 def test_producer_audit_stacks_hold_orderer_fixed_and_vary_producer() -> None:
     # P-1 (step 8): the producer-side audit must hold the orderer fixed (a deterministic
     # baseline) and vary ONLY the producer across entity_planner, the deterministic

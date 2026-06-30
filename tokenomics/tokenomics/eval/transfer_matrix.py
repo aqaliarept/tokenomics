@@ -405,6 +405,86 @@ def out_of_family_targets(seeds: list[int], *, depth: int = 3, width: int = 4,
     ]
 
 
+def shared_capacity_targets(seeds: list[int], *, depth: int = 3,
+                            width: int = 4) -> list[TargetTopology]:
+    """Step-10 broad C3 axis: one shared-capacity target per seed. Levels SHARE capacity
+    types (`max(1,depth-1)` types < depth levels) while staying single-input, so a failure
+    here isolates the capacity-sharing axis from the recipe DAG (covered by fork/join)."""
+    from .fixtures import build_shared_capacity_config
+    return [
+        TargetTopology(f"sharedcap-d{depth}-w{width}-s{s}",
+                       build_shared_capacity_config(s, depth=depth, width=width), depth)
+        for s in seeds
+    ]
+
+
+def deep_join_targets(seeds: list[int], *, depth: int = 5, width: int = 4,
+                      inputs_per_product: int = 3) -> list[TargetTopology]:
+    """Step-10 broad C3 axis: one deeper/wider fork/join target per seed (depth 5, 3-input
+    joins vs the step-6 probe's depth 3, 2-input). Pushes the recipe-graph depth and join
+    width together, so a failure here isolates recipe-graph scale, not a new mechanism."""
+    from .fixtures import build_deep_join_config
+    return [
+        TargetTopology(f"deepjoin-d{depth}-w{width}-in{inputs_per_product}-s{s}",
+                       build_deep_join_config(s, depth=depth, width=width,
+                                              inputs_per_product=inputs_per_product), depth)
+        for s in seeds
+    ]
+
+
+def uneven_strength_targets(seeds: list[int], *, depth: int = 3,
+                            width: int = 4) -> list[TargetTopology]:
+    """Step-10 broad P3 axis: one uneven-strength target per seed — every level has one
+    dominant producer and the rest weak (guaranteed >= 12x spread), single-input and
+    one-type-per-level otherwise. Strength dispersion is the only out-of-family axis, so a
+    value drop here reads as routing/investment-concentration quality, not a contract one."""
+    from .fixtures import build_uneven_strength_config
+    return [
+        TargetTopology(f"uneven-d{depth}-w{width}-s{s}",
+                       build_uneven_strength_config(s, depth=depth, width=width), depth)
+        for s in seeds
+    ]
+
+
+def scarcity_targets(seed: int, *, depth: int = 3) -> list[TargetTopology]:
+    """Step-10 scarcity axis: the five single-axis stress variants of `build_scale_config
+    (seed)` from `fixtures.scarcity_suite` (lean fund, tight inventory, heavy backlog,
+    harsh decay, lean-and-decaying running-investment start). Each is dims-preserving, so a
+    portable checkpoint loads unchanged and a value drop reads as scarcity behavior."""
+    from .fixtures import scarcity_suite
+    base = build_scale_config(seed, depth=depth)
+    return [TargetTopology(f"scarcity-d{depth}-s{seed}-{axis}", cfg, depth)
+            for axis, cfg in scarcity_suite(base).items()]
+
+
+def degenerate_targets(seed: int, *, depth: int = 3,
+                       width: int = 4) -> list[TargetTopology]:
+    """Step-10 degenerate axis: the five edge economies from `fixtures.degenerate_suite`
+    (single eligible producer, all-primal, no inventory expansion, no backlog, minimal).
+    `primal_only` collapses to a depth-1 chain, so its carried depth is 1; the rest keep
+    `depth`. Each probes a boundary of the producer/orderer contract, not its typical point."""
+    from .fixtures import degenerate_suite
+    suite = degenerate_suite(seed, depth=depth, width=width)
+    return [TargetTopology(f"degen-s{seed}-{name}", cfg,
+                           1 if name == "primal_only" else depth)
+            for name, cfg in suite.items()]
+
+
+def fixture_matrix_targets(seeds: list[int], *, depth: int = 3,
+                           width: int = 4) -> list[TargetTopology]:
+    """Step-10 broad C3/P3 sweep: every reusable fixture family in one target list. The
+    per-seed builder families (shared-capacity, deeper-join, uneven-strength) span all
+    `seeds`; the dims-preserving suite families (scarcity, degenerate) ride the FIRST seed
+    only, matching the size-transfer convention (one base economy, many single-axis
+    variants). Names are family-prefixed and unique so no two cells collide in the CSV."""
+    s0 = seeds[0]
+    return (shared_capacity_targets(seeds, depth=depth, width=width)
+            + deep_join_targets(seeds, width=width)
+            + uneven_strength_targets(seeds, depth=depth, width=width)
+            + scarcity_targets(s0, depth=depth)
+            + degenerate_targets(s0, depth=depth, width=width))
+
+
 def main() -> None:
     """Emit the C-1 verification matrix CSV from available artifacts (local eval)."""
     import argparse
@@ -431,6 +511,11 @@ def main() -> None:
     ap.add_argument("--out-of-family", action="store_true",
                     help="use the C3 fork/join multi-input targets (one per seed) instead "
                          "of the scale-family targets (ordered plan step 6)")
+    ap.add_argument("--fixtures", action="store_true",
+                    help="use the broad C3/P3 fixture-family sweep (shared-capacity, "
+                         "deeper-join, uneven-strength across all seeds + scarcity and "
+                         "degenerate suites off the first seed) as the targets, in either "
+                         "the audit or joint stack mode (ordered plan step 10)")
     ap.add_argument("--inputs-per-product", type=int, default=2)
     ap.add_argument("--tie-rel-tol", type=float, default=PLANNER_GATE_TIE_REL_TOL,
                     help="planner-gated producer's replenishment tie tolerance (ablation "
@@ -454,13 +539,19 @@ def main() -> None:
         # (equivariance). One self-contained sweep so contract vs policy stays separable.
         stacks = PRODUCER_AUDIT_STACKS if args.audit == "producer" else ORDERER_AUDIT_STACKS
         s0 = seeds[0]
-        targets = default_targets(args.depth, seeds)
-        targets += numeric_perturbation_targets(s0, depth=args.depth)
-        targets += size_transfer_targets(s0, depth=args.depth,
-                                         product_width=args.product_width,
-                                         producer_width=args.producer_width)
-        if args.audit == "orderer":
-            targets += producer_permutation_targets(s0, depth=args.depth)
+        if args.fixtures:
+            # Step 10: run the chosen audit stack set on the broad fixture-family sweep
+            # instead of the step-8 same-shape sweep, so producer-only / orderer-only rows
+            # are classified on the out-of-family / scarcity / degenerate fixtures too.
+            targets = fixture_matrix_targets(seeds, depth=args.depth)
+        else:
+            targets = default_targets(args.depth, seeds)
+            targets += numeric_perturbation_targets(s0, depth=args.depth)
+            targets += size_transfer_targets(s0, depth=args.depth,
+                                             product_width=args.product_width,
+                                             producer_width=args.producer_width)
+            if args.audit == "orderer":
+                targets += producer_permutation_targets(s0, depth=args.depth)
         rows = transfer_matrix(stacks, targets, args.eval_seeds, args.horizon,
                                producer_model=prod, orderer_model=ord_,
                                planner_gate_tie_rel_tol=args.tie_rel_tol, log=print)
@@ -468,7 +559,9 @@ def main() -> None:
         print(f"\nwrote {len(rows)} rows -> {args.out}")
         return
 
-    if args.out_of_family:
+    if args.fixtures:
+        targets = fixture_matrix_targets(seeds, depth=args.depth)
+    elif args.out_of_family:
         targets = out_of_family_targets(seeds, depth=args.depth,
                                         inputs_per_product=args.inputs_per_product)
     else:

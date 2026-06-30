@@ -1,0 +1,22 @@
+{
+  "id": "EXP-0020-broad-fixture-matrix",
+  "date": "2026-06-30",
+  "ordered_plan_step": 10,
+  "question": "Run the broad C3/P3 fixture matrix (shared-capacity, deeper-join, uneven-strength, scarcity, running-investment, degenerate) in producer-only, orderer-only, and joint-stack modes, and classify every miss as schema/load, decoder/allocator contract, producer policy, orderer policy, scarcity/stress behavior, or scaling/feasibility.",
+  "runner": "tokenomics.eval.transfer_matrix --fixtures",
+  "checkpoints": {
+    "producer": "experiments/EXP-0013-portable-producer-scorer/artifacts/producer_scorer.pt",
+    "orderer": "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt"
+  },
+  "targets": "fixture_matrix_targets(seeds=6-9): shared-capacity x4, deeper-join (d5,in3) x4, uneven-strength x4 (per-seed builder families) + scarcity x5 + degenerate x5 (suites off seed 6) = 22 targets",
+  "eval_seeds": 5,
+  "horizon": 100,
+  "commands": [
+    "python -m tokenomics.eval.transfer_matrix --producer-ckpt <p> --orderer-ckpt <o> --audit producer --fixtures --depth 3 --seeds 6-9 --eval-seeds 5 --horizon 100 --out experiments/EXP-0020-broad-fixture-matrix/producer_fixtures.csv",
+    "python -m tokenomics.eval.transfer_matrix --producer-ckpt <p> --orderer-ckpt <o> --audit orderer --fixtures --depth 3 --seeds 6-9 --eval-seeds 5 --horizon 100 --out experiments/EXP-0020-broad-fixture-matrix/orderer_fixtures.csv",
+    "python -m tokenomics.eval.transfer_matrix --producer-ckpt <p> --orderer-ckpt <o> --fixtures --depth 3 --seeds 6-9 --eval-seeds 5 --horizon 100 --out experiments/EXP-0020-broad-fixture-matrix/joint_fixtures.csv"
+  ],
+  "baseline": "entity_planner + proportional, measured on the same target per row",
+  "local_eval": true,
+  "retrain": false
+}

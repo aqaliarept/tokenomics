@@ -1618,24 +1618,59 @@ so producer-alone rows are now a required gate before any final portability clai
      planner gates; strict s9 closure = producer training coverage, steps 9–12); the
      orderer side has no open gap on the step-8 axes.
 
-9. **Add the remaining reusable fixture families before chasing s9.**
+9. **Add the remaining reusable fixture families before chasing s9.** — **DONE (builders
+   landed in `eval/fixtures.py`, TDD'd in `tests/test_fixtures.py`; no run yet — that is
+   step 10).**
    - Out-of-family: shared capacity types, deeper joins, and a dedicated uneven-strength
-     producer axis. Fork/join + multi-input is already covered by EXP-0017/0018.
+     producer axis. Fork/join + multi-input is already covered by EXP-0017/0018. — done:
+     `build_shared_capacity_config` (levels cycle through `max(1,depth-1)` capacity types,
+     so fewer types than levels), `build_deep_join_config` (fork/join pushed to depth 5 +
+     3-input joins), `build_uneven_strength_config` (one dominant producer per level, the
+     rest weak → guaranteed ≥12× within-level capacity gap). Each isolates ONE axis off the
+     scale family; the two single-input builders share one `_build_single_input_layered`
+     scaffold parameterized by a cap-type fn and a capacity-amount fn.
    - Scarcity: low inventory headroom, low funding, degraded capacity, high backlog,
-     and already-running investments.
+     and already-running investments. — done: `scarcity_suite(base)` returns five
+     dims-preserving single-axis stress variants (`low_funding` = lean investment fund via
+     new `scale_funding`; `low_inventory` = tight buffers via new
+     `scale_inventory_headroom`; `high_backlog`/`degraded` reuse `generalization.perturb_*`;
+     `running_investment` = lean-and-decaying start, the static stand-in for in-flight
+     orders, which are runtime state not config).
    - Degenerate: zero eligible alternatives, one eligible producer, no backlog, no
-     input products, no inventory expansion, and mostly padded rows.
+     input products, no inventory expansion, and mostly padded rows. — done:
+     `degenerate_suite(seed)` = `single_producer` (one declarer per product → zero
+     routing alternatives), `primal_only` (depth-1, no input products), `no_inventory_
+     expansion` (expansion stripped), `no_backlog` (fixed product, quantity 1), `minimal`
+     (one product + one producer per level → mostly padding once encoded).
    - Purpose: expose the full producer/orderer failure surface before retraining or
-     tuning for strict producer-alone closure, so the s9 fix is not seed-specific.
+     tuning for strict producer-alone closure, so the s9 fix is not seed-specific. — the
+     families are now reusable target generators for step 10; nothing run/classified yet.
 
-10. **Run the broad C3/P3 fixture matrix and classify failures.**
+10. **Run the broad C3/P3 fixture matrix and classify failures.** — **DONE
+    (`experiments/EXP-0020-broad-fixture-matrix/`).**
     - Run producer-only, orderer-only, and joint-stack rows on shared-capacity,
       deeper-join, uneven-strength, scarcity, running-investment, and degenerate
-      fixtures.
+      fixtures. — done: new `transfer_matrix --fixtures` target source (6 reusable
+      generators wrapping the step-9 fixtures + `fixture_matrix_targets` umbrella; composes
+      with `--audit`; TDD'd in `tests/test_transfer_matrix.py`). 22 targets × 3 modes,
+      EXP-0012/0013 checkpoints, seeds 6–9, 5 eval seeds, horizon 100.
     - Classify every miss as schema/load, decoder/allocator contract, producer policy
-      quality, orderer policy quality, scarcity/stress behavior, or scaling.
+      quality, orderer policy quality, scarcity/stress behavior, or scaling. — done:
+      **schema/load 0, contract 0** (id-free contract loads/runs on every new family);
+      producer dips small + concentrated on **uneven-strength** + a few scarcity axes;
+      orderer **0 misses** (ties-or-beats every deterministic orderer everywhere, joint
+      mean 1.231 / max 2.002 on uneven-strength); the only scaling result is
+      `deepjoin-d5` = depth×TTL feasibility wall (0 units for ALL policies incl.
+      `entity_planner`), not a contract/policy failure. The two degenerate sub-1.0 orderer
+      cells are no-routing-choice economies where all orderers tie (fixed-producer floor).
     - Keep the EXP-0018 planner-gated rows as the current producer deployment baseline;
-      learned-gate rows remain regression bars.
+      learned-gate rows remain regression bars. — done: both portable producer modes carried
+      (planner-gate ≈ learned on every fixture; both `producer_policy_mode`-labeled).
+    - **Feed-forward to step 11:** the broadened surface localizes the only remaining
+      producer gap to **uneven-strength** (concentration routing/investment) + a few
+      **scarcity** axes — the exact coverage to add. `deepjoin-d5` is a feasibility floor
+      (depth>TTL), so a *feasible* depth-3 wider-join probe is the open item to isolate
+      join-WIDTH policy quality from the depth wall.
 
 11. **Do one producer training/fidelity pass for strict closure.**
     - Use the failures from steps 8-10 to broaden producer training coverage in one
