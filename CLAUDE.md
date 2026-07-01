@@ -15,6 +15,7 @@ tokenomics/tokenomics/
   config/   phase1.json
 docs/        ADRs (adr/), deep-research-report (6-phase curriculum), requirements
 experiments/ empirical runs + results, one dir per experiment — see experiments/README.md
+PROGRESS.md  active work-in-progress status, handoff notes, blockers, next actions
 CONTEXT.md   domain glossary — READ FIRST, use these exact terms
 phase1-implementation-plan.md   roadmap + status + RL target numbers
 ```
@@ -102,7 +103,9 @@ python run_pod_training.py --pod-id <id> \
 - New design decision → write an ADR in `docs/adr/`.
 - New baseline → add to the dicts in `eval/baselines.py` so `signal_check` picks it up.
 - New domain term → add to `CONTEXT.md`.
-- Status/findings changed → update `phase1-implementation-plan.md`.
+- Ongoing progress / handoff / blockers / next actions → update `PROGRESS.md`.
+- Empirical findings → write/update the relevant `experiments/EXP-NNNN-*` record and index.
+- Roadmap or target changes → update the relevant design/plan document.
 
 ## Code style
 - `from __future__ import annotations` top of every module.

@@ -1,8 +1,7 @@
 """Pure snapshot-derived economy metrics (EXP-0006A, no persistent state).
 
-The authoritative current-state formulas behind the enriched orderer observation
-(ALPHAZERO_EXPERT_ITERATION_APPROACH.md, "Feature calculation guide"). Kept in the
-domain so they are testable outside RL and reusable by white-box
+The authoritative current-state formulas behind the enriched orderer observation.
+Kept in the domain so they are testable outside RL and reusable by white-box
 diagnostics/search; the env layer only normalizes them. Every function is a pure
 read of a `ProducingAgent` snapshot and its process sheets — no history, no IO.
 """

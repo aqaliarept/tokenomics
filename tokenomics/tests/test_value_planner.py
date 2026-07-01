@@ -3,7 +3,7 @@ routing by a full `lookahead`-cycle deepcopy rollout (`orderer_oracle._score_can
 which dominates label-gen compute. EXP-0009 replaces the rollout tail with a learned value
 estimate: roll only `short` cycles under the candidate, then add `V(global_state)` for the
 remaining window. The accept criterion is the planner matching the rollout-only teacher's
-consumer units at fewer simulated cycles (ALPHAZERO_EXPERT_ITERATION_APPROACH.md EXP-0009).
+consumer units at fewer simulated cycles.
 
 The value model reads the existing versioned system state (`env.global_state()`, the
 centralized-critic input) so no new state contract is introduced. These tests pin the new

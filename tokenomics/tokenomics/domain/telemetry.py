@@ -3,7 +3,7 @@
 Domain-owned history behind the enriched orderer observation: recent routed /
 completed / rejected flows, throughput, latency and demand, kept as exponential
 moving averages so routing can react to the *current* bottleneck rather than a
-lifetime average (ALPHAZERO_EXPERT_ITERATION_APPROACH.md). Pure Python, no IO/RL —
+lifetime average. Pure Python, no IO/RL —
 it is simulation bookkeeping, like cycle accounting, not an RL artifact.
 
 Contract: callers `record_*` raw per-cycle events, then `end_cycle()` folds each

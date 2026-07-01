@@ -3,8 +3,7 @@ ordering agent (EXP-0006A).
 
 Assembled from live producer/product/order state plus EconomyTelemetry, it is the
 single place that owns "what the orderer is allowed to know" — so the env encoder
-only normalizes it and never becomes a second hidden simulation model
-(ALPHAZERO_EXPERT_ITERATION_APPROACH.md, "Implementation boundary"). Pure domain:
+only normalizes it and never becomes a second hidden simulation model. Pure domain:
 no RL, no numpy, no IO.
 """
 

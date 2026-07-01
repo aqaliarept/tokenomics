@@ -4,7 +4,7 @@ The driver orchestrates the existing orderer expert-iteration pieces (`orderer_i
 into one repeatable loop: load the champion registry -> preflight the champion checkpoint
 -> train a candidate -> evaluate candidate + champion on the held-out suite -> gate ->
 write an experiment record -> emit a promotion recommendation. It must NEVER overwrite the
-champion (ALPHAZERO_EXPERT_ITERATION_APPROACH.md: promotion is human-approved).
+champion (promotion is human-approved).
 
 These tests exercise the orchestration through its public interface with injected
 train/eval functions, so the loop is fast and cloud-free (real training is Runpod-only,
@@ -333,7 +333,7 @@ def test_champion_iterate_runs_the_full_loop_with_injected_fns(tmp_path):
 
 
 def test_champion_iterate_never_modifies_the_champion(tmp_path):
-    """The core safety guarantee (ALPHAZERO_EXPERT_ITERATION_APPROACH.md): a run writes only
+    """The core safety guarantee: a run writes only
     under out_dir — the champion registry and its checkpoint are byte-identical afterwards,
     even when the candidate wins (promotion stays human-approved)."""
     repo = _fake_repo(tmp_path)

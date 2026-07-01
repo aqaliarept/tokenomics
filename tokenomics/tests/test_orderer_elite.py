@@ -3,8 +3,7 @@ argmax routing per cycle, so the learned std only captured spread *across* state
 random-dominated cells (s6/s9) many routings tie within a cycle; collapsing them to one
 arbitrary winner throws away that within-state ambiguity. EXP-0008 keeps the top-K
 elite routings per state (within eps of the best) and distills over all of them, so the
-masked Gaussian fits the elite *centroid + spread* instead of one chosen action
-(ALPHAZERO_EXPERT_ITERATION_APPROACH.md "elite_set_distillation").
+masked Gaussian fits the elite *centroid + spread* instead of one chosen action.
 
 These tests pin the new pieces, kept tiny/local per the compute rule:
   1. elite selection: best-first, within-eps, capped at K, always >= 1,

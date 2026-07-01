@@ -2,8 +2,7 @@
 
 Automates one full `champion -> candidate -> gate -> record` loop on the stable
 product-stream ordering contract (ADR-0052, EXP-0007A), orchestrating the existing
-orderer expert-iteration pieces rather than replacing them
-(ALPHAZERO_EXPERT_ITERATION_APPROACH.md):
+orderer expert-iteration pieces rather than replacing them:
 
     load champion registry -> preflight champion checkpoint -> train candidate ->
     evaluate candidate + champion on held-out suite -> gate -> write experiment record
@@ -41,7 +40,7 @@ _REQUIRED = (
 @dataclass
 class ChampionRegistry:
     """The active champion + gate configuration — one source of truth for the driver
-    (ALPHAZERO_EXPERT_ITERATION_APPROACH.md "Champion Registry")."""
+    and promotion audit."""
 
     champion_id: str
     checkpoint: str
@@ -137,7 +136,7 @@ def evaluate_gates(
     hard_cells: list[int],
     max_death_rate: float = 0.0,
 ) -> GateDecision:
-    """The promotion gate (ALPHAZERO_EXPERT_ITERATION_APPROACH.md "Promotion Gates"), pure
+    """The promotion gate, pure
     over eval_m2-shaped rows so it is testable without running an eval. A candidate is
     PROMOTE_RECOMMENDED only if, on the held-out suite: death ≤ `max_death_rate` everywhere,
     the strict envelope ratio > 1.00 on every seed, the candidate mean beats the champion

@@ -2,9 +2,8 @@
 
 These formulas back the enriched orderer observation. They live in the domain so
 they are testable outside RL and reusable by white-box diagnostics/search
-(ALPHAZERO_EXPERT_ITERATION_APPROACH.md, "Implementation boundary"). One test per
-formula; each asserts the canonical formula from the doc's "Feature calculation
-guide", not an implementation detail.
+without going through the env encoder. One test per formula; each asserts the
+canonical formula, not an implementation detail.
 """
 
 from __future__ import annotations

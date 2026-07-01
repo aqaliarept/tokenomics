@@ -1,8 +1,7 @@
 """EXP-0006A: persistent per-cycle EMA telemetry (domain-owned economy history).
 
 The enriched orderer observation needs recent (not lifetime) flow statistics so
-routing can react to the current bottleneck (ALPHAZERO_EXPERT_ITERATION_APPROACH.md,
-"Use recent EMA/windowed statistics"). The domain owns these so they are testable
+routing can react to the current bottleneck. The domain owns these so they are testable
 outside RL. EMA recurrence: EMA_next = alpha*current + (1-alpha)*EMA_prev, folded
 once per cycle; a cycle with no event decays the EMA toward zero.
 """
