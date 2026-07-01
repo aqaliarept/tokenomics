@@ -1763,7 +1763,14 @@ so producer-alone rows are now a required gate before any final portability clai
       v2/v1 checkpoints saved before the block (live EXP-0012/0013/0021 artifacts) load
       unchanged through the existing version + feature-dim floor (regression-tested).
 
-14. **Run targeted ablations after the matrix and fixtures exist.**
+14. **Run targeted ablations after the matrix and fixtures exist. — DONE (sufficient
+    ablations complete).** #1 + #2 answer the portability claim directly; #3 deferred as
+    low marginal value (see below); dense-planes / aug-on-off left unless a reviewer
+    challenges sparse edges or augmentation. Evidence chain now closed:
+    fingerprint-vs-schema (schema gate necessary) → flat MLP (fixed-shape not portable) →
+    row no-relation (row factoring gives portability) → row + sparse relation (small value
+    win under contention) → planner-gated producer + deterministic allocator (champion,
+    contract-stable).
     - Prioritize the ablations that answer portability questions directly: flat MLP
       vs row scorer, dense planes vs sparse edges, augmentation on/off,
       learned-direct allocation vs scorer plus deterministic allocator, and
@@ -1786,36 +1793,60 @@ so producer-alone rows are now a required gate before any final portability clai
       gate loads all four. Empirical case for schema-version loading — a fingerprint gate
       would block the exact transfers the portable contract claims. Weights irrelevant
       (untrained scorer): only LOAD-GATE behavior under test.
-    - **#2 flat MLP vs row scorer — HARNESS READY (local), cloud distill PENDING (user launches pod).**
-      Two baselines vs the row+edge champion (`EXP-0021 .../producer_scorer_broad.pt`):
-      - **A. fixed-pad flat MLP (`ProducerFlatModel`) — non-portable BY CONSTRUCTION, proven
-        locally** (`test_producer_ablation_arch.py::test_flat_model_scores_within_pad_but_is_non_portable_beyond_it`).
-        One fixed-size padded input vector → single MLP → fixed score head sliced to actual
-        rows. A topology WIDER than its build-time pad raises on `forward_view` — it cannot
-        even distill over the broadened multi-size coverage set, let alone transfer to
-        wider_product / wider_producer. No pod run: the construction failure is the result.
-      - **B. per-row, no-edge scorer (`ProducerScoreModel(use_edges=False)`) — needs the
-        cloud distill.** Same features/entities/decoder, recipe relations zeroed (proven
-        edge-invariant locally, `test_no_edge_model_scores_are_invariant_to_recipe_edges`);
-        stamps `architecture_version="producer-row-noedge-scorer-v2"`, loads + runs portably
-        (verified through `transfer_matrix` on prodW8/agentW8). Distill it over the SAME
-        broadened set + hyperparams as EXP-0021, then run producer-alone
-        `transfer_matrix --audit producer` (fixtures + out-of-family) and compare per-cell
-        ratios to the champion — the edge-value delta.
+    - **#2 flat MLP vs row scorer — DONE (EXP-0022). Edges = value lever, not portability
+      lever; flat MLP non-portable by construction.** Two baselines vs the row+edge champion
+      (`EXP-0021 .../producer_scorer_broad.pt`):
+      - **A. fixed-pad flat MLP (`ProducerFlatModel`) — non-portable BY CONSTRUCTION**
+        (`test_producer_ablation_arch.py::test_flat_model_scores_within_pad_but_is_non_portable_beyond_it`).
+        `forward_view` raises `ValueError` the moment an entity count exceeds its build pad —
+        cannot ingest a wider economy, not a viable portable policy. No pod run: the
+        construction failure IS the result.
+      - **B. per-row, no-edge scorer (`ProducerScoreModel(use_edges=False)`) — distilled on
+        Runpod, fully portable.** Held-out scale 6–9 ratio-vs-planner 1.0000; producer-alone
+        fixtures audit = **0 contract failures / 0 death**, equals the edge champion on 19/22,
+        **never better**, loses only on **3 stressed cells**: scarcity low_inventory −2.5%,
+        sharedcap s8 −1.8%, scarcity high_backlog −0.8%. So the PER-ROW structure gives id-free
+        portability; the EDGES add a small strictly-non-negative value only under scarcity /
+        shared-cap. `transfer_matrix` now stamps `producer_arch` so no-edge rows are
+        self-labeled (`producer-row-noedge-scorer-v2` vs champion `-edge-`).
 
-      Pod command (mirror EXP-0021 with `--no-edges`, then eval locally):
-      ```
-      python run_pod_training.py --pod-id <id> --cpu --python python3.12 \
-        --train "-u -m tokenomics.train.producer_scorer --broaden --no-edges --depth 3 \
-                 --train-seeds 0-5 --width 4 --eval-seeds-list 6-9 --epochs 300 --lr 0.01 \
-                 --eval-seeds 5 --horizon 100 --eval-depths 1-3 \
-                 --save /workspace/producer_scorer_noedge.pt" \
-        --pull /workspace/producer_scorer_noedge.pt:./experiments/EXP-0022-ablation-flat-vs-row/artifacts/producer_scorer_noedge.pt
-      ```
-    - **#3 learned-direct vs scorer + deterministic allocator — only if budget remains.**
+      No new champion — row+edge scorer (EXP-0021) stays; EXP-0022 quantifies the cost of
+      dropping edges. Unaffected EXP-0021 residuals named (uneven-strength s6=0.975, scale
+      s9d3=0.9921 — identical no-edge vs edge).
+    - **#3 learned-direct vs scorer + deterministic allocator — DEFERRED (low marginal
+      value).** The main portability claim is already carried by #1/#2 + the retained
+      champion. This ablation is expensive and easy to MISREAD: a failure could be
+      action-head design, masking, quantity conservation, training coverage, or topology
+      mismatch — many confounded causes, unlike the clean single-variable ablations already
+      run. Spend it ONLY if a reviewer specifically challenges the deterministic
+      planner/allocator split; otherwise it stays deferred.
 
-15. **Promote or narrow the final claim.** — **PROVISIONAL NARROWED CLAIM carried (post
-    EXP-0021); revisit after steps 13/14.**
+15. **Promote or narrow the final claim.** — **NARROWED CLAIM PROMOTED (steps 13 + 14
+    complete).**
+
+    **Promoted claim:** the portable id-free stack (ADR-0053 producer + ADR-0054 orderer)
+    is **product-agnostic across the covered schema family** — schema-compatible product /
+    producer counts, capacity relabels, fork/join, shared-capacity, scarcity, and
+    degenerate topologies — with **zero contract/load failures** anywhere covered
+    (EXP-0016/0017/0020, and the schema-version load gate of step 13 that makes this
+    load-portable, not fingerprint-locked). The **row + sparse-relation producer champion**
+    (EXP-0021) is retained: step-14 ablations show the row factoring is what buys
+    portability, the relation context adds a small contention-only value win (EXP-0022),
+    a flat/fixed-shape architecture is not portable, and the schema gate (not a config
+    fingerprint) is the correct load gate. Joint stack beats the best-available bar
+    everywhere covered.
+
+    **Open residuals (named, not laundered through the joint):** producer-alone
+    uneven-strength s6 = 0.975 and in-family scale s9d3 = 0.9921. **`deepjoin-d5` is a
+    depth×TTL feasibility wall (chains ≥4 vs TTL=2), not a policy failure** — `entity_planner`
+    also completes 0 units there. Closing the two sub-1.0 cells to a strict-everywhere
+    claim is a **bounded, targeted DAgger** item (learned-scorer rollouts on those state
+    families — NOT an architecture change, NOT deterministic tie-tolerance), deferred: run
+    only if "strict producer-alone every covered cell ≥ 1.0" becomes a hard release gate.
+    Learned-direct allocation (ablation #3) stays deferred as low marginal value.
+
+    ---
+    _Prior provisional standing (retained for history):_
     - If C2, C3, and P3 pass with independent producer/orderer rows, promote the
       portable stack as product-agnostic within the covered schema family and list
       remaining stress/ablation caveats.

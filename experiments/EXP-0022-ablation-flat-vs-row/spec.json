@@ -1,0 +1,26 @@
+{
+  "id": "EXP-0022-ablation-flat-vs-row",
+  "version": "producer-arch-ablation-v1",
+  "date": "2026-07-01",
+  "adr": "0053",
+  "plan": "PRODUCT_AGNOSTIC.md step 14 (targeted ablations), ablation #2: flat-MLP vs row-scorer",
+  "driver": "tokenomics.train.producer_scorer --no-edges (distill) + tokenomics.eval.transfer_matrix --audit producer --fixtures (eval); tokenomics.train.producer_scorer.ProducerFlatModel (unit-tested)",
+  "question": "Does the row/edge factoring of the portable producer scorer (ProducerScoreModel) actually buy anything, split into (A) portability and (B) value? (A) Is a fixed-pad flat MLP over the same features non-portable? (B) On the producer-alone acceptance fixtures, how much value do the recipe EDGES buy over an otherwise-identical PER-ROW scorer with edges zeroed (use_edges=False)?",
+  "method": {
+    "variantA_flat": "tokenomics.train.producer_scorer.ProducerFlatModel — same per-entity features (global/capacity/product/input) but concatenated into a FIXED-pad flat vector (cap_max/prod_max/input_max from the build economy), one MLP, sliced back to actual counts. Same forward_view interface as ProducerScoreModel so it deploys through score_with_model. Result is a CONSTRUCTION property, proven by unit test (test_producer_ablation_arch.py) — no training/pod needed: forward_view raises ValueError the moment any actual entity count exceeds the pad it was built for.",
+    "variantB_noedge": "ProducerScoreModel(use_edges=False) — identical row heads, but the 4 recipe relation contexts (product<-capacity, product<-input, input->product, capacity->product) are zeroed. Head input dims unchanged (edge slots become zeros) so it still LOADS on variable topologies = portable. Distilled with the SAME broadened recipe (EXP-0021 command + --no-edges): 54 topologies, depth 3, seeds 0-5, width 4, 300 epochs, lr 0.01. Stamps architecture_version 'producer-row-noedge-scorer-v2' (vs champion 'producer-row-edge-scorer-v2').",
+    "edge_value_measurement": "producer-alone transfer_matrix --audit producer --fixtures for BOTH checkpoints, key stack portable_producer_planner_gates+proportional, eval_seeds 5. Per-cell consumer_completed_units delta (no-edge minus edge-champion) over the 22 C3/P3 fixture cells. transfer_matrix now stamps producer_arch on every row so the no-edge rows are self-labeled (step-14 reviewer caveat).",
+    "champion": "EXP-0021 artifacts/producer_scorer_broad.pt (row+edge, same broadened recipe).",
+    "orderer_fixed": "proportional",
+    "env": "entity_producer_obs=True"
+  },
+  "command": {
+    "distill": "python run_pod_training.py --pod-id <id> --cpu --python python3.12 --train \"-u -m tokenomics.train.producer_scorer --broaden --no-edges --depth 3 --train-seeds 0-5 --width 4 --eval-seeds-list 6-9 --epochs 300 --lr 0.01 --eval-seeds 5 --horizon 100 --eval-depths 1-3 --save /workspace/producer_scorer_noedge.pt\" --pull /workspace/producer_scorer_noedge.pt:./experiments/EXP-0022-ablation-flat-vs-row/artifacts/producer_scorer_noedge.pt",
+    "eval_noedge": "python -m tokenomics.eval.transfer_matrix --audit producer --fixtures --producer-ckpt artifacts/producer_scorer_noedge.pt --eval-seeds 5 --out artifacts/noedge_fixtures.csv",
+    "eval_champion": "python -m tokenomics.eval.transfer_matrix --audit producer --fixtures --producer-ckpt ../EXP-0021-producer-broaden-training/artifacts/producer_scorer_broad.pt --eval-seeds 5 --out artifacts/champion_fixtures.csv"
+  },
+  "compute": {"where": "distill on Runpod CPU pod (--python python3.12); both fixture audits local", "wall_time": "distill ~few min; audits ~minutes"},
+  "metric": "(A) flat model portability = pass/fail on a wider-than-pad view (unit test). (B) per-fixture-cell consumer_completed_units, no-edge vs edge-champion, both under planner-gated producer + proportional orderer; dead_rate + failure_class per side.",
+  "pass": "(A) flat MLP is non-portable by construction (ValueError beyond pad). (B) edges are a VALUE lever, not a portability lever: no-edge stays fully portable (0 contract failures, runs every cell) and equals the edge champion on 19/22 cells, but is NEVER better and loses 6-10 units on 3 stressed cells (scarcity low_inventory -2.5%, sharedcap s8 -1.8%, scarcity high_backlog -0.8%).",
+  "notes": "Ablation #2 of step 14, ordered after #1 (fingerprint-vs-schema gate, DONE) and before #3 (learned-direct vs scorer+allocator). Answers a reviewer challenge that the row/edge factoring might be over-engineered. Split cleanly: the PER-ROW structure alone gives portability (no-edge loads/runs on every fixture incl. wider product/producer), so edges are not what makes the policy id-free. Edges add a small strictly-non-negative value exactly where recipe structure is load-bearing (scarcity + shared-capacity contention), never elsewhere. deepjoin-d5 cells = 0 units both sides (depth x TTL feasibility wall, EXP-0020, excluded from the value read). No new champion: the row+edge scorer (EXP-0021) stays the producer policy; this quantifies what dropping edges would cost."
+}
