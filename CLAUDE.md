@@ -28,8 +28,10 @@ phase1-implementation-plan.md   roadmap + status + RL target numbers
 ../.venv/bin/python -m tokenomics.train.smoke_ppo --iters 50
 ```
 
-## Where training runs (HARD RULE)
-**All real training runs on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `boundary_grid`, `warm_start`/`clone_fidelity` DAgger, `producer_improve`, full `smoke_ppo`/`parallel` sweeps, any multi-topology or multi-iter run. **Only exception: smoke runs** — `smoke_ppo --iters` ≲ 50, a single-cell sanity check, or a fast `--dry-run` — may run on the local `.venv`. Evals (`signal_check`, `producer_rungs`, `swap_eval`, traces) are local. If unsure, it goes to the cloud.
+## Where training + experiments run (HARD RULE)
+**All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `boundary_grid`, `warm_start`/`clone_fidelity` DAgger, `producer_improve`, full `smoke_ppo`/`parallel` sweeps, any multi-topology or multi-iter run.
+
+**Experiments go to the cloud.** Any run that materializes an `EXP-NNNN` result — the full multi-seed / multi-task / multi-topology run that produces `summary.csv` + `artifacts/` (training, boundary/transfer/curriculum matrices, replay suites, acceptance sweeps) — runs on Runpod, wrapped with `run_pod_training.py --pull` to bring the EXP dir back. The **only** things that stay local: **smoke checks** (`smoke_ppo --iters` ≲ 50, a single-cell sanity check, a fast `--dry-run`) and **quick one-shot diagnostics/evals** (`signal_check`, `producer_rungs`, `swap_eval`, a single-seed trace). Build/TDD the experiment driver locally against a tiny subset (`--dry-run`, 1–2 cells, ≤1 seed) to prove it runs, then launch the **full** run on the cloud. If unsure, it goes to the cloud.
 
 ## Parallel training (use the cores)
 One PPO run is single-threaded: rollout `collect` is a sequential Python round-robin over `num_envs`, and inference is batch-1 — extra cores do nothing for one run. Pin BLAS to 1 thread (`--threads 1`, the default) and get throughput by fanning out **independent** runs, one process per core, via `tokenomics.train.parallel`:

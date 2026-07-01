@@ -1,0 +1,19 @@
+task_id,task_family,expected_claim_boundary,target_products,target_producers,target_capacity_types,target_depth,learner_units,learner_rejected_units,learner_dead,reference_model_id,reference_units,reference_rejected_units,reference_dead,reference_status,ratio_vs_reference,contract_ok,failure_class,notes
+stress-scale-d3-s6,scale,in_claim,12,12,3,3,490.33,10.0,False,entity_planner+proportional,453.33,45.33,False,solved,1.0816,True,none,
+stress-scale-d3-s7,scale,in_claim,12,12,3,3,496.67,4.67,False,entity_planner+proportional,474.33,24.67,False,solved,1.0471,True,none,
+stress-scale-d3-s8,scale,in_claim,12,12,3,3,589.33,14.67,False,entity_planner+proportional,499.67,100.67,False,solved,1.1794,True,none,
+stress-scale-d3-s9,scale,in_claim,12,12,3,3,544.67,7.0,False,entity_planner+proportional,491.33,57.67,False,solved,1.1086,True,none,
+stress-forkjoin-s0,fixture,out_of_claim,12,12,3,3,173.33,321.67,False,entity_planner+proportional,63.33,429.33,False,solved,2.7368,True,distribution_mismatch,multi-input join (recipe DAG out of family)
+stress-shared_cap-s0,fixture,out_of_claim,12,12,2,3,494.0,8.33,False,entity_planner+proportional,341.0,157.67,False,solved,1.4487,True,distribution_mismatch,levels share capacity types
+stress-uneven-s0,fixture,out_of_claim,12,12,3,3,484.0,16.33,False,entity_planner+proportional,349.33,144.33,False,solved,1.3855,True,distribution_mismatch,one dominant producer per level
+stress-deep_join-s0,fixture,feasibility_wall,20,20,5,5,0.0,591.67,False,entity_planner+proportional,0.0,591.67,False,failed,,True,feasibility_wall,depth-5 chain exceeds TTL=2 reach (known wall)
+stress-scarcity-low_funding-s0,stress,out_of_claim,12,12,3,3,495.33,7.0,False,entity_planner+proportional,347.33,152.67,False,solved,1.4261,True,distribution_mismatch,scarcity axis: low_funding
+stress-scarcity-low_inventory-s0,stress,out_of_claim,12,12,3,3,472.33,30.0,False,entity_planner+proportional,244.0,254.0,False,solved,1.9358,True,distribution_mismatch,scarcity axis: low_inventory
+stress-scarcity-high_backlog-s0,stress,out_of_claim,12,12,3,3,893.0,305.33,False,entity_planner+proportional,514.67,678.33,False,solved,1.7351,True,distribution_mismatch,scarcity axis: high_backlog
+stress-scarcity-degraded-s0,stress,out_of_claim,12,12,3,3,457.0,45.33,False,entity_planner+proportional,303.33,194.67,False,solved,1.5066,True,distribution_mismatch,scarcity axis: degraded
+stress-scarcity-running_investment-s0,stress,out_of_claim,12,12,3,3,482.0,20.33,False,entity_planner+proportional,319.33,179.67,False,solved,1.5094,True,distribution_mismatch,scarcity axis: running_investment
+stress-degenerate-single_producer-s0,stress,out_of_claim,12,3,3,3,414.0,133.0,False,entity_planner+proportional,414.0,133.0,False,solved,1.0,True,distribution_mismatch,degenerate edge: single_producer
+stress-degenerate-primal_only-s0,stress,out_of_claim,4,4,1,1,552.67,0.0,False,entity_planner+proportional,552.67,0.0,False,solved,1.0,True,distribution_mismatch,degenerate edge: primal_only
+stress-degenerate-no_inventory_expansion-s0,stress,out_of_claim,12,12,3,3,494.0,8.33,False,entity_planner+proportional,341.0,157.67,False,solved,1.4487,True,distribution_mismatch,degenerate edge: no_inventory_expansion
+stress-degenerate-no_backlog-s0,stress,out_of_claim,12,12,3,3,294.0,6.0,False,entity_planner+proportional,297.0,3.0,False,solved,0.9899,True,distribution_mismatch,degenerate edge: no_backlog
+stress-degenerate-minimal-s0,stress,out_of_claim,3,3,3,3,321.33,230.0,False,entity_planner+proportional,321.33,230.0,False,solved,1.0,True,distribution_mismatch,degenerate edge: minimal

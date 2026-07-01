@@ -1,0 +1,45 @@
+{
+  "id": "EXP-0023-curriculum-task-archive-and-stress-suite",
+  "version": "curriculum-scaffold-v1",
+  "date": "2026-07-01",
+  "adr": null,
+  "plan": "CURRICULUM_GAME_MASTER_APPROACH.md — Stage 0 (experiment index + baseline hygiene) + Stage 1 (independent stress suite). The doc's stated Immediate Next Experiment.",
+  "driver": "tokenomics.eval.curriculum",
+  "question": "Can the current portable producer/orderer stack and the deterministic reference bar run on SERIALIZED, replayable curriculum tasks with per-row failure classification — without inventing a new experiment index, without collapsing contract failures into policy scores, and without a promotion recommendation?",
+  "scope": "Scaffolding only. No random generator (Stage 2+), no mutation, no learned game master, no training. No champion change.",
+  "stack_under_test": {
+    "portable": true,
+    "producer_view": "ProducerEntityView",
+    "producer_model": "ProducerScoreModel (row/edge, id-free)",
+    "producer_checkpoint": "experiments/EXP-0021-producer-broaden-training/artifacts/producer_scorer_broad.pt",
+    "producer_deploy": "scorer_producing_policy (default learned gates via run_joint_stack)",
+    "orderer_view": "ProductStreamView",
+    "orderer_model": "OrdererScoreModel",
+    "orderer_checkpoint": "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt",
+    "orderer_deploy": "scorer_ordering_policy (masked allocate_suborders)",
+    "reference_bar": "entity_planner + proportional (deterministic PRACTICAL_BASELINE, no checkpoint, runs anywhere)"
+  },
+  "legacy_baseline_only": {
+    "note": "champion.json still records the OLD fixed-shape stack (d3_rung_dagger_v4 + m2_stream_stochastic). It is a historical baseline, NOT the portable stack under test here. Left untouched (no promotion in this experiment).",
+    "checkpoints": ["m2_inputs/d3_rung_dagger_v4.pt", "m2_inputs/m2_stream_stochastic.pt"]
+  },
+  "task_object": {
+    "reproducibility": "generator-ref: world_spec = {generator, params} names a vetted pure (seed, **params) -> Configuration builder in curriculum.REPRODUCERS; replay() re-calls it. No inlined world dump, no hidden process state. Stage 2's random generator can add an inline world_spec form later without changing the contract.",
+    "serializer": "TaskRecord.to_json_line / from_json_line (jsonl, 1:1 roundtrip, torch-free)"
+  },
+  "stress_suite": {
+    "families": ["scale (in_claim, held-out seeds 6-9 depth 3)", "fixture out-of-family (forkjoin, shared_capacity, uneven_strength)", "fixture feasibility_wall (deep_join depth 5 vs TTL=2)", "stress scarcity (5 axes)", "stress degenerate (5 edges)"],
+    "count": 18,
+    "separate_from_training_replay": true
+  },
+  "failure_taxonomy": ["none", "policy_weakness", "feasibility_wall", "contract_failure", "implementation_failure", "distribution_mismatch"],
+  "reference_bars": {
+    "producer": "entity_planner (deterministic planner)",
+    "orderer": "proportional",
+    "search": "not wired this pass (ratio_vs_best_available_bar left blank, not aliased to the practical bar)"
+  },
+  "compute": {"where": "local (.venv) — eval + one-seed replay smoke, both local-allowed per CLAUDE.md", "wall_time": "seconds"},
+  "reproduce": "cd tokenomics && ../.venv/bin/python -m tokenomics.eval.curriculum --producer-ckpt ../experiments/EXP-0021-producer-broaden-training/artifacts/producer_scorer_broad.pt --orderer-ckpt ../experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt --out-dir ../experiments/EXP-0023-curriculum-task-archive-and-stress-suite --eval-seeds 3 --horizon 100",
+  "tests": "tokenomics/tests/test_curriculum.py (roundtrip, replay determinism, taxonomy, stress-suite legality, torch-guarded champion replay smoke)",
+  "promote_recommended": false
+}
