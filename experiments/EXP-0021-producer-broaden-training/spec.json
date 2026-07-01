@@ -1,0 +1,28 @@
+{
+  "id": "EXP-0021-producer-broaden-training",
+  "version": "producer-scorer-distill-v1",
+  "date": "2026-07-01",
+  "adr": "0053",
+  "plan": "PRODUCT_AGNOSTIC.md ordered-plan step 11 (one producer training/fidelity pass for strict closure)",
+  "driver": "tokenomics.train.producer_scorer --broaden",
+  "question": "Does broadening the portable producer scorer's distillation set past the scale family — to the five families step 11 names (fork/join, shared-capacity, uneven-strength, scarcity, running-investment) at train seeds 0-5 — close the out-of-family producer-alone regression (EXP-0017/0018 fork/join s9=0.955 under a deterministic `proportional` orderer) WITHOUT regressing the in-family scale value EXP-0013 proved, and with zero contract failure / zero death?",
+  "method": {
+    "model": "tokenomics.train.producer_scorer.ProducerScoreModel (shared row/edge scorer over ProducerEntityView, no product/capacity ids, sparse recipe edges; checkpoint v2). Same architecture + schema as EXP-0013 — only the training topology coverage changes, so the new checkpoint stays load-compatible with every existing fixture/size target.",
+    "train_topologies": "broadened_producer_train_configs(seeds 0-5, depth 3, width 4): per seed = scale base + forkjoin + sharedcap + uneven + the five scarcity_suite axes (low_funding, low_inventory, high_backlog, degraded, running_investment) = 9 topologies/seed x 6 seeds = 54 economies. Reuses the eval.fixtures builders the C3/P3 matrix consumes (same recipe family; train seeds 0-5 vs acceptance seeds 6-9).",
+    "teacher": "replenishment / continuous scores: score_producer_entity_view local labels (MSE); investment gates (upgrade, inventory_expansion): the planner's own command booleans (BCE). Restoration planner-owned, no learned gate. entity_planner + proportional rollouts.",
+    "deploy": "scorer_producing_policy -> producing_entity_planner_from_scorer -> plan_producer_command. Acceptance evaluates BOTH producer policy modes: planner_gates=True (EXP-0018 deployment baseline) and learned-gate (regression bar).",
+    "orderer_fixed": "proportional",
+    "env": "entity_producer_obs=True",
+    "epochs": 300,
+    "lr": 0.01,
+    "eval_seeds": 5,
+    "horizon": 100,
+    "in_family_sanity": "the trainer's built-in held-out eval (scale seeds 6-9, eval-depths 1-3 = unseen producer counts P=4/8/12) is the NO-REGRESSION readout vs EXP-0013 (must stay ~1.0, 0 death). The out-of-family acceptance is the separate step-12 transfer_matrix --fixtures run, NOT this trainer's eval."
+  },
+  "command": "python run_pod_training.py --pod-id <id> --cpu --python python3.12 --train \"-u -m tokenomics.train.producer_scorer --broaden --depth 3 --train-seeds 0-5 --width 4 --eval-seeds-list 6-9 --epochs 300 --lr 0.01 --eval-seeds 5 --horizon 100 --eval-depths 1-3 --save /workspace/producer_scorer_broad.pt\" --pull /workspace/producer_scorer_broad.pt:./experiments/EXP-0021-producer-broaden-training/artifacts/producer_scorer_broad.pt",
+  "acceptance_step12": "Strict producer + joint gates were run locally with the pulled checkpoint: tokenomics.eval.transfer_matrix --fixtures (fork/join seeds 6-9 + shared-cap + uneven + scarcity), producer-only under proportional + joint stack. Primary target closed: fork/join s9 0.955 -> 1.000, zero contract failures, zero death for non-floor/non-deepjoin policy rows. Strict covered-set closure is not claimed because uneven-strength s6 remains 0.975 and in-family scale s9d3 remains 0.9921.",
+  "compute": {"where": "runpod CPU pod (base image python3.8 lacks ensurepip -> --python python3.12)", "wall_time": "completed; exact pod wall time not recorded"},
+  "metric": "Per (eval-depth, held-out scale seed): consumer_completed_units ratio vs entity_planner + death (in-family no-regression). Plus command-level fidelity (upgrade/inventory FP, replenishment mismatch). Out-of-family producer-alone closure measured in step 12.",
+  "pass": "(this run) checkpoint trains + saves + reloads through the v2 version gate; in-family held-out scale value is near planner with zero death and low investment FP, but slightly regresses EXP-0013 at one cell (s9d3=0.9921). (step 12) producer-alone planner-gated closes the fork/join target gap and passes fork/join/shared-cap/scarcity/degenerate, but strict covered-set closure is not met because uneven-strength s6=0.975.",
+  "notes": "Step 11/12 are DONE with a partial strict result: the primary fork/join s9 target closed, but uneven-strength s6 and in-family scale s9d3 remain sub-1.0. Step 11 is the FIRST producer run to add out-of-family + scarcity states to training; EXP-0013 was scale-only. Deploy stays planner-gated for investment (EXP-0018) — broadening targets the LEARNED CONTINUOUS heads (replenishment / product urgency / capacity bottleneck), the SUSPECTED driver of the fork/join s9 gap (hypothesis now supported for fork/join, not a proof for every fixture), while gate BCE coverage also widens. Rationale for training-coverage over more deterministic knobs: EXP-0017 step-6 showed the obvious knob (replenish tie tolerance) is non-monotonic (helps s9, hurts s8) — cleaner next bet, not a proof no deterministic patch could work. Primary fallback for close-but-under residuals = DAgger (on-policy distribution shift from the scorer's own replenishment choices), not architecture change. deep-join-d5 excluded (depth>TTL feasibility wall, EXP-0020); degenerate fixtures are contract edge tests rather than broad training material."
+}

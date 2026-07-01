@@ -31,6 +31,59 @@ from ..eval.baselines import Policy
 # checkpoint carries per-gate probability thresholds (EXP-0013).
 PRODUCER_SCORER_CHECKPOINT_VERSION = 2
 
+# Named feature schema for the portable load gate (step 13). These names mirror the
+# `_*_features` row builders below in order; the load gate compares them by name, so a
+# feature rename/reorder rejects while a wider/relabeled topology (absent here) does not.
+_PRODUCER_GLOBAL_FEATURES = (
+    "cut_off_price", "inventory_units", "inventory_limit", "inventory_headroom",
+    "outstanding_inbound_units", "active_restoration", "active_upgrade",
+    "active_inventory_expansion",
+)
+_PRODUCER_CAPACITY_FEATURES = (
+    "owned", "current", "max", "headroom", "ratio", "degradation", "reserved",
+    "previous_requested_capacity", "free", "reserved_ratio", "restore_effect",
+    "restore_cost", "upgrade_effect", "upgrade_cost", "demand_pressure",
+)
+_PRODUCER_PRODUCT_FEATURES = (
+    "eligible", "open_demand_qty", "open_demand_tokens", "product_depth",
+    "recipe_input_count", "recipe_input_units", "recipe_capacity_type_count",
+    "recent_routed_qty", "recent_completed_qty", "recent_rejected_qty",
+    "recent_completion_latency", "active_reservation_qty", "capacity_makeable_qty",
+    "input_makeable_qty", "complete_qty_now", "capacity_bottleneck_ratio",
+    "input_bottleneck_ratio", "bottleneck_ratio",
+)
+_PRODUCER_INPUT_FEATURES = (
+    "inventory", "outstanding_inbound", "blocked_reservation_qty",
+    "downstream_demand_pressure",
+)
+
+
+def producer_portable_schema(*, use_edges: bool = True) -> "PortableSchema":
+    """The current portable-load schema for the producer scorer (step 13). Topology-free:
+    named row features + entity/relation types + norm/decoder/architecture versions, no
+    product/capacity ids or counts.
+
+    `use_edges=False` = the step-14 no-edge ablation variant: same features/entities/decoder,
+    but the recipe relations are unused, so the architecture (and hence load gate) differs."""
+    from .portable_schema import PortableSchema
+
+    return PortableSchema(
+        schema_version=1,
+        entity_feature_names={
+            "global": _PRODUCER_GLOBAL_FEATURES,
+            "capacity": _PRODUCER_CAPACITY_FEATURES,
+            "product": _PRODUCER_PRODUCT_FEATURES,
+            "input": _PRODUCER_INPUT_FEATURES,
+        },
+        entity_types=("global", "capacity", "product", "input"),
+        relation_types=("product_capacity_required", "product_input_required"),
+        normalization_version="log1p-nonneg-v1",
+        decoder_version="plan_producer_command-v2-gates",
+        architecture_version=(
+            "producer-row-edge-scorer-v2" if use_edges else "producer-row-noedge-scorer-v2"
+        ),
+    )
+
 
 @dataclass
 class ProducerScoreSample:
@@ -98,9 +151,14 @@ class ProducerScoreModel(nn.Module):
     deterministic planner converts into a feasible command.
     """
 
-    def __init__(self, hidden: int = 64) -> None:
+    def __init__(self, hidden: int = 64, *, use_edges: bool = True) -> None:
         super().__init__()
         self.hidden = hidden
+        # Step-14 ablation #2: `use_edges=False` = per-row/no-edge baseline. The recipe
+        # relation contexts are zeroed, so each row is scored from its own features + global
+        # only. Head input dims are unchanged (edge slots become zeros), so the variant still
+        # loads on variable topologies — it isolates whether the sparse edges carry transfer.
+        self.use_edges = use_edges
         # Investment gates (upgrade / inventory expansion) are LEARNED BINARY DECISIONS,
         # not thresholded ROI regressions: the heads emit logits trained with BCE against
         # the planner's actual gate booleans, and deployment fires a gate when its
@@ -129,18 +187,24 @@ class ProducerScoreModel(nn.Module):
         prod_h = self._encode_rows(_product_features, view.product_rows, self.hidden, device, self.product_encoder)
         input_h = self._encode_rows(_input_features, view.input_rows, self.hidden, device, self.input_encoder)
 
-        prod_cap_ctx = _forward_relation_context(
-            view.relations.product_capacity_required, len(view.product_rows), cap_h, self.hidden
-        )
-        prod_input_ctx = _forward_relation_context(
-            view.relations.product_input_required, len(view.product_rows), input_h, self.hidden
-        )
-        input_prod_ctx = _reverse_relation_context(
-            view.relations.product_input_required, len(view.input_rows), prod_h, self.hidden
-        )
-        cap_prod_ctx = _reverse_relation_context(
-            view.relations.product_capacity_required, len(view.capacity_rows), prod_h, self.hidden
-        )
+        if self.use_edges:
+            prod_cap_ctx = _forward_relation_context(
+                view.relations.product_capacity_required, len(view.product_rows), cap_h, self.hidden
+            )
+            prod_input_ctx = _forward_relation_context(
+                view.relations.product_input_required, len(view.product_rows), input_h, self.hidden
+            )
+            input_prod_ctx = _reverse_relation_context(
+                view.relations.product_input_required, len(view.input_rows), prod_h, self.hidden
+            )
+            cap_prod_ctx = _reverse_relation_context(
+                view.relations.product_capacity_required, len(view.capacity_rows), prod_h, self.hidden
+            )
+        else:
+            prod_cap_ctx = torch.zeros((len(view.product_rows), self.hidden), device=device)
+            prod_input_ctx = torch.zeros((len(view.product_rows), self.hidden), device=device)
+            input_prod_ctx = torch.zeros((len(view.input_rows), self.hidden), device=device)
+            cap_prod_ctx = torch.zeros((len(view.capacity_rows), self.hidden), device=device)
 
         if len(view.product_rows):
             product_scores = self.product_head(torch.cat([
@@ -196,6 +260,77 @@ class ProducerScoreModel(nn.Module):
         if not rows:
             return torch.empty((0, hidden), device=device)
         return encoder(_tensor([feature_fn(r) for r in rows], device))
+
+
+def flat_model_pads_for(view: ProducerEntityView) -> dict[str, int]:
+    """Pad caps sized to one view's entity counts — the fixed input dims a `ProducerFlatModel`
+    is locked to at construction."""
+    return {
+        "cap_max": len(view.capacity_rows),
+        "prod_max": len(view.product_rows),
+        "input_max": len(view.input_rows),
+    }
+
+
+def _flatten_padded(rows: list[list[float]], n_max: int, dim: int) -> list[float]:
+    flat: list[float] = []
+    for r in rows:
+        flat += r
+    flat += [0.0] * (dim * (n_max - len(rows)))
+    return flat
+
+
+class ProducerFlatModel(nn.Module):
+    """Step-14 ablation #2 baseline: a flat MLP over one fixed-size padded feature vector.
+
+    NON-PORTABLE BY CONSTRUCTION. The whole view (global + every capacity/product/input row)
+    is concatenated into one fixed-length vector padded to `(cap_max, prod_max, input_max)`,
+    fed through a single MLP, and read out as a fixed-size score vector sliced back to the
+    actual row counts. A topology WIDER than the pad it was built for cannot be ingested
+    (`forward_view` raises) — the exact transfer the row/edge scorer handles by just adding
+    rows. Same `forward_view` -> `ProducerScoreTensors` interface as `ProducerScoreModel`, so
+    it deploys through `score_with_model` + the deterministic planner unchanged."""
+
+    def __init__(self, *, cap_max: int, prod_max: int, input_max: int, hidden: int = 64) -> None:
+        super().__init__()
+        self.hidden = hidden
+        self.cap_max = cap_max
+        self.prod_max = prod_max
+        self.input_max = input_max
+        self.upgrade_threshold = 0.5
+        self.inventory_expansion_threshold = 0.5
+        in_dim = _GLOBAL_DIM + cap_max * _CAPACITY_DIM + prod_max * _PRODUCT_DIM + input_max * _INPUT_DIM
+        self.trunk = _mlp(in_dim, hidden)
+        # prod_max + input_max + cap_max row scores, then restoration / upgrade / inventory
+        self.head = nn.Linear(hidden, prod_max + input_max + cap_max + 3)
+
+    def forward_view(self, view: ProducerEntityView) -> ProducerScoreTensors:
+        device = next(self.parameters()).device
+        n_cap, n_prod, n_input = len(view.capacity_rows), len(view.product_rows), len(view.input_rows)
+        if n_cap > self.cap_max or n_prod > self.prod_max or n_input > self.input_max:
+            raise ValueError(
+                f"flat model pad ({self.cap_max},{self.prod_max},{self.input_max}) cannot ingest "
+                f"topology ({n_cap},{n_prod},{n_input}) — non-portable by construction"
+            )
+        flat = (
+            _global_features(view)
+            + _flatten_padded([_capacity_features(r) for r in view.capacity_rows], self.cap_max, _CAPACITY_DIM)
+            + _flatten_padded([_product_features(r) for r in view.product_rows], self.prod_max, _PRODUCT_DIM)
+            + _flatten_padded([_input_features(r) for r in view.input_rows], self.input_max, _INPUT_DIM)
+        )
+        out = self.head(self.trunk(_tensor([flat], device)))[0]
+        i = 0
+        product_scores = out[i:i + self.prod_max][:n_prod]; i += self.prod_max
+        input_scores = out[i:i + self.input_max][:n_input]; i += self.input_max
+        cap_scores = out[i:i + self.cap_max][:n_cap]; i += self.cap_max
+        return ProducerScoreTensors(
+            product_urgency=product_scores,
+            input_value=input_scores,
+            capacity_bottleneck_value=cap_scores,
+            restoration_roi=out[i],
+            upgrade_roi=out[i + 1],
+            inventory_expansion_value=out[i + 2],
+        )
 
 
 def collect_producer_score_samples(
@@ -468,6 +603,49 @@ def producer_command_agreement(
     }
 
 
+def broadened_producer_train_configs(
+    seeds, *, depth: int = 3, width: int = 4
+) -> list[tuple[str, Configuration]]:
+    """Step-11 broadened producer distillation set: the scale base PLUS the five families
+    step 11 names, so the learned scorer trains on out-of-family recipe DAGs and scarcity
+    states the EXP-0013 scale-only run never saw — the suspected source of the fork/join
+    producer-alone regression (a hypothesis the step-12 acceptance matrix tests, not a
+    proven cause). One topology per (family, seed):
+
+    - `scale`           — the in-family layered base (keeps EXP-0013 planner-parity),
+    - `forkjoin`        — multi-input join recipe DAG,
+    - `sharedcap`       — levels share capacity types,
+    - `uneven`          — one dominant producer per level (concentration),
+    - `scarcity-<axis>` — the five `scarcity_suite` single-axis stress variants of the
+      scale base (lean fund, tight inventory, heavy backlog, harsh decay, and a
+      lean-and-decaying `running_investment` start).
+
+    Reuses the `eval.fixtures` builders (same generators the C3/P3 matrix consumes), so
+    training coverage and the acceptance fixtures stay the same recipe family — only the
+    seeds differ (train 0-5, acceptance 6-9). Pure: just config construction."""
+    from ..eval.fixtures import (
+        build_forkjoin_config,
+        build_shared_capacity_config,
+        build_uneven_strength_config,
+        scarcity_suite,
+    )
+    from ..eval.scale import build_scale_config
+
+    named: list[tuple[str, Configuration]] = []
+    for seed in seeds:
+        scale = build_scale_config(seed, depth=depth, products_per_layer=width)
+        named.append((f"scale-d{depth}-s{seed}", scale))
+        named.append((f"forkjoin-d{depth}-s{seed}",
+                      build_forkjoin_config(seed, depth=depth, width=width)))
+        named.append((f"sharedcap-d{depth}-s{seed}",
+                      build_shared_capacity_config(seed, depth=depth, width=width)))
+        named.append((f"uneven-d{depth}-s{seed}",
+                      build_uneven_strength_config(seed, depth=depth, width=width)))
+        for axis, cfg in scarcity_suite(scale).items():
+            named.append((f"scarcity-{axis}-d{depth}-s{seed}", cfg))
+    return named
+
+
 def distill_producer_scorer(
     depth: int,
     train_seeds,
@@ -480,28 +658,42 @@ def distill_producer_scorer(
     hidden: int = 64,
     eval_depths=None,
     gate_thresholds: dict[str, float] | None = None,
+    train_configs: list[Configuration] | None = None,
+    use_edges: bool = True,
     log=print,
 ) -> tuple[ProducerScoreModel, list[dict]]:
-    """One wrapped distill: collect planner-labeled samples over `train_seeds` (at `depth`),
+    """One wrapped distill: collect planner-labeled samples over the training topologies,
     fit the shared scorer, optionally save a versioned checkpoint, then eval value vs the
     planner on held-out `eval_seeds_list` across every depth in `eval_depths` (default:
     `[depth]`). Smaller eval depths have fewer producers than the training topology, so they
-    are genuinely unseen producer counts — that is the P1 producer-count transfer check. The
-    cloud entrypoint for the producer P1 run."""
+    are genuinely unseen producer counts — that is the P1 producer-count transfer check.
+
+    By default the training topologies are `build_scale_config(seed, depth)` over
+    `train_seeds` (the EXP-0013 scale-only set). Pass `train_configs` to distill over an
+    explicit topology list instead — e.g. `broadened_producer_train_configs(...)` for the
+    step-11 out-of-family + scarcity coverage. The held-out scale eval is unchanged either
+    way (it is the in-family sanity readout; the fixture acceptance is a separate
+    `transfer_matrix --fixtures` run). The cloud entrypoint for the producer P1 / step-11
+    runs."""
     from ..eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
     from ..eval.scale import build_scale_config
 
     teacher = PRODUCING_BASELINES["entity_planner"]
     order_pol = ORDERING_BASELINES["proportional"]
     train_seeds = list(train_seeds)
+    if train_configs is None:
+        train_cfgs = [build_scale_config(seed, depth=depth) for seed in train_seeds]
+    else:
+        train_cfgs = list(train_configs)
     samples: list[ProducerScoreSample] = []
-    for seed in train_seeds:
-        cfg = build_scale_config(seed, depth=depth)
+    for cfg in train_cfgs:
         samples += collect_producer_score_samples(
             cfg, teacher, order_pol, seeds=[0], horizon=horizon
         )
-    log(f"collected {len(samples)} producer score samples over {len(train_seeds)} topologies")
-    model = ProducerScoreModel(hidden=hidden)
+    log(f"collected {len(samples)} producer score samples over {len(train_cfgs)} topologies")
+    model = ProducerScoreModel(hidden=hidden, use_edges=use_edges)
+    if not use_edges:
+        log("ablation #2: no-edge variant (recipe relations unused)")
     fit_producer_score_model(model, samples, epochs=epochs, lr=lr, log=log, log_every=max(1, epochs // 10))
     thresholds = calibrate_gate_thresholds(model, samples) if gate_thresholds is None else gate_thresholds
     model.upgrade_threshold = float(thresholds["upgrade"])
@@ -585,29 +777,48 @@ def scorer_producing_policy(
     )
 
 
-def save_producer_score_model(model: ProducerScoreModel, path) -> None:
-    """Save a reusable EXP-0010C scorer checkpoint."""
-    torch.save(
-        {
-            "version": PRODUCER_SCORER_CHECKPOINT_VERSION,
-            "hidden": model.hidden,
-            "upgrade_threshold": float(model.upgrade_threshold),
-            "inventory_expansion_threshold": float(model.inventory_expansion_threshold),
-            "state_dict": model.state_dict(),
-        },
-        path,
-    )
+def save_producer_score_model(model: ProducerScoreModel, path, *,
+                              config_fingerprint: str | None = None) -> None:
+    """Save a reusable EXP-0010C scorer checkpoint.
+
+    Records the portable feature `schema` (step-13 load gate). `config_fingerprint`, if
+    given, is stored as AUDIT metadata for transfer reports only — never a load gate (a
+    portable checkpoint must load across topologies of different fingerprint)."""
+    ckpt = {
+        "version": PRODUCER_SCORER_CHECKPOINT_VERSION,
+        "hidden": model.hidden,
+        "use_edges": bool(model.use_edges),
+        "upgrade_threshold": float(model.upgrade_threshold),
+        "inventory_expansion_threshold": float(model.inventory_expansion_threshold),
+        "state_dict": model.state_dict(),
+        "schema": producer_portable_schema(use_edges=model.use_edges).to_dict(),
+    }
+    if config_fingerprint is not None:
+        ckpt["config_fingerprint"] = config_fingerprint
+    torch.save(ckpt, path)
 
 
 def load_producer_score_model(path) -> ProducerScoreModel:
-    """Load a versioned EXP-0010C scorer checkpoint."""
+    """Load a versioned EXP-0010C scorer checkpoint.
+
+    Gates on the portable feature `schema` when present (step 13): a feature/entity/relation/
+    decoder/architecture change rejects with a named error. Legacy v2 checkpoints saved
+    before the schema block (EXP-0013/0021) have no `schema` and load unchanged — the named
+    gate is additive. The `config_fingerprint` (if any) is ignored on load."""
+    from .portable_schema import PortableSchema, assert_compatible
+
     ckpt = torch.load(path, weights_only=True)
     if ckpt.get("version") != PRODUCER_SCORER_CHECKPOINT_VERSION:
         raise ValueError(
             f"producer scorer checkpoint version {ckpt.get('version')!r} "
             f"!= {PRODUCER_SCORER_CHECKPOINT_VERSION}"
         )
-    model = ProducerScoreModel(hidden=int(ckpt["hidden"]))
+    use_edges = bool(ckpt.get("use_edges", True))
+    if "schema" in ckpt:
+        assert_compatible(
+            PortableSchema.from_dict(ckpt["schema"]), producer_portable_schema(use_edges=use_edges)
+        )
+    model = ProducerScoreModel(hidden=int(ckpt["hidden"]), use_edges=use_edges)
     model.load_state_dict(ckpt["state_dict"])
     model.upgrade_threshold = float(ckpt.get("upgrade_threshold", 0.5))
     model.inventory_expansion_threshold = float(ckpt.get("inventory_expansion_threshold", 0.5))
@@ -750,12 +961,20 @@ def _forward_batch(model: ProducerScoreModel, batch: _ProducerScoreBatch) -> Pro
     prod_h = _encode_batched_rows(batch.product_x, hidden, model.product_encoder)
     input_h = _encode_batched_rows(batch.input_x, hidden, model.input_encoder)
 
-    prod_cap_ctx = _forward_batch_relation_context(batch.product_capacity_weight, cap_h, n, hidden, device)
-    prod_input_ctx = _forward_batch_relation_context(batch.product_input_weight, input_h, n, hidden, device)
-    input_prod_ctx = _reverse_batch_relation_context(batch.product_input_weight, prod_h, n, hidden, device)
-    cap_prod_ctx = _reverse_batch_relation_context(batch.product_capacity_weight, prod_h, n, hidden, device)
-
     n_product = prod_h.shape[1]
+    n_input = input_h.shape[1]
+    n_capacity = cap_h.shape[1]
+    if model.use_edges:
+        prod_cap_ctx = _forward_batch_relation_context(batch.product_capacity_weight, cap_h, n, hidden, device)
+        prod_input_ctx = _forward_batch_relation_context(batch.product_input_weight, input_h, n, hidden, device)
+        input_prod_ctx = _reverse_batch_relation_context(batch.product_input_weight, prod_h, n, hidden, device)
+        cap_prod_ctx = _reverse_batch_relation_context(batch.product_capacity_weight, prod_h, n, hidden, device)
+    else:
+        prod_cap_ctx = torch.zeros((n, n_product, hidden), device=device)
+        prod_input_ctx = torch.zeros((n, n_product, hidden), device=device)
+        input_prod_ctx = torch.zeros((n, n_input, hidden), device=device)
+        cap_prod_ctx = torch.zeros((n, n_capacity, hidden), device=device)
+
     if n_product:
         product_scores = model.product_head(torch.cat([
             prod_h,
@@ -766,7 +985,6 @@ def _forward_batch(model: ProducerScoreModel, batch: _ProducerScoreBatch) -> Pro
     else:
         product_scores = torch.empty((n, 0), device=device)
 
-    n_input = input_h.shape[1]
     if n_input:
         input_scores = model.input_head(torch.cat([
             input_h,
@@ -776,7 +994,6 @@ def _forward_batch(model: ProducerScoreModel, batch: _ProducerScoreBatch) -> Pro
     else:
         input_scores = torch.empty((n, 0), device=device)
 
-    n_capacity = cap_h.shape[1]
     if n_capacity:
         cap_context = torch.cat([
             cap_h,
@@ -1009,6 +1226,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--depth", type=int, default=3)
     ap.add_argument("--train-seeds", type=str, default="0-5", help="scale seeds for distillation, e.g. 0-5")
+    ap.add_argument("--broaden", action="store_true",
+                    help="step 11: distill over the broadened topology set (scale + fork/join + "
+                         "shared-capacity + uneven-strength + scarcity/running-investment) at "
+                         "--train-seeds, not scale-only. TARGETS the out-of-family producer gap "
+                         "(the step-12 acceptance matrix proves whether it closes it).")
+    ap.add_argument("--width", type=int, default=4,
+                    help="products/producers per layer for the broadened fixture families.")
     ap.add_argument("--eval-seeds-list", type=str, default="6-9", help="held-out scale seeds for value/transfer")
     ap.add_argument("--epochs", type=int, default=300)
     ap.add_argument("--lr", type=float, default=1e-2)
@@ -1026,6 +1250,9 @@ def main() -> None:
     ap.add_argument("--inventory-threshold", type=float, default=None,
                     help="fix the inventory-expansion gate threshold (EXP-0013).")
     ap.add_argument("--save", type=str, default=None)
+    ap.add_argument("--no-edges", action="store_true",
+                    help="step-14 ablation #2: distill the no-edge variant (recipe relations "
+                         "unused) to measure the edge contribution to portable transfer.")
     args = ap.parse_args()
     if args.torch_threads > 0:
         torch.set_num_threads(args.torch_threads)
@@ -1042,11 +1269,20 @@ def main() -> None:
         }
 
     eval_depths = list(_range(args.eval_depths)) if args.eval_depths else None
+    train_configs = None
+    if args.broaden:
+        named = broadened_producer_train_configs(
+            list(_range(args.train_seeds)), depth=args.depth, width=args.width
+        )
+        train_configs = [cfg for _, cfg in named]
+        print(f"broadened training set: {len(named)} topologies "
+              f"({sorted({n.split('-')[0] for n, _ in named})})")
     _, rows = distill_producer_scorer(
         depth=args.depth, train_seeds=_range(args.train_seeds),
         eval_seeds_list=_range(args.eval_seeds_list), epochs=args.epochs, lr=args.lr,
         eval_seeds=args.eval_seeds, horizon=args.horizon, save=args.save, hidden=args.hidden,
-        eval_depths=eval_depths, gate_thresholds=gate_thresholds,
+        eval_depths=eval_depths, gate_thresholds=gate_thresholds, train_configs=train_configs,
+        use_edges=not args.no_edges,
     )
     cols = ("depth,seed,producers,scorer_units,planner_units,ratio,dead,planner_dead,"
             "upgrade_fp_rate,inventory_fp_rate,replen_mismatch_rate")

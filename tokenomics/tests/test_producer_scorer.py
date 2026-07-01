@@ -604,6 +604,66 @@ def test_producer_command_agreement_reports_investment_false_positives():
         assert 0.0 <= metrics[key] <= 1.0
 
 
+def test_broadened_producer_train_configs_cover_the_step11_families():
+    """Step 11 broadens producer distillation past the scale family. The training-set
+    builder must materialize the scale base PLUS the five families step 11 names
+    (fork/join, shared-capacity, uneven-strength, scarcity, running-investment), each a
+    valid config, so the learned scorer sees out-of-family + scarcity states the
+    EXP-0013 scale-only run never did."""
+    from tokenomics.train.producer_scorer import broadened_producer_train_configs
+
+    named = broadened_producer_train_configs(seeds=[0, 1], depth=3)
+
+    tags = {name for name, _ in named}
+    # every family present, keyed by a recognizable tag prefix
+    for family in ("scale", "forkjoin", "sharedcap", "uneven", "scarcity-running_investment"):
+        assert any(t.startswith(family) for t in tags), (family, sorted(tags))
+    # the other four scarcity axes too (single-axis stress coverage)
+    for axis in ("low_funding", "low_inventory", "high_backlog", "degraded"):
+        assert any(f"scarcity-{axis}" in t for t in tags), (axis, sorted(tags))
+    # two train seeds -> the per-seed families appear twice
+    assert sum(t.startswith("forkjoin") for t in tags) == 2
+    # every config validates
+    for _, cfg in named:
+        cfg.validate()
+
+
+def test_distill_producer_scorer_accepts_explicit_train_configs(tmp_path):
+    """The cloud entrypoint must distill over a caller-supplied topology list (the
+    broadened set), not only `build_scale_config`. Passing `train_configs` collects
+    planner-labeled samples over exactly those economies; the scale-only path stays the
+    default when it is omitted."""
+    import pytest
+
+    pytest.importorskip("torch")
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.producer_scorer import (
+        ProducerScoreModel,
+        distill_producer_scorer,
+        load_producer_score_model,
+    )
+    from tokenomics.eval.fixtures import build_forkjoin_config
+
+    save = tmp_path / "producer_scorer.pt"
+    train_configs = [build_scale_config(0, depth=2), build_forkjoin_config(0, depth=2)]
+    model, rows = distill_producer_scorer(
+        depth=2,
+        train_seeds=[0],  # ignored for collection when train_configs is given
+        train_configs=train_configs,
+        eval_seeds_list=[6],
+        epochs=3,
+        lr=3e-2,
+        eval_seeds=1,
+        horizon=20,
+        hidden=16,
+        save=str(save),
+    )
+
+    assert isinstance(model, ProducerScoreModel)
+    assert [r["seed"] for r in rows] == [6]
+    load_producer_score_model(save)
+
+
 def test_producer_scorer_checkpoint_round_trips(tmp_path):
     """A fitted scorer should be reusable as an experiment artifact."""
     import pytest

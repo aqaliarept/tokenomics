@@ -1672,34 +1672,96 @@ so producer-alone rows are now a required gate before any final portability clai
       (depth>TTL), so a *feasible* depth-3 wider-join probe is the open item to isolate
       join-WIDTH policy quality from the depth wall.
 
-11. **Do one producer training/fidelity pass for strict closure.**
+11. **Do one producer training/fidelity pass for strict closure.** — **DONE (EXP-0021);
+    primary target CLOSED, two residual sub-1.0 cells named. Acceptance = step 12.**
+    - **Result** (`experiments/EXP-0021-producer-broaden-training/`, Runpod CPU distill,
+      depth 3, seeds 0–5, 300 epochs, 54 topologies): the fork/join producer-alone **s9**
+      regression steps 6–8 could not close deterministically is **closed 0.955 → 1.000**.
+      In-family scale 6–9 (d1/2/3) mean **1.0011** / min **0.9921**, 0 death, invest-FP ≈ 0 —
+      a small in-family cost (one cell, s9d3, 1.0000 → 0.9921) bought the out-of-family
+      robustness. Confirms the hypothesis: the s9 gap lived in the learned *continuous*
+      replenishment heads (planner-gated investment deploy untouched, EXP-0018). **Not a
+      strict clean sweep** — see step 12 for the one remaining held-out cell.
     - Use the failures from steps 8-10 to broaden producer training coverage in one
       pass: fork/join, shared-capacity, uneven strengths, scarcity, and
-      running-investment states.
+      running-investment states. — **landed:** `producer_scorer.broadened_producer_train_
+      configs(seeds, depth, width)` materializes the scale base + the exact five families
+      step 10 localized (reusing the `eval.fixtures` builders the C3/P3 matrix consumes;
+      train seeds 0–5 vs acceptance seeds 6–9), and `distill_producer_scorer` gained a
+      `train_configs` param + a `--broaden` CLI flag so it distills over that 54-economy set
+      instead of scale-only. Same `ProducerScoreModel` / schema / checkpoint v2 — only
+      training coverage changes, so the new checkpoint stays load-compatible with every
+      fixture/size target. Gated by `tests/test_producer_scorer.py`
+      (`test_broadened_producer_train_configs_cover_the_step11_families`,
+      `test_distill_producer_scorer_accepts_explicit_train_configs`).
     - Target the actual remaining issue: strict producer-alone no-regression under a
       deterministic orderer. Avoid seed-specific tie-tolerance tuning unless it also
-      improves the broadened matrix.
+      improves the broadened matrix. — rationale: EXP-0017 step-6 showed the obvious
+      deterministic knob (replenish tie tolerance) is **non-monotonic** (helps s9, hurts
+      s8), so broadening training coverage is the cleaner next bet than more knob-chasing —
+      not a proof that no deterministic patch could work. Broadening targets the LEARNED
+      CONTINUOUS heads (replenishment / product urgency / capacity bottleneck) — the
+      suspected driver of the fork/join s9 gap; deploy stays planner-gated for investment
+      (EXP-0018), tie tolerance stays off. EXP-0021 + step 12 now support that hypothesis
+      for fork/join, shared-cap, scarcity, and degenerate fixtures, with uneven-strength s6
+      and scale s9d3 recorded as the residuals.
     - Acceptance candidate: producer-alone planner-gated scorer clears every covered
       fixture seed (`ratio_vs_practical_baseline >= 1.0`), with zero death and zero
-      contract failures.
+      contract failures. — measured in step 12 via `transfer_matrix --fixtures` on the
+      pulled checkpoint. Run command + the required step-11/12 readouts live in
+      `experiments/EXP-0021-producer-broaden-training/`; strict closure is not claimed
+      because uneven-strength s6 and scale s9d3 remain sub-1.0.
+    - **Primary fallback for close-but-under residuals = DAgger**, not architecture change:
+      the likely issue is on-policy distribution shift — the scorer's own replenishment
+      choices reach states a teacher-only rollout never labeled. Collect on the learned
+      scorer's rollouts (deferred at EXP-0013) before touching the model. Then: wider BCE
+      gate coverage / threshold recal; last, narrow the claim (step 15) — never launder a
+      producer-alone miss through joint-stack success.
 
-12. **Rerun the strict producer and joint acceptance gates.**
-    - Re-run EXP-0018 fork/join seeds plus the new C3/P3 fixtures after the producer
-      training/fidelity pass.
-    - Required before final P2/C3 closure: no producer-alone seed below 1.0 on the
-      covered fixture set, orderer-alone still passes its rows, joint stack still
-      passes, zero death, zero contract failures.
-    - If producer-alone still fails only in narrow stress cases, narrow the final claim
-      explicitly instead of treating joint success as sufficient.
+12. **Rerun the strict producer and joint acceptance gates.** — **DONE (EXP-0021 step 12,
+    local eval with the pulled broad checkpoint); MATERIALLY CLOSED, one residual cell.**
+    - Re-ran EXP-0018 fork/join seeds 6–9 (8-stack, orderer ckpt EXP-0012) + the broad
+      C3/P3 producer audit (`transfer_matrix --audit producer --fixtures`). Producer-alone
+      = `portable_producer_planner_gates+proportional`.
+    - **Result**: zero contract failures across BOTH matrices, and zero death for all
+      non-floor, non-deepjoin policy rows. Deepjoin-d5 is a depth×TTL feasibility wall,
+      where the `entity_planner` bar also completes 0 units and sometimes dies — a scaling
+      result, excluded. Producer-alone planner-gated **fork/join
+      1.000/1.034/1.033/1.000 (min 1.000, was 0.955)**, shared-cap min 1.000, scarcity (all
+      5 s6 axes) ≥ 1.0, degenerate all 1.0. Joint stack fork/join **2.71–3.02×**, all pass.
+    - **Strict gate NOT fully met**: exactly **one** producer-alone cell stays < 1.0 —
+      held-out **uneven-strength s6 = 0.975** (its s7/s8/s9 pass) — plus the in-family scale
+      s9d3 = 0.9921. Both named; joint success is NOT treated as sufficient.
+    - **Final claim (per step 15)**: portable stack is product-agnostic + strict
+      producer-alone on the fork/join + shared-cap + scarcity + degenerate family; the one
+      open producer-alone cell is uneven-strength s6. Next move if strict-everywhere is
+      wanted = DAgger on the learned scorer's own rollouts (concentration-routing states on
+      uneven-strength), not a deterministic patch or architecture change.
 
-13. **Tighten portable checkpoint schema gates.**
+13. **Tighten portable checkpoint schema gates.** — **DONE (local TDD).**
     - Move portable load acceptance toward feature names, row/entity types,
       relation/edge types, normalization version, decoder/planner version, and
-      architecture version.
+      architecture version. — **landed:** shared `train/portable_schema.py`
+      (`PortableSchema` dataclass + `assert_compatible`, the exact unit step 14's
+      "fingerprint vs schema-version gate" ablation compares). Both scorers expose their
+      current schema (`producer_portable_schema()` = global/capacity/product/input named
+      features + `product_capacity_required`/`product_input_required` relations + norm/
+      `plan_producer_command`/architecture versions; `orderer_portable_schema()` =
+      product/producer-row named features, no relations, `allocate_suborders` decoder). Save
+      writes the `schema` block; load asserts it by NAME (a feature rename / entity-type /
+      decoder / architecture change rejects with a field-named `ValueError`).
     - Keep the full config fingerprint as audit metadata rather than the primary
-      portable load gate.
+      portable load gate. — **landed:** `save_*` take an optional `config_fingerprint`
+      stored as audit-only metadata; load never compares it (test: two checkpoints with
+      different fingerprints, same schema, both load).
     - Add negative tests proving real schema/semantics changes reject cleanly while
-      product count, producer count, and relabel changes do not.
+      product count, producer count, and relabel changes do not. — **landed:**
+      `tests/test_portable_schema.py` (renamed feature → reject; tampered entity_types →
+      reject; different fingerprint → loads). Topology is absent from the schema by
+      construction, so widening/relabeling can't trigger a reject (cross-width RUN already
+      proven in EXP-0016/O3). **Backward-compatible**: the named gate is additive — legacy
+      v2/v1 checkpoints saved before the block (live EXP-0012/0013/0021 artifacts) load
+      unchanged through the existing version + feature-dim floor (regression-tested).
 
 14. **Run targeted ablations after the matrix and fixtures exist.**
     - Prioritize the ablations that answer portability questions directly: flat MLP
@@ -1707,11 +1769,68 @@ so producer-alone rows are now a required gate before any final portability clai
       learned-direct allocation vs scorer plus deterministic allocator, and
       fingerprint gate vs schema-version gate.
     - Run only on representative matrix cells so ablation cost stays bounded.
+    - **#1 fingerprint gate vs schema-version gate — DONE (local, `tokenomics.eval.gate_ablation`,
+      test `test_gate_ablation.py`).** Both candidate load gates run on the SAME portable
+      producer checkpoint (stamped with the base economy's `config_fingerprint`) across the
+      topologies a portable policy must transfer to. Result:
 
-15. **Promote or narrow the final claim.**
+      | target | fingerprint changed | schema gate loads | fingerprint gate loads |
+      |---|---|---|---|
+      | base | no | ✓ | ✓ |
+      | capacity_relabel | yes | ✓ | ✗ |
+      | wider_product (8/layer) | yes | ✓ | ✗ |
+      | wider_producer (8/layer) | yes | ✓ | ✗ |
+
+      The `config_fingerprint` gate rejects every non-identical topology (it folds in
+      producer ids / capacity types / vocab / dims); the topology-free `PortableSchema`
+      gate loads all four. Empirical case for schema-version loading — a fingerprint gate
+      would block the exact transfers the portable contract claims. Weights irrelevant
+      (untrained scorer): only LOAD-GATE behavior under test.
+    - **#2 flat MLP vs row scorer — HARNESS READY (local), cloud distill PENDING (user launches pod).**
+      Two baselines vs the row+edge champion (`EXP-0021 .../producer_scorer_broad.pt`):
+      - **A. fixed-pad flat MLP (`ProducerFlatModel`) — non-portable BY CONSTRUCTION, proven
+        locally** (`test_producer_ablation_arch.py::test_flat_model_scores_within_pad_but_is_non_portable_beyond_it`).
+        One fixed-size padded input vector → single MLP → fixed score head sliced to actual
+        rows. A topology WIDER than its build-time pad raises on `forward_view` — it cannot
+        even distill over the broadened multi-size coverage set, let alone transfer to
+        wider_product / wider_producer. No pod run: the construction failure is the result.
+      - **B. per-row, no-edge scorer (`ProducerScoreModel(use_edges=False)`) — needs the
+        cloud distill.** Same features/entities/decoder, recipe relations zeroed (proven
+        edge-invariant locally, `test_no_edge_model_scores_are_invariant_to_recipe_edges`);
+        stamps `architecture_version="producer-row-noedge-scorer-v2"`, loads + runs portably
+        (verified through `transfer_matrix` on prodW8/agentW8). Distill it over the SAME
+        broadened set + hyperparams as EXP-0021, then run producer-alone
+        `transfer_matrix --audit producer` (fixtures + out-of-family) and compare per-cell
+        ratios to the champion — the edge-value delta.
+
+      Pod command (mirror EXP-0021 with `--no-edges`, then eval locally):
+      ```
+      python run_pod_training.py --pod-id <id> --cpu --python python3.12 \
+        --train "-u -m tokenomics.train.producer_scorer --broaden --no-edges --depth 3 \
+                 --train-seeds 0-5 --width 4 --eval-seeds-list 6-9 --epochs 300 --lr 0.01 \
+                 --eval-seeds 5 --horizon 100 --eval-depths 1-3 \
+                 --save /workspace/producer_scorer_noedge.pt" \
+        --pull /workspace/producer_scorer_noedge.pt:./experiments/EXP-0022-ablation-flat-vs-row/artifacts/producer_scorer_noedge.pt
+      ```
+    - **#3 learned-direct vs scorer + deterministic allocator — only if budget remains.**
+
+15. **Promote or narrow the final claim.** — **PROVISIONAL NARROWED CLAIM carried (post
+    EXP-0021); revisit after steps 13/14.**
     - If C2, C3, and P3 pass with independent producer/orderer rows, promote the
       portable stack as product-agnostic within the covered schema family and list
       remaining stress/ablation caveats.
     - If producer-alone out-of-family or scarcity fails, narrow the claim to the
       passing topology family and record the next training-strength or architecture fix
       before claiming general recipe transfer.
+    - **Current standing (EXP-0021)**: the portable id-free stack is product-agnostic
+      (zero contract failures across scale + fork/join + shared-cap + uneven + scarcity +
+      degenerate + size axes) AND strict producer-alone (≥ 1.0, planner-gated, vs
+      `entity_planner + proportional`) on the **fork/join + shared-cap + scarcity +
+      degenerate** family; the joint stack beats the bar everywhere covered. **Two open
+      sub-1.0 cells, both named, neither hidden by the joint**: held-out uneven-strength
+      s6 = 0.975 (producer-alone) and in-family scale s9d3 = 0.9921. Closing them to a
+      strict-everywhere claim is a **bounded, targeted DAgger** item (learned-scorer
+      rollouts on the uneven-strength / that-cell state families — NOT an architecture
+      change, NOT deterministic tie-tolerance), deferred: run it only if "strict
+      producer-alone every covered cell ≥ 1.0" becomes a hard release gate. Steps 13
+      (schema-version load gates) and 14 (ablations) proceed under this narrowed claim.

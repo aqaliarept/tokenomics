@@ -37,6 +37,47 @@ _PRODUCT_DIM = 9
 # ProducerStats (13 scalars + active_investments 3-tuple) + ProducerProductStats (15).
 _PRODUCER_ROW_DIM = 13 + 3 + 15
 
+# Named feature schema for the portable load gate (step 13). Names mirror
+# `_product_features` / `_producer_row_features` in order; the gate compares them by name so
+# a feature drift rejects while a wider/relabeled producer set (absent here) does not.
+_ORDERER_PRODUCT_FEATURES = (
+    "open_demand_quantity", "open_demand_tokens", "recent_average_cycle_demand",
+    "recent_rejected_quantity", "product_depth", "recipe_input_count",
+    "recipe_input_units", "recipe_capacity_type_count", "eligible_producer_count",
+)
+_ORDERER_PRODUCER_ROW_FEATURES = (
+    "total_current_capacity", "total_max_capacity", "capacity_headroom",
+    "min_capacity_ratio", "mean_capacity_ratio", "requested_load", "reserved_load",
+    "total_load", "cut_off_price", "outstanding_inbound_units", "active_restoration",
+    "active_upgrade", "active_inventory_expansion", "acceptance_rate", "completion_rate",
+    "rejection_rate", "eligible", "accept_qty_now", "complete_qty_now", "makeable_qty_now",
+    "capacity_bottleneck_ratio", "input_bottleneck_ratio", "bottleneck_ratio",
+    "slot_makeability", "recent_routed_qty", "recent_completed_qty", "recent_rejected_qty",
+    "recent_success_rate", "recent_throughput", "recent_completion_latency",
+    "recent_failure_latency",
+)
+
+
+def orderer_portable_schema() -> "PortableSchema":
+    """The current portable-load schema for the orderer scorer (step 13). Topology-free:
+    named product/producer-row features + entity types + norm/decoder/architecture versions,
+    no product/producer ids or counts. No sparse relations (the model reads a broadcast
+    product context + independent producer rows), so `relation_types` is empty."""
+    from .portable_schema import PortableSchema
+
+    return PortableSchema(
+        schema_version=1,
+        entity_feature_names={
+            "product": _ORDERER_PRODUCT_FEATURES,
+            "producer_row": _ORDERER_PRODUCER_ROW_FEATURES,
+        },
+        entity_types=("product", "producer_row"),
+        relation_types=(),
+        normalization_version="nan-sanitized-bounded-v1",
+        decoder_version="allocate_suborders-v1",
+        architecture_version="orderer-producer-row-scorer-v1",
+    )
+
 
 def _mlp(in_dim: int, hidden: int) -> nn.Sequential:
     return nn.Sequential(
@@ -226,22 +267,39 @@ def fit_scorer(model: "OrdererScoreModel", samples: list["ScorerSample"], iters:
     return model
 
 
-def save_scorer(model: "OrdererScoreModel", path: str) -> None:
-    torch.save({
+def save_scorer(model: "OrdererScoreModel", path: str, *,
+                config_fingerprint: str | None = None) -> None:
+    """Save an O2 orderer scorer checkpoint with its portable feature `schema` (step-13 load
+    gate). `config_fingerprint`, if given, is audit metadata only — never a load gate."""
+    ckpt = {
         "scorer_version": ORDERER_SCORER_CHECKPOINT_VERSION,
         "hidden": model.hidden,
         "product_dim": _PRODUCT_DIM,
         "producer_row_dim": _PRODUCER_ROW_DIM,
         "state": model.state_dict(),
-    }, path)
+        "schema": orderer_portable_schema().to_dict(),
+    }
+    if config_fingerprint is not None:
+        ckpt["config_fingerprint"] = config_fingerprint
+    torch.save(ckpt, path)
 
 
 def load_scorer(path: str) -> "OrdererScoreModel":
+    """Load an O2 orderer scorer checkpoint.
+
+    Gates on the portable feature `schema` when present (step 13): a feature/entity/relation/
+    decoder/architecture change rejects by name. Legacy checkpoints without the block (the
+    live EXP-0012 orderer) still load through the version + feature-dim floor. The
+    `config_fingerprint` (if any) is ignored on load."""
+    from .portable_schema import PortableSchema, assert_compatible
+
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
     if ckpt["scorer_version"] != ORDERER_SCORER_CHECKPOINT_VERSION:
         raise ValueError(f"scorer checkpoint version {ckpt['scorer_version']} != {ORDERER_SCORER_CHECKPOINT_VERSION}")
     if ckpt["producer_row_dim"] != _PRODUCER_ROW_DIM or ckpt["product_dim"] != _PRODUCT_DIM:
         raise ValueError("scorer feature schema mismatch")
+    if "schema" in ckpt:
+        assert_compatible(PortableSchema.from_dict(ckpt["schema"]), orderer_portable_schema())
     model = OrdererScoreModel(hidden=ckpt["hidden"])
     model.load_state_dict(ckpt["state"])
     model.eval()
