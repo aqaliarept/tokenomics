@@ -1,0 +1,30 @@
+{
+  "id": "EXP-0024-curriculum-reference-strength",
+  "version": "curriculum-refbar-v1",
+  "date": "2026-07-01",
+  "adr": null,
+  "plan": "CURRICULUM_GAME_MASTER_APPROACH.md — Stage 0 reference bars ('local routing search / bounded short-rollout search where available'), the enabler EXP-0023 flagged as the first curriculum blocker (the fixed practical bar was too weak to expose any policy gap).",
+  "driver": "tokenomics.eval.curriculum (--reference-bars)",
+  "question": "Does a stronger, checkpoint-free reference bar (per-cycle directed short-rollout orderer search, producer fixed at entity_planner) expose in-claim policy_weakness the fixed entity_planner+proportional bar could not — so Stage 3 hard-case mining has a reference that can actually surface gaps?",
+  "scope": "Reference-bar strength only. Same 18-task stress suite as EXP-0023, same portable stack (no champion change, no training, no promotion). Adds the search bar and best-of-bars reference selection; default single-bar behaviour (EXP-0023) unchanged.",
+  "stack_under_test": {
+    "portable": true,
+    "producer_checkpoint": "experiments/EXP-0021-producer-broaden-training/artifacts/producer_scorer_broad.pt",
+    "orderer_checkpoint": "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt",
+    "note": "identical to EXP-0023; this experiment varies only the REFERENCE, not the learner"
+  },
+  "reference_bars": {
+    "entity_planner+proportional": "fixed practical bar (EXP-0023) — entity planner producer + proportional orderer, deterministic, no checkpoint",
+    "entity_planner+mpc_search": "bounded short-rollout / directed routing search — producer fixed at entity_planner, orderer routing re-chosen each cycle by lookahead=6 rollout over {even_split, proportional} + 8 sampled routing vectors (search_orderer_episode, EXP-0005). Deterministic given seed (sample RNG seeded by seed+cycle). No checkpoint.",
+    "selection": "reference = strongest of the enabled bars per task (max mean consumer units); winning bar id retained in reference_model_id so every row's ratio is attributable (never read against an unknown bar). Ties -> first-registered bar."
+  },
+  "failure_taxonomy": ["none", "policy_weakness", "feasibility_wall", "contract_failure", "implementation_failure", "distribution_mismatch"],
+  "compute": {
+    "where": "Runpod pod k0a9uec6v8ip38 (CPU profile, --cpu --python python3.12), pulled back via --pull. Search bar = per-cycle rollouts, CPU-bound; full 18-task run belongs on the pod per CLAUDE.md HARD RULE.",
+    "eval_seeds": 3,
+    "horizon": 100
+  },
+  "reproduce": "python run_pod_training.py --pod-id <id> --cpu --python python3.12 --train \"-u -m tokenomics.eval.curriculum --producer-ckpt /workspace/tokenomics/_pod_ckpts/producer_scorer_broad.pt --orderer-ckpt /workspace/tokenomics/_pod_ckpts/orderer_scorer.pt --out-dir /workspace/tokenomics/curriculum_runs/exp0024 --eval-seeds 3 --horizon 100 --reference-bars entity_planner+proportional,entity_planner+mpc_search\" --pull \"/workspace/tokenomics/curriculum_runs/exp0024:./experiments/EXP-0024-curriculum-reference-strength\"  (stage the two ckpts under tokenomics/_pod_ckpts/ first — the driver syncs the inner package dir, not repo-root experiments/)",
+  "tests": "tokenomics/tests/test_curriculum.py (adds: reference-bar registry, bars run on a replayable task, best-of-bars selection). 494 passed.",
+  "promote_recommended": false
+}

@@ -11,7 +11,7 @@ tokenomics/tokenomics/
   domain/   pure sim logic (no RL, no IO, no logging)
   env/      PettingZoo AEC adapter: spaces, encode, decode, aec_env
   eval/     heuristic baselines + metrics harness (signal check)
-  train/    smoke PPO + parallel fan-out + boundary_grid driver (optional: needs torch)
+  train/    legacy PPO trainer + parallel fan-out + boundary_grid driver (optional: needs torch)
   config/   phase1.json
 docs/        ADRs (adr/), deep-research-report (6-phase curriculum), requirements
 experiments/ empirical runs + results, one dir per experiment — see experiments/README.md
@@ -25,13 +25,16 @@ phase1-implementation-plan.md   roadmap + status + RL target numbers
 ../.venv/bin/pip install -e .          # install (torch extra: .[train])
 ../.venv/bin/python -m pytest -q       # tests (must stay green)
 ../.venv/bin/python -m tokenomics.eval.signal_check    # baseline table
-../.venv/bin/python -m tokenomics.train.smoke_ppo --iters 50
 ```
+
+Curriculum/game-master stages use replayable task archives, scorer checkpoints, and
+deterministic reference bars. Do **not** run `tokenomics.train.smoke_ppo` as a
+curriculum-stage smoke check; PPO training was rejected for this stage.
 
 ## Where training + experiments run (HARD RULE)
 **All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `boundary_grid`, `warm_start`/`clone_fidelity` DAgger, `producer_improve`, full `smoke_ppo`/`parallel` sweeps, any multi-topology or multi-iter run.
 
-**Experiments go to the cloud.** Any run that materializes an `EXP-NNNN` result — the full multi-seed / multi-task / multi-topology run that produces `summary.csv` + `artifacts/` (training, boundary/transfer/curriculum matrices, replay suites, acceptance sweeps) — runs on Runpod, wrapped with `run_pod_training.py --pull` to bring the EXP dir back. The **only** things that stay local: **smoke checks** (`smoke_ppo --iters` ≲ 50, a single-cell sanity check, a fast `--dry-run`) and **quick one-shot diagnostics/evals** (`signal_check`, `producer_rungs`, `swap_eval`, a single-seed trace). Build/TDD the experiment driver locally against a tiny subset (`--dry-run`, 1–2 cells, ≤1 seed) to prove it runs, then launch the **full** run on the cloud. If unsure, it goes to the cloud.
+**Experiments go to the cloud.** Any run that materializes an `EXP-NNNN` result — the full multi-seed / multi-task / multi-topology run that produces `summary.csv` + `artifacts/` (training, boundary/transfer/curriculum matrices, replay suites, acceptance sweeps) — runs on Runpod, wrapped with `run_pod_training.py --pull` to bring the EXP dir back. The **only** things that stay local: stage-appropriate smoke checks (a curriculum replay on 1-2 archived tasks, a single-cell sanity check, a fast `--dry-run`) and **quick one-shot diagnostics/evals** (`signal_check`, `producer_rungs`, `swap_eval`, a single-seed trace). Build/TDD the experiment driver locally against a tiny subset (`--dry-run`, 1–2 cells, ≤1 seed) to prove it runs, then launch the **full** run on the cloud. If unsure, it goes to the cloud.
 
 ## Parallel training (use the cores)
 One PPO run is single-threaded: rollout `collect` is a sequential Python round-robin over `num_envs`, and inference is batch-1 — extra cores do nothing for one run. Pin BLAS to 1 thread (`--threads 1`, the default) and get throughput by fanning out **independent** runs, one process per core, via `tokenomics.train.parallel`:
@@ -67,19 +70,34 @@ python run_pod_training.py --pod-id <id> \
 `-u` keeps the driver's stdout unbuffered (per-cell iter logs already flush live to their files). Pod (25 vCPU) runs all 6 cells concurrently; full grid ≈ 15 min.
 
 ## Remote GPU training (Runpod)
-`run_pod_training.py` (repo root) drives a full off-box run on a Runpod GPU pod: **start pod → rsync code → venv+install → train → stop pod**. Pod stop runs in a `finally`, so the pod is stopped even on error / Ctrl-C (the whole point: don't pay for an idle GPU). Needs `runpodctl` authed (`runpodctl doctor`), plus `ssh`+`rsync` locally.
+`run_pod_training.py` (repo root) drives a full off-box run: **start pod → rsync code → venv+install → train (detached) → pull results → stop pod**. Pod stop runs in a `finally`, so the pod is stopped even on error / Ctrl-C (the whole point: don't pay for an idle pod). Needs `runpodctl` authed (`runpodctl doctor`), plus `ssh`+`rsync` locally.
+
+### Concrete steps (do these in order)
+1. **Get pod id**: `runpodctl pod list`. Note the id; a stopped pod restarts automatically (its `/workspace` volume persists across stop/start).
+2. **Stage input checkpoints INTO the synced tree** (the gotcha). The driver rsyncs the **inner package dir** `tokenomics/` (the `pyproject.toml` root, so `pip install -e .` works) — **NOT** the repo root. So repo-root `experiments/EXP-*/artifacts/*.pt` do **not** reach the pod. Any ckpt a run READS must be copied under `tokenomics/` first, e.g. `mkdir -p tokenomics/_pod_ckpts && cp experiments/.../foo.pt tokenomics/_pod_ckpts/`, then reference it on the pod as `/workspace/tokenomics/_pod_ckpts/foo.pt`. Delete `_pod_ckpts/` after. (Runs that only WRITE a ckpt on the pod — smoke/train — don't need this.)
+3. **Pick the profile**: GPU (default, `runpod/pytorch:*` image, reuses system CUDA torch) or **CPU** (`--cpu`, `runpod/base:*` image, installs the `[train]` CPU-torch extra). CPU-bound work (search bars, boundary_grid, batch-1 rollout) → `--cpu`; GPU buys nothing there. **On a CPU/base pod add `--python python3.12`** — the base image's python3.8 has no `ensurepip` and venv creation fails.
+4. **Choose pod paths**: write outputs under `/workspace/...` (e.g. `--out-dir /workspace/tokenomics/curriculum_runs/exp0024`) and `--pull REMOTE:LOCAL` them back into a fresh `experiments/EXP-NNNN-*` dir.
+5. **Launch** (detached by default — survives SSH drop / laptop sleep; the client auto-reconnects and finishes when the remote exit marker appears; Ctrl-C just detaches):
 ```
-# default = smoke PPO; stops pod when done
-python run_pod_training.py --pod-id <id>
-# real run: save a checkpoint, pull it back, then stop
+# CPU experiment reading staged ckpts, writing an EXP dir, pulled back
+python run_pod_training.py --pod-id <id> --cpu --python python3.12 \
+  --train "-u -m tokenomics.eval.curriculum \
+    --producer-ckpt /workspace/tokenomics/_pod_ckpts/producer_scorer_broad.pt \
+    --orderer-ckpt  /workspace/tokenomics/_pod_ckpts/orderer_scorer.pt \
+    --out-dir /workspace/tokenomics/curriculum_runs/exp0024 --eval-seeds 3 --horizon 100" \
+  --pull "/workspace/tokenomics/curriculum_runs/exp0024:./experiments/EXP-NNNN-<title>"
+# GPU smoke: default profile, save+pull one ckpt
 python run_pod_training.py --pod-id <id> \
   --train "-m tokenomics.train.smoke_ppo --iters 400 --steps 1024 --save /workspace/model.pt" \
   --pull /workspace/model.pt:./model.pt
 ```
-- `--train "<args>"` = args handed to the pod's `.venv/bin/python` (default: smoke PPO). `--pull REMOTE:LOCAL` (repeatable) rsyncs files back before stopping.
-- Pod addressed by **id**; ip/port resolved fresh each run via `runpodctl ssh info` (they change across restarts). Code goes to `/workspace/tokenomics`; pod venv is `--system-site-packages` to reuse the image's CUDA torch.
-- Skips: `--no-stop` (leave pod up for inspection), `--no-sync`, `--no-install`. `--ssh-key` / `--ready-timeout` override defaults.
-- **Caveat**: training runs in the **foreground** over SSH — the script must stay connected for the whole run. Fine for short/smoke runs; for long runs that must survive a laptop sleep/disconnect, switch to a detached `nohup`+poll model first (not yet implemented).
+6. **Watch / reattach**: live progress mirrors to `train.live.log` (`tail -f`). If the client detaches, reconnect: `python run_pod_training.py --pod-id <id> --attach --remote-log /workspace/train.log --cpu`.
+7. **After**: pod auto-stops (unless `--no-stop`); delete any staged `tokenomics/_pod_ckpts/`.
+
+### Reference
+- `--train "<args>"` = args handed to the pod's `.venv/bin/python` (default: smoke PPO). `-u` = unbuffered stdout (live per-iter logs). `--pull REMOTE:LOCAL` (repeatable) rsyncs back before stopping.
+- Pod addressed by **id**; ip/port resolved fresh each run via `runpodctl ssh info` (they change across restarts). Code lands at `/workspace/tokenomics`.
+- Skips: `--no-stop` (leave pod up), `--no-sync` (code already on pod), `--no-install`, `--foreground` (legacy blocking stream). `--ssh-key` / `--ready-timeout` override defaults.
 
 ## Architecture rules
 - **`domain/` stays pure.** No RL, no numpy, no IO, no logging. Just the simulation.

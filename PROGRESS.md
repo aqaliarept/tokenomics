@@ -48,3 +48,28 @@ Next: (1) wire the stronger reference bar (search) into run_replay_task; then St
   canonical artifacts cloud-produced per the tightened rule (was run local pre-tightening;
   deterministic, so identical output expected).
 
+2026-07-01 - Stronger reference bar wired (EXP-0024) — blocker (1) above DONE
+Status: DONE. `REFERENCE_BARS` registry in eval/curriculum.py: added `entity_planner+mpc_search`
+  (producer fixed at entity_planner; orderer routing re-chosen per cycle by lookahead=6 rollout
+  over {even_split, proportional} + 8 sampled routings via search_orderer_episode; deterministic
+  given seed, no ckpt) beside the fixed practical bar. `run_replay_task` gains opt-in
+  `reference_bars` → reference = STRONGEST of the set, winning bar id attributed per row
+  (`reference_model_id`); DEFAULT single practical bar keeps EXP-0023 + old tests byte-identical.
+  CLI `--reference-bars`. TDD: 3 new tests (registry, bars-run, best-of selection), full suite 494 pass.
+Artifacts: experiments/EXP-0024-curriculum-reference-strength/ (spec.json, RESULT.md, summary.csv,
+  artifacts/{curriculum_matrix.csv, task_archive.jsonl}). Ran on Runpod CPU pod (--cpu --python
+  python3.12), pulled back. Same 18-task suite + same portable stack as EXP-0023; only ref changed.
+Result: histogram {policy_weakness: 2, none: 2, distribution_mismatch: 13, feasibility_wall: 1}
+  (was {none: 4, ...}). FIRST in-claim policy_weakness in the arc: search bar beats learner on
+  scale-d3-s6 (493.3>491.3) and s7 (499>496.7) — `none` under the fixed bar. Taxonomy holds
+  (scarcity-degraded search>learner but out_of_claim → distribution_mismatch, not miscounted).
+Decisions: reference = best-of-available-bars, per-row attributable. No learner change, no promotion.
+  CLAUDE.md got a concrete 7-step cloud-run recipe (ckpt-staging gotcha: driver syncs inner
+  tokenomics/ pkg dir, NOT repo root → stage input ckpts under tokenomics/_pod_ckpts/; CPU pod
+  needs --cpu --python python3.12; detached driver, --attach — old foreground caveat was stale).
+Blockers: the 2 in-claim gaps are NARROW (≤0.5%, ~2 units, only 2/4 held-out seeds). Before Stage 3
+  trains on them, need a paired-seed/trace check (doc close-win rule) to rule out search-sampling
+  noise; or sharpen the bar (more samples/lookahead, more compute).
+Next: Stage 2 broad legal randomization + inline world_spec, OR Stage 3 mining a large random pool
+  against the mpc_search bar (with the paired-seed guard on narrow gaps).
+

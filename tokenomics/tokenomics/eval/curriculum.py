@@ -253,6 +253,60 @@ def stress_suite() -> list[TaskRecord]:
 REFERENCE_MODEL_ID = "entity_planner+proportional"
 
 
+# --- reference bars ------------------------------------------------------------------
+# A reference bar is a checkpoint-free, deterministic-given-seed policy that runs on a
+# replayed economy and reports `episode_stats`. The doc (Stage 0) lists the bars a task
+# family may compare against: deterministic planner, proportional orderer, and — "where
+# available" — local routing / bounded short-rollout search. EXP-0023 used only the fixed
+# `entity_planner + proportional`, which the learner beats on every live task (0
+# policy_weakness); the search bar below re-selects the orderer routing per cycle by a
+# bounded lookahead rollout, the strongest affordable deterministic bar, so Stage 3 mining
+# has a reference that can actually expose a policy gap.
+
+ReferenceBar = Callable[..., dict]
+
+
+def _bar_practical(cfg: Configuration, seed: int, horizon: int) -> dict:
+    """The fixed practical bar (EXP-0023): entity planner producer + proportional orderer."""
+    from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from .joint_stack import joint_stack_env
+    from .runner import run_episode
+
+    return run_episode(joint_stack_env(cfg, horizon),
+                       PRODUCING_BASELINES["entity_planner"],
+                       ORDERING_BASELINES["proportional"], seed=seed)
+
+
+def _bar_mpc_search(cfg: Configuration, seed: int, horizon: int, *,
+                    lookahead: int = 6, n_samples: int = 8, sample_scale: float = 1.0) -> dict:
+    """Bounded short-rollout / directed routing search bar (doc Stage 0 "where available").
+
+    Producer held at `entity_planner`; each cycle the orderer routing is re-chosen by a
+    `lookahead`-cycle rollout over the named baselines plus `n_samples` sampled routings
+    (`search_orderer_episode`, EXP-0005 — the search that reaches orderer headroom a fixed
+    baseline can't). Deterministic given `seed` (sample RNG seeded by seed+cycle), no
+    checkpoint — a legal reference bar, strictly the argmax of its candidate set per cycle."""
+    from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+    from .joint_stack import joint_stack_env
+    from .orderer_oracle import search_orderer_episode
+
+    env = joint_stack_env(cfg, horizon)
+    prod = PRODUCING_BASELINES["entity_planner"]
+    cands = {n: ORDERING_BASELINES[n] for n in ("even_split", "proportional")}
+    stats, _ = search_orderer_episode(env, prod, cands, n_samples, sample_scale, lookahead, seed)
+    return dict(stats)
+
+
+REFERENCE_BARS: dict[str, ReferenceBar] = {
+    "entity_planner+proportional": _bar_practical,
+    "entity_planner+mpc_search": _bar_mpc_search,
+}
+
+# Default = the single fixed practical bar, so `run_replay_task`'s default behaviour (and
+# EXP-0023's artifacts) are unchanged; Stage 3 mining opts into the multi-bar best-of.
+DEFAULT_REFERENCE_BARS: tuple[str, ...] = ("entity_planner+proportional",)
+
+
 def _dims(cfg: Configuration) -> tuple[int, int, int]:
     products = len(cfg.process_sheets)
     producers = len(cfg.producer_configs)
@@ -298,33 +352,62 @@ def _episode_seeds(episode_seed: int, eval_seeds: int) -> list[int]:
     return list(range(episode_seed, episode_seed + eval_seeds))
 
 
+def _best_reference(scored: dict[str, dict]) -> tuple[str, dict]:
+    """Pick the strongest reference bar (max mean consumer units) from per-bar stats.
+
+    Ties resolve to the first-registered bar in `REFERENCE_BARS` order — NOT the caller's
+    `--reference-bars` order — so the chosen reference (and the row's ratio) is a stable,
+    attributable identity no matter how the bar list is ordered on the command line."""
+    order = list(REFERENCE_BARS)
+    items = sorted(scored.items(), key=lambda kv: order.index(kv[0]))
+    return max(items, key=lambda kv: kv[1]["consumer_completed_units"])
+
+
+def _run_reference_bars(cfg: Configuration, seeds: list[int], horizon: int,
+                        bar_names: "tuple[str, ...]") -> tuple[str, dict]:
+    """Run each named reference bar over `seeds`, average, and return the best (bar_id, agg).
+
+    `agg` carries mean units / rejected units / dead for the winning bar — the reference
+    the learner is scored against. Default is a single fixed bar (EXP-0023 behaviour); a
+    multi-bar list makes the reference the best-of-available (doc's stronger-bar path)."""
+    scored: dict[str, dict] = {}
+    n = len(seeds)
+    for name in bar_names:
+        bar = REFERENCE_BARS[name]
+        u = d = rej = 0.0
+        for es in seeds:
+            rs = bar(cfg, es, horizon)
+            u += rs["consumer_completed_units"]; d += float(rs["dead"])
+            rej += rs["consumer_rejected_units"]
+        scored[name] = {"consumer_completed_units": u / n,
+                        "consumer_rejected_units": rej / n, "dead": d / n}
+    return _best_reference(scored)
+
+
 def run_replay_task(record: TaskRecord, producer_model: object, orderer_model: object,
-                    *, eval_seeds: int = 1, horizon: int = 100) -> dict:
-    """Replay one task under the portable stack (learner) and the deterministic reference
-    bar on the same world, then classify the outcome. A learner exception is recorded as a
-    contract failure (matrix convention) — never propagated, so one bad cell can't sink the
-    run. Returns a curriculum_matrix row."""
-    from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES
-    from .joint_stack import joint_stack_env, run_joint_stack
-    from .runner import run_episode
+                    *, eval_seeds: int = 1, horizon: int = 100,
+                    reference_bars: "tuple[str, ...]" = DEFAULT_REFERENCE_BARS) -> dict:
+    """Replay one task under the portable stack (learner) and the reference bar(s) on the
+    same world, then classify the outcome. A learner exception is recorded as a contract
+    failure (matrix convention) — never propagated, so one bad cell can't sink the run. The
+    reference is the strongest of `reference_bars` (default: the single fixed practical bar,
+    so EXP-0023 is unchanged; pass the multi-bar set for Stage 3 mining). Returns a
+    curriculum_matrix row."""
+    from .joint_stack import run_joint_stack
 
     cfg = replay(record)
     products, producers, caps = _dims(cfg)
-    bar_prod = PRODUCING_BASELINES["entity_planner"]
-    bar_order = ORDERING_BASELINES["proportional"]
 
     # Episodes ANCHORED at the record's serialized seed (not 0), so the row reproduces
     # the exact condition(s) the archive records.
     seeds = _episode_seeds(record.episode_seed, eval_seeds)
     n = len(seeds)
 
-    # reference bar — deterministic, always runs.
-    ref_u = ref_d = ref_rej = 0.0
-    for es in seeds:
-        rs = run_episode(joint_stack_env(cfg, horizon), bar_prod, bar_order, seed=es)
-        ref_u += rs["consumer_completed_units"]; ref_d += float(rs["dead"])
-        ref_rej += rs["consumer_rejected_units"]
-    ref_u /= n; ref_d /= n; ref_rej /= n
+    # reference bar(s) — deterministic, always run; the strongest wins and is attributed.
+    reference_model_id, ref_agg = _run_reference_bars(cfg, seeds, horizon, reference_bars)
+    ref_u = ref_agg["consumer_completed_units"]
+    ref_d = ref_agg["dead"]
+    ref_rej = ref_agg["consumer_rejected_units"]
 
     # learner — the portable stack; any episode-time failure = contract-incompatible cell.
     contract_ok = True
@@ -366,7 +449,7 @@ def run_replay_task(record: TaskRecord, producer_model: object, orderer_model: o
         "learner_units": lu_val,
         "learner_rejected_units": None if not contract_ok else round(learner_rej, 2),
         "learner_dead": outcome.learner_dead,
-        "reference_model_id": REFERENCE_MODEL_ID,
+        "reference_model_id": reference_model_id,
         "reference_units": outcome.reference_units,
         "reference_rejected_units": round(ref_rej, 2),
         "reference_dead": outcome.reference_dead,
@@ -381,15 +464,17 @@ def run_replay_task(record: TaskRecord, producer_model: object, orderer_model: o
 
 def run_replay_suite(records: list[TaskRecord], producer_model: object, orderer_model: object,
                      *, eval_seeds: int = 1, horizon: int = 100,
+                     reference_bars: "tuple[str, ...]" = DEFAULT_REFERENCE_BARS,
                      log=lambda *a, **k: None) -> list[dict]:
     """Run every task's learner-vs-reference replay + classification (Stage 0/1 smoke)."""
     rows: list[dict] = []
     for rec in records:
         row = run_replay_task(rec, producer_model, orderer_model,
-                              eval_seeds=eval_seeds, horizon=horizon)
+                              eval_seeds=eval_seeds, horizon=horizon,
+                              reference_bars=reference_bars)
         rows.append(row)
         log(f"{row['task_id']}: learner={row['learner_units']} ref={row['reference_units']} "
-            f"class={row['failure_class']}")
+            f"[{row['reference_model_id']}] class={row['failure_class']}")
     return rows
 
 
@@ -440,7 +525,15 @@ def main() -> None:
     ap.add_argument("--out-dir", required=True, help="experiment dir (writes artifacts/ + summary.csv)")
     ap.add_argument("--eval-seeds", type=int, default=3)
     ap.add_argument("--horizon", type=int, default=100)
+    ap.add_argument("--reference-bars", default=",".join(DEFAULT_REFERENCE_BARS),
+                    help="comma-separated reference bar ids; reference = strongest of these "
+                         f"(available: {','.join(REFERENCE_BARS)})")
     args = ap.parse_args()
+
+    bar_names = tuple(s for s in args.reference_bars.split(",") if s)
+    for b in bar_names:
+        if b not in REFERENCE_BARS:
+            ap.error(f"unknown reference bar {b!r}; available: {','.join(REFERENCE_BARS)}")
 
     out = Path(args.out_dir)
     (out / "artifacts").mkdir(parents=True, exist_ok=True)
@@ -451,7 +544,7 @@ def main() -> None:
     prod = load_producer_score_model(args.producer_ckpt)
     order = load_scorer(args.orderer_ckpt)
     rows = run_replay_suite(suite, prod, order, eval_seeds=args.eval_seeds,
-                            horizon=args.horizon, log=print)
+                            horizon=args.horizon, reference_bars=bar_names, log=print)
     write_matrix_csv(rows, out / "artifacts" / "curriculum_matrix.csv")
     write_matrix_csv(rows, out / "summary.csv")
 

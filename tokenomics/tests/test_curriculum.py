@@ -179,3 +179,52 @@ def test_matrix_schema_carries_rejected_units_and_reference_identity() -> None:
     for col in ("learner_rejected_units", "reference_rejected_units", "reference_model_id"):
         assert col in _MATRIX_COLUMNS
     assert REFERENCE_MODEL_ID == "entity_planner+proportional"
+
+
+# --- stronger reference bar (Stage 3 enabler) ---------------------------------------
+from tokenomics.eval.curriculum import REFERENCE_BARS, DEFAULT_REFERENCE_BARS
+
+
+def test_reference_bar_registry_has_practical_and_search_bars() -> None:
+    # The practical fixed bar (EXP-0023) plus a stronger bounded short-rollout / directed
+    # search bar (doc Stage 0: "local routing search / bounded short-rollout where
+    # available") — so Stage 3 mining can compare the learner against a bar that isn't a
+    # single fixed orderer.
+    assert "entity_planner+proportional" in REFERENCE_BARS
+    assert "entity_planner+mpc_search" in REFERENCE_BARS
+    assert DEFAULT_REFERENCE_BARS == ("entity_planner+proportional",)  # non-breaking default
+
+
+def test_reference_bars_run_and_return_units_on_a_replayable_task() -> None:
+    # Every registered bar is a checkpoint-free, deterministic-given-seed policy that runs
+    # on a replayed economy and reports the stats the matrix reads (units/rejected/dead).
+    cfg = build_scale_config(6, depth=3)
+    for name, bar in REFERENCE_BARS.items():
+        stats = bar(cfg, seed=0, horizon=30)
+        for k in ("consumer_completed_units", "consumer_rejected_units", "dead"):
+            assert k in stats, (name, k)
+        assert stats["consumer_completed_units"] >= 0.0
+
+
+from tokenomics.eval.curriculum import _best_reference
+
+
+def test_best_reference_picks_highest_units_bar_and_is_attributable() -> None:
+    # The reference the learner is scored against is the STRONGEST available bar, and the
+    # winning bar id is retained so the row's ratio is attributable (doc: reference
+    # identity per row; never read a ratio against an unknown bar).
+    scored = {
+        "entity_planner+proportional": {"consumer_completed_units": 453.0, "dead": 0.0},
+        "entity_planner+mpc_search": {"consumer_completed_units": 501.0, "dead": 0.0},
+    }
+    name, stats = _best_reference(scored)
+    assert name == "entity_planner+mpc_search"
+    assert stats["consumer_completed_units"] == 501.0
+    # tie -> the REGISTRY-first bar wins, independent of the caller's dict order. Build the
+    # tie dict with mpc_search FIRST to prove attribution follows REFERENCE_BARS order, not
+    # the --reference-bars ordering (reversing the flag must not flip the tie winner).
+    tie = {
+        "entity_planner+mpc_search": {"consumer_completed_units": 400.0, "dead": 0.0},
+        "entity_planner+proportional": {"consumer_completed_units": 400.0, "dead": 0.0},
+    }
+    assert _best_reference(tie)[0] == "entity_planner+proportional"
