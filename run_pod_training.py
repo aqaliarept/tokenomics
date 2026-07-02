@@ -468,19 +468,78 @@ def default_local_log(remote_log: str) -> str:
     return f"{Path(remote_log).stem}.live.log"
 
 
-def make_content_sink(local_log: str | None) -> Callable[[str], None]:
+def default_status_path(remote_log: str) -> str:
+    """Local heartbeat path (`<remote-basename>.status`) that sits next to the `.live.log`
+    mirror — a compact, always-fresh snapshot of the run's phase + last line, so remote
+    status is on disk even when nobody is actively tailing."""
+    return f"{Path(remote_log).stem}.status"
+
+
+def init_local_mirror(local_log: str, header: str) -> bool:
+    """Truncate the mirror and write a run header at LAUNCH START — before the multi-minute
+    rsync+install — so during setup the local file already reflects THIS run (pod id, cmd,
+    start time) instead of masquerading as a prior run's stale log. Returns False (never
+    raises) on any IO failure, so a broken mirror path can't sink a live remote run."""
+    try:
+        Path(local_log).parent.mkdir(parents=True, exist_ok=True)
+        with open(local_log, "w") as f:
+            f.write(header)
+        return True
+    except OSError as e:
+        log(f"WARNING: local log mirror disabled (cannot create {local_log}): {e}")
+        return False
+
+
+_PHASE_RE = re.compile(r"\[phase \d+/\d+\][^\n]*")
+
+
+def parse_run_status(text: str) -> dict:
+    """Compact status from streamed log text: the latest `[phase i/N] ...` marker and the
+    last non-empty line (the live progress signal), plus a line count. Pure — the heartbeat
+    and any status reader derive from this, no SSH."""
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
+    phases = _PHASE_RE.findall(text)
+    return {
+        "phase": phases[-1].rstrip() if phases else "",
+        "last_line": lines[-1] if lines else "",
+        "n_lines": len(lines),
+    }
+
+
+def write_run_status(path: str, *, pod_id: str | None, remote_log: str, state: str,
+                     started: str, text: str, phase: str | None = None) -> None:
+    """Write the compact heartbeat `.status` (JSON) for a detached run. Degrades silently on
+    any IO failure — like the mirror, a heartbeat must never raise into `main()` and stop a
+    live pod. `phase`, if given, overrides the phase parsed from the bounded `text` tail — the
+    caller tracks it stickily so a phase whose marker scrolled past the tail isn't lost."""
+    st = parse_run_status(text)
+    if phase is not None:
+        st["phase"] = phase
+    st.update({"pod_id": pod_id, "remote_log": remote_log, "state": state,
+               "started": started, "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    try:
+        Path(path).write_text(json.dumps(st, indent=2) + "\n")
+    except OSError as e:
+        log(f"WARNING: run status heartbeat disabled (write failed on {path}): {e}")
+
+
+def make_content_sink(local_log: str | None, *, truncate: bool = True,
+                      status: dict | None = None,
+                      heartbeat_interval: float = 5.0) -> Callable[[str], None]:
     """An `on_content` callback that streams the detached run's new log bytes to stdout and,
     when `local_log` is set, mirrors the same bytes to a local file — so a long detached run
-    is observable via `tail -f` locally, not only by re-SSHing the pod. The mirror is
-    truncated up front so a fresh run never appends to a prior run's stale log; the monitor
-    loop's offset never regresses, so per-poll appends never duplicate content.
+    is observable via `tail -f` locally, not only by re-SSHing the pod. `truncate=True` wipes
+    any prior mirror up front (the attach/reconnect default); pass `truncate=False` when
+    `init_local_mirror` already wrote a run header this launch, so the stream APPENDS. The
+    monitor loop's offset never regresses, so per-poll appends never duplicate content.
 
-    The mirror is OPTIONAL and created AFTER the remote job has launched, so any IO failure
-    (read-only cwd, unwritable parent, full disk) is degraded to a warning and disables the
-    mirror — it must never raise, or `main()`'s except-handler would stop the pod and kill a
-    live remote run."""
-    state = {"path": local_log}
-    if local_log:
+    If `status` (`{path,pod_id,remote_log,started}`) is given, the sink also drops a compact
+    heartbeat `.status` (throttled to `heartbeat_interval` seconds) parsed from the streamed
+    tail — remote phase + last line on disk without an active tail. The mirror + heartbeat are
+    OPTIONAL and degrade to a warning on any IO failure — they must never raise, or `main()`'s
+    except-handler would stop the pod and kill a live remote run."""
+    state = {"path": local_log, "buf": "", "last_hb": 0.0, "phase": ""}
+    if local_log and truncate:
         try:
             Path(local_log).parent.mkdir(parents=True, exist_ok=True)
             open(local_log, "w").close()  # truncate any prior run's mirror
@@ -498,6 +557,23 @@ def make_content_sink(local_log: str | None) -> Callable[[str], None]:
             except OSError as e:
                 log(f"WARNING: local log mirror disabled (write failed on {state['path']}): {e}")
                 state["path"] = None
+        if status:
+            # Track the phase stickily off the FULL incoming chunk, not the bounded tail: a
+            # long phase can emit >8 KB of same-phase output before the next marker, scrolling
+            # its `[phase i/N]` line out of `buf` — reparsing only the tail would then report an
+            # empty phase mid-run. Scanning `content` here keeps the last-seen phase pinned.
+            found = _PHASE_RE.findall(content)
+            if found:
+                state["phase"] = found[-1].rstrip()
+            # keep a bounded tail so the heartbeat's last-line stays cheap to derive.
+            state["buf"] = (state["buf"] + content)[-8192:]
+            now = time.time()
+            if now - state["last_hb"] >= heartbeat_interval:
+                state["last_hb"] = now
+                write_run_status(status["path"], pod_id=status.get("pod_id"),
+                                 remote_log=status["remote_log"], state="running",
+                                 started=status["started"], text=state["buf"],
+                                 phase=state["phase"])
 
     return sink
 
@@ -513,10 +589,14 @@ def monitor_remote(
     ready_timeout: int,
     poll_interval: float,
     local_log: str | None = None,
+    truncate: bool = True,
+    status: dict | None = None,
 ) -> int:
     """Drive `run_monitor_loop` against a real pod: stream the detached run's log to our
-    stdout (and mirror it to `local_log` if set) and reconnect (re-resolving ip/port)
-    whenever the SSH link drops. Returns the remote training exit code."""
+    stdout (and mirror it to `local_log` if set, plus a heartbeat `.status` if `status` is
+    given) and reconnect (re-resolving ip/port) whenever the SSH link drops. `truncate=False`
+    appends to a mirror `init_local_mirror` pre-seeded with a header this launch. Returns the
+    remote training exit code."""
     state = {"ssh": ssh}
 
     def poll_fn(offset: int) -> str:
@@ -527,7 +607,7 @@ def monitor_remote(
 
     return run_monitor_loop(
         poll_fn=poll_fn,
-        on_content=make_content_sink(local_log),
+        on_content=make_content_sink(local_log, truncate=truncate, status=status),
         reconnect_fn=reconnect_fn,
         sleep_fn=time.sleep,
         poll_interval=poll_interval,
@@ -861,6 +941,9 @@ def main() -> int:
     detached = not args.foreground
     pid_file, exit_file = marker_paths(args.remote_log)
     local_log = None if args.no_local_log else (args.local_log or default_local_log(args.remote_log))
+    status_path = None if not local_log else default_status_path(args.remote_log)
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    mirror_headed = False  # True once init_local_mirror wrote a launch header (append, don't wipe)
     started_ok = False
     detached_interrupt = False
     pod_id = args.pod_id  # None in clone mode until the pod is created
@@ -896,6 +979,15 @@ def main() -> int:
         if args.attach:
             log(f"attaching to detached run (log {args.remote_log})...")
         else:
+            # Seed the local mirror with a header BEFORE the multi-minute rsync+install, so a
+            # `tail -f` during setup shows THIS run (pod/cmd/start), never a prior stale log.
+            if local_log:
+                header = (f"# run_pod detached mirror\n# pod {pod_id} | remote {args.remote_log}"
+                          f" | started {started_at}\n# cmd: {args.train}\n"
+                          "# (setting up venv + syncing code; remote output streams below)\n\n")
+                mirror_headed = init_local_mirror(local_log, header)
+                write_run_status(status_path, pod_id=pod_id, remote_log=args.remote_log,
+                                 state="starting", started=started_at, text="")
             if not args.no_sync:
                 rsync_up(ssh, args.local_dir, args.remote_dir)
             if not args.no_install:
@@ -910,13 +1002,24 @@ def main() -> int:
                 f"python run_pod_training.py --pod-id {pod_id} --attach "
                 f"--remote-log {args.remote_log}{' --cpu' if args.cpu else ''}")
 
+        status_meta = (None if not status_path else
+                       {"path": status_path, "pod_id": pod_id, "remote_log": args.remote_log,
+                        "started": started_at})
         if local_log:
-            log(f"mirroring remote log -> {local_log} (tail -f for live progress)")
+            log(f"mirroring remote log -> {local_log} (tail -f); status -> {status_path}")
         rc = monitor_remote(
             pod_id, ssh, args.ssh_key, args.remote_log, pid_file, exit_file,
             ready_timeout=args.ready_timeout, poll_interval=args.poll_interval,
-            local_log=local_log,
+            local_log=local_log, truncate=not mirror_headed, status=status_meta,
         )
+        if status_path:  # final heartbeat: full mirror text -> accurate last phase/line + state
+            try:
+                final_text = Path(local_log).read_text() if local_log else ""
+            except OSError:
+                final_text = ""
+            write_run_status(status_path, pod_id=pod_id, remote_log=args.remote_log,
+                             state="finished" if rc == 0 else "failed",
+                             started=started_at, text=final_text)
         log(f"detached run finished (exit {rc}); pulling results")
         ssh = resolve_ssh(pod_id, args.ssh_key)  # refresh endpoint for the pull
         pulls_ok = not _do_pulls(ssh, args.pull)

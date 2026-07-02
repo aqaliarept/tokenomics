@@ -113,6 +113,115 @@ def test_content_sink_mirrors_to_local_file_and_truncates_stale(tmp_path) -> Non
     assert p.read_text() == "chunk one\nchunk two\n"
 
 
+def test_init_local_mirror_truncates_and_writes_header(tmp_path) -> None:
+    # the mirror is truncated + given a run header at LAUNCH START (before the ~5 min
+    # install), so during setup the local file reflects THIS run, never a prior run's log.
+    p = tmp_path / "run.live.log"
+    p.write_text("STALE FROM A PRIOR RUN\n")
+    ok = rpt.init_local_mirror(str(p), "# run xyz | started now\n")
+    assert ok is True
+    assert p.read_text() == "# run xyz | started now\n"
+    assert "STALE" not in p.read_text()
+
+
+def test_init_local_mirror_never_raises_on_bad_path(tmp_path) -> None:
+    (tmp_path / "afile").write_text("x")
+    assert rpt.init_local_mirror(str(tmp_path / "afile" / "run.live.log"), "hdr") is False
+
+
+def test_content_sink_appends_when_truncate_false(tmp_path) -> None:
+    # after init_local_mirror wrote the header, the stream must APPEND (not wipe it).
+    p = tmp_path / "run.live.log"
+    p.write_text("# header\n")
+    sink = rpt.make_content_sink(str(p), truncate=False)
+    sink("chunk one\n")
+    assert p.read_text() == "# header\nchunk one\n"
+
+
+def test_parse_run_status_extracts_latest_phase_and_last_line() -> None:
+    text = ("[phase 1/7] split\nsome work\n[phase 2/7] producer distill\n"
+            "  epoch 400/400 mse 0.002\n")
+    st = rpt.parse_run_status(text)
+    assert st["phase"] == "[phase 2/7] producer distill"
+    assert st["last_line"] == "  epoch 400/400 mse 0.002"
+    assert st["n_lines"] == 4
+
+
+def test_parse_run_status_no_phase_marker() -> None:
+    st = rpt.parse_run_status("just logs\nmore logs\n")
+    assert st["phase"] == ""
+    assert st["last_line"] == "more logs"
+
+
+def test_write_run_status_roundtrips_json(tmp_path) -> None:
+    import json
+    p = tmp_path / "run.status"
+    rpt.write_run_status(str(p), pod_id="pod1", remote_log="/workspace/train.log",
+                         state="running", started="T0", text="[phase 3/7] orderer\nwork\n")
+    st = json.loads(p.read_text())
+    assert st["pod_id"] == "pod1" and st["state"] == "running"
+    assert st["phase"] == "[phase 3/7] orderer" and st["last_line"] == "work"
+
+
+def test_write_run_status_never_raises_on_bad_path(tmp_path) -> None:
+    (tmp_path / "afile").write_text("x")
+    # must degrade like the mirror — a heartbeat IO failure can't sink a live run.
+    rpt.write_run_status(str(tmp_path / "afile" / "run.status"), pod_id="p",
+                         remote_log="r", state="running", started="T0", text="x\n")
+
+
+def test_content_sink_writes_heartbeat_status(tmp_path) -> None:
+    # with a status target + interval 0 (every chunk), the sink drops a compact .status
+    # next to the mirror so remote progress is on disk even without actively tailing.
+    import json
+    log_p = tmp_path / "run.live.log"
+    status_p = tmp_path / "run.status"
+    sink = rpt.make_content_sink(
+        str(log_p), truncate=False,
+        status={"path": str(status_p), "pod_id": "pod9", "remote_log": "/workspace/train.log",
+                "started": "T0"},
+        heartbeat_interval=0.0)
+    sink("[phase 4/7] mined validation replay\n")
+    sink("  task s99 gap=2.6\n")
+    st = json.loads(status_p.read_text())
+    assert st["phase"] == "[phase 4/7] mined validation replay"
+    assert st["last_line"] == "  task s99 gap=2.6"
+    assert st["state"] == "running" and st["pod_id"] == "pod9"
+
+
+def test_content_sink_keeps_phase_after_marker_scrolls_past_tail(tmp_path) -> None:
+    # a long phase can emit >8 KB of same-phase output before the next [phase] marker, pushing
+    # the marker out of the bounded tail. The sink must still report that phase (sticky), not "".
+    import json
+    status_p = tmp_path / "run.status"
+    sink = rpt.make_content_sink(
+        None, truncate=False,
+        status={"path": str(status_p), "pod_id": "p", "remote_log": "/workspace/train.log",
+                "started": "T0"},
+        heartbeat_interval=0.0)
+    sink("[phase 2/7] producer distill\n")
+    for i in range(400):  # ~ >8 KB, no new marker -> marker scrolls out of the 8192-char buf
+        sink(f"  epoch {i}/400 masked-mse 0.00{i % 10}  padding padding padding padding\n")
+    st = json.loads(status_p.read_text())
+    assert st["phase"] == "[phase 2/7] producer distill"  # sticky, not lost to the tail
+    assert st["last_line"].startswith("  epoch 399/400")
+
+
+def test_write_run_status_phase_override_wins_over_parsed(tmp_path) -> None:
+    import json
+    p = tmp_path / "run.status"
+    # text tail has no marker, but the caller pins the sticky phase explicitly.
+    rpt.write_run_status(str(p), pod_id="p", remote_log="r", state="running", started="T0",
+                         text="  epoch 399/400\n", phase="[phase 2/7] producer distill")
+    st = json.loads(p.read_text())
+    assert st["phase"] == "[phase 2/7] producer distill"
+
+
+def test_default_status_path_derives_from_remote_basename() -> None:
+    assert rpt.default_status_path("/workspace/train.log") == "train.status"
+    assert rpt.default_status_path("/workspace/runs/exp0026") == "exp0026.status"
+
+
 def test_content_sink_without_local_log_is_stdout_only(tmp_path, capsys) -> None:
     # local_log=None disables mirroring (stdout still streams) and must not raise
     sink = rpt.make_content_sink(None)

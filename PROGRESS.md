@@ -123,3 +123,76 @@ Decisions: bias-free-or-abort for mining (a partial archive is worse than no arc
 Blockers: none.
 Next: same as EXP-0025 next (topology-grid mining, then Stage 4).
 
+
+---
+
+## Stage 4 driver + observability (in progress)
+Status: Stage 4 (prioritized replay + relabeling) built + TDD'd; cloud run live on pod
+  hd8oel7ei7to1c (blind-replay phase at time of writing) → will pull EXP-0026. Observability
+  improvements to run_pod_training.py DONE + green.
+Artifacts:
+  - eval/curriculum_replay.py — pure half (split_archive / score_from_notes / replay_priorities /
+    sample_replay, priority ∝ (eps+score)^eta) + torch-guarded run_stage4_replay driver +
+    main()/--dry-run. Candidate trained in CHAMPION score-model format (producer:
+    distill_producer_scorer, entity_planner teacher == mining bar's producer; orderer:
+    distill_orderer_scorer, proportional teacher) so transfer_matrix/eval_joint_stack compare
+    apples-to-apples. Evals candidate-vs-champion on mined-val + blind (evaluate_pool, mpc_search
+    bar), transfer+stress (transfer_matrix ×2), producer-alone/joint (eval_joint_stack). Emits EXP
+    layout + advisory gate; promote_recommended ALWAYS False (single-cell + human-approved).
+  - tests/test_curriculum_replay.py — 18 (split/priority/sample/score pure + end-to-end torch
+    smoke + phase-marker assertion). Full suite 545 green.
+  - Observability (user-requested): run_pod_training.py — (1) init_local_mirror writes a run
+    header + truncates at LAUNCH START (before the ~5 min install), make_content_sink gains
+    truncate=False so the stream appends → local mirror never masquerades as a prior run during
+    setup (the stale-file gotcha we hit); (2) parse_run_status/write_run_status + a throttled
+    heartbeat in the sink → compact <remote-stem>.status (phase + last line + state) on disk
+    without an active tail; (3) curriculum_replay emits ordered `[phase i/7] name` markers the
+    heartbeat parses. `.gitignore` += *.status. tests/test_run_pod_detached.py +9.
+Decisions:
+  - Stage 4 on the CURRENT single-cell EXP-0025 archive (user); best case = "promising, not
+    promoted". Lever = BOTH, but the portable orderer SCORE model distills only from the
+    proportional teacher (teacher_logits), so it structurally can't absorb the search-oracle
+    headroom the mined gap used — retraining ≈ reproduces champion; that limit is the Stage-4
+    orderer finding (reported), and the shared transfer/stress harness only scores the
+    score-model orderer (not the GaussianActor search orderer) anyway.
+  - Pre-flight local smoke (mpc_search + fixtures, tiny) before burning a pod; real run on cloud
+    per HARD RULE (fresh 16-vCPU cpu5c pod, auto-terminated).
+Blockers: none.
+Next: on pull, fill EXP-0026 RESULT.md conclusions + README index row + PROGRESS; interpret the
+  gate (expect producer ≈/↑ champion, orderer ≈ champion, no transfer/stress regression).
+
+## Stage 4 result (EXP-0026) — REJECT, pipeline validated
+Status: cloud run done (fresh 16-vCPU pod, auto-terminated), pulled to
+  experiments/EXP-0026-stage4-prioritized-replay (nesting flattened). Full suite 545 green.
+Result: candidate ≈ champion on the mined family (val 511.39 vs 511.33, blind tail 444.33 tie,
+  in-family joint 532.7 vs 530.5) AND 4 out-of-family regressions, all uneven-strength
+  (465–495 vs 487–584, −22..−92u), producer-side. 0 contract failures. promote_recommended=false.
+Why: (1) portable orderer score model distills only from proportional → can't absorb the
+  mpc_search headroom the 2–7u mined gap used (architecture limit, not data). (2) producer trained
+  FROM SCRATCH on 12 narrow depth-3 seeds REPLACED EXP-0021's broad coverage → lost uneven-strength.
+Decisions: single-cell mined weakness too small/narrow to train on; replace-not-augment replay
+  trades robustness for nothing. Fixes for next: broaden archive across topologies (EXP-0025
+  blocker) THEN augment the champion's broad train set with mined replay (not mined-only distill).
+Blockers: none.
+Next: (1) topology-grid mining (EXP-0025 blocker); (2) Stage 4 v2 = augment broad train set with
+  prioritized mined replay, re-eval transfer/stress. No promotion; champion untouched.
+
+## Stage 4 review fixes (curriculum_replay + run_pod heartbeat)
+Status: three code-review items on the Stage 4 driver + heartbeat fixed + TDD'd. Full suite 552
+  green (was 545; +7 tests). Forward-looking — do NOT change the concluded EXP-0026 verdict.
+Fixes:
+  - [P2] Default replay sampling now honors priorities. `sample_replay(..., replace=True)` added;
+    driver default (sample_k=None) draws a full-budget batch WITH replacement so high-regret tasks
+    are DUPLICATED (real prioritized replay). Old default (no-replacement, k==len(train)) selected
+    every task once → priorities only reordered. Explicit --sample-k still = distinct subset.
+  - [P2] Orderer training is now config-aware. `collect_scorer_samples(..., configs=)` +
+    `distill_orderer_scorer(..., train_configs=)`; driver passes the replayed archive configs so a
+    non-scale / mixed-depth archive trains the orderer on the mined topologies, not a
+    build_scale_config(seed, depth) stand-in. Misaligned configs→seeds raises ValueError.
+  - [P3] Heartbeat keeps the last phase when a long phase emits >8 KB before the next marker.
+    Sink tracks a STICKY phase off the full incoming chunk (not the bounded 8192-char tail);
+    `write_run_status(..., phase=)` override wins over the parsed tail.
+Note: none of these alter EXP-0026 (single-cell archive: replayed config == build_scale_config,
+  and replace-vs-not is near-identical over one topology cell) — the REJECT stands, no pod re-run.
+Blockers: none.
+Next: unchanged — topology-grid mining, then Stage 4 v2 (augment, not replace).

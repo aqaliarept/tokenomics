@@ -204,18 +204,29 @@ class ScorerSample:
     mask: np.ndarray    # eligibility (sorted ids)
 
 
-def collect_scorer_samples(seeds, depth: int, horizon: int, log=lambda *a, **k: None) -> list["ScorerSample"]:
+def collect_scorer_samples(seeds, depth: int, horizon: int, log=lambda *a, **k: None,
+                           configs=None) -> list["ScorerSample"]:
     """Roll `stock_aware` + `proportional` across the given scale topologies and
     snapshot every product-stream view that holds a backlog, paired with the teacher
-    target. On-teacher BC: the proportional orderer also drives the states."""
+    target. On-teacher BC: the proportional orderer also drives the states.
+
+    By default each seed rebuilds `build_scale_config(seed, depth)`. Pass `configs` (aligned
+    1:1 with `seeds`, e.g. replayed archived `Configuration`s) to collect over an explicit
+    topology list instead — so a mined/replay curriculum trains the orderer on exactly the
+    tasks it was mined on, not a depth-`depth` scale stand-in."""
     from ..env.aec_env import TokenomicsAECEnv
     from ..eval.baselines import PRODUCING_BASELINES, ORDERING_BASELINES
     from ..eval.scale import build_scale_config
 
     prod_pol, order_pol = PRODUCING_BASELINES["stock_aware"], ORDERING_BASELINES["proportional"]
+    seeds = list(seeds)
+    if configs is not None:
+        configs = list(configs)
+        if len(configs) != len(seeds):
+            raise ValueError(f"configs ({len(configs)}) must align 1:1 with seeds ({len(seeds)})")
     samples: list[ScorerSample] = []
-    for seed in seeds:
-        cfg = build_scale_config(seed, depth=depth)
+    for i, seed in enumerate(seeds):
+        cfg = configs[i] if configs is not None else build_scale_config(seed, depth=depth)
         env = TokenomicsAECEnv(config=cfg, horizon=horizon,
                                product_stream_ordering=True, corrected_stream_k=True)
         env.reset(seed=seed)
@@ -339,9 +350,10 @@ def eval_scorer(model: "OrdererScoreModel", depth: int, seeds, eval_seeds: int, 
 
 def distill_orderer_scorer(depth: int, train_seeds, eval_seeds_list, iters: int, eval_seeds: int,
                            horizon: int, save: str | None, hidden: int = 64,
-                           log=print) -> tuple["OrdererScoreModel", list[dict]]:
-    samples = collect_scorer_samples(train_seeds, depth, horizon, log=log)
-    log(f"collected {len(samples)} scorer samples over {len(list(train_seeds))} topologies")
+                           log=print, train_configs=None) -> tuple["OrdererScoreModel", list[dict]]:
+    train_seeds = list(train_seeds)
+    samples = collect_scorer_samples(train_seeds, depth, horizon, log=log, configs=train_configs)
+    log(f"collected {len(samples)} scorer samples over {len(train_seeds)} topologies")
     model = OrdererScoreModel(hidden=hidden)
     fit_scorer(model, samples, iters=iters, log=log)
     if save:

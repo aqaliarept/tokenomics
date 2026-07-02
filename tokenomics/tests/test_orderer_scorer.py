@@ -182,3 +182,22 @@ def test_smoke_distill_roundtrip() -> None:
         reloaded = load_scorer(path)
     rows = eval_scorer(reloaded, depth=3, seeds=[6], eval_seeds=1, horizon=12)
     assert rows and "ratio" in rows[0] and rows[0]["producers"] >= 1
+
+
+def test_collect_scorer_samples_honors_explicit_configs() -> None:
+    # A replay/curriculum caller passes explicit Configurations (e.g. archived tasks) so the
+    # orderer trains on exactly those topologies, not a build_scale_config(seed, depth) stand-in.
+    from tokenomics.train.orderer_scorer import collect_scorer_samples
+    from tokenomics.eval.scale import build_scale_config
+
+    cfgs = [build_scale_config(0, depth=2), build_scale_config(1, depth=2)]
+    samples = collect_scorer_samples([0, 1], depth=5, horizon=12, configs=cfgs)  # depth ignored
+    assert samples
+
+
+def test_collect_scorer_samples_rejects_misaligned_configs() -> None:
+    from tokenomics.train.orderer_scorer import collect_scorer_samples
+    from tokenomics.eval.scale import build_scale_config
+
+    with pytest.raises(ValueError):
+        collect_scorer_samples([0, 1], depth=2, horizon=12, configs=[build_scale_config(0, depth=2)])
