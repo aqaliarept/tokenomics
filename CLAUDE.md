@@ -94,9 +94,22 @@ python run_pod_training.py --pod-id <id> \
 6. **Watch / reattach**: live progress mirrors to `train.live.log` (`tail -f`). If the client detaches, reconnect: `python run_pod_training.py --pod-id <id> --attach --remote-log /workspace/train.log --cpu`.
 7. **After**: pod auto-stops (unless `--no-stop`); delete any staged `tokenomics/_pod_ckpts/`.
 
+### Existing pod host stuck? Create a fresh pod (`--create-pod`)
+When an existing pod's host keeps failing `pod start`, skip `--pod-id` and enrol a **fresh** pod, run, then **stop AND terminate** it (only a pod created by the run is ever removed — a `--pod-id` is only stopped):
+```
+python run_pod_training.py --create-pod --image <img-with-py3.11+torch+ssh> \
+  --vcpu 16 --mem 32 --disk 30 \
+  --train "-u -m tokenomics.eval.curriculum_mining ..." \
+  --pull /workspace/tokenomics/mine:./experiments/EXP-NNNN-title
+```
+- Spec flags default to a **16 vCPU / 32 GB / 30 GB CPU pod** (flavor `cpu5c`, the CPU-bound shape). Override `--cpu-flavor`, `--compute-type GPU --gpu-type ... --gpu-count N` for GPU; `--volume-size`/`--data-center`/`--network-volume-id`/`--community` as needed. `--clone-from <pod-id>` seeds the spec from an existing pod instead of the flags.
+- **Create/clone go through the RunPod REST API, not `runpodctl`** — `runpodctl pod create` has no vCPU flag, so a CPU pod would come up at 2 vCPU. `create_pod` POSTs `rest.runpod.io/v1/pods` with `vcpuCount`+`cpuFlavorIds` (verified 16 vCPU/cpu5c); `--clone-from` reads the template via REST `GET /v1/pods/<id>` (only REST returns `cpuFlavorId`). API key from `RUNPOD_API_KEY` or `~/.runpod/config.toml` (never logged).
+- **Pick the `--image` to skip installing Python/torch.** An image with python3.11+ **and** torch, run WITHOUT `--cpu` (default GPU profile → `--system-site-packages` venv reuses the image's Python+torch) means no `--python python3.12`/ensurepip workaround and no torch download. Image must ship SSH.
+- `--keep-pod` = stop but don't terminate (inspect). Ctrl-C on a detached run leaves the created pod up (run continues) and prints the `runpodctl remove pod <id>` to clean up after `--attach`.
+
 ### Reference
 - `--train "<args>"` = args handed to the pod's `.venv/bin/python` (default: smoke PPO). `-u` = unbuffered stdout (live per-iter logs). `--pull REMOTE:LOCAL` (repeatable) rsyncs back before stopping.
-- Pod addressed by **id**; ip/port resolved fresh each run via `runpodctl ssh info` (they change across restarts). Code lands at `/workspace/tokenomics`.
+- Pod addressed by **id** (existing) or created via `--create-pod`/`--clone-from`; ip/port resolved fresh each run via `runpodctl ssh info` (they change across restarts). Code lands at `/workspace/tokenomics`.
 - Skips: `--no-stop` (leave pod up), `--no-sync` (code already on pod), `--no-install`, `--foreground` (legacy blocking stream). `--ssh-key` / `--ready-timeout` override defaults.
 
 ## Architecture rules
@@ -126,6 +139,7 @@ python run_pod_training.py --pod-id <id> \
 - Ongoing progress / handoff / blockers / next actions → update `PROGRESS.md`.
 - Empirical findings → write/update the relevant `experiments/EXP-NNNN-*` record and index.
 - Roadmap or target changes → update the relevant design/plan document.
+- **After every task done → append a `PROGRESS.md` entry** (the suggested `Status/Artifacts/Decisions/Blockers/Next` format). Non-negotiable: a completed task isn't done until `PROGRESS.md` reflects it. Newest entry at the bottom.
 
 ## Code style
 - `from __future__ import annotations` top of every module.

@@ -1,0 +1,34 @@
+{
+  "id": "EXP-0025-stage3-random-mining",
+  "version": "curriculum-mining-v1",
+  "date": "2026-07-02",
+  "adr": null,
+  "plan": "CURRICULUM_GAME_MASTER_APPROACH.md — Stage 3 (Random Hard-Case Mining). Sample a large legal pool, run the learner vs the strongest affordable reference (the EXP-0024 mpc_search bar), classify each task via the 6-way taxonomy, gate to reproduced in-claim policy_weakness above a paired-seed noise floor, rank by regret + novelty, archive the high-value tasks.",
+  "driver": "tokenomics.eval.curriculum_mining (--workers parallel fan-out)",
+  "question": "Given the stronger reference bar from EXP-0024, does random hard-case mining over a large depth-3 in-claim pool (full 200-seed suite) surface reproduced in-claim policy_weakness tasks worth archiving for the curriculum — and does the paired-seed noise floor (EXP-0024 caveat) correctly separate real gaps from coin-flip noise?",
+  "scope": "Mining machinery + one full seed pool. Same portable stack as EXP-0023/0024 (no champion change, no training, no promotion). Adds eval/curriculum_mining.py (pool build, normalized gap, novelty, gates, ranked archive, parallel shard fan-out). Pool = build_scale_config depth=3, seeds 0-199 (200 tasks), boundary in_claim.",
+  "stack_under_test": {
+    "portable": true,
+    "producer_checkpoint": "experiments/EXP-0021-producer-broaden-training/artifacts/producer_scorer_broad.pt",
+    "orderer_checkpoint": "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt",
+    "note": "identical learner to EXP-0023/0024; only the task pool + mining/gating logic is new"
+  },
+  "reference_bar": "entity_planner+mpc_search (EXP-0024 strong bar): producer fixed at entity_planner, orderer routing re-chosen each cycle by lookahead=6 rollout over {even_split, proportional} + 8 sampled routing vectors (search_orderer_episode). Deterministic given seed, no checkpoint.",
+  "gates": {
+    "failure_class": "policy_weakness only (contract/implementation/distribution/wall never mined)",
+    "min_gap": 2.0,
+    "min_win_frac": 0.6,
+    "note": "paired-seed noise floor per EXP-0024 caveat: a task must beat the learner by >=2 mean units AND win >=60% of paired eval seeds. score = alpha*normalized_gap + beta*novelty (alpha=1.0, beta=0.5), greedy-diverse selection."
+  },
+  "failure_taxonomy": ["none", "policy_weakness", "feasibility_wall", "contract_failure", "implementation_failure", "distribution_mismatch"],
+  "compute": {
+    "where": "Fresh Runpod CPU pod created via REST POST /v1/pods (16 vCPU / cpu5c / 32 GB / 30 GB, runpod/base:0.7.0-ubuntu2004), run, then stopped AND terminated (--create-pod). CPU profile --cpu --python python3.12; torch 2.12.1+cpu. Mining is CPU-bound (per-cycle search + batch-1 inference) and parallel across 16 workers -> the 16-vCPU shape.",
+    "eval_seeds": 3,
+    "horizon": 100,
+    "workers": 16,
+    "note": "A 30-seed pilot (seeds 20-49) preceded this full run and agreed on the noise-floor behaviour; the full 200-seed suite supersedes it and is the recorded result."
+  },
+  "reproduce": "python run_pod_training.py --create-pod --image runpod/base:0.7.0-ubuntu2004 --cpu --python python3.12 --vcpu 16 --mem 32 --disk 30 --train \"-u -m tokenomics.eval.curriculum_mining --producer-ckpt /workspace/tokenomics/_pod_ckpts/producer_scorer_broad.pt --orderer-ckpt /workspace/tokenomics/_pod_ckpts/orderer_scorer.pt --generator build_scale_config --depth 3 --seeds 0-199 --workers 16 --reference-bar entity_planner+mpc_search --eval-seeds 3 --horizon 100 --out-dir /workspace/tokenomics/mine/exp0025\" --pull \"/workspace/tokenomics/mine/exp0025:./experiments/EXP-0025-stage3-random-mining\"  (stage the two ckpts under tokenomics/_pod_ckpts/ first — the driver syncs the inner package dir, not repo-root experiments/)",
+  "tests": "tokenomics/tests/test_curriculum_mining.py (pool legality, normalized gap, novelty, gates, mine end-to-end, top_k, contract-failure-not-raise, run_mining emission, shard split, parallel==sequential). test_run_pod_clone.py (REST create body/spec/parse helpers). full suite 513 passed.",
+  "promote_recommended": false
+}

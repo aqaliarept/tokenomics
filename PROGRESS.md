@@ -73,3 +73,53 @@ Blockers: the 2 in-claim gaps are NARROW (≤0.5%, ~2 units, only 2/4 held-out s
 Next: Stage 2 broad legal randomization + inline world_spec, OR Stage 3 mining a large random pool
   against the mpc_search bar (with the paired-seed guard on narrow gaps).
 
+2026-07-02 - Stage 3 Random Hard-Case Mining (EXP-0025) — blocker above resolved
+Status: DONE. New `tokenomics/eval/curriculum_mining.py` (TDD, torch-free core via injectable
+  LearnerRun): mining_pool (legal/replayable/uniquely-ided), normalized_gap, topology novelty
+  (L1 over (depth,products,producers,caps)), passes_gates (taxonomy=policy_weakness only +
+  PAIRED-SEED noise floor min_gap/min_win_frac — the EXP-0024 narrow-gap guard), evaluate_pool +
+  rank_and_archive (greedy-diverse), _mine_parallel subprocess shard fan-out (--workers, one proc
+  per core, BLAS pinned to 1; parallel == sequential regression-tested). 10 mining tests, full
+  suite 513 pass.
+Artifacts: experiments/EXP-0025-stage3-random-mining/ (spec.json, RESULT.md, summary.csv,
+  artifacts/{task_archive.jsonl, curriculum_matrix.csv}). Full 200-seed suite (build_scale_config
+  d3, seeds 0-199) vs entity_planner+mpc_search, eval-seeds 3, workers 16. (A 30-seed pilot 20-49
+  preceded + agreed; full run supersedes it — dropped, this dir IS the full run.)
+Result: histogram {none: 148, policy_weakness: 52}; 24 archived (gaps 2.0–7.67u, mean 3.24;
+  8/24 win all 3 seeds; top s136 7.67u/3-of-3). Noise floor load-bearing: robust s136 tops the
+  archive while the largest NOISY gap s34 (4.67u, 1/3 seeds) is dropped — 6 gap≥2 tasks rejected
+  on the win floor (exactly the EXP-0024 false-positive). Yield real 24/200=12%.
+Decisions: no learner change, no promotion. Ran on a FRESH 16-vCPU Runpod pod via
+  run_pod_training.py --create-pod, terminated after --pull. Driver create/clone rewired to RunPod
+  REST (POST/GET /v1/pods) — runpodctl pod create has no vCPU flag (CPU pod came up at 2 vCPU);
+  REST honours vcpuCount+cpuFlavorIds (verified 16 vCPU / cpu5c). tests/test_run_pod_clone.py.
+Blockers: yield is all ONE topology cell (depth-3 seed sweep) → novelty term is idle, ranking is
+  regret-only. A useful curriculum needs topology diversity in the pool.
+Next: (1) Stage 3 broaden — mine across a topology GRID (depths × quantity rungs × out-of-family
+  recipe shapes), not a seed sweep, so novelty has distinct cells. (2) Stage 4 — feed the 24
+  archived weaknesses into expert-iteration / targeted training, re-mine to confirm gaps close.
+
+2026-07-02 - Review fixes: 3 correctness bugs in the new pod-lifecycle + parallel mining
+Status: DONE. Addressed 3 review comments on the newly-added code.
+  P1 (run_pod_training.py) — a created pod (--create-pod/--clone-from) holds the ONLY copy of
+    artifacts; a failed --pull previously fell through to remove_pod and destroyed results.
+    `_do_pulls` now RETURNS the failed specs; driver tracks a `pulls_ok` invariant (True only
+    when every requested pull succeeded, or none requested) — any pull failure OR error before
+    pulling keeps the created pod (stopped, not terminated) with recovery instructions. A pod
+    that never came up (no artifacts) still terminates.
+  P2 (run_pod_training.py build_create_body) — a cloned RunPod REST payload has ports as a JSON
+    LIST (['8888/http','22/tcp']); re.split on a list raised TypeError before the create request.
+    Now normalizes list OR string, de-dupes, always exposes 22/tcp first. PodSpec.ports type
+    widened to list|str|None.
+  P3 (curriculum_mining.py _mine_parallel) — with --workers>1, one shard failing while others
+    produced rows only warned, then ranked the survivors → a BIASED archive written under the
+    full-pool name. Now ABORTS (RuntimeError) if ANY shard fails; points at the shard logs.
+Artifacts: tests added — test_run_pod_clone.py (cloned port-list + port-string normalization,
+  _do_pulls returns failed specs for bad-spec + rsync-failure), test_curriculum_mining.py
+  (_mine_parallel aborts when a shard fails, via bogus ckpts → nonzero children). Affected files
+  34 pass; full suite green.
+Decisions: bias-free-or-abort for mining (a partial archive is worse than no archive); never
+  auto-terminate a created pod with un-pulled artifacts (cost of a lingering pod << lost results).
+Blockers: none.
+Next: same as EXP-0025 next (topology-grid mining, then Stage 4).
+

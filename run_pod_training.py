@@ -41,18 +41,41 @@ Usage:
   python run_pod_training.py --pod-id <id> \
       --train "-m tokenomics.train.smoke_ppo --iters 400 --save /workspace/model.pt" \
       --pull /workspace/model.pt:./model.pt
+
+  # create a FRESH pod from an explicit spec, run, then stop + TERMINATE it (for when an
+  # existing pod's host is stuck and `pod start` keeps failing). Pick an --image that ships
+  # python3.11+ and SSH so no Python is installed on the pod:
+  python run_pod_training.py --create-pod --image <img-with-py311+ssh> \
+      --vcpu 16 --mem 32 --disk 30 \
+      --train "-m tokenomics.eval.curriculum_mining ..." \
+      --pull /workspace/tokenomics/mine:./experiments/EXP-NNNN-title
+
+Pod target (exactly one):
+  * --pod-id <id>:     run on an existing pod; stopped afterwards, NEVER removed.
+  * --create-pod:      enrol a FRESH pod from the explicit --image/--vcpu/--mem/--disk/...
+                       flags (default: a 16 vCPU / 32 GB / 30 GB CPU pod), run, then stop
+                       AND terminate the created pod. Only a pod created here is ever
+                       removed. --keep-pod stops but keeps it for inspection.
+  * --clone-from <id>: same lifecycle, but seed the spec from an existing pod via
+                       `runpodctl pod get` instead of the explicit flags.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+RUNPOD_REST = "https://rest.runpod.io/v1"
 
 # Monitor-loop collaborators (dependency-injected so the reconnect logic is testable).
 PollFn = Callable[[int], str]        # offset -> raw poll output (raises SshDropped on transport loss)
@@ -148,6 +171,228 @@ def stop_pod(pod_id: str) -> None:
         log(f"WARNING: stop failed: {res.stderr.strip() or res.stdout.strip()}")
     else:
         log("pod stopped")
+
+
+def remove_pod(pod_id: str) -> None:
+    """Terminate (delete) a pod. ONLY ever called on a pod THIS run created (`--clone-from`)
+    — a user-supplied `--pod-id` is never removed, only stopped. Best-effort: a remove
+    failure is warned, never fatal, so it can't mask the run's real exit code."""
+    log(f"terminating pod {pod_id} (removing)...")
+    res = run(["runpodctl", "pod", "delete", pod_id], check=False, capture=True)
+    if res.returncode != 0:
+        log(f"WARNING: remove failed: {res.stderr.strip() or res.stdout.strip()}")
+    else:
+        log("pod terminated")
+
+
+# --- clone-a-pod: enrol a fresh pod from an existing pod's characteristics ------------
+# For when an existing pod's host is stuck and `pod start` keeps failing: read the
+# template pod's spec (works even while it's stopped), create a NEW pod with the same
+# shape on an available host, run, then stop + terminate the created pod.
+
+
+@dataclass
+class PodSpec:
+    """The cloneable characteristics of a pod, normalized from `runpodctl pod get`."""
+
+    image: str
+    compute_type: str = "GPU"          # "GPU" | "CPU"
+    gpu_type: str | None = None
+    gpu_count: int = 1
+    vcpu: int | None = None
+    mem_gb: int | None = None
+    container_disk_gb: int = 20
+    volume_gb: int = 1
+    volume_path: str = "/workspace"
+    network_volume_id: str | None = None
+    ports: list | str | None = None    # REST returns a JSON list; a string is also accepted
+    secure_cloud: bool = True
+    data_center_id: str | None = None
+    cpu_flavor: str | None = None       # e.g. "cpu5c"; needed to size a CPU pod via REST
+
+
+def _first(*values, default=None):
+    """First value that is not None/empty (tolerant of runpodctl field-name variants)."""
+    for v in values:
+        if v not in (None, ""):
+            return v
+    return default
+
+
+def pod_spec_from_json(raw: dict) -> PodSpec:
+    """Extract cloneable characteristics from a `runpodctl pod get` JSON blob.
+
+    Tolerant of field-name / nesting variants across runpodctl versions: GPU type, cloud
+    and datacenter live under `machine` on some versions and top-level on others, so both
+    are checked. `computeType` is derived from the GPU count when absent — a 0-GPU pod is a
+    CPU pod. The derived spec is logged by `fetch_pod_spec`, so a wrong mapping is visible
+    (and the create command is printed) before any billable pod is created."""
+    m = raw.get("machine") or {}
+    gpu_count = int(_first(raw.get("gpuCount"), m.get("gpuCount"), default=0) or 0)
+    compute = _first(raw.get("computeType"), default=("GPU" if gpu_count else "CPU"))
+    return PodSpec(
+        image=_first(raw.get("imageName"), raw.get("image"), default=""),
+        compute_type=compute,
+        gpu_type=(_first(raw.get("gpuTypeId"), m.get("gpuTypeId"),
+                         raw.get("gpuDisplayName"), m.get("gpuDisplayName"))
+                  if compute == "GPU" else None),
+        gpu_count=gpu_count or 1,
+        vcpu=_first(raw.get("vcpuCount"), raw.get("vcpu"), m.get("vcpuCount")),
+        mem_gb=_first(raw.get("memoryInGb"), raw.get("mem")),
+        container_disk_gb=int(_first(raw.get("containerDiskInGb"),
+                                     raw.get("containerDiskSize"), default=20)),
+        volume_gb=int(_first(raw.get("volumeInGb"), raw.get("volumeSize"), default=1)),
+        volume_path=_first(raw.get("volumeMountPath"), raw.get("volumePath"),
+                           default="/workspace"),
+        network_volume_id=_first(raw.get("networkVolumeId"),
+                                 (raw.get("networkVolume") or {}).get("id")),
+        ports=_first(raw.get("ports")),
+        secure_cloud=bool(_first(raw.get("secureCloud"), m.get("secureCloud"), default=True)),
+        data_center_id=_first(raw.get("dataCenterId"), m.get("dataCenterId")),
+        cpu_flavor=_first(raw.get("cpuFlavorId"),
+                          (raw.get("cpuFlavorIds") or [None])[0], m.get("cpuFlavorId")),
+    )
+
+
+def build_create_body(spec: PodSpec, name: str) -> dict:
+    """The REST `POST /v1/pods` JSON body that reproduces `spec` under a new `name`.
+
+    Pure (no IO) so the exact request is unit-tested before a billable create. We POST to
+    the REST API instead of `runpodctl pod create` because the CLI has NO vCPU flag — a CPU
+    pod created via CLI gets the smallest (2 vCPU) flavor. REST honours `vcpuCount` +
+    `cpuFlavorIds` (verified: 16 vCPU / cpu5c comes up as asked). `22/tcp` is always exposed
+    so the driver can reach the pod over SSH (RunPod injects the account's SSH keys). A
+    network-volume pod attaches the volume + its datacenter and omits a per-pod
+    `volumeInGb`; otherwise a per-pod volume is requested only when sized."""
+    # spec.ports may be a REST JSON list (['8888/http', '22/tcp'] — the common cloned shape)
+    # or a comma/space string; normalize both to a de-duped list that always exposes 22/tcp.
+    if isinstance(spec.ports, (list, tuple)):
+        extra = [str(p) for p in spec.ports]
+    elif spec.ports:
+        extra = re.split(r"[,\s]+", spec.ports)
+    else:
+        extra = []
+    ports = ["22/tcp"] + [p for p in extra if p and p != "22/tcp"]
+    body: dict = {
+        "name": name,
+        "imageName": spec.image,
+        "computeType": spec.compute_type,
+        "containerDiskInGb": spec.container_disk_gb,
+        "volumeMountPath": spec.volume_path,
+        "cloudType": "SECURE" if spec.secure_cloud else "COMMUNITY",
+        "ports": ports,
+    }
+    if spec.compute_type == "CPU":
+        if spec.vcpu:
+            body["vcpuCount"] = spec.vcpu
+        if spec.cpu_flavor:
+            body["cpuFlavorIds"] = [spec.cpu_flavor]
+    else:
+        if spec.gpu_type:
+            body["gpuTypeIds"] = [spec.gpu_type]
+        body["gpuCount"] = spec.gpu_count
+    if spec.network_volume_id:
+        body["networkVolumeId"] = spec.network_volume_id
+    elif spec.volume_gb > 0:
+        # per-pod persistent volume only when asked; volume_gb == 0 keeps /workspace on the
+        # container disk (fine for an ephemeral pod we terminate after pulling results).
+        body["volumeInGb"] = spec.volume_gb
+    if spec.data_center_id:
+        body["dataCenterIds"] = [spec.data_center_id]
+    return body
+
+
+def _runpod_api_key() -> str:
+    """The RunPod API key from env or ~/.runpod/config.toml (never logged)."""
+    key = os.environ.get("RUNPOD_API_KEY")
+    if key:
+        return key.strip()
+    cfg = Path.home() / ".runpod" / "config.toml"
+    if cfg.exists():
+        m = re.search(r"apikey\s*=\s*['\"]([^'\"]+)['\"]", cfg.read_text())
+        if m:
+            return m.group(1)
+    raise RuntimeError("no RunPod API key (set RUNPOD_API_KEY or run `runpodctl config`)")
+
+
+def parse_created_pod_id(output: str) -> str:
+    """The new pod's id from a `POST /v1/pods` JSON response (`id`), tolerant of a legacy
+    `pod "<id>" created ...` human line."""
+    output = output.strip()
+    try:
+        data = json.loads(output)
+        if isinstance(data, dict) and data.get("id"):
+            return str(data["id"])
+    except (json.JSONDecodeError, ValueError):
+        pass
+    m = re.search(r'pod\s+"?([A-Za-z0-9]+)"?', output)
+    if m:
+        return m.group(1)
+    raise RuntimeError(f"could not parse created pod id from: {output!r}")
+
+
+def pod_spec_from_args(args: argparse.Namespace) -> PodSpec:
+    """Build a PodSpec straight from explicit `--image/--vcpu/...` flags (no template).
+
+    The default shape is a CPU pod (16 vCPU / 32 GB / 30 GB container disk). Pick an
+    `--image` that already ships python3.11+ and SSH so no Python has to be installed on
+    the pod (the base image's python3.8 lacked ensurepip — choosing the image sidesteps the
+    whole `--python python3.12` workaround)."""
+    ct = args.compute_type
+    return PodSpec(
+        image=args.image,
+        compute_type=ct,
+        gpu_type=(args.gpu_type if ct == "GPU" else None),
+        gpu_count=args.gpu_count,
+        vcpu=(args.vcpu if ct == "CPU" else None),
+        mem_gb=(args.mem if ct == "CPU" else None),
+        container_disk_gb=args.disk,
+        volume_gb=args.volume_size,
+        volume_path=args.volume_path,
+        network_volume_id=args.network_volume_id,
+        data_center_id=args.data_center,
+        secure_cloud=not args.community,
+        cpu_flavor=(args.cpu_flavor if ct == "CPU" else None),
+    )
+
+
+def fetch_pod_spec(template_id: str) -> PodSpec:
+    """Read the template pod's cloneable spec via REST `GET /v1/pods/<id>` (works while it is
+    stopped). REST, not `runpodctl pod get`, because only REST returns `cpuFlavorId` — the
+    CLI blob omits it, so a CLI-seeded clone would drop the flavor and mis-size vCPU."""
+    req = urllib.request.Request(
+        f"{RUNPOD_REST}/pods/{template_id}",
+        headers={"Authorization": f"Bearer {_runpod_api_key()}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"pod get failed ({e.code}): {e.read().decode().strip()}")
+    spec = pod_spec_from_json(raw)
+    log(f"cloning spec from {template_id}: {spec}")
+    return spec
+
+
+def create_pod(spec: PodSpec, name: str) -> str:
+    """Create a fresh pod from `spec` via REST `POST /v1/pods`; return its id. Prints the
+    request body first (never the API key), and surfaces the API error body on failure (so a
+    bad spec isn't an opaque HTTP code). REST is used, not `runpodctl pod create`, because
+    the CLI cannot set vCPU (a CPU pod would come up at 2 vCPU)."""
+    body = build_create_body(spec, name)
+    log("creating pod: POST /v1/pods " + json.dumps(body))
+    req = urllib.request.Request(
+        f"{RUNPOD_REST}/pods", method="POST",
+        data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {_runpod_api_key()}",
+                 "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            out = resp.read().decode()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"pod create failed ({e.code}): {e.read().decode().strip()}")
+    pod_id = parse_created_pod_id(out)
+    log(f"created pod {pod_id}")
+    return pod_id
 
 
 def resolve_ssh(pod_id: str, key_override: str | None) -> Ssh:
@@ -494,23 +739,64 @@ def train(ssh: Ssh, remote_dir: str, train_args: str, log_file: str) -> None:
     ssh_run(ssh, cmd)
 
 
-def _do_pulls(ssh: Ssh, pull_specs: list[str]) -> None:
-    """Best-effort rsync of result files back. A missing artifact (e.g. after a failed
-    run) is warned, not fatal — it must not mask the real training exit code."""
+def _do_pulls(ssh: Ssh, pull_specs: list[str]) -> list[str]:
+    """rsync result files back; return the list of specs that FAILED. A failure is warned
+    (not raised) so it can't mask the real training exit code — but the caller must inspect
+    the return: a created pod holding the only copy of the artifacts must NOT be terminated
+    when a pull failed, or the results are lost (see the finally in the run driver)."""
+    failed: list[str] = []
     for spec in pull_specs:
         remote_path, _, local_path = spec.partition(":")
         if not remote_path or not local_path:
             log(f"WARNING: bad --pull spec (want REMOTE:LOCAL): {spec}")
+            failed.append(spec)
             continue
         try:
             rsync_down(ssh, remote_path, local_path)
         except Exception as e:  # noqa: BLE001
             log(f"WARNING: pull failed for {spec}: {e}")
+            failed.append(spec)
+    return failed
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--pod-id", required=True, help="Runpod pod id")
+    ap.add_argument("--pod-id", default=None, help="existing Runpod pod id to run on (stopped after, never removed)")
+    ap.add_argument("--create-pod", action="store_true",
+                    help="enrol a FRESH pod from the explicit --image/--vcpu/... spec flags, "
+                         "run, then stop + TERMINATE the created pod. Use when an existing "
+                         "pod's host is stuck on start.")
+    ap.add_argument("--clone-from", default=None, metavar="TEMPLATE_POD_ID",
+                    help="like --create-pod but seed the spec from this existing pod via "
+                         "`runpodctl pod get` instead of the explicit flags.")
+    ap.add_argument("--pod-name", default=None,
+                    help="name for the created pod (default: clone-<src>-<timestamp>)")
+    ap.add_argument("--keep-pod", action="store_true",
+                    help="with --create-pod/--clone-from: stop but do NOT terminate the "
+                         "created pod (leave it for inspection).")
+    # explicit pod spec (used by --create-pod). Defaults = the CPU shape for the CPU-bound
+    # trainers/experiments. Pick an --image with python3.11+ and SSH to skip installing
+    # Python on the pod.
+    ap.add_argument("--image", default=None,
+                    help="container image for --create-pod (needs python3.11+ and SSH; "
+                         "e.g. a runpod/pytorch py3.11 image)")
+    ap.add_argument("--compute-type", default="CPU", choices=("CPU", "GPU"),
+                    help="created-pod compute type (default CPU)")
+    ap.add_argument("--vcpu", type=int, default=16, help="created CPU pod: vCPUs (default 16)")
+    ap.add_argument("--mem", type=int, default=32, help="created CPU pod: system memory GB (default 32)")
+    ap.add_argument("--cpu-flavor", default="cpu5c",
+                    help="created CPU pod: RunPod cpu flavor id (default cpu5c = the 16 vCPU shape)")
+    ap.add_argument("--disk", type=int, default=30, help="created pod: container disk GB (default 30)")
+    ap.add_argument("--volume-size", type=int, default=0,
+                    help="created pod: per-pod persistent volume GB (default 0 = none, "
+                         "/workspace on container disk; results are pulled before terminate)")
+    ap.add_argument("--volume-path", default="/workspace", help="created pod: volume mount path")
+    ap.add_argument("--gpu-type", default=None, help="created GPU pod: gpu type id")
+    ap.add_argument("--gpu-count", type=int, default=1, help="created GPU pod: gpu count")
+    ap.add_argument("--data-center", default=None, help="created pod: datacenter id")
+    ap.add_argument("--network-volume-id", default=None, help="created pod: attach this network volume")
+    ap.add_argument("--community", action="store_true",
+                    help="created pod: use community cloud (default secure cloud)")
     ap.add_argument(
         "--train",
         default="-m tokenomics.train.smoke_ppo --iters 50 --steps 1024 --seed 0",
@@ -556,6 +842,18 @@ def main() -> int:
                          "images need e.g. python3.12, as their python3 is below requires-python)")
     args = ap.parse_args()
 
+    # exactly one target: an existing pod (--pod-id) or a freshly created/cloned one.
+    create_mode = args.create_pod or bool(args.clone_from)
+    if bool(args.pod_id) == create_mode:
+        log("ERROR: pass exactly one of --pod-id or --create-pod/--clone-from")
+        return 2
+    if create_mode and args.attach:
+        log("ERROR: --attach reconnects to an existing run; it can't create a pod")
+        return 2
+    if args.create_pod and not args.clone_from and not args.image:
+        log("ERROR: --create-pod needs --image (pick one with python3.11+ and SSH)")
+        return 2
+
     if not args.attach and not args.local_dir.exists():
         log(f"ERROR: local dir not found: {args.local_dir}")
         return 2
@@ -565,9 +863,22 @@ def main() -> int:
     local_log = None if args.no_local_log else (args.local_log or default_local_log(args.remote_log))
     started_ok = False
     detached_interrupt = False
+    pod_id = args.pod_id  # None in clone mode until the pod is created
+    created = False
+    # Never terminate a CREATED pod that may still hold un-pulled artifacts. True only once
+    # every requested --pull has succeeded (or none were requested); any pull failure OR an
+    # error before pulling leaves it False, so the finally keeps the pod for recovery.
+    pulls_ok = not args.pull
     try:
-        start_pod(args.pod_id, retries=args.start_retries, retry_delay=args.start_retry_delay)
-        ssh = wait_for_ssh(args.pod_id, args.ssh_key, args.ready_timeout)
+        if create_mode:
+            # enrol a fresh pod (from a template's spec or explicit flags), then treat it
+            # like any pod. Only a pod created HERE is eligible for termination.
+            spec = fetch_pod_spec(args.clone_from) if args.clone_from else pod_spec_from_args(args)
+            name = args.pod_name or f"clone-{args.clone_from or 'new'}-{int(time.time())}"
+            pod_id = create_pod(spec, name)
+            created = True
+        start_pod(pod_id, retries=args.start_retries, retry_delay=args.start_retry_delay)
+        ssh = wait_for_ssh(pod_id, args.ssh_key, args.ready_timeout)
         started_ok = True
 
         if args.foreground:
@@ -577,7 +888,7 @@ def main() -> int:
             if not args.no_install:
                 setup_env(ssh, args.remote_dir, cpu=args.cpu, python_bin=args.python_bin)
             train(ssh, args.remote_dir, args.train, args.remote_log)
-            _do_pulls(ssh, args.pull)
+            pulls_ok = not _do_pulls(ssh, args.pull)
             log("training complete")
             return 0
 
@@ -596,26 +907,29 @@ def main() -> int:
             log(f"launching detached: {args.train}")
             ssh_run(ssh, launch)
             log(f"launched (survives disconnect). Reattach any time: "
-                f"python run_pod_training.py --pod-id {args.pod_id} --attach "
+                f"python run_pod_training.py --pod-id {pod_id} --attach "
                 f"--remote-log {args.remote_log}{' --cpu' if args.cpu else ''}")
 
         if local_log:
             log(f"mirroring remote log -> {local_log} (tail -f for live progress)")
         rc = monitor_remote(
-            args.pod_id, ssh, args.ssh_key, args.remote_log, pid_file, exit_file,
+            pod_id, ssh, args.ssh_key, args.remote_log, pid_file, exit_file,
             ready_timeout=args.ready_timeout, poll_interval=args.poll_interval,
             local_log=local_log,
         )
         log(f"detached run finished (exit {rc}); pulling results")
-        ssh = resolve_ssh(args.pod_id, args.ssh_key)  # refresh endpoint for the pull
-        _do_pulls(ssh, args.pull)
+        ssh = resolve_ssh(pod_id, args.ssh_key)  # refresh endpoint for the pull
+        pulls_ok = not _do_pulls(ssh, args.pull)
         return rc
     except KeyboardInterrupt:
         if detached:
             detached_interrupt = True
             log("client detached — the run KEEPS GOING on the pod. "
-                f"Reattach: python run_pod_training.py --pod-id {args.pod_id} --attach "
+                f"Reattach: python run_pod_training.py --pod-id {pod_id} --attach "
                 f"--remote-log {args.remote_log}{' --cpu' if args.cpu else ''}")
+            if created:
+                log(f"NOTE: cloned pod {pod_id} was NOT terminated (run still going). "
+                    f"Remove it yourself when done: runpodctl remove pod {pod_id}")
             return 130
         log("interrupted")
         return 130
@@ -623,12 +937,34 @@ def main() -> int:
         log(f"ERROR: {e}")
         return 1
     finally:
-        if args.no_stop:
+        # A cloned pod is stopped AND terminated (the whole point: don't leave a fresh pod
+        # billing). A user-supplied --pod-id is only ever stopped, never removed.
+        if pod_id is None:
+            pass  # clone creation failed before a pod existed — nothing to clean up
+        elif args.no_stop:
             log("--no-stop set: leaving pod running")
+            if created:
+                log(f"NOTE: cloned pod {pod_id} left running — remove with: "
+                    f"runpodctl remove pod {pod_id}")
         elif detached_interrupt:
             log("leaving pod running so the detached run can finish (use --attach to resume)")
-        elif started_ok or pod_status(args.pod_id) == "RUNNING":
-            stop_pod(args.pod_id)
+        elif created and started_ok and not pulls_ok and not args.keep_pod:
+            # A created pod that came up holds the ONLY copy of the artifacts and a --pull
+            # did not confirm success (failed pull, or an error before pulling) —
+            # terminating it would destroy the results. Keep it (stopped) for recovery.
+            # (A pod that never came up produced nothing, so it falls through to terminate.)
+            stop_pod(pod_id)
+            log(f"NOTE: results were NOT confirmed pulled — cloned pod {pod_id} kept "
+                f"(stopped), not terminated, so the artifacts survive. Recover them, then "
+                f"remove it: runpodctl remove pod {pod_id}")
+        elif started_ok or pod_status(pod_id) == "RUNNING":
+            stop_pod(pod_id)
+            if created and not args.keep_pod:
+                remove_pod(pod_id)
+        elif created and not args.keep_pod:
+            # created but never came up (e.g. SSH never ready) — still terminate it so a
+            # half-started clone doesn't linger and bill.
+            remove_pod(pod_id)
 
 
 if __name__ == "__main__":
