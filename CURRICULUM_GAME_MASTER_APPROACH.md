@@ -2,10 +2,10 @@
 
 Status: active roadmap replacing the previous opponent-centric self-improvement plan.
 Stages 0-4 executed and closed on the depth-3 scale family (EXP-0023 .. EXP-0033) — see
-"Executed History And Current Position". Stage 4 produced no new champion (fixed point
-on a saturated family), so the active stage is Stage 4b: apply the same machinery to
-distributions with real headroom and exit only with a promoted champion. Stage 5 waits
-on that exit.
+"Executed History And Current Position". EXP-0030 is now the human-approved incumbent
+producer stack after EXP-0033 demoted its advisory gate miss to saturated-family noise.
+The active stage is Stage 4b: apply the same machinery to distributions with real
+headroom and exit only with a promoted next champion. Stage 5 waits on that exit.
 
 This document defines the self-improvement path for the portable producer/orderer
 stack. The next step is not a learned consumer actor and not a full learned
@@ -71,9 +71,9 @@ roadmap:
 Position: the Stage-4 loop reached a real fixed point on this task family, and the
 family itself is saturated — capacity never binds, so a near-perfect score is
 structurally easy. Improvement requires new task distributions, not a stronger teacher
-on the same archive. The promotion decision for the EXP-0030 candidate (0 transfer
-regressions; one mined blind cell traced to replay concentration) is parked as a
-human call.
+on the same archive. The EXP-0030 candidate is promoted by human override: zero
+transfer regressions, wins in the scarcity/degenerate/uneven regimes Track A cares
+about, and its one mined blind miss sits on the EXP-0033 saturated family.
 
 ## Current System Boundary
 
@@ -85,7 +85,7 @@ Producer:
 - Learned component: `ProducerScoreModel`.
 - Decoder/planner: deterministic `plan_producer_command`.
 - Deployment mode: planner-gated investments for out-of-family safety.
-- Current checkpoint: `experiments/EXP-0021-producer-broaden-training/artifacts/producer_scorer_broad.pt`.
+- Current checkpoint: `experiments/EXP-0030-stage4-freeze-orderer/artifacts/producer_candidate.pt`.
 
 Orderer:
 
@@ -436,12 +436,12 @@ Amendments (binding, from EXP-0026/0027/0029/0030):
 
 Purpose:
 
-Stage 4 validated the replay machinery but formally produced no new champion: the loop
-hit a real fixed point on a demand-saturated family (EXP-0031/0032b/0033, see "Executed
-History"). Stage 4b applies the same Stage 3/4 machinery — with the amendments above —
-to distributions where headroom exists by construction. The stage exits only when a
-candidate passes the promotion gates and a new champion is promoted; only then does
-Stage 5 mutation start.
+Stage 4 validated the replay machinery and produced the EXP-0030 human-approved
+incumbent, but it also hit a real fixed point on a demand-saturated family
+(EXP-0031/0032b/0033, see "Executed History"). Stage 4b applies the same Stage 3/4
+machinery — with the amendments above — to distributions where headroom exists by
+construction. The stage exits only when a candidate passes the promotion gates and a
+next champion is promoted; only then does Stage 5 mutation start.
 
 Three tracks, in order of cost-to-signal. Track A needs no domain change, Track B uses
 reserved task-record machinery, Track C is a domain design change requiring an ADR.
@@ -794,4 +794,3 @@ Do not change learned feature contracts as part of curriculum generation.
 Do not mutate topology or state mid-episode outside legal event/shock primitives.
 
 Do not treat open-ended discovery as the same objective as bounded product robustness.
-

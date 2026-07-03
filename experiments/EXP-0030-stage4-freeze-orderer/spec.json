@@ -53,5 +53,12 @@
     "no_transfer_regression": true,
     "objective_gate_pass": false,
     "promote_recommended": false
+  },
+  "promotion": {
+    "status": "promoted_by_human_override",
+    "date": "2026-07-03",
+    "producer_ckpt": "experiments/EXP-0030-stage4-freeze-orderer/artifacts/producer_candidate.pt",
+    "orderer_ckpt": "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt",
+    "override_reason": "EXP-0031/EXP-0032b/EXP-0033 show the archived validation/blind defects are noise on a saturated family; candidate has zero transfer regressions and improves the intended scarcity/degenerate/uneven regimes."
   }
 }

@@ -1,7 +1,9 @@
 # EXP-0030 - Stage 4 v3a: Producer Augment + Frozen Orderer
 
 Stage 4 of CURRICULUM_GAME_MASTER_APPROACH.md: replay the Stage-3 mined archive,
-relabel + train candidate portable score models, evaluate vs champion. No promotion.
+relabel + train candidate portable score models, evaluate vs champion. Initially recorded
+as no promotion by the advisory gate; later promoted by human override after EXP-0031,
+EXP-0032b, and EXP-0033 closed the apparent gate defects.
 
 Controlled follow-up to EXP-0029: keep the successful augmented producer path, but freeze the
 orderer at the champion checkpoint instead of retraining it on mined replay. This tests whether
@@ -35,6 +37,28 @@ EXP-0029's two transfer regressions were orderer replay noise.
 }
 ```
 
+## Promotion Override
+
+**PROMOTED on 2026-07-03 by human approval.** The advisory gate remains recorded above,
+but it is no longer the controlling decision for this saturated archive.
+
+Rationale:
+
+- The candidate has **0 transfer/stress regressions** and freezes the champion orderer,
+  removing EXP-0029's orderer-noise regressions.
+- The wins land in the intended next-mining regime: scarcity high-backlog, degenerate
+  no-backlog, and uneven-strength transfer cells.
+- EXP-0031/EXP-0032b show no material producer/orderer recoverable headroom remains on
+  the mined archive under this frozen-orderer stack.
+- EXP-0033 shows the EXP-0028 archive is demand-bound and near ceiling: champion/B2 min
+  0.9755, bar/B2 min 0.9819. The val tie miss and blind-tail miss are therefore noise on
+  a saturated family, not a meaningful blocker for the incumbent stack used by Track A.
+
+Promoted stack:
+
+- Producer: `experiments/EXP-0030-stage4-freeze-orderer/artifacts/producer_candidate.pt`.
+- Orderer: `experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt`.
+
 ## Caveat
 
 Producer trained with the selected Stage-4 replay mode, but the orderer is
@@ -47,7 +71,7 @@ none
 
 ## Conclusions
 
-**REJECT for promotion, but v3a confirms the orderer-noise diagnosis.**
+**PROMOTED by human override; v3a confirms the orderer-noise diagnosis.**
 
 1. **Transfer gate is clean.** Freezing the orderer removes EXP-0029's `scale-d3-s9` and
    `sharedcap-d3-w4-s9` regressions. Transfer/stress has 0 contract failures and 0 value
@@ -63,6 +87,6 @@ none
    not orderer replay drift. It is the augmented producer's replay fit moving one mined blind cell
    while preserving transfer.
 
-**Next lever:** do not promote. Run a stratified/duplicate-capped producer replay variant, or reduce
-producer mined-replay concentration, because the sampled replay is still seed-14 heavy
-(`[14, 14, 15, 14, 26, 14, 14, 14]`) and did not improve mined validation/blind robustly.
+**Next lever:** use this stack as the incumbent for Stage 4b Track A. The seed-14 replay
+concentration remains a Stage-4 machinery bug, so future replay runs should use gap priority
+plus a duplicate cap; it no longer requires a hygiene rerun on EXP-0028 before promotion.

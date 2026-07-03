@@ -460,15 +460,15 @@ Decision: current Stage-4 archive is effectively ceiling-saturated. The remainin
   row. Close the current Stage-4 improvement loop; next work is either promotion hygiene for the
   EXP-0030-style candidate or a new distribution/claim axis, not more expert-iteration on EXP-0028.
 Blockers: none.
-Next: optional separate decision: run the parked promotion-hygiene candidate (gap-priority replay,
-  duplicate cap, frozen orderer) if promotion is still desired; otherwise move to the next task
-  distribution/claim axis.
+Next: superseded by the EXP-0030 promotion override below; keep the gap-priority/duplicate-cap
+  amendment for future replay runs.
 
 ## Roadmap update — CURRICULUM_GAME_MASTER_APPROACH.md post-EXP-0033 revision
 Status: DONE (doc-only, no code).
 Artifacts: CURRICULUM_GAME_MASTER_APPROACH.md — (1) new "Executed History And Current
   Position (EXP-0023..0033)" section: stages 0-4 closed on the depth-3 scale family,
-  fixed point real, family demand-saturated, EXP-0030 promotion parked as human call;
+  fixed point real, family demand-saturated, EXP-0030 promotion was parked as human call
+  at the time;
   (2) binding Amendments appended to Stage 3 (ceiling pre-flight via eval/ceiling_bound,
   recoverability gate via cross-stack probes, mining seeds disjoint from held-out) and
   Stage 4 (augment-not-replace, replay priority = gap not mining score + dup-cap <=2,
@@ -485,19 +485,37 @@ Artifacts: CURRICULUM_GAME_MASTER_APPROACH.md — (1) new "Executed History And 
 Decisions: track order = cost-to-signal (A no-domain-change first); TTL design made
   per-order (user proposal) instead of global per-family constant — urgency becomes a
   learnable signal and a game-master dial; ADR required before Track C code.
-Blockers: none. Next: Track A grid spec + ceiling pre-flight wiring, or Track C ADR —
-  user picks; EXP-0030 promotion decision still parked.
+Blockers: none. Next: superseded by the EXP-0030 promotion override below, then Track A grid spec
+  + ceiling pre-flight wiring or Track C ADR.
 
 ## Roadmap restructure — Stage 4b inserted (tracks moved into stage order)
 Status: DONE (doc-only). Follow-up to the post-EXP-0033 revision: the three improvement
   tracks moved from a trailing "Next Improvement Tracks" section into a formal
   "Stage 4b: New-Distribution Curriculum To A New Champion" between Stage 4 and
-  Stage 5 — because Stage 4 formally produced NO new champion (fixed point on a
-  saturated family), the stage order must carry the implementation order.
+  Stage 5 — because Stage 4 had reached a fixed point on a saturated family and the next real
+  improvement must come from a new distribution, the stage order must carry the implementation order.
 Artifacts: CURRICULUM_GAME_MASTER_APPROACH.md — Stage 4b (purpose, Tracks A/B/C
   unchanged in content, stage-exit acceptance = promoted champion via full gates incl.
   mined-val improvement since real headroom exists, reject = all tracks saturate ->
   claim-boundary finding); Stage 5 gains entry criteria (Stage 4b exit); Status header
   updated (active stage = 4b, Stage 5 waits).
-Blockers: none. Next: start Stage 4b Track A (grid spec + ceiling pre-flight wiring)
-  or Track C ADR; EXP-0030 promotion decision still parked.
+Blockers: none. Next: superseded by the EXP-0030 promotion override below, then start Stage 4b
+  Track A (grid spec + ceiling pre-flight wiring) or Track C ADR.
+
+## EXP-0030 promotion override — DONE
+Status: PROMOTED by human approval on 2026-07-03; no rerun.
+Artifacts: experiments/EXP-0030-stage4-freeze-orderer/RESULT.md now carries the promotion
+  override note; spec.json has a top-level `promotion` object. CURRICULUM_GAME_MASTER_APPROACH.md
+  now names the EXP-0030 producer candidate as the active producer checkpoint while retaining the
+  EXP-0012 frozen orderer.
+Reasoning: EXP-0030's advisory gate failed only on mined-val -0.165u and the blind w4p3-s8
+  tail -11.33u, with 0 transfer/stress regressions. EXP-0031/EXP-0032b show there is no
+  meaningful recoverable producer/orderer headroom left on the mined archive under the frozen
+  stack, and EXP-0033 proves the archive is exact-demand saturated (champion/B2 min 0.9755,
+  bar/B2 min 0.9819). The failing rows are therefore noise on a saturated family, while the wins
+  are exactly where Track A should mine next: scarcity high-backlog, degenerate, and uneven cells.
+Decision: promote as-is and skip the hygiene rerun for EXP-0028. Future Stage-4 replay still must
+  use the sampling amendment (gap priority plus duplicate cap) so Track A does not repeat the
+  seed-14 replay concentration failure mode.
+Next: commit this as the EXP-0030 promotion boundary, then implement the replay sampling amendment
+  before Stage 4b Track A.
