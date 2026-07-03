@@ -519,3 +519,16 @@ Decision: promote as-is and skip the hygiene rerun for EXP-0028. Future Stage-4 
   seed-14 replay concentration failure mode.
 Next: commit this as the EXP-0030 promotion boundary, then implement the replay sampling amendment
   before Stage 4b Track A.
+
+## Stage-4 replay sampling amendment — DONE
+Status: implemented locally; no cloud run required.
+Artifacts: tokenomics/eval/curriculum_replay.py now separates `score_from_notes` (mining/archive
+  score) from `priority_from_notes` (replay signal), and Stage-4 replay defaults to raw archived
+  `gap=` priority instead of novelty-weighted mining score. Replacement replay now accepts a
+  positive `max_per_record` cap; the Stage-4 driver and CLI default `--replay-duplicate-cap 2`
+  and emit `replay_priority_signal=gap` plus `replay_duplicate_cap` into spec.json.
+Tests: tokenomics/tests/test_curriculum_replay.py adds the gap-priority parser behavior, capped
+  replacement sampling, oversized capped budgets, and Stage-4 spec metadata assertions.
+Decision: this is the binding pre-4b fix for the EXP-0030 seed-14 concentration failure mode.
+  Track A replay should use the default capped gap-priority path unless a run explicitly records
+  a reason to override it.

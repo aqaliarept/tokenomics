@@ -13,7 +13,7 @@ import pytest
 
 from tokenomics.eval.curriculum import TaskRecord
 from tokenomics.eval.curriculum_replay import (
-    replay_priorities, sample_replay, score_from_notes, split_archive,
+    priority_from_notes, replay_priorities, sample_replay, score_from_notes, split_archive,
 )
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -95,6 +95,18 @@ def test_score_from_notes_falls_back_to_gap() -> None:
 
 def test_score_from_notes_defaults_zero() -> None:
     assert score_from_notes("") == 0.0
+
+
+# --- priority_from_notes -------------------------------------------------------------
+
+def test_priority_from_notes_prefers_gap_over_mining_score() -> None:
+    # Replay priority must rank by recoverable gap. The mining score includes novelty and can
+    # swamp the gap, which caused EXP-0030's seed-14 concentration.
+    assert priority_from_notes("mined: score=0.5153 gap=7.667u win=1.0") == 7.667
+
+
+def test_priority_from_notes_falls_back_to_score() -> None:
+    assert priority_from_notes("mined: score=0.5153 win=1.0") == 0.5153
 
 
 # --- replay_priorities ---------------------------------------------------------------
@@ -193,6 +205,23 @@ def test_sample_with_replacement_deterministic() -> None:
     a = sample_replay(recs, pri, 8, seed=5, replace=True)
     b = sample_replay(recs, pri, 8, seed=5, replace=True)
     assert [r.task_id for r in a] == [r.task_id for r in b]
+
+
+def test_sample_with_replacement_respects_duplicate_cap() -> None:
+    recs = _archive(4)
+    pri = replay_priorities([0.99, 0.01, 0.01, 0.01])
+    got = sample_replay(recs, pri, 8, seed=0, replace=True, max_per_record=2)
+    counts = {r.task_id: [g.task_id for g in got].count(r.task_id) for r in recs}
+    assert len(got) == 8
+    assert max(counts.values()) <= 2
+
+
+def test_sample_with_replacement_duplicate_cap_limits_oversized_budget() -> None:
+    recs = _archive(3)
+    pri = replay_priorities([0.5, 0.3, 0.2])
+    got = sample_replay(recs, pri, 99, seed=0, replace=True, max_per_record=2)
+    assert len(got) == 6
+    assert max([g.task_id for g in got].count(r.task_id) for r in recs) <= 2
 
 
 # --- gate ---------------------------------------------------------------------------
@@ -342,6 +371,8 @@ def test_run_stage4_replay_augment_smoke_and_leakage_drop(tmp_path) -> None:
     spec = _json.loads((out / "spec.json").read_text())
     assert spec["generator_version"] == "stage4-v2"
     assert "augment" in spec["train_mode"]
+    assert spec["replay_priority_signal"] == "gap"
+    assert spec["replay_duplicate_cap"] == 2
     assert (out / "artifacts" / "producer_candidate.pt").exists()
     assert gate["promote_recommended"] is False
 

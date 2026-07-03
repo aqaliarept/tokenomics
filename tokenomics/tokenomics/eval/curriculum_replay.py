@@ -1,18 +1,19 @@
 """Stage 4 prioritized replay + relabeling (CURRICULUM_GAME_MASTER_APPROACH.md Stage 4).
 
 Turn the Stage-3 mined weakness archive into a curriculum: split it into train / validation
-/ blind-holdout replay, priority-sample the train tasks by their mining score, replay each
+/ blind-holdout replay, priority-sample the train tasks by their archived gap, replay each
 under the portable stack's state distribution, **relabel** the visited producer/orderer
 states with the same teachers the mining reference used, **train** fresh portable scorers
 (no schema change), and evaluate the candidate against the champion on the full matrix
 (mined validation, blind holdout, transfer, stress, producer-alone + joint). This is a
 curriculum/eval tool — it never promotes; promotion stays human-approved (doc).
 
-The pure half (`split_archive`, `score_from_notes`, `replay_priorities`, `sample_replay`)
+The pure half (`split_archive`, `priority_from_notes`, `replay_priorities`, `sample_replay`)
 carries the curation logic and is torch-free/unit-tested; `run_stage4_replay` is the
 torch-guarded driver that composes the existing DAgger relabel/train machinery
 (`clone_fidelity.dagger_producer_first`, `orderer_improve.dagger_orderer`) over the replayed
-configs. Priority sampling follows the doc: `priority_i ∝ (epsilon + score_i) ** eta`.
+configs. Priority sampling follows the Stage-4 amendment: `priority_i ∝ (epsilon + gap_i) ** eta`,
+with a duplicate cap on replacement replay draws.
 """
 
 from __future__ import annotations
@@ -29,16 +30,29 @@ _GAP_RE = re.compile(r"gap=([0-9.]+)")
 
 
 def score_from_notes(note: str) -> float:
-    """The task's priority score, read from its self-contained archived `notes`.
+    """The task's mining score, read from its self-contained archived `notes`.
 
-    Prefers the mining `score=` (the `alpha*normalized_gap + beta*novelty` the archive was
-    ranked by); falls back to the `gap=` magnitude so an un-scored record still ranks; 0.0
-    if neither is present (never negative — priority weighting assumes a non-negative score)."""
+    The mining `score=` includes novelty, so it is useful for archive curation but not for
+    replay priority (see `priority_from_notes`). Falls back to `gap=` for older un-scored
+    records; 0.0 if neither is present."""
     m = _SCORE_RE.search(note or "")
     if m:
         return float(m.group(1))
     m = _GAP_RE.search(note or "")
     return float(m.group(1)) if m else 0.0
+
+
+def priority_from_notes(note: str) -> float:
+    """Replay priority signal from archived notes.
+
+    Stage 3's mining score mixes gap with novelty. That is correct for diversifying the
+    archive, but wrong for replay: novelty caused one high-novelty seed to dominate EXP-0030.
+    Replay ranks by the measured gap, falling back to the mining score only for legacy records
+    without `gap=`."""
+    m = _GAP_RE.search(note or "")
+    if m:
+        return float(m.group(1))
+    return score_from_notes(note)
 
 
 def split_archive(records: list[TaskRecord], *, val_frac: float = 0.25,
@@ -80,10 +94,11 @@ def replay_priorities(scores: list[float], *, epsilon: float = 0.01,
 
 
 def sample_replay(records: list[TaskRecord], priorities: list[float], k: int, *,
-                  seed: int = 0, replace: bool = False) -> list[TaskRecord]:
+                  seed: int = 0, replace: bool = False,
+                  max_per_record: int | None = None) -> list[TaskRecord]:
     """Priority-weighted sample of `k` tasks (deterministic given seed).
 
-    Picks which mined tasks to replay for training this round; higher-priority (higher-regret)
+    Picks which mined tasks to replay for training this round; higher-priority (higher-gap)
     tasks are favored but the draw is stochastic so the train set isn't frozen to the top-k.
 
     `replace=False` (default) draws WITHOUT replacement — a distinct subset, at most one copy
@@ -92,14 +107,34 @@ def sample_replay(records: list[TaskRecord], priorities: list[float], k: int, *,
     priorities only reorder it (no actual prioritization).
 
     `replace=True` draws WITH replacement, so priorities genuinely bite even at `k ==
-    len(records)`: high-regret tasks are duplicated and thus replayed more (the intended
-    prioritized-replay semantics), and `k` may exceed the pool size."""
+    len(records)`: high-gap tasks are duplicated and thus replayed more (the intended
+    prioritized-replay semantics), and `k` may exceed the pool size. A positive
+    `max_per_record` caps any one task's replay count; if `k` exceeds the capped capacity,
+    the returned batch is capped at `len(records) * max_per_record`."""
     rng = random.Random(seed)
     if replace:
-        total = sum(max(0.0, w) for w in priorities)
-        if total <= 0.0:  # degenerate -> uniform with replacement
-            return [rng.choice(records) for _ in range(k)] if records else []
-        return list(rng.choices(records, weights=priorities, k=k)) if records else []
+        if not records:
+            return []
+        cap = max_per_record if max_per_record is not None and max_per_record > 0 else None
+        limit = k if cap is None else min(k, len(records) * cap)
+        counts = [0] * len(records)
+        picked: list[TaskRecord] = []
+        for _ in range(limit):
+            available = [
+                i for i in range(len(records))
+                if cap is None or counts[i] < cap
+            ]
+            if not available:
+                break
+            weights = [max(0.0, priorities[i]) for i in available]
+            total = sum(weights)
+            if total <= 0.0:
+                idx = rng.choice(available)
+            else:
+                idx = rng.choices(available, weights=weights, k=1)[0]
+            picked.append(records[idx])
+            counts[idx] += 1
+        return picked
     k = min(k, len(records))
     pool = list(zip(records, priorities))
     picked: list[TaskRecord] = []
@@ -270,7 +305,8 @@ def run_stage4_replay(archive_path: str | Path, producer_ckpt: str, orderer_ckpt
                       horizon: int = 100, reference_bar: str = _MINING_REFERENCE_BAR,
                       fixtures: bool = True, augment: bool = False,
                       broad_seeds: tuple[int, ...] = (0, 1, 2, 3, 4, 5), broad_width: int = 4,
-                      freeze_orderer: bool = False, log=print) -> dict:
+                      freeze_orderer: bool = False, replay_duplicate_cap: int | None = 2,
+                      log=print) -> dict:
     """Stage 4 driver: split the mined archive, relabel+train candidate score models on the
     prioritized train replay, evaluate candidate-vs-champion on the full matrix, emit the EXP
     layout, and return a machine-readable gate. NEVER promotes (doc): the gate is advisory and
@@ -298,16 +334,19 @@ def run_stage4_replay(archive_path: str | Path, producer_ckpt: str, orderer_ckpt
     records = _load_archive(archive_path)
     train, val, blind = split_archive(records, val_frac=val_frac, blind_frac=blind_frac,
                                       seed=split_seed)
-    scores = [score_from_notes(r.notes) for r in train]
+    scores = [priority_from_notes(r.notes) for r in train]
     priorities = replay_priorities(scores, epsilon=priority_epsilon, eta=priority_eta)
     # Default (sample_k=None): draw a full-budget batch WITH replacement so priorities actually
-    # bite — high-regret tasks are duplicated and replayed more (true prioritized replay).
+    # bite — high-gap tasks are duplicated and replayed more (true prioritized replay), but cap
+    # duplicates so one high-novelty/high-gap task cannot consume the whole replay batch.
     # Without replacement + k==len(train) would select every task once, so priorities would only
     # reorder, not prioritize. An explicit --sample-k picks a distinct subset (no replacement).
     if sample_k is not None:
         sampled = sample_replay(train, priorities, sample_k, seed=split_seed, replace=False)
     else:
-        sampled = sample_replay(train, priorities, len(train), seed=split_seed, replace=True)
+        sampled = sample_replay(
+            train, priorities, len(train), seed=split_seed, replace=True,
+            max_per_record=replay_duplicate_cap)
     held = list(held_out_seeds)
 
     # Leakage guard: the mined family and the transfer/joint held-out share a seed namespace
@@ -408,7 +447,8 @@ def run_stage4_replay(archive_path: str | Path, producer_ckpt: str, orderer_ckpt
                  train_seeds=mined_seeds, val_ids=[r.task_id for r in val],
                  blind_ids=[r.task_id for r in blind], depth=depth, reference_bar=reference_bar,
                  priority=(priority_epsilon, priority_eta), split=(val_frac, blind_frac, split_seed),
-                 augment=augment, freeze_orderer=freeze_orderer)
+                 augment=augment, freeze_orderer=freeze_orderer,
+                 replay_duplicate_cap=replay_duplicate_cap)
     log(f"[stage4] gate={gate}")
     return gate
 
@@ -450,7 +490,7 @@ def _stage4_gate(val_rows, blind_rows, tm_rows, regressions) -> dict:
 def _emit_stage4(out: Path, gate, val_rows, blind_rows, tm_rows, joint_rows, regressions, *,
                  producer_ckpt, orderer_ckpt, train_seeds, val_ids, blind_ids, depth,
                  reference_bar, priority, split, augment: bool = False,
-                 freeze_orderer: bool = False) -> None:
+                 freeze_orderer: bool = False, replay_duplicate_cap: int | None = 2) -> None:
     """Write the EXP layout: spec.json, per-split CSVs, summary.csv, and a RESULT.md skeleton
     (conclusions filled by a human from the written artifacts — the driver never promotes)."""
     import json
@@ -480,6 +520,8 @@ def _emit_stage4(out: Path, gate, val_rows, blind_rows, tm_rows, joint_rows, reg
         "reference_bar": reference_bar,
         "depth": depth,
         "priority_epsilon": priority[0], "priority_eta": priority[1],
+        "replay_priority_signal": "gap",
+        "replay_duplicate_cap": replay_duplicate_cap,
         "val_frac": split[0], "blind_frac": split[1], "split_seed": split[2],
         "mined_replay_seeds": train_seeds, "val_task_ids": val_ids, "blind_task_ids": blind_ids,
         "gate": gate,
@@ -537,6 +579,9 @@ def main() -> None:
     ap.add_argument("--split-seed", type=int, default=0)
     ap.add_argument("--priority-epsilon", type=float, default=0.01)
     ap.add_argument("--priority-eta", type=float, default=1.0)
+    ap.add_argument("--replay-duplicate-cap", type=int, default=2,
+                    help="with default replacement replay: max repeats per mined task "
+                         "(<=0 disables the cap)")
     ap.add_argument("--sample-k", type=int, default=None, help="train tasks to replay (default: all)")
     ap.add_argument("--depth", type=int, default=3, help="chain depth of the mined family")
     ap.add_argument("--epochs", type=int, default=400, help="producer scorer fit epochs")
@@ -564,15 +609,18 @@ def main() -> None:
     records = _load_archive(args.archive)
     train, val, blind = split_archive(records, val_frac=args.val_frac, blind_frac=args.blind_frac,
                                       seed=args.split_seed)
-    scores = [score_from_notes(r.notes) for r in train]
+    replay_duplicate_cap = args.replay_duplicate_cap if args.replay_duplicate_cap > 0 else None
+    scores = [priority_from_notes(r.notes) for r in train]
     priorities = replay_priorities(scores, epsilon=args.priority_epsilon, eta=args.priority_eta)
     # Mirror run_stage4_replay: explicit --sample-k = distinct subset (no replacement); default
-    # = full-budget WITH replacement so priorities duplicate high-regret tasks (real prioritized
+    # = full-budget WITH replacement so priorities duplicate high-gap tasks (real prioritized
     # replay), rather than selecting every task once.
     if args.sample_k is not None:
         sampled = sample_replay(train, priorities, args.sample_k, seed=args.split_seed, replace=False)
     else:
-        sampled = sample_replay(train, priorities, len(train), seed=args.split_seed, replace=True)
+        sampled = sample_replay(
+            train, priorities, len(train), seed=args.split_seed, replace=True,
+            max_per_record=replay_duplicate_cap)
 
     held = tuple(int(x) for x in args.held_out_seeds.split(","))
     blo, bhi = (int(x) for x in args.broad_seeds.split("-"))
@@ -586,13 +634,14 @@ def main() -> None:
         print(f"[dry-run] mode={'AUGMENT broad(' + args.broad_seeds + ')+mined' if args.augment else 'mined-only'}"
               f"; orderer={'frozen_champion' if args.freeze_orderer else 'trained'}"
               f"; held-out={list(held)}; dropped-for-leakage seeds={held_leaked}")
-        print(f"[dry-run] prioritized train ({len(sampled)} draws, eta={args.priority_eta}); "
+        print(f"[dry-run] prioritized train ({len(sampled)} draws, gap priority, "
+              f"duplicate_cap={replay_duplicate_cap}, eta={args.priority_eta}); "
               f"'xN' = replay count:")
         ranked = sorted(zip(train, priorities, scores), key=lambda t: -t[1])
         for rec, p, s in ranked:
             n = counts[rec.task_id]
             mark = f"x{n}" if n else "  "
-            print(f"  {mark} p={p:.4f} score={s:.4f} {rec.task_id}")
+            print(f"  {mark} p={p:.4f} gap={s:.4f} {rec.task_id}")
         print(f"[dry-run] val ids: {[r.task_id for r in val]}")
         print(f"[dry-run] blind ids: {[r.task_id for r in blind]}")
         return
@@ -607,7 +656,8 @@ def main() -> None:
         lr=args.lr, hidden=args.hidden, held_out_seeds=held,
         eval_seeds=args.eval_seeds, horizon=args.horizon, reference_bar=args.reference_bar,
         fixtures=not args.no_fixtures, augment=args.augment, broad_seeds=broad_seeds,
-        broad_width=args.broad_width, freeze_orderer=args.freeze_orderer, log=print)
+        broad_width=args.broad_width, freeze_orderer=args.freeze_orderer,
+        replay_duplicate_cap=replay_duplicate_cap, log=print)
 
 
 if __name__ == "__main__":

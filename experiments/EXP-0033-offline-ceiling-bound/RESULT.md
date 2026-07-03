@@ -43,8 +43,9 @@ at least 97.55% of the exact available demand in every archived task, and averag
 The search bar averages 99.0%, so the mined "gap" is only the last 1-2% of demanded units,
 not evidence of a large hidden policy ceiling.
 
-B3 temporal LP is not worth adding for this archive: B0 already binds every row, so a
-more detailed temporal/capacity LP cannot produce a lower valid upper bound than exact
-consumer demand. The Stage-4 fixed point is real for this task family. Further improvement
-should move to a different distribution/claim axis or a promotion hygiene decision, not a
-stronger `mpc_search` teacher for these archived tasks.
+B3 temporal LP is not worth adding for this archive. A temporal LP could in principle
+tighten the upper bound below total demand if TTL or timing were binding, but B1/B2 found
+no capacity pressure and the observed stacks already reach 98-99% of exact demand. The
+decision is therefore unchanged: the Stage-4 fixed point is real for this task family.
+Further improvement should move to a different distribution/claim axis or a promotion
+hygiene decision, not a stronger `mpc_search` teacher for these archived tasks.
