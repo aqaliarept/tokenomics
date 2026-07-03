@@ -1,0 +1,57 @@
+{
+  "stage": 4,
+  "title": "prioritized replay + relabeling",
+  "generator_version": "stage4-v3a",
+  "train_mode": "augment (broad + mined replay)",
+  "orderer_train_mode": "frozen_champion",
+  "champion_producer_ckpt": "/workspace/tokenomics/_pod_ckpts/producer_scorer_broad.pt",
+  "champion_orderer_ckpt": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+  "producer_teacher": "entity_planner",
+  "orderer_teacher": "champion_checkpoint",
+  "reference_bar": "entity_planner+mpc_search",
+  "depth": 3,
+  "priority_epsilon": 0.01,
+  "priority_eta": 1.0,
+  "val_frac": 0.25,
+  "blind_frac": 0.25,
+  "split_seed": 0,
+  "mined_replay_seeds": [
+    14,
+    14,
+    15,
+    14,
+    26,
+    14,
+    14,
+    14
+  ],
+  "val_task_ids": [
+    "mine-build_scale_config-depth3-producers_per_layer5-products_per_layer4-s21",
+    "mine-build_scale_config-depth3-producers_per_layer5-products_per_layer4-s20",
+    "mine-build_scale_config-depth3-producers_per_layer5-products_per_layer3-s20",
+    "mine-build_scale_config-depth3-producers_per_layer4-products_per_layer5-s12",
+    "mine-build_scale_config-depth3-producers_per_layer6-products_per_layer4-s11",
+    "mine-build_scale_config-depth3-producers_per_layer4-products_per_layer4-s27"
+  ],
+  "blind_task_ids": [
+    "mine-build_scale_config-depth3-producers_per_layer5-products_per_layer5-s15",
+    "mine-build_scale_config-depth3-producers_per_layer6-products_per_layer4-s20",
+    "mine-build_scale_config-depth3-producers_per_layer5-products_per_layer3-s21",
+    "mine-build_scale_config-depth3-producers_per_layer4-products_per_layer3-s12",
+    "mine-build_scale_config-depth3-producers_per_layer5-products_per_layer3-s6",
+    "mine-build_scale_config-depth3-producers_per_layer4-products_per_layer3-s8"
+  ],
+  "gate": {
+    "val_candidate_units": 493.89,
+    "val_champion_units": 494.055,
+    "val_improves_or_ties": false,
+    "blind_candidate_tail": 472.67,
+    "blind_champion_tail": 484.0,
+    "blind_tail_not_worse": false,
+    "new_contract_failures": 0,
+    "transfer_regressions": 0,
+    "no_transfer_regression": true,
+    "objective_gate_pass": false,
+    "promote_recommended": false
+  }
+}

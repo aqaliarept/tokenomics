@@ -196,3 +196,113 @@ Note: none of these alter EXP-0026 (single-cell archive: replayed config == buil
   and replace-vs-not is near-identical over one topology cell) — the REJECT stands, no pod re-run.
 Blockers: none.
 Next: unchanged — topology-grid mining, then Stage 4 v2 (augment, not replace).
+
+## Stage 4 bug-fixed rerun (EXP-0027) — REJECT stands, now scientifically valid
+Status: cloud run done (fresh 16-vCPU pod, terminated), pulled to
+  experiments/EXP-0027-stage4-replay-fixed. Suite 552 green. Controlled rerun of EXP-0026 with the
+  three review fixes applied, defaults otherwise identical (single-cell archive, eta=1.0, ε=0.01,
+  epochs/iters=400, mpc_search bar, fixtures).
+Result: candidate now BEATS champion on mined-val (512.998 vs 511.333, +1.67u; EXP-0026 was +0.06u
+  wash), blind tail (445.67 vs 444.33), and every scale/sharedcap/scarcity/degenerate cell. Lift is
+  the ORDERER (orderer-alone 497.7/594.0 > champ on s6/s8) — bug-fix #1 (with-replacement duplication)
+  reweighted the fit; updates EXP-0026's "orderer can't move". BUT same 4 uneven-strength regressions
+  (456–528 vs 487–584, −16..−128u), producer-side (producer-alone ≈ champ on scale). 0 contract fails.
+Why it matters: reproduces the EXP-0026 REJECT for the SAME structural reason on the CORRECT effective
+  data → the rejection was never a data-bug artifact. The two prescribed fixes (broaden archive across
+  topologies; AUGMENT not replace the broad train set) are confirmed as the real next steps.
+Ops bug filed (not fixed): run_pod_training detached-launch SSH hung — remote launch shell stuck in
+  do_wait, never exits → client blocks in ssh_run(launch), never reaches monitor_remote, no streaming.
+  Root-caused with ps/wchan evidence. Run itself fine (setsid job independent); recovered via manual
+  reconnecting `tail -F` + rsync pull, pod terminated. Proposed fix: `… & ; exit 0` + `ssh -n` on the
+  remote launch, and a bounded timeout on ssh_run(launch). Observability heartbeat worked up to launch.
+Blockers: none (Stage 4 concluded on this archive).
+Next: topology-grid mining (EXP-0025 blocker), then Stage 4 v2 = augment broad train set with
+  prioritized mined replay. Optionally apply the run_pod launch-hang fix. No promotion; champion untouched.
+
+## run_pod launch-hang fix (item 1 of the post-EXP-0027 queue)
+Status: DONE. Applied the three-part fix to run_pod_training.py; suite 555 green (+3 tests).
+Artifacts: run_pod_training.py — build_launch_cmd now appends `exit 0` after the backgrounded
+  `setsid … &` (outer sshd shell exits instead of sitting in do_wait); Ssh.base_cmd(no_stdin=True)
+  adds `ssh -n`; ssh_run gains `timeout`/`no_stdin`, launch call bounded by LAUNCH_TIMEOUT_S=60 and
+  on TimeoutExpired logs + falls through to monitor_remote (liveness via pid/exit files either way).
+  tests/test_run_pod_detached.py +3 (outer-shell-exit, base_cmd -n, ssh_run timeout threads -n).
+Decisions: timeout path is non-fatal — the detached job runs in its own session, so a slow/hung
+  launch shell no longer blocks the client; monitor picks the job up from the pod files regardless.
+Blockers: none. Not committed (per rule).
+Next: item 2 — topology-grid mining (vary depth/products/producers so the archive has distinct
+  novelty cells), then item 3 — Stage 4 v2 (augment, not replace).
+
+## Topology-grid mining driver + launch (item 2 of the post-EXP-0027 queue)
+Status: IN PROGRESS (cloud run launched). Driver made grid-capable; suite 560 green (+5 tests).
+Artifacts (code): tokenomics/eval/curriculum_mining.py — parse_grid (JSON list of param cells,
+  falls back to single default cell = old behaviour), grid_pool (concat mining_pool over cells;
+  distinct params ⇒ distinct task_ids), grid_shards (distribute workers across cell×seed grid);
+  main() gains --grid/--params, _mine_parallel shards by (cell,seed-range) passing --params JSON;
+  tests/test_curriculum_mining.py +5. Quoting round-trip through build_launch_cmd verified (grid
+  JSON survives as one argv token).
+Run: EXP-0028 topology-grid mine — 9 IN-CLAIM depth-3 scale cells (products_per_layer∈{3,4,5} ×
+  producers_per_layer∈{4,5,6} → products 9-15, producers 12-18, all inside the stage-5 envelope
+  8-16/10-20/3), 30 seeds/cell = 270 tasks, eval-seeds 3, mpc_search bar, min-gap 2.0/min-win 0.6.
+  9 distinct descriptor cells (was 1 in EXP-0025). Fresh 16-vCPU pod via --create-pod (auto-terminate).
+Decisions: kept the grid honestly in-claim (fixed depth=3, the claimed wall axis; varied width +
+  producer density only) so gaps score policy_weakness, not distribution_mismatch. Depth-4+ excluded
+  (out-of-claim / feasibility wall). This also live-tests the fix-#1 launch path.
+Blockers: none yet. Next: pull EXP-0028, report histogram + archived topology-cell spread, then
+  item 3 = Stage 4 v2 (augment broad train set with prioritized mined replay).
+
+## Topology-grid mining (EXP-0028) — DONE, single-cell blocker FIXED
+Status: cloud run done (fresh 16-vCPU pod, auto-terminated), pulled to
+  experiments/EXP-0028-topology-grid-mining. Suite 560. First live run on the FIXED
+  detached-launch path (item 1) — client reached monitor_remote, streamed, no hang.
+Result: 270 sampled over 9 in-claim depth-3 cells (width×producer-density); {none:221,
+  policy_weakness:49}; 26 archived across 8 of 9 TOPOLOGY cells (EXP-0025 was 1), gaps
+  2.0-7.33u mean 3.67, 12/26 robust 3-of-3 wins, even spread, 0 contract fails / 0 deaths.
+Finding: weakness concentrates at LOW producer density (producers=12 → pw 8/8/9; producers=18
+  → 2/5/1), ~independent of width — mineable gap lives where capacity is tight vs demand (the
+  capacity-asymmetry axis the single-cell EXP-0025 couldn't see; exactly the coverage Stage 4
+  needs to avoid the uneven-strength regression).
+Decisions: grid kept honestly in-claim (depth fixed at claimed 3; only width + producer density
+  varied, all inside stage-5 envelope) so gaps are policy_weakness not distribution_mismatch.
+  EXP-0028 artifacts are jsonl/logs only (no .pt → no git-lfs).
+Blockers: none. Next: item 3 = Stage 4 v2 — augment champion's broad producer/orderer train set
+  with THIS prioritized mined replay (not mined-only distill), re-eval transfer/stress.
+
+## Stage 4 v2 — augment-not-replace (item 3) code + EXP-0029 launch
+Status: IN PROGRESS (cloud run launched, pod 76ycecm9w2shrj). Suite 563 green (+3 tests).
+Artifacts (code): tokenomics/eval/curriculum_replay.py — new augmented_train_configs (champions'
+  broad sets + mined replay: producer = broadened_producer_train_configs(0-5,d3,w4) = 54 economies
+  incl. the UNEVEN family the mined-only run dropped; orderer = build_scale_config(0-5,d3) = 6) +
+  mined replay, per-distiller aligned seeds; run_stage4_replay gains augment/broad_seeds/broad_width;
+  LEAKAGE GUARD drops replay tasks whose world_seed ∈ held_out (mining seeds 0-29 overlap held-out
+  6-9 → a mined w4p4 s6 cell could reconstruct held-out scale-d3-s6); spec/RESULT record augment
+  mode (stage4-v2). CLI --augment/--broad-seeds/--broad-width; dry-run shows mode + dropped seeds.
+  tests/test_curriculum_replay.py +3.
+Run: EXP-0029 = controlled flip of EXP-0027 to augment=True on the EXP-0028 diverse archive.
+  Hyperparams matched to the CHAMPIONS (producer epochs 300 lr 0.01 = EXP-0021; orderer iters 400
+  = EXP-0012) so the broad half reproduces the champion → any residual uneven gap is about
+  data/augment, not under-training. eta 1.0, ε 0.01, eval-seeds 3, held 6,7,8,9, fixtures on.
+  Dry-run on real archive: 26→train14/val6/blind6, leakage-drop seeds [7,9], AUGMENT mode. Fresh
+  16-vCPU pod (--create-pod, auto-terminate).
+Decisions: held everything constant vs EXP-0027 except the augment flip (+ champion-matched
+  hyperparams) → isolates the augment effect. Success criterion: candidate keeps/beats champion on
+  mined-val + blind AND sheds the 4 uneven-strength regressions (456-528 vs 487-584 in EXP-0027).
+Blockers: none yet. Next: pull EXP-0029, check the 4 uneven cells + gate, write RESULT, then STOP.
+
+## Stage 4 v2 augment (EXP-0029) — DONE, producer regression CLOSED (item 3, final)
+Status: cloud run done (fresh 16-vCPU pod, auto-terminated), pulled to
+  experiments/EXP-0029-stage4-augment. Suite 563. Controlled flip of EXP-0027 to augment=True on
+  the EXP-0028 diverse archive; champion-matched hyperparams; leakage guard dropped seeds 7,9.
+Result: augmented PRODUCER reproduces champion EXACTLY on held-out scale (producer_alone ==
+  champion 491.3/496.7/589.3/544.7 every seed) AND joint candidate BEATS champion on all 4
+  uneven-strength cells (+1.67/+2/+4/+4.67) — the 4 EXP-0027 regressions (−16..−128u) are GONE.
+  First Stage-4 candidate with no producer-side transfer regression. Mined-val tie (−0.11u), blind
+  tail +2. Residual: 2 regressions → 1 locus, ORDERER-side (scale-d3-s9 + sharedcap twin, −13u
+  −2.4%, carried by candidate_orderer_alone) from the novelty/seed-14-heavy mined orderer replay.
+  0 contract fails, 0 deaths. Gate promote_recommended=false (val tie + 2 regressions).
+Why it matters: DECISIVELY confirms the EXP-0026/0027 diagnosis+fix — the uneven regressions were a
+  replace-not-augment coverage hole; augment closes them. Producer half solved. Next lever = ORDERER
+  (down-weight or drop mined replay into the orderer; its scorer distills only from proportional and
+  can't absorb mined search-oracle headroom anyway).
+Artifacts: augmented_train_configs + --augment/--broad-seeds/--broad-width + leakage guard in
+  curriculum_replay.py; +3 tests. EXP-0029 candidate .pt files need git-lfs on commit. Not committed.
+Blockers: none. Items 1,2,3 all DONE. (Stopping here per user.)

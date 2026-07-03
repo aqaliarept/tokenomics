@@ -23,6 +23,7 @@ is only kept when the reference beats the learner on a *paired* fraction of seed
 
 from __future__ import annotations
 
+import json
 from typing import Callable
 
 from ..domain.config import Configuration
@@ -81,6 +82,52 @@ def shard_seeds(lo: int, hi: int, workers: int) -> list[tuple[int, int]]:
         size = base + (1 if i < extra else 0)
         shards.append((start, start + size - 1))
         start += size
+    return shards
+
+
+def parse_grid(spec: "str | None", *, default: dict) -> list[dict]:
+    """Parse a `--grid` JSON list of param-dict cells into the topology grid to mine.
+
+    Each cell is the non-seed `params` for the generator (e.g.
+    `{"depth":3,"products_per_layer":5}`); the seed sweep is applied within every cell. A
+    missing/empty spec falls back to a single `default` cell (the EXP-0025 single-cell
+    behaviour, so the old call site is unchanged). This is the fix for the EXP-0025 blocker:
+    a *grid* of cells gives the ranking's novelty term distinct descriptor cells to spread
+    the archive across instead of collapsing onto one depth-3 cell."""
+    if not spec:
+        return [dict(default)]
+    cells = json.loads(spec)
+    if not isinstance(cells, list) or not cells or not all(isinstance(c, dict) for c in cells):
+        raise ValueError("grid must be a non-empty JSON list of param-dict cells")
+    return cells
+
+
+def grid_pool(generator: str, cells: list[dict], seeds: "range | list[int]", *,
+              boundary: str = "in_claim", id_prefix: str = "mine") -> list[TaskRecord]:
+    """Concatenate `mining_pool` over a grid of param cells → one pool spanning topology cells.
+
+    Distinct params ⇒ distinct task_ids (the sorted params string is baked into the id), so
+    the same seed may recur across cells without an id collision. Ranking's novelty term then
+    spreads the archive across the descriptor cells the grid induces (the EXP-0025 fix)."""
+    pool: list[TaskRecord] = []
+    for params in cells:
+        pool += mining_pool(generator, seeds, params, boundary=boundary, id_prefix=id_prefix)
+    return pool
+
+
+def grid_shards(cells: list[dict], lo: int, hi: int, workers: int) -> list[tuple[dict, int, int]]:
+    """Distribute `workers` processes across the (cell × seed-range) grid.
+
+    Every cell gets at least one shard; when `workers > len(cells)` each cell's seed range is
+    split into `workers // len(cells)` contiguous sub-shards (via `shard_seeds`), so the total
+    is ≈ `workers` and no core idles. Deterministic → a parallel grid mine ranks identically to
+    a sequential one (ranking is global over the merged rows)."""
+    n = max(1, len(cells))
+    per_cell = max(1, workers // n)
+    shards: list[tuple[dict, int, int]] = []
+    for cell in cells:
+        for slo, shi in shard_seeds(lo, hi, per_cell):
+            shards.append((cell, slo, shi))
     return shards
 
 
@@ -363,17 +410,20 @@ def _joint_stack_learner(producer_model: object, orderer_model: object) -> Learn
     return run
 
 
-def _mine_parallel(args: "argparse.Namespace", lo: int, hi: int) -> list[dict]:
-    """Fan the seed range out across `args.workers` child processes, one per shard, then
-    merge their evaluated rows. Mirrors `tokenomics.train.parallel`: mining per task is
-    single-threaded, so throughput comes from independent processes, one per core, each with
-    BLAS pinned to 1 thread (no oversubscription). The parent ranks the merged rows."""
+def _mine_parallel(args: "argparse.Namespace", lo: int, hi: int, cells: list[dict]) -> list[dict]:
+    """Fan the (cell × seed-range) grid out across `args.workers` child processes, one per
+    shard, then merge their evaluated rows. Mirrors `tokenomics.train.parallel`: mining per
+    task is single-threaded, so throughput comes from independent processes, one per core, each
+    with BLAS pinned to 1 thread (no oversubscription). The parent ranks the merged rows.
+
+    Each child runs ONE cell's params over a seed sub-range (`--params <json> --seeds LO-HI`);
+    passing params as JSON on argv (Popen list = no shell) keeps the grid shape exact."""
     import os
     import subprocess
     import sys
     from pathlib import Path
 
-    shards = shard_seeds(lo, hi, args.workers)
+    shards = grid_shards(cells, lo, hi, args.workers)
     out = Path(args.out_dir)
     logs = out / "artifacts" / "logs"
     rowdir = out / "artifacts" / "shard_rows"
@@ -382,16 +432,17 @@ def _mine_parallel(args: "argparse.Namespace", lo: int, hi: int) -> list[dict]:
     env = dict(os.environ, OMP_NUM_THREADS="1", MKL_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1")
 
     procs = []
-    for i, (slo, shi) in enumerate(shards):
+    for i, (cell, slo, shi) in enumerate(shards):
         rowpath = rowdir / f"shard_{i}_{slo}-{shi}.jsonl"
         cmd = [sys.executable, "-u", "-m", "tokenomics.eval.curriculum_mining",
                "--producer-ckpt", args.producer_ckpt, "--orderer-ckpt", args.orderer_ckpt,
-               "--generator", args.generator, "--depth", str(args.depth),
+               "--generator", args.generator, "--params", json.dumps(cell),
                "--boundary", args.boundary, "--reference-bar", args.reference_bar,
                "--eval-seeds", str(args.eval_seeds), "--horizon", str(args.horizon),
                "--seeds", f"{slo}-{shi}", "--emit-rows", str(rowpath), "--workers", "1"]
         lf = (logs / f"shard_{i}.log").open("w")
-        print(f"[parallel] worker {i}: seeds {slo}-{shi} -> {rowpath.name} (log {lf.name})")
+        print(f"[parallel] worker {i}: {json.dumps(cell)} seeds {slo}-{shi} "
+              f"-> {rowpath.name} (log {lf.name})")
         procs.append((subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT, env=env),
                       lf, rowpath))
 
@@ -442,6 +493,13 @@ def main() -> None:
     ap.add_argument("--generator", default="build_scale_config",
                     help=f"vetted reproducer to sample (available: {','.join(REPRODUCERS)})")
     ap.add_argument("--depth", type=int, default=3, help="chain depth param for the generator")
+    ap.add_argument("--params", default=None,
+                    help="INTERNAL/single-cell: JSON params dict for the generator "
+                         "(e.g. '{\"depth\":3,\"products_per_layer\":5}'); overrides --depth")
+    ap.add_argument("--grid", default=None,
+                    help="topology GRID: JSON list of param-dict cells to mine (each cell's "
+                         "params get the full seed sweep). Spreads the archive across distinct "
+                         "descriptor cells (EXP-0025 single-cell fix). Parent-only.")
     ap.add_argument("--seeds", default="20-119", help="inclusive seed range LO-HI for the pool")
     ap.add_argument("--boundary", default="in_claim",
                     choices=("in_claim", "out_of_claim", "feasibility_wall"))
@@ -461,15 +519,23 @@ def main() -> None:
         ap.error(f"unknown generator {args.generator!r}; available: {','.join(REPRODUCERS)}")
     if args.reference_bar not in REFERENCE_BARS:
         ap.error(f"unknown reference bar {args.reference_bar!r}; available: {','.join(REFERENCE_BARS)}")
+    if args.grid and args.params:
+        ap.error("--grid (multi-cell parent) and --params (single cell) are mutually exclusive")
     lo, hi = (int(x) for x in args.seeds.split("-"))
-    pool = mining_pool(args.generator, range(lo, hi + 1), {"depth": args.depth},
-                       boundary=args.boundary)
+    # cells = the topology grid to mine. --grid (parent) > --params (child/single) > --depth.
+    if args.grid:
+        cells = parse_grid(args.grid, default={"depth": args.depth})
+    elif args.params:
+        cells = [json.loads(args.params)]
+    else:
+        cells = [{"depth": args.depth}]
+    pool = grid_pool(args.generator, cells, range(lo, hi + 1), boundary=args.boundary)
 
     if args.dry_run:
-        shards = shard_seeds(lo, hi, args.workers)
-        print(f"[dry-run] {len(pool)} tasks {args.generator} depth={args.depth} "
+        shards = grid_shards(cells, lo, hi, args.workers)
+        print(f"[dry-run] {len(pool)} tasks {args.generator} cells={cells} "
               f"seeds={lo}-{hi} ref={args.reference_bar} eval_seeds={args.eval_seeds} "
-              f"workers={args.workers} shards={shards}")
+              f"workers={args.workers} shards={len(shards)}")
         for r in pool[:5]:
             print(f"  {r.task_id}")
         return
@@ -490,7 +556,7 @@ def main() -> None:
         ap.error("--out-dir is required (except in --emit-rows child mode)")
 
     if args.workers > 1:
-        rows = _mine_parallel(args, lo, hi)
+        rows = _mine_parallel(args, lo, hi, cells)
     else:
         rows = evaluate_pool(pool, learner, eval_seeds=args.eval_seeds, horizon=args.horizon,
                              reference_bar=args.reference_bar, log=print)
@@ -505,11 +571,13 @@ def main() -> None:
     write_matrix_csv(csv_rows, out / "artifacts" / "curriculum_matrix.csv")
     write_matrix_csv(csv_rows, out / "summary.csv")
 
-    cells = {tuple(r["descriptor"]) for r in rows}
-    arch_cells = {(r.world_spec["params"].get("depth"),) for r in archived}
-    print(f"\n{len(pool)} sampled; failure classes: {_class_histogram(rows)}")
+    pool_cells = {tuple(r["descriptor"]) for r in rows}
+    arch_cells = {tuple(r["descriptor"]) for r in rows
+                  if r["task_id"] in {a.task_id for a in archived}}
+    print(f"\n{len(pool)} sampled over {len(cells)} grid cells; "
+          f"failure classes: {_class_histogram(rows)}")
     print(f"archived {len(archived)} policy_weakness tasks; "
-          f"pool topology cells={len(cells)}; archived depth cells={len(arch_cells)}")
+          f"pool topology cells={len(pool_cells)}; archived topology cells={len(arch_cells)}")
 
 
 if __name__ == "__main__":

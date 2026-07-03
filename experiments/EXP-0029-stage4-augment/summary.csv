@@ -1,0 +1,17 @@
+task_id,task_family,expected_claim_boundary,target_products,target_producers,target_capacity_types,target_depth,learner_units,learner_rejected_units,learner_dead,reference_model_id,reference_units,reference_rejected_units,reference_dead,reference_status,ratio_vs_reference,contract_ok,failure_class,notes,seed,producers,joint_units,bar_units,ratio,dead,bar_dead,stack
+,,,,,,,,,,,,,,,,,,,6,12,491.33,458.0,1.072772925764192,0.0,0.0,champion
+,,,,,,,,,,,,,,,,,,,7,12,496.67,473.67,1.0485570122659236,0.0,0.0,champion
+,,,,,,,,,,,,,,,,,,,8,12,589.33,499.67,1.17943842936338,0.0,0.0,champion
+,,,,,,,,,,,,,,,,,,,9,12,544.67,491.33,1.108562473286793,0.0,0.0,champion
+,,,,,,,,,,,,,,,,,,,6,12,493.33,458.0,1.0771397379912664,0.0,0.0,candidate_joint
+,,,,,,,,,,,,,,,,,,,7,12,496.67,473.67,1.0485570122659236,0.0,0.0,candidate_joint
+,,,,,,,,,,,,,,,,,,,8,12,591.67,499.67,1.1841215202033342,0.0,0.0,candidate_joint
+,,,,,,,,,,,,,,,,,,,9,12,531.67,491.33,1.0821036777725763,0.0,0.0,candidate_joint
+,,,,,,,,,,,,,,,,,,,6,12,491.33,458.0,1.072772925764192,0.0,0.0,candidate_producer_alone
+,,,,,,,,,,,,,,,,,,,7,12,496.67,473.67,1.0485570122659236,0.0,0.0,candidate_producer_alone
+,,,,,,,,,,,,,,,,,,,8,12,589.33,499.67,1.17943842936338,0.0,0.0,candidate_producer_alone
+,,,,,,,,,,,,,,,,,,,9,12,544.67,491.33,1.108562473286793,0.0,0.0,candidate_producer_alone
+,,,,,,,,,,,,,,,,,,,6,12,493.33,458.0,1.0771397379912664,0.0,0.0,candidate_orderer_alone
+,,,,,,,,,,,,,,,,,,,7,12,496.67,473.67,1.0485570122659236,0.0,0.0,candidate_orderer_alone
+,,,,,,,,,,,,,,,,,,,8,12,591.67,499.67,1.1841215202033342,0.0,0.0,candidate_orderer_alone
+,,,,,,,,,,,,,,,,,,,9,12,532.33,491.33,1.0834469704679137,0.0,0.0,candidate_orderer_alone

@@ -229,6 +229,38 @@ def _transfer_regressions(rows: list[dict], *, rel_tol: float = 0.02) -> list[di
     return out
 
 
+def augmented_train_configs(
+    mined_configs: list, mined_seeds: list[int], depth: int, *,
+    broad_seeds: tuple[int, ...] = (0, 1, 2, 3, 4, 5), broad_width: int = 4,
+) -> tuple[tuple[list, list[int]], tuple[list, list[int]]]:
+    """Build the Stage-4 v2 AUGMENTED train sets: the champions' original broad coverage PLUS
+    the prioritized mined replay (EXP-0027 lesson — augment, don't replace).
+
+    Returns `((producer_configs, producer_seeds), (orderer_configs, orderer_seeds))`, each the
+    broad set concatenated with the mined replay:
+    - producer broad = `broadened_producer_train_configs(broad_seeds, depth, broad_width)` — the
+      EXP-0021 champion set (scale + forkjoin + sharedcap + **uneven** + 5 scarcity per seed).
+      Keeping the uneven family is the whole point: training the producer from scratch on
+      mined-only cells dropped it and regressed uneven-strength transfer (EXP-0026/0027).
+    - orderer broad = `build_scale_config(s, depth)` over `broad_seeds` — the EXP-0012 champion
+      scale-only set.
+    The producer distiller ignores `train_seeds` when `train_configs` is given (it rolls each
+    config from seed 0), so its seeds are a positional filler; the orderer distiller zips
+    seeds↔configs (the rollout reset seed), so orderer seeds align 1:1 with orderer configs."""
+    from .scale import build_scale_config
+    from ..train.producer_scorer import broadened_producer_train_configs
+
+    broad_prod = [cfg for _, cfg in
+                  broadened_producer_train_configs(list(broad_seeds), depth=depth, width=broad_width)]
+    prod_configs = broad_prod + list(mined_configs)
+    prod_seeds = list(range(len(prod_configs)))  # unused by the producer distiller (configs given)
+
+    broad_ord = [build_scale_config(s, depth=depth) for s in broad_seeds]
+    ord_configs = broad_ord + list(mined_configs)
+    ord_seeds = list(broad_seeds) + list(mined_seeds)  # aligned 1:1 with ord_configs
+    return (prod_configs, prod_seeds), (ord_configs, ord_seeds)
+
+
 def run_stage4_replay(archive_path: str | Path, producer_ckpt: str, orderer_ckpt: str,
                       out_dir: str | Path, *, val_frac: float = 0.25, blind_frac: float = 0.25,
                       split_seed: int = 0, priority_epsilon: float = 0.01,
@@ -236,12 +268,14 @@ def run_stage4_replay(archive_path: str | Path, producer_ckpt: str, orderer_ckpt
                       epochs: int = 400, iters: int = 400, lr: float = 3e-3, hidden: int = 64,
                       held_out_seeds: tuple[int, ...] = (6, 7, 8, 9), eval_seeds: int = 3,
                       horizon: int = 100, reference_bar: str = _MINING_REFERENCE_BAR,
-                      fixtures: bool = True, log=print) -> dict:
+                      fixtures: bool = True, augment: bool = False,
+                      broad_seeds: tuple[int, ...] = (0, 1, 2, 3, 4, 5), broad_width: int = 4,
+                      freeze_orderer: bool = False, log=print) -> dict:
     """Stage 4 driver: split the mined archive, relabel+train candidate score models on the
     prioritized train replay, evaluate candidate-vs-champion on the full matrix, emit the EXP
     layout, and return a machine-readable gate. NEVER promotes (doc): the gate is advisory and
-    `promote_recommended` is always False here — the single-cell archive caps this at
-    'promising', and promotion is human-approved from the written experiment record.
+    `promote_recommended` is always False here because promotion is human-approved from the
+    written experiment record.
 
     Composes existing entry points: `distill_producer_scorer` (entity_planner teacher, the
     mining bar's producer) over the replayed train configs, `distill_orderer_scorer`
@@ -274,28 +308,60 @@ def run_stage4_replay(archive_path: str | Path, producer_ckpt: str, orderer_ckpt
         sampled = sample_replay(train, priorities, sample_k, seed=split_seed, replace=False)
     else:
         sampled = sample_replay(train, priorities, len(train), seed=split_seed, replace=True)
-    train_seeds = [r.world_seed for r in sampled]
-    train_configs = [replay(r) for r in sampled]
     held = list(held_out_seeds)
-    _seed_counts = {s: train_seeds.count(s) for s in dict.fromkeys(train_seeds)}
+
+    # Leakage guard: the mined family and the transfer/joint held-out share a seed namespace
+    # (mining seeds can include the held-out 6-9), and a mined scale cell at a held-out seed can
+    # exactly reconstruct a held-out target. Drop any replay task at a held-out seed so the
+    # candidate is never trained on a topology it is then evaluated on.
+    held_set = set(held)
+    leaked = [r for r in sampled if r.world_seed in held_set]
+    if leaked:
+        log(f"[stage4] dropping {len(leaked)} replay tasks at held-out seeds "
+            f"{sorted({r.world_seed for r in leaked})} to avoid eval leakage")
+        sampled = [r for r in sampled if r.world_seed not in held_set]
+
+    mined_seeds = [r.world_seed for r in sampled]
+    mined_configs = [replay(r) for r in sampled]
+    _seed_counts = {s: mined_seeds.count(s) for s in dict.fromkeys(mined_seeds)}
     log(f"[stage4] archive={len(records)} train={len(train)} val={len(val)} blind={len(blind)}"
-        f" | prioritized train seeds (count)={_seed_counts}")
+        f" | prioritized mined seeds (count)={_seed_counts}")
+
+    # v2 AUGMENT: mix the champions' broad train sets with the mined replay (EXP-0027 lesson).
+    # v1 (default): distill from mined-only (replace) — the EXP-0026/0027 behaviour, kept for
+    # controlled comparison.
+    if augment:
+        (prod_configs, prod_seeds), (ord_configs, ord_seeds) = augmented_train_configs(
+            mined_configs, mined_seeds, depth, broad_seeds=broad_seeds, broad_width=broad_width)
+        orderer_desc = ("frozen champion checkpoint"
+                        if freeze_orderer else
+                        f"{len(ord_configs)} (broad {len(ord_configs) - len(mined_configs)} + mined)")
+        log(f"[stage4] AUGMENT: producer {len(prod_configs)} topologies "
+            f"(broad {len(prod_configs) - len(mined_configs)} + mined {len(mined_configs)}); "
+            f"orderer {orderer_desc}")
+    else:
+        prod_configs, prod_seeds = mined_configs, mined_seeds
+        ord_configs, ord_seeds = mined_configs, mined_seeds
 
     # 2. relabel + train candidate score models (champion format).
     prod_path = str(art / "producer_candidate.pt")
     ord_path = str(art / "orderer_candidate.pt")
     _phase(2, _PHASES[1], log)
-    log("[stage4] distilling producer candidate (entity_planner teacher over mined configs)...")
-    distill_producer_scorer(depth, train_seeds, held, epochs, lr, eval_seeds, horizon,
-                            save=prod_path, hidden=hidden, train_configs=train_configs, log=log)
+    log(f"[stage4] distilling producer candidate (entity_planner teacher, {len(prod_configs)} configs)...")
+    distill_producer_scorer(depth, prod_seeds, held, epochs, lr, eval_seeds, horizon,
+                            save=prod_path, hidden=hidden, train_configs=prod_configs, log=log)
     _phase(3, _PHASES[2], log)
-    log("[stage4] distilling orderer candidate (proportional teacher over mined configs)...")
-    distill_orderer_scorer(depth, train_seeds, held, iters, eval_seeds, horizon,
-                           save=ord_path, hidden=hidden, log=log, train_configs=train_configs)
+    if freeze_orderer:
+        log("[stage4] freezing orderer candidate at champion checkpoint; skipping orderer distill")
+    else:
+        log(f"[stage4] distilling orderer candidate (proportional teacher, {len(ord_configs)} configs)...")
+        distill_orderer_scorer(depth, ord_seeds, held, iters, eval_seeds, horizon,
+                               save=ord_path, hidden=hidden, log=log, train_configs=ord_configs)
 
     # 3. load champion + candidate score models.
     champ_prod, champ_ord = load_producer_score_model(producer_ckpt), load_scorer(orderer_ckpt)
-    cand_prod, cand_ord = load_producer_score_model(prod_path), load_scorer(ord_path)
+    cand_prod = load_producer_score_model(prod_path)
+    cand_ord = champ_ord if freeze_orderer else load_scorer(ord_path)
     champ_run = _joint_stack_learner(champ_prod, champ_ord)
     cand_run = _joint_stack_learner(cand_prod, cand_ord)
 
@@ -339,9 +405,10 @@ def run_stage4_replay(archive_path: str | Path, producer_ckpt: str, orderer_ckpt
     gate = _stage4_gate(val_rows, blind_rows, tm_rows, regressions)
     _emit_stage4(out, gate, val_rows, blind_rows, tm_rows, joint_rows, regressions,
                  producer_ckpt=producer_ckpt, orderer_ckpt=orderer_ckpt,
-                 train_seeds=train_seeds, val_ids=[r.task_id for r in val],
+                 train_seeds=mined_seeds, val_ids=[r.task_id for r in val],
                  blind_ids=[r.task_id for r in blind], depth=depth, reference_bar=reference_bar,
-                 priority=(priority_epsilon, priority_eta), split=(val_frac, blind_frac, split_seed))
+                 priority=(priority_epsilon, priority_eta), split=(val_frac, blind_frac, split_seed),
+                 augment=augment, freeze_orderer=freeze_orderer)
     log(f"[stage4] gate={gate}")
     return gate
 
@@ -351,31 +418,39 @@ def _stage4_gate(val_rows, blind_rows, tm_rows, regressions) -> dict:
 
     A row's `contract_ok`/`crashed` come from the mining evaluate. Candidate must: improve or
     tie champion mean units on mined validation, not drop the blind-holdout tail, add zero new
-    contract failures, and cause no transfer/stress regression. `promote_recommended` is always
-    False (single-cell archive + human-approved promotion)."""
+    contract failures, and cause no transfer/stress regression. `objective_gate_pass` records
+    that objective result; `promote_recommended` remains False for human-approved promotion."""
     val_c, val_h = _mean_units(val_rows, "candidate"), _mean_units(val_rows, "champion")
     blind_c, blind_h = _min_units(blind_rows, "candidate"), _min_units(blind_rows, "champion")
     new_contract_failures = sum(
         1 for r in tm_rows if r["stack"] == "candidate"
         and not (r.get("producer_contract_compatible") and r.get("orderer_contract_compatible")))
     tol = 1e-6
+    val_ok = val_c >= val_h - tol
+    blind_ok = blind_c >= blind_h - tol
+    no_transfer_regression = not regressions
+    objective_gate_pass = (
+        val_ok and blind_ok and new_contract_failures == 0 and no_transfer_regression
+    )
     return {
         "val_candidate_units": round(val_c, 3),
         "val_champion_units": round(val_h, 3),
-        "val_improves_or_ties": val_c >= val_h - tol,
+        "val_improves_or_ties": val_ok,
         "blind_candidate_tail": round(blind_c, 3),
         "blind_champion_tail": round(blind_h, 3),
-        "blind_tail_not_worse": blind_c >= blind_h - tol,
+        "blind_tail_not_worse": blind_ok,
         "new_contract_failures": int(new_contract_failures),
         "transfer_regressions": len(regressions),
-        "no_transfer_regression": not regressions,
-        "promote_recommended": False,  # single-cell archive; promotion is human-approved
+        "no_transfer_regression": no_transfer_regression,
+        "objective_gate_pass": objective_gate_pass,
+        "promote_recommended": False,  # promotion is human-approved
     }
 
 
 def _emit_stage4(out: Path, gate, val_rows, blind_rows, tm_rows, joint_rows, regressions, *,
                  producer_ckpt, orderer_ckpt, train_seeds, val_ids, blind_ids, depth,
-                 reference_bar, priority, split) -> None:
+                 reference_bar, priority, split, augment: bool = False,
+                 freeze_orderer: bool = False) -> None:
     """Write the EXP layout: spec.json, per-split CSVs, summary.csv, and a RESULT.md skeleton
     (conclusions filled by a human from the written artifacts — the driver never promotes)."""
     import json
@@ -389,35 +464,57 @@ def _emit_stage4(out: Path, gate, val_rows, blind_rows, tm_rows, joint_rows, reg
     write_matrix_csv(tm_rows, art / "transfer_matrix.csv")
     write_matrix_csv(joint_rows, out / "summary.csv")
 
+    mode = "augment (broad + mined replay)" if augment else "mined-only (replace)"
+    orderer_mode = "frozen_champion" if freeze_orderer else mode
+    version = "stage4-v3a" if freeze_orderer else ("stage4-v2" if augment else "stage4-v1")
     spec = {
         "stage": 4,
         "title": "prioritized replay + relabeling",
-        "generator_version": "stage4-v1",
+        "generator_version": version,
+        "train_mode": mode,
+        "orderer_train_mode": orderer_mode,
         "champion_producer_ckpt": producer_ckpt,
         "champion_orderer_ckpt": orderer_ckpt,
         "producer_teacher": "entity_planner",
-        "orderer_teacher": "proportional",
+        "orderer_teacher": "champion_checkpoint" if freeze_orderer else "proportional",
         "reference_bar": reference_bar,
         "depth": depth,
         "priority_epsilon": priority[0], "priority_eta": priority[1],
         "val_frac": split[0], "blind_frac": split[1], "split_seed": split[2],
-        "train_seeds": train_seeds, "val_task_ids": val_ids, "blind_task_ids": blind_ids,
+        "mined_replay_seeds": train_seeds, "val_task_ids": val_ids, "blind_task_ids": blind_ids,
         "gate": gate,
     }
     (out / "spec.json").write_text(json.dumps(spec, indent=2) + "\n")
 
+    if freeze_orderer:
+        caveat = [
+            "Producer trained with the selected Stage-4 replay mode, but the orderer is",
+            "**frozen at the champion checkpoint**. This isolates producer augment from orderer",
+            "replay noise; promotion remains human-approved. `PROMOTE_RECOMMENDED=false`.",
+        ]
+    else:
+        caveat = (
+            ["Trained by **augmenting** the champions' original broad train sets with the",
+             "prioritized mined replay (Stage-4 v2 — keeps the uneven-strength / broad coverage the",
+             "mined-only run dropped). The portable orderer still distills only from the proportional",
+             "teacher, so it cannot absorb the search-oracle headroom the mined gap used. Promotion is",
+             "human-approved. `PROMOTE_RECOMMENDED=false`."]
+            if augment else
+            ["Trained **mined-only** (replace). The orderer score model distills only from the",
+             "proportional teacher and cannot absorb the search-oracle headroom the mined gap used —",
+             "the orderer half is expected to reproduce the champion (a scorer-architecture limit, not",
+             "a training-data gap). `PROMOTE_RECOMMENDED=false`."]
+        )
+    stage_label = ("v3a (frozen orderer)" if freeze_orderer else
+                   ("v2 (augment)" if augment else "v1 (mined-only)"))
     lines = [
-        "# EXP-0026 — Stage 4: Prioritized Replay & Relabeling", "",
+        f"# Stage 4 {stage_label}: "
+        "Prioritized Replay & Relabeling", "",
         "Stage 4 of CURRICULUM_GAME_MASTER_APPROACH.md: replay the Stage-3 mined archive,",
         "relabel + train candidate portable score models, evaluate vs champion. No promotion.", "",
         "## Gate (advisory — promotion is human-approved)", "",
         "```json", json.dumps(gate, indent=2), "```", "",
-        "## Caveat", "",
-        "Archive is **single-cell** (all mined tasks `build_scale_config depth=3`), so the best",
-        "outcome is *promising, not promoted*. The orderer score model distills only from the",
-        "proportional teacher and cannot absorb the search-oracle headroom the mined gap used —",
-        "the orderer half is expected to reproduce the champion (a scorer-architecture limit, not",
-        "a training-data gap). `PROMOTE_RECOMMENDED=false`.", "",
+        "## Caveat", "", *caveat, "",
         "## Transfer/stress regressions vs champion", "",
         ("none" if not regressions else "```json\n" + json.dumps(regressions, indent=2) + "\n```"), "",
         "## Conclusions", "", "_TODO (human): fill from the artifacts above._", "",
@@ -451,6 +548,16 @@ def main() -> None:
     ap.add_argument("--horizon", type=int, default=100)
     ap.add_argument("--reference-bar", default=_MINING_REFERENCE_BAR)
     ap.add_argument("--no-fixtures", action="store_true", help="skip the fixture stress targets (faster)")
+    ap.add_argument("--augment", action="store_true",
+                    help="Stage-4 v2: AUGMENT the champions' broad train sets with the prioritized "
+                         "mined replay (keeps uneven/broad coverage) instead of distilling mined-only")
+    ap.add_argument("--freeze-orderer", action="store_true",
+                    help="Stage-4 v3a: train the producer as requested, but reuse the champion "
+                         "orderer checkpoint instead of distilling a candidate orderer")
+    ap.add_argument("--broad-seeds", default="0-5",
+                    help="with --augment: champions' broad train seeds (LO-HI, default 0-5)")
+    ap.add_argument("--broad-width", type=int, default=4,
+                    help="with --augment: products_per_layer for the broad producer set (default 4)")
     ap.add_argument("--dry-run", action="store_true", help="print split + priorities, train nothing")
     args = ap.parse_args()
 
@@ -467,10 +574,18 @@ def main() -> None:
     else:
         sampled = sample_replay(train, priorities, len(train), seed=args.split_seed, replace=True)
 
+    held = tuple(int(x) for x in args.held_out_seeds.split(","))
+    blo, bhi = (int(x) for x in args.broad_seeds.split("-"))
+    broad_seeds = tuple(range(blo, bhi + 1))
+
     if args.dry_run:
         counts = {r.task_id: [s.task_id for s in sampled].count(r.task_id) for r in train}
+        held_leaked = sorted({r.world_seed for r in sampled if r.world_seed in set(held)})
         print(f"[dry-run] archive={len(records)} -> train={len(train)} val={len(val)} "
               f"blind={len(blind)} (split_seed={args.split_seed})")
+        print(f"[dry-run] mode={'AUGMENT broad(' + args.broad_seeds + ')+mined' if args.augment else 'mined-only'}"
+              f"; orderer={'frozen_champion' if args.freeze_orderer else 'trained'}"
+              f"; held-out={list(held)}; dropped-for-leakage seeds={held_leaked}")
         print(f"[dry-run] prioritized train ({len(sampled)} draws, eta={args.priority_eta}); "
               f"'xN' = replay count:")
         ranked = sorted(zip(train, priorities, scores), key=lambda t: -t[1])
@@ -489,12 +604,11 @@ def main() -> None:
         val_frac=args.val_frac, blind_frac=args.blind_frac, split_seed=args.split_seed,
         priority_epsilon=args.priority_epsilon, priority_eta=args.priority_eta,
         sample_k=args.sample_k, depth=args.depth, epochs=args.epochs, iters=args.iters,
-        lr=args.lr, hidden=args.hidden,
-        held_out_seeds=tuple(int(x) for x in args.held_out_seeds.split(",")),
+        lr=args.lr, hidden=args.hidden, held_out_seeds=held,
         eval_seeds=args.eval_seeds, horizon=args.horizon, reference_bar=args.reference_bar,
-        fixtures=not args.no_fixtures, log=print)
+        fixtures=not args.no_fixtures, augment=args.augment, broad_seeds=broad_seeds,
+        broad_width=args.broad_width, freeze_orderer=args.freeze_orderer, log=print)
 
 
 if __name__ == "__main__":
     main()
-

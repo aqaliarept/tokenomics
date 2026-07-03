@@ -1,0 +1,28 @@
+{
+  "archive": "../experiments/EXP-0028-topology-grid-mining/artifacts/task_archive.jsonl",
+  "candidates": [
+    "even_split",
+    "proportional"
+  ],
+  "csv": "../experiments/EXP-0031-gap-attribution-smoke/gap_attribution.csv",
+  "curriculum_matrix": "../experiments/EXP-0028-topology-grid-mining/artifacts/curriculum_matrix.csv",
+  "dominant_channel_counts": {
+    "not_producer": 2
+  },
+  "eval_seeds": 3,
+  "horizon": 100,
+  "lookahead": 6,
+  "n_samples": 8,
+  "orderer_ckpt": "_pod_ckpts/orderer_scorer.pt",
+  "orderer_closure_ratio": null,
+  "orderer_cross": false,
+  "positive_gap_rows": 2,
+  "producer_ckpt": "_pod_ckpts/producer_scorer_broad.pt",
+  "producer_closure_ratio": 0.0,
+  "rows": 2,
+  "sample_scale": 1.0,
+  "sum_positive_gap_units": 13.0,
+  "sum_positive_orderer_only_gain": null,
+  "sum_positive_producer_only_gain": 0.0,
+  "workers": 1
+}

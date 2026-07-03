@@ -1,0 +1,31 @@
+{
+  "experiment": "EXP-0028-topology-grid-mining",
+  "stage": "curriculum game-master Stage 3 (random hard-case mining) — topology GRID",
+  "question": "Does mining over a GRID of in-claim topology cells (not one depth-3 seed sweep) produce a diverse archive, fixing the EXP-0025 single-cell blocker?",
+  "learner_stack": {
+    "producer": "experiments/EXP-0021-producer-broaden-training/artifacts/producer_scorer_broad.pt",
+    "orderer": "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt"
+  },
+  "reference_bar": "entity_planner+mpc_search",
+  "generator": "build_scale_config",
+  "grid_cells": [
+    {"depth": 3, "products_per_layer": 3, "producers_per_layer": 4},
+    {"depth": 3, "products_per_layer": 3, "producers_per_layer": 5},
+    {"depth": 3, "products_per_layer": 3, "producers_per_layer": 6},
+    {"depth": 3, "products_per_layer": 4, "producers_per_layer": 4},
+    {"depth": 3, "products_per_layer": 4, "producers_per_layer": 5},
+    {"depth": 3, "products_per_layer": 4, "producers_per_layer": 6},
+    {"depth": 3, "products_per_layer": 5, "producers_per_layer": 4},
+    {"depth": 3, "products_per_layer": 5, "producers_per_layer": 5},
+    {"depth": 3, "products_per_layer": 5, "producers_per_layer": 6}
+  ],
+  "grid_rationale": "All cells fixed at depth=3 (the claimed depth / wall axis, held constant so gaps stay honestly in-claim policy_weakness, never distribution_mismatch). Only WIDTH (products_per_layer) and PRODUCER DENSITY (producers_per_layer) vary -> products 9/12/15, producers 12/15/18, all inside the stage-5 envelope (8-16 products, 10-20 producers, 3 consumers). This gives 9 distinct (depth,products,producers,caps) descriptor cells for the ranking's novelty term to spread the archive across.",
+  "seeds_per_cell": "0-29 (30)",
+  "pool_size": 270,
+  "eval_seeds": 3,
+  "horizon": 100,
+  "gates": {"min_gap": 2.0, "min_win_frac": 0.6},
+  "ranking": {"alpha": 1.0, "beta": 0.5},
+  "infra": "fresh 16-vCPU CPU pod via run_pod_training.py --create-pod (base:0.7.0-ubuntu2004, --cpu --python python3.12); 9 parallel shards (one per cell); auto-stopped AND terminated after pull",
+  "promotion": "none — mining only curates tasks; no learner change, no promotion"
+}

@@ -45,6 +45,54 @@ def test_build_launch_cmd_detaches_and_records_pid_and_exit() -> None:
     assert "/workspace/train.log" in cmd
 
 
+def test_build_launch_cmd_forces_outer_shell_to_exit() -> None:
+    # EXP-0027 hang fix: the outer sshd-spawned shell must exit right after backgrounding the
+    # setsid job (else it sits in do_wait, keeping the SSH channel open so ssh_run never returns).
+    cmd = rpt.build_launch_cmd(
+        remote_dir="/workspace/tokenomics",
+        python_bin_path=".venv/bin/python",
+        train_args="-m tokenomics.train.smoke_ppo --iters 50",
+        log_file="/workspace/train.log",
+        pid_file="/workspace/train.pid",
+        exit_file="/workspace/train.exit",
+    )
+    assert cmd.rstrip().endswith("exit 0")
+    # the exit follows the backgrounded job (order matters: background THEN exit)
+    assert cmd.index("setsid") < cmd.index("exit 0")
+    assert "&" in cmd.split("exit 0")[0]
+
+
+def test_base_cmd_no_stdin_passes_dash_n() -> None:
+    # the detached launch uses `ssh -n` so the channel isn't held open on stdin.
+    ssh = rpt.Ssh(ip="1.2.3.4", port=22, key="/tmp/k")
+    assert "-n" in ssh.base_cmd(no_stdin=True)
+    # default (poll/capture) must NOT pass -n — those read remote stdout normally.
+    assert "-n" not in ssh.base_cmd()
+
+
+def test_ssh_run_times_out_and_raises(monkeypatch) -> None:
+    # a hung launch must surface as TimeoutExpired (the caller then falls through to monitor),
+    # not block forever. Bound via the `timeout` arg threaded into subprocess.run.
+    import subprocess
+
+    seen: dict[str, object] = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        seen["cmd"] = cmd
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+
+    monkeypatch.setattr(rpt.subprocess, "run", fake_run)
+    ssh = rpt.Ssh(ip="1.2.3.4", port=22, key="/tmp/k")
+    try:
+        rpt.ssh_run(ssh, "sleep 999", timeout=60, no_stdin=True)
+        assert False, "expected TimeoutExpired"
+    except subprocess.TimeoutExpired:
+        pass
+    assert seen["timeout"] == 60
+    assert "-n" in seen["cmd"]  # no_stdin threaded through to base_cmd
+
+
 def test_parse_poll_output_separates_new_log_from_status_sentinel() -> None:
     raw = (
         "epoch 1 loss 0.5\n"

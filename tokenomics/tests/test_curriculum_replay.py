@@ -195,6 +195,64 @@ def test_sample_with_replacement_deterministic() -> None:
     assert [r.task_id for r in a] == [r.task_id for r in b]
 
 
+# --- gate ---------------------------------------------------------------------------
+
+def test_stage4_gate_has_objective_pass_but_keeps_promotion_advisory() -> None:
+    from tokenomics.eval.curriculum_replay import _stage4_gate
+
+    val_rows = [
+        {"stack": "champion", "learner_units": 10.0},
+        {"stack": "candidate", "learner_units": 10.0},
+    ]
+    blind_rows = [
+        {"stack": "champion", "learner_units": 9.0},
+        {"stack": "candidate", "learner_units": 9.0},
+    ]
+    tm_rows = [
+        {
+            "stack": "candidate",
+            "producer_contract_compatible": True,
+            "orderer_contract_compatible": True,
+        }
+    ]
+    gate = _stage4_gate(val_rows, blind_rows, tm_rows, regressions=[])
+    assert gate["objective_gate_pass"] is True
+    assert gate["promote_recommended"] is False
+
+
+# --- augmented_train_configs (v2: augment, not replace) ------------------------------
+
+from tokenomics.eval.curriculum_replay import augmented_train_configs
+
+
+def test_augment_prepends_broad_sets_and_keeps_mined_replay() -> None:
+    # v2 = champions' broad train sets + mined replay. Producer broad = 9 topologies/seed
+    # (scale+forkjoin+sharedcap+uneven+5 scarcity); orderer broad = 1 scale config/seed.
+    from tokenomics.eval.scale import build_scale_config
+    mined = [build_scale_config(20, depth=3), build_scale_config(21, depth=3)]
+    mined_seeds = [20, 21]
+    (pcfg, pseed), (ocfg, oseed) = augmented_train_configs(
+        mined, mined_seeds, depth=3, broad_seeds=(0, 1, 2, 3, 4, 5), broad_width=4)
+    # producer: 6 seeds * 9 topologies + 2 mined = 56
+    assert len(pcfg) == 6 * 9 + 2
+    assert len(pseed) == len(pcfg)  # positional filler, but must match length
+    # orderer: 6 broad scale + 2 mined = 8, seeds aligned 1:1
+    assert len(ocfg) == 6 + 2
+    assert oseed == [0, 1, 2, 3, 4, 5, 20, 21]
+    # the mined configs are the trailing entries (broad coverage is not dropped, it's prepended)
+    assert ocfg[-2:] == mined
+
+
+def test_augment_keeps_the_uneven_family_the_mined_only_run_dropped() -> None:
+    # the whole point: the broad producer set includes the uneven-strength family, so the
+    # augmented producer keeps the coverage whose absence caused the EXP-0026/0027 regression.
+    from tokenomics.eval.scale import build_scale_config
+    (pcfg, _), _ = augmented_train_configs(
+        [build_scale_config(20, depth=3)], [20], depth=3, broad_seeds=(0,), broad_width=4)
+    # 1 seed * 9 topologies + 1 mined = 10; the 9 broad ones are the champion families.
+    assert len(pcfg) == 10
+
+
 # --- driver micro-smoke (torch) ------------------------------------------------------
 
 def _mined_record(seed: int, depth: int, score: float) -> TaskRecord:
@@ -250,5 +308,70 @@ def test_run_stage4_replay_smoke(tmp_path) -> None:
     # advisory gate is present and never self-promotes.
     assert gate["promote_recommended"] is False
     for key in ("val_improves_or_ties", "blind_tail_not_worse", "new_contract_failures",
-                "no_transfer_regression"):
+                "no_transfer_regression", "objective_gate_pass"):
         assert key in gate
+
+
+def test_run_stage4_replay_augment_smoke_and_leakage_drop(tmp_path) -> None:
+    """v2 augment path: trains on broad + mined replay, drops replay tasks at held-out seeds,
+    records the augment mode. Fast (depth-2, 1 broad seed, 2 fit steps, no fixtures)."""
+    pytest.importorskip("torch")
+    if not (_CHAMP_PROD.exists() and _CHAMP_ORD.exists()):
+        pytest.skip("champion checkpoints not present")
+    import json as _json
+    from tokenomics.eval.curriculum import write_archive
+    from tokenomics.eval.curriculum_replay import run_stage4_replay
+
+    depth = 2
+    archive = tmp_path / "task_archive.jsonl"
+    # seed 6 is a held-out seed below -> its replay task must be dropped (leakage guard).
+    write_archive([_mined_record(s, depth, 0.2 + 0.1 * i) for i, s in enumerate((0, 1, 2, 6))],
+                  archive)
+    out = tmp_path / "exp"
+    captured: list[str] = []
+    gate = run_stage4_replay(
+        archive, str(_CHAMP_PROD), str(_CHAMP_ORD), out,
+        depth=depth, epochs=2, iters=2, held_out_seeds=(6,), eval_seeds=1, horizon=20,
+        reference_bar="entity_planner+proportional", fixtures=False,
+        augment=True, broad_seeds=(0,), broad_width=4, log=captured.append)
+
+    # the held-out-seed (6) replay task was dropped to avoid eval leakage.
+    assert any("dropping" in ln and "held-out" in ln for ln in captured)
+    # augment mode is logged and recorded in the spec.
+    assert any(ln.startswith("[stage4] AUGMENT:") for ln in captured)
+    spec = _json.loads((out / "spec.json").read_text())
+    assert spec["generator_version"] == "stage4-v2"
+    assert "augment" in spec["train_mode"]
+    assert (out / "artifacts" / "producer_candidate.pt").exists()
+    assert gate["promote_recommended"] is False
+
+
+def test_run_stage4_replay_freeze_orderer_smoke(tmp_path) -> None:
+    """v3a path: producer still trains, orderer distill is skipped and champion orderer is used."""
+    pytest.importorskip("torch")
+    if not (_CHAMP_PROD.exists() and _CHAMP_ORD.exists()):
+        pytest.skip("champion checkpoints not present")
+    import json as _json
+    from tokenomics.eval.curriculum import write_archive
+    from tokenomics.eval.curriculum_replay import run_stage4_replay
+
+    depth = 2
+    archive = tmp_path / "task_archive.jsonl"
+    write_archive([_mined_record(s, depth, 0.2 + 0.1 * i) for i, s in enumerate((0, 1, 2, 6))],
+                  archive)
+    out = tmp_path / "exp"
+    captured: list[str] = []
+    gate = run_stage4_replay(
+        archive, str(_CHAMP_PROD), str(_CHAMP_ORD), out,
+        depth=depth, epochs=2, iters=2, held_out_seeds=(6,), eval_seeds=1, horizon=20,
+        reference_bar="entity_planner+proportional", fixtures=False,
+        augment=True, broad_seeds=(0,), broad_width=4, freeze_orderer=True, log=captured.append)
+
+    assert any("freezing orderer candidate" in ln for ln in captured)
+    assert not any("distilling orderer candidate" in ln for ln in captured)
+    spec = _json.loads((out / "spec.json").read_text())
+    assert spec["generator_version"] == "stage4-v3a"
+    assert spec["orderer_train_mode"] == "frozen_champion"
+    assert spec["gate"]["objective_gate_pass"] == gate["objective_gate_pass"]
+    assert (out / "artifacts" / "producer_candidate.pt").exists()
+    assert not (out / "artifacts" / "orderer_candidate.pt").exists()

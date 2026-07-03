@@ -1,0 +1,58 @@
+{
+  "stage": 4,
+  "title": "prioritized replay + relabeling",
+  "generator_version": "stage4-v1",
+  "champion_producer_ckpt": "/workspace/tokenomics/_pod_ckpts/producer_scorer_broad.pt",
+  "champion_orderer_ckpt": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+  "producer_teacher": "entity_planner",
+  "orderer_teacher": "proportional",
+  "reference_bar": "entity_planner+mpc_search",
+  "depth": 3,
+  "priority_epsilon": 0.01,
+  "priority_eta": 1.0,
+  "val_frac": 0.25,
+  "blind_frac": 0.25,
+  "split_seed": 0,
+  "train_seeds": [
+    7,
+    174,
+    4,
+    57,
+    151,
+    42,
+    174,
+    170,
+    4,
+    73,
+    7,
+    151
+  ],
+  "val_task_ids": [
+    "mine-build_scale_config-depth3-s99",
+    "mine-build_scale_config-depth3-s136",
+    "mine-build_scale_config-depth3-s54",
+    "mine-build_scale_config-depth3-s96",
+    "mine-build_scale_config-depth3-s28",
+    "mine-build_scale_config-depth3-s61"
+  ],
+  "blind_task_ids": [
+    "mine-build_scale_config-depth3-s62",
+    "mine-build_scale_config-depth3-s195",
+    "mine-build_scale_config-depth3-s6",
+    "mine-build_scale_config-depth3-s80",
+    "mine-build_scale_config-depth3-s27",
+    "mine-build_scale_config-depth3-s66"
+  ],
+  "gate": {
+    "val_candidate_units": 512.998,
+    "val_champion_units": 511.333,
+    "val_improves_or_ties": true,
+    "blind_candidate_tail": 445.67,
+    "blind_champion_tail": 444.33,
+    "blind_tail_not_worse": true,
+    "new_contract_failures": 0,
+    "transfer_regressions": 4,
+    "no_transfer_regression": false,
+    "promote_recommended": false
+  }
+}

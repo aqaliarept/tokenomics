@@ -194,4 +194,53 @@ def test_mine_parallel_aborts_when_a_shard_fails(tmp_path) -> None:
         reference_bar="entity_planner+proportional", eval_seeds=1, horizon=20,
         workers=2, out_dir=str(tmp_path / "out"))
     with pytest.raises(RuntimeError, match="shard"):
-        _mine_parallel(args, 0, 3)
+        _mine_parallel(args, 0, 3, [{"depth": 3}])
+
+
+from tokenomics.eval.curriculum_mining import parse_grid, grid_pool, grid_shards
+
+
+def test_parse_grid_defaults_to_single_cell_when_absent() -> None:
+    # no grid spec -> the EXP-0025 single-cell behaviour (unchanged old call site).
+    assert parse_grid(None, default={"depth": 3}) == [{"depth": 3}]
+    assert parse_grid("", default={"depth": 3}) == [{"depth": 3}]
+
+
+def test_parse_grid_parses_a_json_list_of_param_cells() -> None:
+    cells = parse_grid('[{"depth":3,"products_per_layer":4},{"depth":3,"products_per_layer":5}]',
+                       default={"depth": 3})
+    assert cells == [{"depth": 3, "products_per_layer": 4}, {"depth": 3, "products_per_layer": 5}]
+
+
+def test_parse_grid_rejects_non_list_or_empty() -> None:
+    for bad in ("{}", "[]", "[1,2]", "42"):
+        with pytest.raises(ValueError, match="grid"):
+            parse_grid(bad, default={"depth": 3})
+
+
+def test_grid_pool_spans_cells_with_unique_ids_and_replayable() -> None:
+    cells = [{"depth": 2, "products_per_layer": 3}, {"depth": 2, "products_per_layer": 4}]
+    pool = grid_pool("build_scale_config", cells, range(0, 3), boundary="in_claim")
+    assert len(pool) == len(cells) * 3
+    # distinct params -> distinct ids even at the same seed (no collision across cells).
+    assert len({r.task_id for r in pool}) == len(pool)
+    # every task replays to a valid economy, and the two cells induce DISTINCT descriptors.
+    from tokenomics.eval.curriculum_mining import _descriptor
+    descs = {_descriptor(replay(r)) for r in pool}
+    assert len(descs) == 2  # width 3 vs 4 -> different product/producer counts
+
+
+def test_grid_shards_covers_every_cell_and_scales_to_workers() -> None:
+    cells = [{"depth": 3}, {"depth": 4}]
+    # workers >= cells: each cell gets workers//cells seed sub-shards.
+    shards = grid_shards(cells, 0, 9, 4)
+    assert len(shards) == 4  # 2 cells * (4//2) sub-shards
+    per_cell: dict = {}
+    for cell, lo, hi in shards:
+        per_cell.setdefault(tuple(sorted(cell.items())), []).extend(range(lo, hi + 1))
+    # every cell present, and each cell's sub-shards tile the full seed range exactly.
+    assert len(per_cell) == 2
+    for seeds in per_cell.values():
+        assert sorted(seeds) == list(range(0, 10))
+    # fewer workers than cells: still at least one shard per cell.
+    assert len(grid_shards(cells, 0, 9, 1)) == 2

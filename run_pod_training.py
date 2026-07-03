@@ -105,9 +105,13 @@ class Ssh:
     port: int
     key: str
 
-    def base_cmd(self) -> list[str]:
+    def base_cmd(self, *, no_stdin: bool = False) -> list[str]:
+        # `-n` redirects stdin from /dev/null: for the detached launch we never feed stdin,
+        # and leaving the channel's stdin open is one way the launching SSH can hang waiting
+        # on the remote shell instead of returning once the job is backgrounded.
         return [
             "ssh",
+            *(["-n"] if no_stdin else []),
             "-i", self.key,
             "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
@@ -428,9 +432,23 @@ def wait_for_ssh(pod_id: str, key_override: str | None, timeout_s: int) -> Ssh:
     raise TimeoutError(f"pod not reachable within {timeout_s}s (last: {last})")
 
 
-def ssh_run(ssh: Ssh, remote_cmd: str, *, check: bool = True) -> int:
-    """Run a remote command over SSH, streaming output. Returns exit code."""
-    res = subprocess.run(ssh.base_cmd() + [remote_cmd], text=True)
+def ssh_run(
+    ssh: Ssh,
+    remote_cmd: str,
+    *,
+    check: bool = True,
+    timeout: float | None = None,
+    no_stdin: bool = False,
+) -> int:
+    """Run a remote command over SSH, streaming output. Returns exit code.
+
+    `timeout` bounds the call (raises `subprocess.TimeoutExpired`) — used for the detached
+    launch, which must return promptly once the job is backgrounded; a hung launch shell must
+    not block the client forever (it never reached `monitor_remote`, so nothing streamed).
+    `no_stdin` passes `ssh -n` for the same launch (don't hold the channel on stdin)."""
+    res = subprocess.run(
+        ssh.base_cmd(no_stdin=no_stdin) + [remote_cmd], text=True, timeout=timeout
+    )
     if check and res.returncode != 0:
         raise RuntimeError(f"remote command failed ({res.returncode}): {remote_cmd}")
     return res.returncode
@@ -440,6 +458,11 @@ def ssh_run(ssh: Ssh, remote_cmd: str, *, check: bool = True) -> int:
 # from a remote command's own non-zero exit. The poll command itself always exits 0, so a
 # 255 (or a local timeout) means the link dropped — recoverable by reconnecting.
 SSH_TRANSPORT_FAIL = 255
+
+# Bound the detached-launch SSH call. The launch only backgrounds the job and returns, so it
+# should take seconds; if it hasn't returned by now the outer shell has hung (EXP-0027) and we
+# fall through to monitor_remote, which confirms liveness from the pod's pid/exit files.
+LAUNCH_TIMEOUT_S = 60
 
 
 def ssh_capture(ssh: Ssh, remote_cmd: str, *, timeout_s: int = 30) -> str:
@@ -791,7 +814,12 @@ def build_launch_cmd(
     after, so a reconnecting client can tell "running" from "done (rc=N)" purely from
     files on the pod. A stale exit marker is removed first so it can't read as completion
     of the new run. stdin/stdout/stderr of the backgrounded job are detached to /dev/null
-    (training output goes to `log_file`) so the launching SSH call returns immediately."""
+    (training output goes to `log_file`) so the launching SSH call returns immediately.
+
+    The trailing `exit 0` is load-bearing: without it the outer sshd-spawned shell can sit in
+    `do_wait` after backgrounding `setsid` (observed EXP-0027), keeping the SSH channel open so
+    the client's `ssh_run(launch)` never returns. Forcing the outer shell to exit closes the
+    channel the instant the job is detached."""
     inner = (
         f"echo $$ > {pid_file}; "
         f"{python_bin_path} {train_args} > {log_file} 2>&1; "
@@ -799,7 +827,8 @@ def build_launch_cmd(
     )
     return (
         f"cd {remote_dir} && rm -f {exit_file} && "
-        f"setsid sh -c {_shquote(inner)} < /dev/null > /dev/null 2>&1 &"
+        f"setsid sh -c {_shquote(inner)} < /dev/null > /dev/null 2>&1 & "
+        f"exit 0"
     )
 
 
@@ -997,7 +1026,14 @@ def main() -> int:
                 args.remote_log, pid_file, exit_file,
             )
             log(f"launching detached: {args.train}")
-            ssh_run(ssh, launch)
+            try:
+                ssh_run(ssh, launch, timeout=LAUNCH_TIMEOUT_S, no_stdin=True)
+            except subprocess.TimeoutExpired:
+                # The launch shell didn't return in time (the EXP-0027 hang). The detached
+                # job runs in its own session regardless — proceed to monitor, which verifies
+                # liveness purely from the pod's pid/exit files.
+                log(f"launch ssh did not return within {LAUNCH_TIMEOUT_S}s; the job is "
+                    "detached (own session) — proceeding to monitor via pid/exit files")
             log(f"launched (survives disconnect). Reattach any time: "
                 f"python run_pod_training.py --pod-id {pod_id} --attach "
                 f"--remote-log {args.remote_log}{' --cpu' if args.cpu else ''}")
