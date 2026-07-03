@@ -1,6 +1,11 @@
 # Curriculum Game-Master Approach
 
 Status: active roadmap replacing the previous opponent-centric self-improvement plan.
+Stages 0-4 executed and closed on the depth-3 scale family (EXP-0023 .. EXP-0033) — see
+"Executed History And Current Position". Stage 4 produced no new champion (fixed point
+on a saturated family), so the active stage is Stage 4b: apply the same machinery to
+distributions with real headroom and exit only with a promoted champion. Stage 5 waits
+on that exit.
 
 This document defines the self-improvement path for the portable producer/orderer
 stack. The next step is not a learned consumer actor and not a full learned
@@ -38,6 +43,37 @@ training on the task improves transfer or tail-risk metrics.
 The game master is not part of the promoted system stack. It is a curriculum and
 evaluation tool. Promotion remains human-approved and must use experiment artifacts,
 not ad hoc runs.
+
+## Executed History And Current Position (EXP-0023 .. EXP-0033)
+
+Stages 0-4 ran to completion on the depth-3 scale family. Findings that now bind this
+roadmap:
+
+- Stage 0/1 (EXP-0023): scaffold worked; the fixed practical bar was too weak
+  (0 policy_weakness rows). Reference strength, not the learner, was the first blocker.
+- Stage 0 bars (EXP-0024): the `entity_planner+mpc_search` short-rollout search bar
+  produced the first in-claim policy_weakness rows.
+- Stage 3 (EXP-0025, EXP-0028): single-cell mining collapses novelty; the topology grid
+  (width x producer density) fixed it. Weakness concentrates at LOW producer density —
+  the capacity-tight axis.
+- Stage 4 (EXP-0026, EXP-0027, EXP-0029, EXP-0030): mined-only distill REPLACED broad
+  coverage and regressed out-of-family cells; augment (broad + mined) closed every
+  producer-side regression; freezing the orderer removed orderer replay noise. The best
+  candidate ties champion on mined validation with zero transfer regressions.
+- Attribution (EXP-0031): the producer channel closes 5.27% of the archived gap
+  (train split 0.0%). Producer replay is not the lever.
+- Orderer headroom (EXP-0032, EXP-0032b): champion orderer >= the mpc_search teacher on
+  26/26 archived tasks under the frozen producer (8 negative). Nothing to distill.
+- Ceiling audit (EXP-0033): analytic upper bounds (`eval/ceiling_bound.py`) are
+  demand-bound on 26/26 archived tasks; champion fulfils mean 98.3% (min 97.6%) of
+  exact demand, the bar 99.0%.
+
+Position: the Stage-4 loop reached a real fixed point on this task family, and the
+family itself is saturated — capacity never binds, so a near-perfect score is
+structurally easy. Improvement requires new task distributions, not a stronger teacher
+on the same archive. The promotion decision for the EXP-0030 candidate (0 transfer
+regressions; one mined blind cell traced to replay concentration) is parked as a
+human call.
 
 ## Current System Boundary
 
@@ -329,6 +365,17 @@ Reject if:
 - The same exploit dominates the archive.
 - No reference/bar comparison exists for high-ranked tasks.
 
+Amendments (binding, from EXP-0025/0028/0031/0032b/0033):
+
+- Ceiling pre-flight: before mining a cell, run the offline upper bound
+  (`eval/ceiling_bound.py`). Do not mine cells where demand is the binding ceiling
+  (B1/B2 >= B0): gaps there are the last percent of a saturated objective.
+- Recoverability gate: a policy_weakness row enters the archive only if a cheap
+  cross-stack probe (gap attribution / orderer headroom scan) attributes the gap to a
+  trainable component. Joint-bar-mismatch gaps are unlearnable by component distill.
+- Mining seeds must be disjoint from held-out eval seeds, or the Stage-4 leakage guard
+  later strips exactly the high-priority tasks.
+
 ## Stage 4: Prioritized Replay And Relabeling
 
 Purpose:
@@ -374,12 +421,159 @@ Reject if:
 - Gains come from changing deterministic feasibility code without a separate audit.
 - Producer residuals are hidden by joint-stack orderer lift.
 
+Amendments (binding, from EXP-0026/0027/0029/0030):
+
+- Augment, never replace: the candidate trains on the champion's broad set PLUS the
+  mined replay. Mined-only distill trades robustness for nothing.
+- Replay priority uses the raw gap, not the mining score: the novelty term belongs to
+  mining coverage and makes the score bimodal (first-in-cell bonus), which concentrates
+  sampling onto one task. Cap duplicates (<=2) or stratify per topology cell.
+- A validation tie at measured-zero recoverable headroom is a ceiling, not a miss:
+  treat improve-or-tie with a noise-aware paired comparison, and gate promotion on the
+  transfer/stress side.
+
+## Stage 4b: New-Distribution Curriculum To A New Champion
+
+Purpose:
+
+Stage 4 validated the replay machinery but formally produced no new champion: the loop
+hit a real fixed point on a demand-saturated family (EXP-0031/0032b/0033, see "Executed
+History"). Stage 4b applies the same Stage 3/4 machinery — with the amendments above —
+to distributions where headroom exists by construction. The stage exits only when a
+candidate passes the promotion gates and a new champion is promoted; only then does
+Stage 5 mutation start.
+
+Three tracks, in order of cost-to-signal. Track A needs no domain change, Track B uses
+reserved task-record machinery, Track C is a domain design change requiring an ADR.
+Track A and Tracks B/C can proceed in parallel (A is a spec + run; B/C are code arcs).
+
+### Track A: Capacity-Binding Mining (first)
+
+Purpose: rerun Stage 3 where capacity, not demand, is the ceiling — the only regime
+where headroom exists by construction. EXP-0028 already showed the gradient: weakness
+triples at the tightest tested density cell (producers=12 vs 18).
+
+Tasks:
+
+- Grid axes: producer density below the current envelope (`producers_per_layer=3`),
+  higher demand quantity, harsher degradation; include the `scarcity_variant`
+  reproducers (already registered in `eval/curriculum.py`) as mineable families, not
+  just stress labels.
+- Ceiling pre-flight per cell (Stage 3 amendment): keep only cells where B1/B2 < B0.
+- Recoverability probe per archived task (Stage 3 amendment).
+- Then the existing Stage-4 replay machinery with its amendments (augment, gap
+  priority, duplicate cap).
+
+Accept:
+
+- Mined archive concentrates in capacity-bound cells with component-attributable gaps.
+- Stage-4 replay on it moves mined validation, not only transfer cells.
+
+Reject:
+
+- Cells pass pre-flight but the archive still saturates (report as a claim-boundary
+  finding, not a failure).
+- Gaps are recoverable by neither component (joint-bar mismatch again).
+
+### Track B: Scripted Demand And Shock Traces
+
+Purpose: test and train closed-loop adaptivity — the historically weakest documented
+axis (operating-point memorization). This is the intended use of the reserved
+`demand_trace` / `shock_trace` / `event_trace` task-record fields, and the legal
+primitive route Stage 5 mutation expects ("demand/event trace splice", "bounded shock
+timing shift").
+
+Tasks:
+
+- Implement trace injection in the replay path: scripted per-cycle demand deltas and
+  bounded mid-episode shocks (capacity dip, demand spike), serialized in the task
+  record, deterministic on replay.
+- Extend the generator with bounded trace sampling; legality gates unchanged.
+- Mine and replay with the same Stage 3/4 machinery and amendments.
+
+Accept:
+
+- Traces replay deterministically from the task record alone.
+- Mined trace tasks are policy_weakness with recoverable attribution.
+- No learned feature-contract change.
+
+Reject:
+
+- Traces mutate topology/state outside legal event/shock primitives.
+- Shock tasks are mostly feasibility walls.
+
+### Track C: Per-Order TTL (urgency signal + depth axis)
+
+Purpose: turn `ORDER_TTL` from a global domain constant into a per-order field. TTL
+becomes a demand-urgency signal policies can learn to triage, a curriculum dial the
+game master can anneal, and the feasibility gate for depth>=4 families (deep_join d5
+is a known TTL=2 wall).
+
+Design decisions (pin these in an ADR before code):
+
+1. `Order.ttl` field, default `ORDER_TTL=2`. Gate: full suite green AND byte-identical
+   episodes at defaults before any other slice lands.
+2. Sub-orders inherit the parent's REMAINING TTL — urgency propagates downstream or
+   the signal dies at the first split.
+3. Producer investment/input orders keep the hardcoded constant — isolates the change
+   to the demand side; auction/restoration dynamics untouched.
+4. Schedule semantics: a scripted per-cycle TTL applies to NEWLY placed consumer
+   orders only. In-flight orders never mutate (a mid-flight cut would be a
+   `shock_trace` event — Track B, separate).
+5. The consumer TTL schedule lives in the config `consumers` block; serializable and
+   generator-ref reproducible.
+6. Observation contract: `ttl_remaining` normalization assumes max=2 today; variable
+   TTL needs a versioned opt-in encoder change (champion stays byte-compatible at the
+   old version).
+7. Score unchanged: -1 per in-progress cycle and -5 per rejection stay; longer TTL
+   naturally accrues more holding pressure.
+
+Slices (each independently green):
+
+```text
+ADR + CONTEXT.md ->
+Order.ttl + sub-order inheritance + byte-identical gate ->
+consumer TTL schedule in config + generator param ->
+obs version bump (opt-in) ->
+feasibility-frontier probe
+```
+
+The probe: depth in {4,5} x consumer TTL in {2,4,6,8} x {cold, primed initial
+inventory}, with a ceiling pre-flight on every opened cell. TTL ~ depth+1 .. 2*depth is
+the expected feasible band; a large flat TTL (10-20) removes timing pressure entirely
+and re-creates a saturated regime — explicitly not the target.
+
+Deep-family curriculum endgame: start deep chains at TTL ~ 2*depth, anneal down as
+competence rises. TTL annealing is difficulty scheduling inside the game-master design
+— no topology mutation, no contract change.
+
+### Stage 4b acceptance criteria (stage exit)
+
+- At least one track yields a mined archive concentrated in policy_weakness rows with
+  component-recoverable gaps.
+- Stage-4 replay (with amendments) on that archive produces a candidate that passes
+  the full promotion gates — including mined-validation improvement, since real
+  headroom now exists and a tie is no longer the ceiling.
+- A new champion is promoted (human-approved) and recorded in an experiment directory.
+
+Reject if:
+
+- All pursued tracks saturate at pre-flight or mine only joint-mismatch gaps (report
+  as a claim-boundary finding and reassess the roadmap before touching Stage 5).
+- A candidate is promoted on new-distribution gains while regressing the existing
+  transfer/stress matrix.
+
 ## Stage 5: ACCEL-Style Local Mutation
 
 Purpose:
 
 Generate new frontier tasks by mutating archived high-value tasks instead of generating
 from scratch.
+
+Entry criteria:
+
+- Stage 4b exited: a new champion was promoted from at least one Stage 4b track, so
+  there is a live archive of useful, component-recoverable tasks worth mutating.
 
 Tasks:
 
@@ -601,47 +795,3 @@ Do not mutate topology or state mid-episode outside legal event/shock primitives
 
 Do not treat open-ended discovery as the same objective as bounded product robustness.
 
-## Immediate Next Experiment
-
-The next concrete experiment should be Stage 0 plus Stage 1 scaffolding.
-
-Title:
-
-```text
-EXP-0023-curriculum-task-archive-and-stress-suite
-```
-
-Purpose:
-
-```text
-Replace the opponent framing with a replayable task archive and independent stress
-suite, then prove the current portable stack and reference bars can run on serialized
-tasks with failure classification.
-```
-
-Tasks:
-
-- Create the experiment under the existing `experiments/EXP-NNNN-*` layout.
-- Record the portable stack under test in `spec.json` and `RESULT.md`.
-- Define `TaskRecord` serialization.
-- Convert existing fixture/stress rows into task records where possible.
-- Add a one-seed replay smoke for current champion and reference bars.
-- Emit `artifacts/task_archive.jsonl` and `artifacts/curriculum_matrix.csv` when those
-  files add detail beyond `summary.csv`.
-- Report legality, replayability, reference availability, and failure class.
-
-Accept:
-
-- Current portable stack loads from the existing checkpoint paths recorded in the
-  experiment spec.
-- At least one task from each existing accepted fixture family serializes and replays.
-- Champion and reference bars can run on the replay smoke.
-- Failure classes are present in every row.
-- No promotion recommendation is made from this scaffolding experiment.
-
-Reject:
-
-- Task replay depends on hidden process state.
-- Existing fixture behavior changes without explanation.
-- Contract failures are mixed into policy weakness.
-- The new archive cannot represent known residuals and feasibility walls.

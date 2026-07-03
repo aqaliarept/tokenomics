@@ -382,3 +382,122 @@ Artifacts: headroom_row + _qualifies + scan_headroom + --scan mode + _champ_sear
 Blockers: none. Next (only if further improvement wanted, different lever): stronger/less-myopic
   reference than mpc_search, or stochastic/elite orderer forms ([[exp0006b-stochastic]]) — but no
   evidence the current bar leaves recoverable orderer headroom to justify it.
+
+## HANDOVER — EXP-0033 offline achievable-units upper bound (ceiling audit). NOT STARTED
+Status: handover for a fresh agent. Read this entry + the three below it (EXP-0031/0032/0032b) first;
+  full arc context in experiments/README.md index rows EXP-0023..0032b.
+Question: is the champion NEAR-IDEAL, or does the weak searcher merely hide headroom? The Stage-4
+  improvement loop is expert iteration and it is STALLED at a fixed point of its search operator
+  (EXP-0032b: champion orderer >= mpc_search on 26/26 archived tasks, 8 negative; EXP-0031: producer
+  channel closes 5.27%). All bars so far are RELATIVE (baselines/search/champion). Nothing measures
+  distance to the true ceiling. One number decides the roadmap:
+  - champion at ~>=90-95% of an offline optimum bound -> agent effectively ideal on this
+    distribution; residual = feasibility, not policy. Close the arc (promotion decision, next axis).
+  - champion at ~<=80% -> real headroom hidden by the myopic searcher -> build a stronger improvement
+    operator (deeper lookahead / joint producer+orderer search / CEM over routing sequences) and
+    expert iteration resumes with a live teacher.
+Method (tiered relaxations; every tier MUST be a provable UPPER bound — relax, never approximate):
+  domain is deterministic w/ scripted consumers, so the offline optimum is well-defined per economy.
+  - B0: total demanded consumer units over horizon 100 (trivial demand cap).
+  - B1: capacity-throughput cap — per capacity type, aggregate capacity-cycles over the horizon
+    (optimistic: capacity pinned at max every cycle = restoration free & instant, a valid
+    relaxation) divided by per-unit capacity cost; min over binding types, then min w/ B0.
+  - B2: B1 + input-product coupling — expand each consumer product's recipe TRANSITIVELY (composite
+    products consume primal outputs), charge the full capacity bundle per delivered unit, re-take
+    the min over types. Analytic, numpy-only.
+  - B3 (optional, only if B2-vs-champion is ambiguous): temporal LP adding TTL=2 windows, inventory
+    limits, real degradation/restoration dynamics. NOTE: an LP solver (scipy) is a NEW dep — needs
+    justification per CLAUDE.md; try B0-B2 first, they may already separate the two hypotheses.
+Inputs (all exist, no training, no ckpts to stage):
+  - Tasks: experiments/EXP-0028-topology-grid-mining/artifacts/task_archive.jsonl (26 records);
+    rebuild each Configuration via eval/curriculum.py replay()/TaskRecord (world_spec generator-ref,
+    generator build_scale_config). demand_trace fields are empty — derive demand from the replayed
+    config's scripted consumers, horizon 100.
+  - Champion + bar units per task: same dir, curriculum_matrix.csv (learner_units/reference_units).
+    Optionally also score the EXP-0030 candidate stack (ckpts in EXP-0030 artifacts, git-lfs).
+  - Recipes/capacities: read from the replayed Configuration (process sheets, producer configs);
+    keep the bound code in eval/ (new module, e.g. eval/ceiling_bound.py) — domain/ stays pure.
+Deliverables: experiments/EXP-0033-<title>/ (spec.json, summary.csv one row per task x tier w/
+  champion ratio, RESULT.md w/ the decision call), index row in experiments/README.md, PROGRESS.md
+  entry. Per-task output: B0/B1/B2(/B3), champion_units, bar_units, champion/bound ratio, binding
+  constraint (which tier/type binds).
+Build/run: TDD the bound locally against 1-2 archived tasks + a hand-checkable toy config (assert
+  bound >= best observed units on EVERY task — an invariant test; any violation = bound bug). Full
+  26-task sweep is pure arithmetic — borderline local-eval, but per the hard rule if it materializes
+  the EXP dir, wrap it: run_pod_training.py --create-pod (16 vCPU default) --train "-u -m
+  tokenomics.eval.ceiling_bound --archive ... --out-dir /workspace/tokenomics/exp0033" --pull
+  "...:./experiments/EXP-0033-<title>". No GPU, no staged ckpts needed.
+Pitfalls: (1) optimism direction — degradation/restoration/TTL/inventory must only ever be relaxed
+  UP, else the "ceiling" undercuts real policies and the ratio lies; the invariant test catches
+  this (matrix has 26 champion + 26 bar observations to check against). (2) fulfilled units metric
+  = consumer units (cons✓ convention), NOT return. (3) suite must stay green (574); style rules:
+  from __future__ import annotations, full type annotations, docstrings say why.
+Parked (do NOT fold into EXP-0033, separate decisions): (a) promotion of the EXP-0030 candidate —
+  ledger: 0 transfer regressions + uneven/scarcity/degen wins vs one mined-blind cell w4p3-s8
+  -11.33u traced to seed-14 replay concentration; option = one hygiene rerun (replay priority = gap
+  not novelty score, dup-cap <=2, orderer frozen) then promote if blind clean; val tie is the
+  proven ceiling (EXP-0031/0032b), not a miss. (b) recoverability gate for Stage-3 mining
+  (passes_gates + cheap cross-probes from gap_attribution/orderer_representability) so future
+  archives only contain component-recoverable gaps. (c) GNN: no evidence it helps now; only
+  defensible probe = GNN value model on the EXP-0009 dataset, gate = held-out R^2 > 0.
+Blockers: none. Everything needed is committed-or-staged on branch new-model (staged, not committed).
+
+## EXP-0033 offline achievable-units upper bound — DONE, NEAR-BOUND
+Status: implemented + cloud run done (fresh 16-vCPU CPU pod, auto-terminated), pulled to
+  experiments/EXP-0033-offline-ceiling-bound. Focused tests green.
+Artifacts: new `tokenomics/eval/ceiling_bound.py` computes B0/B1/B2 analytic upper bounds from
+  replayed `Configuration`s: exact seeded consumer demand over the observed matrix episode seeds,
+  direct recipe capacity cap, and transitive input-product capacity cap. Capacity tiers are
+  optimistic (aggregate producers, pinned capacity, free/instant upgrade slack, no TTL/inventory/
+  funding/routing), and the invariant is every tier >= max(champion, bar) with 0.01 tolerance for
+  the two-decimal observed matrix. New tests in `tests/test_ceiling_bound.py`: hand-checkable toy
+  config, transitive bundle, EXP layout, and all-26 archived invariant.
+Result: B0=B1=B2 are identical and **demand-bound on 26/26 EXP-0028 archived tasks**. Champion/B2
+  mean 0.9830, min 0.9755, 26/26 >=95%; bar/B2 mean 0.9902, min 0.9819; 0 invariant failures.
+Decision: current Stage-4 archive is effectively ceiling-saturated. The remaining mined gap is the
+  final 1-2% of exact demanded units, not evidence for hidden headroom behind a weak `mpc_search`
+  teacher. B3 temporal LP is unnecessary on this archive because exact demand already binds every
+  row. Close the current Stage-4 improvement loop; next work is either promotion hygiene for the
+  EXP-0030-style candidate or a new distribution/claim axis, not more expert-iteration on EXP-0028.
+Blockers: none.
+Next: optional separate decision: run the parked promotion-hygiene candidate (gap-priority replay,
+  duplicate cap, frozen orderer) if promotion is still desired; otherwise move to the next task
+  distribution/claim axis.
+
+## Roadmap update — CURRICULUM_GAME_MASTER_APPROACH.md post-EXP-0033 revision
+Status: DONE (doc-only, no code).
+Artifacts: CURRICULUM_GAME_MASTER_APPROACH.md — (1) new "Executed History And Current
+  Position (EXP-0023..0033)" section: stages 0-4 closed on the depth-3 scale family,
+  fixed point real, family demand-saturated, EXP-0030 promotion parked as human call;
+  (2) binding Amendments appended to Stage 3 (ceiling pre-flight via eval/ceiling_bound,
+  recoverability gate via cross-stack probes, mining seeds disjoint from held-out) and
+  Stage 4 (augment-not-replace, replay priority = gap not mining score + dup-cap <=2,
+  val tie at zero recoverable headroom = ceiling w/ noise-aware pairing); (3) stale
+  "Immediate Next Experiment" (EXP-0023 scaffold, long done) replaced by "Next
+  Improvement Tracks" in priority order: Track A capacity-binding mining (no domain
+  change, scarcity_variant reproducers mineable, pre-flight-gated grid), Track B
+  scripted demand/shock traces (reserved TaskRecord trace slots, closed-loop
+  adaptivity, Stage-5 legal primitives), Track C per-order TTL (Order.ttl default 2
+  byte-identical, sub-orders inherit REMAINING ttl, producer orders stay constant,
+  schedule = new orders only, consumers-block config, versioned obs bump, score
+  unchanged; probe depth{4,5} x TTL{2,4,6,8} x {cold,primed}; anneal TTL~2*depth->tight;
+  flat TTL 10-20 rejected as saturation re-creation).
+Decisions: track order = cost-to-signal (A no-domain-change first); TTL design made
+  per-order (user proposal) instead of global per-family constant — urgency becomes a
+  learnable signal and a game-master dial; ADR required before Track C code.
+Blockers: none. Next: Track A grid spec + ceiling pre-flight wiring, or Track C ADR —
+  user picks; EXP-0030 promotion decision still parked.
+
+## Roadmap restructure — Stage 4b inserted (tracks moved into stage order)
+Status: DONE (doc-only). Follow-up to the post-EXP-0033 revision: the three improvement
+  tracks moved from a trailing "Next Improvement Tracks" section into a formal
+  "Stage 4b: New-Distribution Curriculum To A New Champion" between Stage 4 and
+  Stage 5 — because Stage 4 formally produced NO new champion (fixed point on a
+  saturated family), the stage order must carry the implementation order.
+Artifacts: CURRICULUM_GAME_MASTER_APPROACH.md — Stage 4b (purpose, Tracks A/B/C
+  unchanged in content, stage-exit acceptance = promoted champion via full gates incl.
+  mined-val improvement since real headroom exists, reject = all tracks saturate ->
+  claim-boundary finding); Stage 5 gains entry criteria (Stage 4b exit); Status header
+  updated (active stage = 4b, Stage 5 waits).
+Blockers: none. Next: start Stage 4b Track A (grid spec + ceiling pre-flight wiring)
+  or Track C ADR; EXP-0030 promotion decision still parked.

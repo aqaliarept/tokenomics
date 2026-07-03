@@ -1,0 +1,53 @@
+{
+  "archive": "experiments/EXP-0028-topology-grid-mining/artifacts/task_archive.jsonl",
+  "cloud_archive": "/workspace/tokenomics/_pod_inputs/exp0028/task_archive.jsonl",
+  "cloud_curriculum_matrix": "/workspace/tokenomics/_pod_inputs/exp0028/curriculum_matrix.csv",
+  "curriculum_matrix": "experiments/EXP-0028-topology-grid-mining/artifacts/curriculum_matrix.csv",
+  "driver": "tokenomics.eval.ceiling_bound",
+  "eval_seeds": 3,
+  "horizon": 100,
+  "reproduce": "python run_pod_training.py --create-pod --image runpod/base:0.7.0-ubuntu2004 --cpu --python python3.12 --vcpu 16 --mem 32 --disk 30 --train \"-u -m tokenomics.eval.ceiling_bound --archive /workspace/tokenomics/_pod_inputs/exp0028/task_archive.jsonl --curriculum-matrix /workspace/tokenomics/_pod_inputs/exp0028/curriculum_matrix.csv --out-dir /workspace/tokenomics/exp0033 --horizon 100 --eval-seeds 3\" --pull \"/workspace/tokenomics/exp0033/:./experiments/EXP-0033-offline-ceiling-bound/\"",
+  "rows": 78,
+  "stage": "EXP-0033",
+  "tasks": 26,
+  "tier_stats": {
+    "B0": {
+      "binding_counts": {
+        "demand": 26
+      },
+      "max_champion_bound_ratio": 0.9941,
+      "mean_champion_bound_ratio": 0.983,
+      "min_champion_bound_ratio": 0.9755,
+      "rows_at_or_above_90pct": 26,
+      "rows_at_or_above_95pct": 26
+    },
+    "B1": {
+      "binding_counts": {
+        "demand": 26
+      },
+      "max_champion_bound_ratio": 0.9941,
+      "mean_champion_bound_ratio": 0.983,
+      "min_champion_bound_ratio": 0.9755,
+      "rows_at_or_above_90pct": 26,
+      "rows_at_or_above_95pct": 26
+    },
+    "B2": {
+      "binding_counts": {
+        "demand": 26
+      },
+      "max_champion_bound_ratio": 0.9941,
+      "mean_champion_bound_ratio": 0.983,
+      "min_champion_bound_ratio": 0.9755,
+      "rows_at_or_above_90pct": 26,
+      "rows_at_or_above_95pct": 26
+    }
+  },
+  "tiers": [
+    "B0",
+    "B1",
+    "B2"
+  ],
+  "title": "offline achievable-units upper bound",
+  "upper_bound_failures": 0,
+  "verdict": "near_bound"
+}
