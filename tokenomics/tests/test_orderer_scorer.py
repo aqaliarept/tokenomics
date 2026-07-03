@@ -201,3 +201,154 @@ def test_collect_scorer_samples_rejects_misaligned_configs() -> None:
 
     with pytest.raises(ValueError):
         collect_scorer_samples([0, 1], depth=2, horizon=12, configs=[build_scale_config(0, depth=2)])
+
+
+# --- v4 orderer oracle relabel (EXP-0032): teach the orderer from the mining bar's own
+# per-cycle search routing instead of the proportional throughput teacher. The collector
+# reuses `_search_best_pol`; targets are the committed routing, mean-reduced over active
+# backlog slots then centered + clipped (softmax shift-invariance). ---
+
+
+def test_center_clip_eligible_centers_and_clips() -> None:
+    # A sampled routing's logits have arbitrary scale; softmax is shift-invariant, so the
+    # relabel target centers the eligible logits to zero mean and clips to the action bound.
+    # Ineligible rows are floored (masked out of the distill loss anyway).
+    from tokenomics.train.orderer_scorer import _BOUND, _center_clip_eligible
+
+    logits = np.array([1.0, 3.0, 5.0, 999.0], dtype=np.float32)
+    mask = np.array([True, True, True, False])
+    out = _center_clip_eligible(logits, mask)
+    assert np.allclose(out[mask], [-2.0, 0.0, 2.0])   # eligible mean 3 -> centered
+    assert abs(out[mask].mean()) < 1e-6
+    assert out[3] == -_BOUND                          # ineligible floored
+
+
+def test_reduce_committed_means_active_slots() -> None:
+    # The scorer represents one per-producer vector per stream, but a committed sampled
+    # routing has arbitrary per-slot rows. Reduce (k_stream, P) -> (P,) by mean over the
+    # occupied backlog slots; empty slots beyond the backlog are excluded.
+    from tokenomics.train.orderer_scorer import _reduce_committed
+
+    action = np.array([0.0, 10.0, 2.0, 20.0, 99.0, 99.0], dtype=np.float32)  # 3 slots x 2 producers
+    reduced = _reduce_committed(action, k_stream=3, num_producers=2, n_occupied=2)
+    assert reduced.tolist() == [1.0, 15.0]            # mean of the first 2 rows only
+
+
+def test_collect_oracle_orderer_samples_parity() -> None:
+    # The oracle-relabel collector yields ScorerSamples that feed the existing masked-distill
+    # path unchanged: target/mask are aligned to sorted(view.producers), mask is the view's
+    # eligibility, and only backlog+eligible views are captured.
+    from tokenomics.train.orderer_scorer import (
+        collect_oracle_orderer_samples, fit_scorer, OrdererScoreModel)
+    from tokenomics.eval.baselines import PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+
+    cfg = build_scale_config(0, depth=2)
+    samples = collect_oracle_orderer_samples(
+        [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"],
+        n_samples=2, sample_scale=1.0, lookahead=3, horizon=12)
+    assert samples
+    for s in samples:
+        pids = sorted(s.view.producers)
+        assert s.target.shape == (len(pids),)
+        assert s.mask.shape == (len(pids),)
+        assert s.mask.dtype == bool and s.mask.any()
+        assert s.mask.tolist() == [s.view.producer_products[p].eligible > 0 for p in pids]
+    fit_scorer(OrdererScoreModel(hidden=16), samples, iters=2)  # consumed unchanged
+
+
+def test_collect_oracle_orderer_samples_reproducible() -> None:
+    # Deterministic teacher: same (configs, seeds, params) -> identical samples (the search
+    # sample RNG is seeded by (seed, cycle)), so a re-run reproduces the distill set.
+    from tokenomics.train.orderer_scorer import collect_oracle_orderer_samples
+    from tokenomics.eval.baselines import PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+
+    cfg = build_scale_config(0, depth=2)
+    kw = dict(prod=PRODUCING_BASELINES["stock_aware"], n_samples=2, lookahead=3, horizon=12)
+    a = collect_oracle_orderer_samples([cfg], [0], **kw)
+    b = collect_oracle_orderer_samples([cfg], [0], **kw)
+    assert len(a) == len(b) and a
+    for sa, sb in zip(a, b):
+        assert np.array_equal(sa.target, sb.target)
+        assert np.array_equal(sa.mask, sb.mask)
+
+
+def test_collect_oracle_orderer_samples_rejects_misaligned() -> None:
+    from tokenomics.train.orderer_scorer import collect_oracle_orderer_samples
+    from tokenomics.eval.baselines import PRODUCING_BASELINES
+    from tokenomics.eval.scale import build_scale_config
+
+    with pytest.raises(ValueError):
+        collect_oracle_orderer_samples(
+            [build_scale_config(0, depth=2)], [0, 1],
+            prod=PRODUCING_BASELINES["stock_aware"], horizon=12)
+
+
+def test_representability_row_reports_recovery_ratios() -> None:
+    # Smoke (local-allowed): the oracle-relabel representability row distills an orderer on a
+    # task's search targets and reports on-task champ/search/oracle/bar units + recovery ratios
+    # in the right ordering (search teacher is the champ-producer ceiling the oracle chases).
+    from tokenomics.eval.curriculum import TaskRecord
+    from tokenomics.eval.baselines import PRODUCING_BASELINES
+    from tokenomics.eval.orderer_representability import representability_row
+    from tokenomics.train.orderer_scorer import OrdererScoreModel
+
+    rec = TaskRecord(
+        task_id="t", task_family="scale", generator_version="test", serializer_version="v1",
+        world_seed=0, episode_seed=0,
+        world_spec={"generator": "build_scale_config", "params": {"depth": 2}},
+    )
+    row = representability_row(rec, PRODUCING_BASELINES["stock_aware"], OrdererScoreModel(),
+                              iters=3, horizon=12, eval_seeds=1)
+    for k in ("champ_cu", "search_cu", "oracle_cu", "bar_cu", "recovered",
+              "recovered_vs_teacher", "recovered_vs_bar"):
+        assert k in row
+    assert row["n_samples"] > 0
+    # the search teacher (champ producer + per-cycle search) is the on-task ceiling it distills.
+    assert row["search_cu"] >= row["champ_cu"] - 1e-6
+
+
+def test_emit_representability_writes_exp_layout(tmp_path) -> None:
+    # The verification run writes a pullable EXP layout (summary.csv + spec.json + RESULT.md);
+    # the RESULT gate line is the mean recovered_vs_teacher. No compute — fake rows.
+    from tokenomics.eval.orderer_representability import _emit_representability
+
+    rows = [{"task_id": "t1", "champ_cu": 10.0, "search_cu": 20.0, "oracle_cu": 16.0,
+             "bar_cu": 22.0, "recovered": 6.0, "recovered_vs_teacher": 0.6,
+             "recovered_vs_bar": 0.5, "n_samples": 5}]
+    _emit_representability(tmp_path, rows, meta={"iters": 300})
+    assert (tmp_path / "summary.csv").exists()
+    assert (tmp_path / "spec.json").exists()
+    result = (tmp_path / "RESULT.md").read_text()
+    assert "recovered_vs_teacher" in result and "green-light" in result
+
+
+def test_headroom_row_reports_measured_headroom() -> None:
+    # Probe re-selection: the cheap headroom row measures teacher_headroom = search - champ under
+    # the frozen producer (no distill), the ceiling >= the deployed stack, with a normalized frac.
+    from tokenomics.eval.curriculum import TaskRecord
+    from tokenomics.eval.baselines import PRODUCING_BASELINES
+    from tokenomics.eval.orderer_representability import headroom_row
+    from tokenomics.train.orderer_scorer import OrdererScoreModel
+
+    rec = TaskRecord(
+        task_id="t", task_family="scale", generator_version="test", serializer_version="v1",
+        world_seed=0, episode_seed=0,
+        world_spec={"generator": "build_scale_config", "params": {"depth": 2}},
+    )
+    row = headroom_row(rec, PRODUCING_BASELINES["stock_aware"], OrdererScoreModel(),
+                       horizon=12, eval_seeds=1)
+    for k in ("champ_cu", "search_cu", "teacher_headroom", "headroom_frac"):
+        assert k in row
+    assert row["search_cu"] >= row["champ_cu"] - 1e-6
+    assert abs(row["teacher_headroom"] - (row["search_cu"] - row["champ_cu"])) < 0.02
+
+
+def test_qualifies_uses_headroom_floor() -> None:
+    # A task is a valid representability probe only if its measured headroom clears the floor.
+    from tokenomics.eval.orderer_representability import _qualifies
+
+    assert _qualifies({"headroom_frac": 0.05}, 0.02) is True
+    assert _qualifies({"headroom_frac": 0.01}, 0.02) is False
+    assert _qualifies({"headroom_frac": None}, 0.02) is False

@@ -1,0 +1,16 @@
+{
+  "producer_ckpt": "/workspace/tokenomics/_pod_ckpts/producer_candidate.pt",
+  "orderer_ckpt": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+  "horizon": 100,
+  "eval_seeds": 3,
+  "floor_frac": 0.02,
+  "search": {
+    "candidates": [
+      "even_split",
+      "proportional"
+    ],
+    "n_samples": 8,
+    "sample_scale": 1.0,
+    "lookahead": 6
+  }
+}

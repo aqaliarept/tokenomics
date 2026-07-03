@@ -197,6 +197,32 @@ def teacher_logits(view: ProductStreamView) -> tuple[list[ProducerId], np.ndarra
     return pids, target, mask
 
 
+def _center_clip_eligible(logits: np.ndarray, mask: np.ndarray, bound: float = _BOUND) -> np.ndarray:
+    """Normalize a committed routing into a distill target (EXP-0032 oracle relabel).
+
+    Sampled routing vectors have arbitrary scale, but the allocator softmaxes per order over
+    the eligible producers, so only the *within-eligible* differences matter. Center the
+    eligible logits to zero mean (softmax shift-invariance) and clip to the action `bound`;
+    ineligible rows floor at -bound to mirror `teacher_logits` (they are masked out of the
+    distill loss regardless)."""
+    out = np.full(len(mask), -bound, dtype=np.float32)
+    if mask.any():
+        elig = np.asarray(logits, dtype=np.float32)[mask]
+        out[mask] = np.clip(elig - elig.mean(), -bound, bound)
+    return out
+
+
+def _reduce_committed(action: np.ndarray, k_stream: int, num_producers: int,
+                      n_occupied: int) -> np.ndarray:
+    """Reduce a committed ordering action `(k_stream * num_producers)` to one per-producer
+    routing (EXP-0032). The scorer emits a single vector tiled across the stream's backlog
+    slots, so a committed routing that differs per slot is summarized by the mean over the
+    occupied backlog slots (empty slots beyond the backlog carry no order and are dropped)."""
+    rows = np.asarray(action, dtype=np.float32).reshape(k_stream, num_producers)
+    n = max(1, min(n_occupied, k_stream))
+    return rows[:n].mean(axis=0)
+
+
 @dataclass
 class ScorerSample:
     view: ProductStreamView
@@ -247,6 +273,69 @@ def collect_scorer_samples(seeds, depth: int, horizon: int, log=lambda *a, **k: 
                 env.step(order_pol(env, agent))
             else:
                 env.step(prod_pol(env, agent))
+        log(f"seed {seed}: {len(samples)} cumulative samples")
+    return samples
+
+
+def collect_oracle_orderer_samples(
+    configs, seeds, *, prod, candidates: Sequence[str] = ("even_split", "proportional"),
+    n_samples: int = 8, sample_scale: float = 1.0, lookahead: int = 6, horizon: int = 100,
+    log=lambda *a, **k: None,
+) -> list["ScorerSample"]:
+    """Relabel the orderer from the mining bar's own per-cycle search (EXP-0032 v4).
+
+    Drives each `(config, seed)` under the deployment-matched cross `prod` (the champion
+    producer) + the bar's directed routing search (`_search_best_pol` over `candidates` +
+    `n_samples` sampled routings, EXP-0005), and snapshots every product-stream view holding
+    a backlog. The teacher target is the committed routing itself — reduced over the occupied
+    backlog slots (`_reduce_committed`) and centered+clipped (`_center_clip_eligible`) — so the
+    same masked-distill path (`fit_scorer`) that consumes `collect_scorer_samples` output can
+    absorb the search-oracle headroom the proportional teacher cannot. Defaults reproduce the
+    `entity_planner+mpc_search` bar's search (candidates, `n_samples=8`, `lookahead=6`), so the
+    orderer teacher == the bar the mined gap was measured against. Reproducible: the sample RNG
+    is seeded by `(seed, cycle)` inside `_search_best_pol`."""
+    from ..env.aec_env import TokenomicsAECEnv
+    from ..eval.baselines import ORDERING_BASELINES
+    from ..eval.orderer_oracle import _search_best_pol
+
+    configs, seeds = list(configs), list(seeds)
+    if len(configs) != len(seeds):
+        raise ValueError(f"configs ({len(configs)}) must align 1:1 with seeds ({len(seeds)})")
+    cand = {name: ORDERING_BASELINES[name] for name in candidates}
+    samples: list[ScorerSample] = []
+    for cfg, seed in zip(configs, seeds):
+        # Deployment env (matches `joint_stack_env`): entity producer obs so a champion
+        # score-model `prod` observes correctly + corrected v4 product streams.
+        env = TokenomicsAECEnv(config=cfg, horizon=horizon, entity_producer_obs=True,
+                               product_stream_ordering=True, corrected_stream_k=True)
+        env.reset(seed=seed)
+        spec = env.spec_
+        adim = spec.ordering_action_dim
+        max_iter = env.horizon * len(env.possible_agents) * 3 + 100
+        cur = -1
+        order_pol = next(iter(cand.values()))
+        for agent in env.agent_iter(max_iter=max_iter):
+            if env.terminations[agent] or env.truncations[agent]:
+                env.step(None)
+                continue
+            if env.current_cycle != cur:  # re-search the committed routing once per cycle
+                cur = env.current_cycle
+                order_pol, _ = _search_best_pol(
+                    env, prod, cand, n_samples, sample_scale, lookahead, seed, cur, adim)
+            role, aid = env._role[agent]
+            if role == "order":
+                view = env.system.product_stream_view(aid)
+                if view.backlog:
+                    pids = sorted(view.producers)
+                    mask = np.array([view.producer_products[p].eligible > 0 for p in pids])
+                    if mask.any():
+                        act = np.asarray(order_pol(env, agent), dtype=np.float32)
+                        reduced = _reduce_committed(act, spec.k_stream, spec.num_producers,
+                                                    len(view.backlog))
+                        samples.append(ScorerSample(view, _center_clip_eligible(reduced, mask), mask))
+                env.step(order_pol(env, agent))
+            else:
+                env.step(prod(env, agent))
         log(f"seed {seed}: {len(samples)} cumulative samples")
     return samples
 

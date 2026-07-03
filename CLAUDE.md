@@ -36,6 +36,16 @@ curriculum-stage smoke check; PPO training was rejected for this stage.
 
 **Experiments go to the cloud.** Any run that materializes an `EXP-NNNN` result — the full multi-seed / multi-task / multi-topology run that produces `summary.csv` + `artifacts/` (training, boundary/transfer/curriculum matrices, replay suites, acceptance sweeps) — runs on Runpod, wrapped with `run_pod_training.py --pull` to bring the EXP dir back. The **only** things that stay local: stage-appropriate smoke checks (a curriculum replay on 1-2 archived tasks, a single-cell sanity check, a fast `--dry-run`) and **quick one-shot diagnostics/evals** (`signal_check`, `producer_rungs`, `swap_eval`, a single-seed trace). Build/TDD the experiment driver locally against a tiny subset (`--dry-run`, 1–2 cells, ≤1 seed) to prove it runs, then launch the **full** run on the cloud. If unsure, it goes to the cloud.
 
+**Classify by COMPUTE PROFILE + PURPOSE, not task count** (this is where the rule gets broken). "1-2 archived tasks" is necessary but NOT sufficient for local — a run stays local only if it is *also* fast AND throwaway. It goes to the **cloud** if ANY of these is true:
+- it materializes a result you will base a **go/no-go decision** on (representability check, gate, acceptance read) — that's a verification run, not a diagnostic;
+- it **trains/distills to convergence** (real `iters`/`epochs`, not a handful) or runs **full-horizon per-cycle search / rollouts** (`search_orderer_episode`, `mpc_search`, planner rollouts, deepcopy-per-candidate);
+- it sweeps `eval_seeds > 1`, or spans **multiple tasks / topologies / seeds**;
+- it would take more than ~1-2 min wall-clock.
+
+A genuine local smoke has ALL knobs pinned tiny: `horizon ≤ ~12`, `iters ≤ ~5`, `eval_seeds ≤ 1`, 1-2 tasks, finishes in **seconds**. If any knob sits at a "real" value, it is the real run → cloud.
+
+**Naming trap:** calling something a "smoke" — in your plan, a function name, a CLI flag — does NOT make it one. Check the profile against the list above, never the label you gave it. (Failure seen: a `run_representability_smoke` at `--iters 300 --eval-seeds 3 --horizon 100` over 2 tasks with per-cycle search — ~14 heavy search episodes, 18+ min — was run locally because it was *called* a smoke and touched only 2 tasks. Both wrong: it was a decision-gating verification run and belonged on the pod.)
+
 ## Parallel training (use the cores)
 One PPO run is single-threaded: rollout `collect` is a sequential Python round-robin over `num_envs`, and inference is batch-1 — extra cores do nothing for one run. Pin BLAS to 1 thread (`--threads 1`, the default) and get throughput by fanning out **independent** runs, one process per core, via `tokenomics.train.parallel`:
 ```

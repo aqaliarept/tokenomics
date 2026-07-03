@@ -306,3 +306,79 @@ Why it matters: DECISIVELY confirms the EXP-0026/0027 diagnosis+fix — the unev
 Artifacts: augmented_train_configs + --augment/--broad-seeds/--broad-width + leakage guard in
   curriculum_replay.py; +3 tests. EXP-0029 candidate .pt files need git-lfs on commit. Not committed.
 Blockers: none. Items 1,2,3 all DONE. (Stopping here per user.)
+
+## Stage 4 v4 orderer oracle-relabel — collector BUILT (TDD, green), verification LAUNCHED on pod
+Status: TDD build done + suite green (571). v4 verification run in flight on a fresh 16-vCPU CPU
+  pod (t3rg8k2avnyhao, --create-pod, auto-terminate), pulling to EXP-0032. Follows EXP-0031 verdict
+  (producer replay dead as a lever: closes 5.02u/5.27% of the 95.34u archived gap, train-split 0.0%,
+  21/26 not_producer) → pivot to teaching the orderer from the mining bar's own search.
+Artifacts (train/orderer_scorer.py): `collect_oracle_orderer_samples(configs, seeds, *, prod, ...)` —
+  drives the product-stream v4 deployment env (entity_producer_obs + corrected streams) with the
+  champion producer + per-cycle `_search_best_pol` (reused from orderer_oracle), snapshots each
+  backlog-holding ProductStreamView, and relabels the target from the COMMITTED search routing:
+  `_reduce_committed` (mean over active backlog slots) → `_center_clip_eligible` (center eligible
+  logits, softmax shift-invariance, clip ±BOUND, floor ineligible). Same ScorerSample shape → existing
+  masked `fit_scorer` consumes it unchanged. Defaults reproduce the mpc_search bar (even_split+
+  proportional, n_samples=8, lookahead=6) so teacher == bar. New eval/orderer_representability.py =
+  the decision gate: per task, on-task champ/search/oracle/bar units + `recovered_vs_teacher =
+  (oracle−champ)/(search−champ)` (can the head reproduce the search it distilled?) and
+  `recovered_vs_bar`; writes EXP layout (summary.csv/spec.json/RESULT.md) via --out-dir. Tests:
+  test_orderer_scorer.py +6 (center/clip, slot-reduce, collector parity→fit_scorer, reproducibility,
+  align guard, representability_row, emit layout).
+Run: champion producer = EXP-0030 producer_candidate.pt (frozen, augmented — clean transfer + uneven
+  wins), champion orderer = EXP-0012 orderer_scorer.pt, archive = EXP-0028; 2 high-gap train tasks
+  (w4p5-s14, w4p3-s19), iters 300, horizon 100, eval-seeds 3. Staged the 3 read-inputs under
+  tokenomics/_pod_ckpts/ (driver syncs the inner pkg dir, not repo-root experiments/).
+Decisions: slot reduction = mean-over-active-slots (user-chosen); producer FROZEN at EXP-0030 so v4
+  trains orderer only → clean attribution; verification measures the deployment-matched cross
+  (champ_prod + oracle_ord) directly. Gate: mean recovered_vs_teacher ≥ ~0.5 → green-light full v4
+  `run_stage4_replay` (orderer_teacher="oracle_relabel"); ~0 → architecture limit real, escalate.
+Process correction: I first ran this verification LOCALLY, mislabeling it a "smoke" because it touched
+  only 2 tasks — violating the CLAUDE.md HARD RULE (full-horizon per-cycle search + distill-to-
+  convergence + eval_seeds>1 + multi-task = a real decision-gating run → cloud). Killed it, moved to
+  the pod, and hardened CLAUDE.md: classify local-vs-cloud by COMPUTE PROFILE + PURPOSE not task
+  count, with a "naming trap" note (calling it a smoke doesn't make it one). Renamed the function
+  run_representability_smoke → run_representability_verification.
+Blockers: none. Next: on pod completion, read EXP-0032 RESULT gate; if green-light, wire
+  orderer_teacher="oracle_relabel" into run_stage4_replay (step 2) and launch fresh EXP as a pod run.
+
+## Stage 4 v4 representability (EXP-0032) — DONE, INCONCLUSIVE (invalid probe) → do NOT proceed
+Status: cloud run done (pod t3rg8k2avnyhao, auto-terminated), pulled to
+  experiments/EXP-0032-orderer-oracle-representability. Collector worked (1267/1150 oracle samples;
+  masked-MSE converged 0.79 s14, plateaued 2.05 s19).
+Result: the 2 "high-gap" probe tasks have ~0 on-task orderer headroom under the FROZEN EXP-0030
+  producer. teacher_headroom (search−champ) = 3.33u (0.7%) / 0.33u (0.07%): champ orderer already ≈
+  search ≈ bar. The archived gaps (5.67u/~7u) were vs a WEAKER champion (producer_scorer_broad); the
+  augmented EXP-0030 producer already ate them. recovered_vs_teacher = −1.4 / −31 is noise
+  (denominator 0.33u). Two real signals: (1) oracle relabel is WORSE than champion orderer (−4.67 /
+  −10.33u) even where MSE converged; (2) matches [[exp0006b-stochastic]] — the search's lever is
+  temporal per-cycle re-routing, and a deterministic scorer distill collapses that diversity.
+Decision: do NOT green-light the full v4 run_stage4_replay. Corrected the auto-verdict in RESULT.md
+  (it wrongly read "architecture limit real"; actually confounded by task selection).
+Next (open, needs user call): (a) re-select probe tasks by MEASURED headroom under EXP-0030 producer
+  (keep teacher_headroom ≥ ~2% of champ_cu); if few clear the floor → augmented producer already
+  closed the mined gap → orderer lever spent → STOP. (b) explain oracle<champion (lossy mean-slot/
+  center-clip target vs deterministic-distill-loses-switching). Gate fix: require headroom floor +
+  report absolute recovered units (ratio unstable as headroom→0).
+Blockers: none. Code (collector + verification) is sound and reusable for the re-probe.
+
+## Stage 4 v4 headroom scan (EXP-0032b) — DONE, DECISIVE: orderer lever spent → STOP v4
+Status: cloud run done (pod ru1uervyedyhy8, auto-terminated $0.56/hr), pulled to
+  experiments/EXP-0032b-orderer-headroom-scan. Re-probe after EXP-0032's invalid (near-zero-headroom)
+  probe: measured teacher_headroom = champ_prod+search − champ_prod+champ_ord over ALL 26 archived
+  tasks under the frozen EXP-0030 producer, floor 2% of champ_cu.
+Result: 0/26 clear the 2% floor. Max headroom +9.33u (+1.91%, still under floor); distribution a
+  tight band [−4.83%, +1.91%]; 8/26 NEGATIVE (champion orderer BEATS the myopic mpc_search, down to
+  −26.33u). The mpc_search teacher v4 wanted to distill is not even a ceiling for the orderer under
+  this producer.
+Decision: STOP the v4 orderer oracle-relabel lever — no recoverable orderer headroom exists archive-
+  wide; nothing to teach. EXP-0032's negative read was task selection (0 headroom), NOT an
+  architecture limit. Closes the Stage-4 improvement thread: producer solved (EXP-0029), producer
+  replay can't close residual (EXP-0031), orderer has no residual either (EXP-0032/0032b). Remaining
+  mined gap vs entity_planner+mpc_search bar = producer/bar mismatch (bar's entity_planner producer),
+  not a champion-orderer deficiency.
+Artifacts: headroom_row + _qualifies + scan_headroom + --scan mode + _champ_search_units refactor in
+  eval/orderer_representability.py; tests +2 (headroom_row, _qualifies). Suite 574.
+Blockers: none. Next (only if further improvement wanted, different lever): stronger/less-myopic
+  reference than mpc_search, or stochastic/elite orderer forms ([[exp0006b-stochastic]]) — but no
+  evidence the current bar leaves recoverable orderer headroom to justify it.

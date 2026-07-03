@@ -1,0 +1,20 @@
+{
+  "producer_ckpt": "/workspace/tokenomics/_pod_ckpts/producer_candidate.pt",
+  "orderer_ckpt": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+  "task_ids": [
+    "mine-build_scale_config-depth3-producers_per_layer4-products_per_layer5-s14",
+    "mine-build_scale_config-depth3-producers_per_layer4-products_per_layer3-s19"
+  ],
+  "iters": 300,
+  "horizon": 100,
+  "eval_seeds": 3,
+  "search": {
+    "candidates": [
+      "even_split",
+      "proportional"
+    ],
+    "n_samples": 8,
+    "sample_scale": 1.0,
+    "lookahead": 6
+  }
+}

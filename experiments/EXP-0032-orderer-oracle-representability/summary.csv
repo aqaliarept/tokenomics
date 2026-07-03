@@ -1,0 +1,3 @@
+task_id,task_family,expected_claim_boundary,target_products,target_producers,target_capacity_types,target_depth,learner_units,learner_rejected_units,learner_dead,reference_model_id,reference_units,reference_rejected_units,reference_dead,reference_status,ratio_vs_reference,contract_ok,failure_class,notes,world_seed,champ_cu,search_cu,oracle_cu,bar_cu,teacher_headroom,bar_headroom,recovered,recovered_vs_teacher,recovered_vs_bar,n_samples
+mine-build_scale_config-depth3-producers_per_layer4-products_per_layer5-s14,,,,,,,,,,,,,,,,,,,14,493.67,497,489,497,3.33,3.33,-4.67,-1.4,-1.4,1267
+mine-build_scale_config-depth3-producers_per_layer4-products_per_layer3-s19,,,,,,,,,,,,,,,,,,,19,498.67,499,488.33,499,0.33,0.33,-10.33,-31.0,-31.0,1150
