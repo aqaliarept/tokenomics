@@ -725,3 +725,19 @@ Blockers: none.
 Next (human): PROMOTE replay/artifacts/producer_candidate.pt over the EXP-0030 incumbent (passes every
   gate incl. the tail gate the EXP-0034 candidate failed; promotion is human-approved by design). Then
   pick: Track-A round 2 (primal-tight) or Track B (scripted demand/shock traces) for the next mine.
+
+## 2026-07-04 - EXP-0035 candidate PROMOTED (human approval) — new champion producer
+Status: DONE. Human approved promotion of the EXP-0035 candidate over the EXP-0030 incumbent.
+What: active stack is now `experiments/EXP-0035-distill-epochs/replay/artifacts/producer_candidate.pt`
+  (producer) + EXP-0012 `orderer_scorer.pt` (orderer, unchanged). Recorded in EXP-0035 RESULT.md and
+  the experiments/README.md index (EXP-0030 row marked superseded). Legacy champion.json untouched
+  (historical baseline only).
+Basis: first Stage-4 replay to pass EVERY gate — val 1106.7>1038.4, blind tail 813.3>772.3, 0
+  contract/transfer/death failures, broad seeds 6-9 clean; beats the incumbent on train/val/blind
+  of the capacity-binding family (closure 1.096/0.860/1.000) at zero broad-family cost.
+Decisions: future replay rounds train against THIS champion (champion ckpt arg in curriculum_replay /
+  gap_attribution / train_closure now points at the EXP-0035 .pt); mined bars must be re-attributed
+  vs the new champion before reuse (old gap_attribution.csv references the EXP-0030 stack).
+Blockers: none.
+Next: pick the next mine — Track-A round 2 (primal-tight cells, code ready) or Track B (scripted
+  demand/shock traces).

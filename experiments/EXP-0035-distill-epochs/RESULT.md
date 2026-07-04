@@ -50,9 +50,10 @@ multi-task scale. One knob (epochs 400 → 2000) took harvest from ~1/6 of mined
 headroom to ~all of it. No width increase, no recipe change, no staging needed.**
 
 Consequences:
-- **Promotion candidate**: `replay/artifacts/producer_candidate.pt` beats the EXP-0030
-  incumbent on every split of the capacity-binding family with zero broad-family cost —
-  strictly dominates the EXP-0034 advisory-fail candidate. Human promotion call open.
+- **PROMOTED (human approval, 2026-07-04)**: `replay/artifacts/producer_candidate.pt`
+  is the new champion producer — it beats the EXP-0030 incumbent on every split of the
+  capacity-binding family with zero broad-family cost and strictly dominates the
+  EXP-0034 advisory-fail candidate. Active stack: EXP-0035 producer + EXP-0012 orderer.
 - **Mining unblocked**: Track-A round 2 (primal-tight cells) and Track B (scripted
   demand/shock traces) are off HOLD — the refinery is fixed; `--epochs 2000` is the
   new replay default posture, `train_closure` stays the standing gate per round.
