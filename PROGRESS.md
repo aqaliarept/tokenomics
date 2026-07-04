@@ -704,3 +704,24 @@ Decisions: train_closure = standing output of every replay experiment; overfit_p
 Blockers: none.
 Next: unchanged - human picks distill fix trial (augment-replay rerun --epochs 2000, optional --hidden 256),
   judged by train_closure per registry entry 1.
+
+## 2026-07-04 - EXP-0035 distill fix trial: epochs 2000 BREAKS the fidelity wall (all gates pass)
+Status: DONE. Cheapest licensed fix (per the EXP-0034 root-cause chain: multi-task interference at
+  400 epochs) tried first: EXP-0034 augment-replay rerun byte-identical except --epochs 2000, hidden 64
+  unchanged. Two fresh 16-vCPU pods (replay, then train_closure standing gate), both auto-terminated.
+Result: closure of mined (bar-champion) gap: train 0.159 -> 1.096 (median/task 1.04), val 0.19 -> 0.860
+  (+68.3u/task), blind 0.12 -> 1.000 (+68.4u/task; candidate mean = bar mean). Worse-than-champion:
+  train 26/57 -> 3/57, val 12/28 -> 1/28, blind 10/28 -> 1/28. s54 (EXP-0034's -107u tail-gate task,
+  upgrade-misallocation) heals to +61.7u, above its own bar. Objective gate PASSES (first Stage-4 replay
+  ever): val 1106.7>1038.4, blind tail 813.3>772.3, 0 contract/transfer/death failures, broad seeds 6-9
+  clean. Fit MSE was still falling at the old 400 cutoff (0.045@400 -> 0.027@600) - under-training
+  signature confirmed live.
+Artifacts: experiments/EXP-0035-distill-epochs/{RESULT.md, replay/ (spec, summary, candidate .pt via lfs,
+  val/blind/transfer CSVs), train_closure/}; README index row.
+Decisions: (a) --epochs 2000 = new replay posture; train_closure stays the standing gate per DIAGNOSTICS
+  entry 1; (b) mining OFF HOLD - Track-A round 2 (primal-tight cells, code ready in tree) + Track B now
+  licensed; (c) EXP-0034 candidate is obsolete - EXP-0035 candidate strictly dominates it.
+Blockers: none.
+Next (human): PROMOTE replay/artifacts/producer_candidate.pt over the EXP-0030 incumbent (passes every
+  gate incl. the tail gate the EXP-0034 candidate failed; promotion is human-approved by design). Then
+  pick: Track-A round 2 (primal-tight) or Track B (scripted demand/shock traces) for the next mine.

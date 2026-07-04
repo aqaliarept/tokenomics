@@ -1,0 +1,9 @@
+{
+  "split": "train",
+  "n_tasks": 57,
+  "mean_candidate_units": 1084.08,
+  "mean_champion_units": 1001.01,
+  "mean_bar_units": 1076.83,
+  "aggregate_closure": 1.0956,
+  "median_task_closure": 1.0411
+}
