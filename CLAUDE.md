@@ -32,7 +32,10 @@ deterministic reference bars. Do **not** run `tokenomics.train.smoke_ppo` as a
 curriculum-stage smoke check; PPO training was rejected for this stage.
 
 ## Root cause before next strategy (HARD RULE)
-An experiment failed or underperformed → do **NOT** propose or start the next strategy/axis/arc until the failure cause is **diagnosed with evidence** (trace, closure-by-split, ablation — not a hypothesis) and written down (EXP `RESULT.md` or `PROGRESS.md`). When competing explanations demand different responses (e.g. distill-fidelity wall → fix training vs generalization gap → mine denser), run the **discriminating diagnostic first**; it decides the move. Every new-strategy proposal must name the diagnosed cause it addresses. (Failure seen: EXP-0034 candidate captured ~15% of mined headroom; jumping to "mine more cells" without knowing WHY the harvest is low would have spent pods on the wrong fix.)
+An experiment failed or underperformed → do **NOT** propose or start the next strategy/axis/arc until the failure cause is **diagnosed with evidence** (trace, closure-by-split, ablation — not a hypothesis) and written down (EXP `RESULT.md` or `PROGRESS.md`). When competing explanations demand different responses (e.g. distill-fidelity wall → fix training vs generalization gap → mine denser), run the **discriminating diagnostic first**; it decides the move. Every new-strategy proposal must name the diagnosed cause it addresses. **Check `docs/DIAGNOSTICS.md` first** — the registry of known problems → verification checks (plain-English problem statements, discriminating check, outcome branches); if the symptom matches an entry, run that check before inventing a new diagnostic. New cause diagnosed → add a registry entry. (Failure seen: EXP-0034 candidate captured ~15% of mined headroom; jumping to "mine more cells" without knowing WHY the harvest is low would have spent pods on the wrong fix.)
+
+## Explain experiments simply (RULE)
+When reporting an experiment/diagnostic result to the user, explain it in **plain English first**: what question was asked, what was measured, what the numbers mean, and what changes because of them. Full sentences; define any invented term (e.g. "harvest rate", "closure") the first time it is used; assume the reader did not watch the pipeline run. Compressed jargon summaries and metric tables belong in `RESULT.md`/`PROGRESS.md` — the chat explanation must stand alone without them.
 
 ## Where training + experiments run (HARD RULE)
 **All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `boundary_grid`, `warm_start`/`clone_fidelity` DAgger, `producer_improve`, full `smoke_ppo`/`parallel` sweeps, any multi-topology or multi-iter run.
@@ -149,6 +152,7 @@ python run_pod_training.py --create-pod --image <img-with-py3.11+torch+ssh> \
 - New design decision → write an ADR in `docs/adr/`.
 - New baseline → add to the dicts in `eval/baselines.py` so `signal_check` picks it up.
 - New domain term → add to `CONTEXT.md`.
+- New diagnosed failure cause / diagnostic tool → add an entry to `docs/DIAGNOSTICS.md` (problem in plain English + check + outcome branches).
 - Ongoing progress / handoff / blockers / next actions → update `PROGRESS.md`.
 - Empirical findings → write/update the relevant `experiments/EXP-NNNN-*` record and index.
 - Roadmap or target changes → update the relevant design/plan document.

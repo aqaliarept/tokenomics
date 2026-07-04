@@ -665,3 +665,42 @@ Next (root-cause layer 2, pick one): single-task overfit discriminator - distill
   generous epochs; teacher matched -> optimization/capacity at scale (bigger scorer, staged DAgger a la
   EXP-0004); not matched -> representability (scorer can't express planner lookahead). THEN decide distill
   fix vs accept ceiling; only after that Track B / EXP-0035 relaunch.
+
+## 2026-07-04 - Single-task overfit probe: fidelity wall = MULTI-TASK OPTIMIZATION (representability CLEARED)
+Status: DONE. Root-cause chain closed per the CLAUDE.md rule: low harvest -> not generalization (train
+  closure ~ val ~ blind) -> not representability, not single-task capacity (this probe) -> multi-task
+  optimization/interference at scale.
+What: new tokenomics/eval/overfit_probe.py (+4 tests; suite green) - distills the producer scorer on ONE
+  mined task with the exact replay recipe (entity_planner teacher, proportional-orderer collect at seed 0),
+  2000 epochs, arms hidden {64=champion arch, 256}, deploys with frozen champion orderer on paired seeds,
+  verdict vs bar_producer_champ_orderer_units from gap_attribution. Fresh 16-vCPU pod, created+terminated.
+Result: 4/6 arms MATCH the teacher (fidelity >= 0.98). Closures solo vs full-replay: s42 0.97 vs 0.10,
+  s96 0.90 (256: 1.04) vs -0.16, s118 0.66/0.77 vs 0.10. The 64-wide champion architecture CAN express the
+  planner behavior it fails to learn at scale; 256 ~ 64 solo. Cause = one scorer fitting 121 topologies
+  (57 mined + 64 broad augment) in 400 epochs averages away per-task investment behavior. Recipe's
+  collect-vs-deploy covariate shift (proportional/seed-0 collect) did NOT block solo fidelity - secondary.
+Artifacts: EXP-0034 overfit_probe/ (CSV+summary), RESULT.md probe section, eval/overfit_probe.py.
+Decisions: mining stays ON HOLD; fix trials now licensed (cause named): at-scale epochs >> 400, at-scale
+  width >= 256 (multi-task capacity untested), sample balance, staged/rung distillation (EXP-0004 cure).
+  Each = one pod replay rerun judged by eval.train_closure.
+Blockers: none.
+Next (human pick): cheapest fix trial = augment-replay rerun with --epochs 2000 (+optional --hidden 256 arm),
+  then train_closure; if closure jumps, EXP-0035-style round 2 + promotion path reopen.
+
+## 2026-07-04 - Diagnostics registry: docs/DIAGNOSTICS.md (known problems -> verification checks)
+Status: DONE. New registry docs/DIAGNOSTICS.md, wired into the CLAUDE.md root-cause rule ("check the
+  registry first") + Conventions ("new diagnosed cause -> add entry").
+What: 9 evidence-backed entries, each = plain-English problem statement + discriminating check (tool +
+  command) + outcome branches + EXP citation: (1) low harvest -> train_closure (STANDING GATE for every
+  replay/distill experiment; cheapest detector), (2) fidelity wall -> overfit_probe (TRIGGERED only - answer
+  is a property of arch/obs/recipe/family, re-run only when one changes), (3) weak-teacher vs weak-cloning
+  (EXP-0004), (4) single-task regression trace: skill trade vs noise (s54), (5) producer/orderer channel
+  attribution (gap_attribution/swap), (6) memorization vs transfer (EXP-0009 held-out R^2), (7) return vs
+  fulfilled-units objective (ADR-0040), (8) signal_check learnability, (9) pod thread-oversubscription.
+  Plus "Unverified problems" inbox: humans drop plain-English problem statements, agent attaches checks.
+Decisions: train_closure = standing output of every replay experiment; overfit_probe = on-trigger
+  discriminator, not a per-experiment gate (answered user question: don't re-verify representability when
+  nothing it depends on changed).
+Blockers: none.
+Next: unchanged - human picks distill fix trial (augment-replay rerun --epochs 2000, optional --hidden 256),
+  judged by train_closure per registry entry 1.

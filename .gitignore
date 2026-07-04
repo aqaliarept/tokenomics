@@ -19,3 +19,6 @@ tokenomics/parallel_runs/
 # local mirror + heartbeat of a detached pod run's remote log (run_pod_training poller)
 *.live.log
 *.status
+
+# staged pod-input checkpoints (run_pod_training syncs the inner pkg dir; delete after runs)
+tokenomics/_pod_ckpts/

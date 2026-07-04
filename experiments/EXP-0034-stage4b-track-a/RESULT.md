@@ -117,6 +117,36 @@ representability (scorer obs can't express the planner's lookahead behavior).
 Artifacts: `train_closure/train_closure.csv` (+ summary JSON); tool
 `tokenomics.eval.train_closure` (reusable closure-by-split diagnostic).
 
+## Single-task overfit probe (2026-07-04) — fidelity wall = MULTI-TASK OPTIMIZATION, not representability
+
+Discriminator for the fidelity wall's cause: distill the producer scorer on ONE mined
+task at a time (`eval.overfit_probe`, recipe exactly as replay runs it — entity_planner
+teacher, proportional-orderer collect at seed 0), 2000 epochs, two width arms, then
+deploy with the frozen champion orderer on the task's paired seeds. 3 tasks (s42
+harsh-degradation cell, s118, s96 negative-closure) × hidden {64 = champion arch, 256}:
+
+| task | hidden 64 closure | hidden 256 closure | full-replay closure |
+|---|---|---|---|
+| s42 (gap 175u) | **0.97** (matched) | 0.85 (matched) | 0.10 |
+| s118 (gap 129u) | 0.66 | 0.77 | 0.10 |
+| s96 (gap 112u) | **0.90** (matched) | **1.04** (matched) | **−0.16** |
+
+4/6 arms match the teacher outright (fidelity ≥ 0.98); every arm lands far above the
+at-scale closure. Verdicts eliminated: **representability CLEARED** (the 64-wide champion
+architecture reproduces the planner on tasks it could not follow at scale — even with
+the recipe's collect-vs-deploy covariate shift); **capacity CLEARED at single-task
+level** (256 ≈ 64). Remaining cause: **multi-task optimization/interference** — one
+scorer asked to fit 121 topologies (57 mined + 64 broad augment) in 400 epochs averages
+away per-task investment behavior (s96: solo distill closes 90%, in the full replay the
+same data point REGRESSES −16%). s118's partial match (0.97 fidelity solo) marks a
+harder residual, secondary to the main effect.
+
+Fix trials this licenses (at-scale knobs, one pod run each, judged by `train_closure`):
+epochs ≫ 400 at scale, width ≥ 256 at scale (multi-task capacity untested — probe only
+cleared single-task), sample-balance/duplication changes, or staged/rung distillation
+(EXP-0004's cure). Artifacts: `overfit_probe/overfit_probe.csv` (+ summary JSON); tool
+`tokenomics.eval.overfit_probe`.
+
 ## Artifacts
 
 - `artifacts/preflight.csv`, `artifacts/vetted_grid.json` — pre-flight table + vetted grid

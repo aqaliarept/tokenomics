@@ -1,0 +1,7 @@
+task_id,hidden,epochs,clone_units,teacher_units,champion_units,fidelity,closure,teacher_matched
+mine-build_scale_config-capacity_scale0.3-degradation9-depth3-producers_per_layer3-quantity_max20-s42,64,2000,1273.0,1275.67,1191.0,0.9979,0.9685,True
+mine-build_scale_config-capacity_scale0.3-degradation9-depth3-producers_per_layer3-quantity_max20-s42,256,2000,1263.33,1275.67,1191.0,0.9903,0.8543,True
+mine-build_scale_config-capacity_scale0.35-depth3-producers_per_layer2-quantity_max14-s118,64,2000,991.67,1027.0,922.0,0.9656,0.6635,False
+mine-build_scale_config-capacity_scale0.35-depth3-producers_per_layer2-quantity_max14-s118,256,2000,1003.0,1027.0,922.0,0.9766,0.7714,False
+mine-build_scale_config-capacity_scale0.35-depth3-producers_per_layer2-quantity_max14-s96,64,2000,1034.0,1043.67,944.33,0.9907,0.9027,True
+mine-build_scale_config-capacity_scale0.35-depth3-producers_per_layer2-quantity_max14-s96,256,2000,1047.33,1043.67,944.33,1.0035,1.0369,True
