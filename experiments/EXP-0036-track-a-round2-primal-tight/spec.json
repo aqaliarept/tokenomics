@@ -1,0 +1,42 @@
+{
+  "stage": "4b Track A round 2",
+  "title": "primal-tight mining: capacity bound at the layer-0 source",
+  "question": "Does the freshly promoted EXP-0035 champion have real headroom on worlds whose capacity ceiling binds at the PRIMAL (layer-0) layer — the regime round 1 under-represented and the s54 skill trade pointed at — and which channel (producer vs orderer) owns it?",
+  "champion_producer_ckpt": "experiments/EXP-0035-distill-epochs/replay/artifacts/producer_candidate.pt",
+  "champion_orderer_ckpt": "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt",
+  "reference_bar": "entity_planner+mpc_search",
+  "grid": "primal_tight_cells() — 4 cells, depth 3, capacity_scale 0.60, primal_capacity_scale 0.22-0.30, ppl 2-3, qmax 14-20, one degradation-9 cell; preflight 4/4 capacity-bound at every world seed 20-119, binding at capacity-0",
+  "mine": {
+    "seeds": "20-119",
+    "eval_seeds": 3,
+    "horizon": 100,
+    "min_gap": 2.0,
+    "min_win_frac": 0.6,
+    "sampled": 400,
+    "policy_weakness": 96,
+    "archived": 81,
+    "archived_per_cell": {"p0.22-ppl3-q14": 26, "p0.3-ppl2-q14": 35, "deg9-p0.25-ppl3-q20": 2, "p0.25-ppl3-q16": 18},
+    "gap_units": {"min": 2.7, "median": 53.0, "mean": 99.9, "max": 973.3},
+    "win_fracs": {"1.0": 28, "0.667": 53}
+  },
+  "gap_attribution": {
+    "archive": "combined = EXP-0034 recoverable (113, retention) + round-2 (81)",
+    "round2_channels": {"orderer": 45, "mixed": 15, "producer": 11, "interaction_or_noise": 10},
+    "round2_sum_gap_units": 8088,
+    "round2_orderer_only_gain_units": 7172,
+    "round2_producer_only_gain_units": 1123,
+    "round2_champion_death_tasks": 6,
+    "orderer_closure_ratio": 0.9283,
+    "producer_closure_ratio": 0.3101,
+    "round1_no_positive_gap": "54/113 (promoted champion absorbed round 1)"
+  },
+  "probe": {
+    "tool": "eval.orderer_representability (seed-anchoring FIXED this EXP, DIAGNOSTICS entry 10)",
+    "task_ids_n": 10,
+    "selection": "top-2 orderer-gain per cell (4 champion-death monsters) + 2 mid-gap 30-80u",
+    "iters": 1000,
+    "eval_seeds": 3,
+    "status": "running"
+  },
+  "pods": ["4cbaqy4dwose9s mine", "h4trktlfnhlev1 gap_attribution", "y1n4jxte51zreb probe INVALID (seed bug, killed mid-run)", "probe rerun (fixed)"]
+}

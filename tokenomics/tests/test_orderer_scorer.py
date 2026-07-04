@@ -352,3 +352,39 @@ def test_qualifies_uses_headroom_floor() -> None:
     assert _qualifies({"headroom_frac": 0.05}, 0.02) is True
     assert _qualifies({"headroom_frac": 0.01}, 0.02) is False
     assert _qualifies({"headroom_frac": None}, 0.02) is False
+
+
+def test_headroom_row_anchors_at_record_episode_seed(monkeypatch) -> None:
+    # EXP-0036 probe bug regression: the probe evaluated at seeds range(eval_seeds) while the
+    # mined gap lives at the record's episode_seed block (`_episode_seeds`) — a different demand
+    # trace entirely (champ alive at 0-2, dead at the archived 77-79). The row must anchor every
+    # eval at the archive convention.
+    from tokenomics.eval import runner as runner_mod
+    from tokenomics.eval import orderer_oracle as oracle_mod
+    from tokenomics.eval.curriculum import TaskRecord
+    from tokenomics.eval.baselines import PRODUCING_BASELINES
+    from tokenomics.eval.orderer_representability import headroom_row
+    from tokenomics.train.orderer_scorer import OrdererScoreModel
+
+    seen: list[int] = []
+
+    def fake_run_episode(env, prod, order, seed):
+        seen.append(seed)
+        return {"consumer_completed_units": float(seed)}
+
+    def fake_search(env, prod, cand, n_samples, sample_scale, lookahead, seed):
+        seen.append(seed)
+        return {"consumer_completed_units": float(seed)}, None
+
+    monkeypatch.setattr(runner_mod, "run_episode", fake_run_episode)
+    monkeypatch.setattr(oracle_mod, "search_orderer_episode", fake_search)
+
+    rec = TaskRecord(
+        task_id="t", task_family="scale", generator_version="test", serializer_version="v1",
+        world_seed=7, episode_seed=7,
+        world_spec={"generator": "build_scale_config", "params": {"depth": 2}},
+    )
+    row = headroom_row(rec, PRODUCING_BASELINES["stock_aware"], OrdererScoreModel(),
+                       horizon=12, eval_seeds=2)
+    assert sorted(set(seen)) == [7, 8], f"evals must run at episode seeds 7-8, saw {sorted(set(seen))}"
+    assert row["champ_cu"] == pytest.approx(7.5)  # mean over the anchored block, not range(2)

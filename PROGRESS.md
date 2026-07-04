@@ -741,3 +741,28 @@ Decisions: future replay rounds train against THIS champion (champion ckpt arg i
 Blockers: none.
 Next: pick the next mine — Track-A round 2 (primal-tight cells, code ready) or Track B (scripted
   demand/shock traces).
+
+## 2026-07-04 - EXP-0036 Track-A round 2 (primal-tight): mined 81 tasks, headroom is ORDERER-owned; probe seed bug fixed
+Status: IN PROGRESS (representability probe pod running). Pipeline so far all on fresh CPU pods, each terminated.
+What: preflight 4/4 primal_tight_cells() bind at capacity-0 (every world seed 20-119) -> mine 400 vs
+  entity_planner+mpc_search with the EXP-0035 champion (400->96 policy_weakness->81 archived, cells
+  26/35/2/18; gaps min 2.7/med 53/mean 99.9/MAX 973u - order of magnitude beyond round 1) ->
+  gap_attribution over combined archive (113 round-1 retention + 81 new).
+Result (attribution): round-2 headroom is ORDERER-channel - 45 orderer/15 mixed/11 producer/10 noise;
+  orderer-only cross recovers 7172u of 8088u (89%), producer-only 14% (closure ratios 0.928 vs 0.310);
+  6/81 tasks are champion SYSTEM-DEATH that routing alone prevents (monster gaps 200-973u). Round 1 was
+  the inverse (70% producer). Round-1 sanity: 54/113 old tasks have no positive gap left - the promoted
+  champion absorbed round 1. Decision (user): orderer-probe-first (freeze-orderer replay would strand
+  ~86% of the mined headroom).
+Bug found + fixed (DIAGNOSTICS entry 10): orderer_representability evaluated archived tasks at episode
+  seeds range(eval_seeds)=0-2 instead of _episode_seeds(record.episode_seed,...) - a different demand
+  trace (champ "alive 957u" vs archived full-death 973u gap on s77). First probe pod killed mid-run.
+  Fix: all evals + oracle collection anchored at the archive convention (collector now covers all eval
+  seeds); regression test test_headroom_row_anchors_at_record_episode_seed; suite 608 passed. Caveat
+  propagated: EXP-0032b scan_headroom shared the bug - its "0/26 orderer headroom" survives only via
+  EXP-0033's exact-seed ceiling, not its own measurement.
+Artifacts: experiments/EXP-0036-track-a-round2-primal-tight/{spec.json, RESULT.md (in progress),
+  artifacts/(preflight.csv, vetted_grid.json), mine/, gap_attribution/}; README index row.
+Blockers: none. Probe ETA hours (sequential search collection ~30 min/task x 10).
+Next: probe verdict -> recovered_vs_teacher high = full orderer oracle-relabel replay on the 81-task
+  archive (plan to user first); low = architecture discussion, no new strategy without root-cause.

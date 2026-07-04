@@ -1,0 +1,31 @@
+{
+  "archive": "/workspace/tokenomics/_pod_ckpts/combined_archive.jsonl",
+  "candidates": [
+    "even_split",
+    "proportional"
+  ],
+  "csv": "/workspace/tokenomics/gap_r2/gap_attribution.csv",
+  "curriculum_matrix": null,
+  "dominant_channel_counts": {
+    "interaction_or_noise": 15,
+    "mixed": 22,
+    "orderer": 74,
+    "producer": 29
+  },
+  "eval_seeds": 3,
+  "horizon": 100,
+  "lookahead": 6,
+  "n_samples": 8,
+  "orderer_ckpt": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+  "orderer_closure_ratio": 0.9283,
+  "orderer_cross": true,
+  "positive_gap_rows": 140,
+  "producer_ckpt": "/workspace/tokenomics/_pod_ckpts/producer_champion_exp0035.pt",
+  "producer_closure_ratio": 0.3101,
+  "rows": 194,
+  "sample_scale": 1.0,
+  "sum_positive_gap_units": 10642.29,
+  "sum_positive_orderer_only_gain": 9879.28,
+  "sum_positive_producer_only_gain": 3299.95,
+  "workers": 16
+}

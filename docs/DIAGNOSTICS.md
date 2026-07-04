@@ -193,6 +193,37 @@ fixed in `_init_worker`).
 
 ---
 
+## 10. Probe numbers contradict the archive — same task, different result
+
+**Problem.** A diagnostic/probe harness reports champion (or bar) units on an archived
+task that disagree with what mining/`gap_attribution` recorded — e.g. champion alive and
+scoring high where the archive says it died. The domain is deterministic, so the same
+policies on the same config can only differ if the **episode seeds** differ.
+
+**Check.** Compare the harness's eval seeds against the archive convention:
+every consumer of a `TaskRecord` must evaluate at
+`_episode_seeds(record.episode_seed, eval_seeds)` (the contiguous block anchored at the
+record's seed), never `range(eval_seeds)` or the world seed. Grep the harness for
+`range(eval_seeds)`; cross-check one task against its `gap_attribution` row.
+Collect/deploy must use the SAME seeds (a distill collected at the archived seed but
+deployed at 0-2 craters for a second reason).
+
+**Outcome branches.**
+- Seeds mismatch → the probe measured a different demand trace, i.e. a different task;
+  all its verdicts on archived gaps are invalid. Fix the anchoring, rerun.
+- Seeds match → real disagreement; suspect config reconstruction (`replay()`/generator
+  drift) or policy loading.
+
+**Seen in.** EXP-0036 orderer representability probe (champ_cu 957 alive at seeds 0-2 vs
+archived full-death gap 973 at seeds 77-79; collector anchored, evals not — pod killed
+mid-run, fixed + regression-tested in `test_headroom_row_anchors_at_record_episode_seed`).
+**Caveat propagated:** EXP-0032b's headroom scan (`scan_headroom`) shared the bug — its
+"0/26 orderer headroom" was measured at seeds 0-2, not the archived seeds. Its
+conclusion stands only via EXP-0033 (family demand-bound by exact-seed analytic ceiling),
+not on its own measurement.
+
+---
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

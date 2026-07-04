@@ -32,7 +32,7 @@ from __future__ import annotations
 import argparse
 import statistics
 
-from .curriculum import TaskRecord, replay
+from .curriculum import TaskRecord, _episode_seeds, replay
 from ..train.orderer_scorer import (
     OrdererScoreModel,
     collect_oracle_orderer_samples,
@@ -50,12 +50,15 @@ def _mean_units(run) -> float:
     return run["consumer_completed_units"]
 
 
-def _champ_search_units(cfg, prod_pol, champ_order_model, *, horizon: int, eval_seeds: int
+def _champ_search_units(cfg, prod_pol, champ_order_model, *, horizon: int, seeds: list[int]
                         ) -> tuple[float, float]:
     """Mean on-task units for the two producer-frozen crosses that bound the orderer headroom:
     `champ_prod + champ_ord` (the deployed stack) and `champ_prod + per-cycle search` (the
     teacher ceiling). Shared by the headroom scan and the representability row so the two never
-    drift."""
+    drift. `seeds` MUST be the archive-anchored episode seeds (`_episode_seeds`), never
+    `range(eval_seeds)` — the mined gap lives at the record's demand trace, and evaluating any
+    other seed measures a different task (EXP-0036 probe bug: champ alive at seeds 0-2 while
+    the archived gap had it dead at seeds 77-79)."""
     from .joint_stack import joint_stack_env
     from .orderer_oracle import search_orderer_episode
     from .baselines import ORDERING_BASELINES
@@ -64,7 +67,7 @@ def _champ_search_units(cfg, prod_pol, champ_order_model, *, horizon: int, eval_
     cand = {n: ORDERING_BASELINES[n] for n in _SEARCH["candidates"]}
     champ_order = scorer_ordering_policy(champ_order_model)
     champ, search = [], []
-    for es in range(eval_seeds):
+    for es in seeds:
         champ.append(_mean_units(run_episode(joint_stack_env(cfg, horizon), prod_pol, champ_order, seed=es)))
         stats, _ = search_orderer_episode(joint_stack_env(cfg, horizon), prod_pol, cand,
                                           _SEARCH["n_samples"], _SEARCH["sample_scale"],
@@ -81,8 +84,9 @@ def headroom_row(record: TaskRecord, prod_pol, champ_order_model, *, horizon: in
     closed most of it), so probe tasks must be re-selected by *measured* headroom, not archived
     score. `headroom_frac` normalizes by `champ_cu` for a topology-agnostic floor."""
     cfg = replay(record)
+    seeds = _episode_seeds(record.episode_seed, eval_seeds)
     champ_cu, search_cu = _champ_search_units(cfg, prod_pol, champ_order_model,
-                                              horizon=horizon, eval_seeds=eval_seeds)
+                                              horizon=horizon, seeds=seeds)
     head = search_cu - champ_cu
     return {
         "task_id": record.task_id, "world_seed": record.world_seed,
@@ -104,10 +108,12 @@ def representability_row(
     from .runner import run_episode
 
     cfg = replay(record)
+    seeds = _episode_seeds(record.episode_seed, eval_seeds)
 
-    # 1. collect oracle-relabel samples on this task, distill a fresh orderer.
+    # 1. collect oracle-relabel samples on this task AT THE ARCHIVED EPISODE SEEDS (the same
+    # demand traces every eval below averages — collect/deploy seed mismatch craters the oracle).
     samples = collect_oracle_orderer_samples(
-        [cfg], [record.world_seed], prod=prod_pol, horizon=horizon,
+        [cfg] * len(seeds), seeds, prod=prod_pol, horizon=horizon,
         candidates=_SEARCH["candidates"], n_samples=_SEARCH["n_samples"],
         sample_scale=_SEARCH["sample_scale"], lookahead=_SEARCH["lookahead"], log=log)
     log(f"{record.task_id}: {len(samples)} oracle samples")
@@ -118,9 +124,9 @@ def representability_row(
 
     # champ + search (the frozen-producer bounds) share one code path with the headroom scan.
     champ_cu, search_cu = _champ_search_units(cfg, prod_pol, champ_order_model,
-                                              horizon=horizon, eval_seeds=eval_seeds)
+                                              horizon=horizon, seeds=seeds)
     oracle, barcu = [], []
-    for es in range(eval_seeds):
+    for es in seeds:
         oracle.append(_mean_units(run_episode(joint_stack_env(cfg, horizon), prod_pol, oracle_order, seed=es)))
         barcu.append(_mean_units(bar(cfg, es, horizon)))
 
