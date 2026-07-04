@@ -92,6 +92,10 @@ def build_scale_config(
     products_per_layer: int = 4,
     producers_per_layer: int = 4,
     num_consumers: int = 3,
+    quantity_max: int | None = None,
+    capacity_scale: float = 1.0,
+    primal_capacity_scale: float = 1.0,
+    degradation: int | None = None,
 ) -> Configuration:
     """A valid layered economy (see module docstring). Defaults: 3 levels × 4 products
     = 12 products, 4 producers/level = 12 producers, 3 consumers — inside the stage-5
@@ -100,7 +104,17 @@ def build_scale_config(
     Depth defaults to 3 as the cheapest scale smoke target. ADR-0041 corrected the
     earlier ADR-0040 diagnosis: depth 4-5 chains are fulfillable once producing
     observations expose outstanding inbound replenishment. `depth` stays a parameter
-    so deeper-chain and stress findings remain reproducible."""
+    so deeper-chain and stress findings remain reproducible.
+
+    Track A capacity-binding axes (all opt-in; the defaults draw the exact prior rng
+    stream, so `capacity_scale=1.0, quantity_max=None, degradation=None` is byte-identical
+    to the original economy): `quantity_max` raises consumer demand pressure,
+    `capacity_scale` multiplies every producer's owned capacity (< 1 tightens toward a
+    capacity-bound ceiling), `primal_capacity_scale` multiplies ONLY layer-0 (primal)
+    capacity on top of `capacity_scale` (< 1 makes the primal source the binding layer —
+    the regime whose "upgrade the tight primal first" skill the Track-A round-1 replay
+    traded away, EXP-0034 s54), `degradation` overrides the per-cycle decay. Each rng draw
+    still happens even when overridden, so topology and every other value stay aligned."""
     rng = random.Random(seed)
     W = products_per_layer
     stride = _stride_for_width(W)
@@ -131,10 +145,15 @@ def build_scale_config(
             # first producer is always strong so every product stays makeable.
             strong = (k == 0) or rng.random() < 0.6
             cap = rng.randint(80, 140) if strong else rng.randint(8, 20)
+            # capacity-tight axes (opt-in): uniform `capacity_scale`, plus a layer-0-only
+            # `primal_capacity_scale` so the primal source can be made the binding layer.
+            scale = capacity_scale * (primal_capacity_scale if level == 0 else 1.0)
+            cap = max(1, int(round(cap * scale)))
+            deg = rng.randint(3, 7)  # drawn even when overridden -> rng stream stays aligned
             common = dict(
                 id=f"p{level}_{k}",
                 capacities={cap_type: cap},
-                degradation=rng.randint(3, 7),
+                degradation=deg if degradation is None else degradation,
                 restoration=Restoration(require=_MAINT, restores=rng.randint(40, 70),
                                         type=cap_type, cost=rng.randint(20, 50)),
                 upgrade=Upgrade(require=_MAINT, increases=rng.randint(30, 50),
@@ -156,11 +175,12 @@ def build_scale_config(
     # --- consumers: demand the finished top layer with episode-seeded demand (B9) ---
     top = depth - 1
     top_pool = tuple(_pid(top, j, stride) for j in range(W))
-    consumers = [
-        ConsumerConfig(id=f"c{i}", product=top_pool[0], products=top_pool,
-                       quantity_min=1, quantity_max=rng.randint(2, 3))
-        for i in range(num_consumers)
-    ]
+    consumers = []
+    for i in range(num_consumers):
+        qd = rng.randint(2, 3)  # drawn even when overridden -> rng stream stays aligned
+        consumers.append(ConsumerConfig(
+            id=f"c{i}", product=top_pool[0], products=top_pool, quantity_min=1,
+            quantity_max=(qd if quantity_max is None else quantity_max)))
 
     cfg = Configuration(
         cycle_emission=2000 + 200 * depth * producers_per_layer,

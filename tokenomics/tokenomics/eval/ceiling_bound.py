@@ -176,8 +176,9 @@ def _capacity_bound_for_demand(
     *,
     transitive: bool,
     demand: dict[Product, int],
+    include_upgrade_slack: bool = True,
 ) -> Bound:
-    caps = capacity_cycles_by_type(cfg, horizon)
+    caps = capacity_cycles_by_type(cfg, horizon, include_upgrade_slack=include_upgrade_slack)
     products = set(demand)
     bundles = {
         product: recipe_capacity_bundle(cfg, product, transitive=transitive)
@@ -216,18 +217,27 @@ def ceiling_bounds(
     horizon: int,
     *,
     episode_seeds: Iterable[int] | None = None,
+    include_upgrade_slack: bool = True,
 ) -> dict[str, Bound]:
     """Return B0/B1/B2 upper bounds for ``cfg`` over ``horizon`` cycles.
 
     With ``episode_seeds`` the bounds are the mean of the exact deterministic consumer
     schedules for those seeds, matching the curriculum matrix convention.  Without seeds,
     a conservative seed-free max-demand cap is used.
+
+    ``include_upgrade_slack`` (default True, EXP-0033 byte-identical) relaxes upgrades to
+    free/instant, so the capacity tiers stay above any policy that expands max capacity.
+    The Track A capacity-binding pre-flight sets it False: base capacity only, so a cell
+    whose *base* throughput cannot meet demand (investment skill required) reads as
+    capacity-bound instead of the structurally-demand-bound slack tier.
     """
     if episode_seeds is None:
         demand = {product: int(demand_cap_units(cfg, horizon)) for product in demanded_products(cfg)}
         b0 = Bound("B0", demand_cap_units(cfg, horizon), "demand")
-        b1_raw = _capacity_bound_for_demand(cfg, horizon, transitive=False, demand=demand)
-        b2_raw = _capacity_bound_for_demand(cfg, horizon, transitive=True, demand=demand)
+        b1_raw = _capacity_bound_for_demand(cfg, horizon, transitive=False, demand=demand,
+                                            include_upgrade_slack=include_upgrade_slack)
+        b2_raw = _capacity_bound_for_demand(cfg, horizon, transitive=True, demand=demand,
+                                            include_upgrade_slack=include_upgrade_slack)
         b1 = Bound(
             "B1",
             min(b0.units, b1_raw.units),
@@ -246,8 +256,10 @@ def ceiling_bounds(
     for seed in episode_seeds:
         demand = episode_demand(cfg, horizon, seed)
         b0s.append(Bound("B0", float(sum(demand.values())), "demand"))
-        b1s.append(_capacity_bound_for_demand(cfg, horizon, transitive=False, demand=demand))
-        b2s.append(_capacity_bound_for_demand(cfg, horizon, transitive=True, demand=demand))
+        b1s.append(_capacity_bound_for_demand(cfg, horizon, transitive=False, demand=demand,
+                                              include_upgrade_slack=include_upgrade_slack))
+        b2s.append(_capacity_bound_for_demand(cfg, horizon, transitive=True, demand=demand,
+                                              include_upgrade_slack=include_upgrade_slack))
     b0 = _mean_bound("B0", b0s)
     b1 = _mean_bound("B1", b1s)
     b2 = _mean_bound("B2", b2s)

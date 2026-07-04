@@ -532,3 +532,136 @@ Tests: tokenomics/tests/test_curriculum_replay.py adds the gap-priority parser b
 Decision: this is the binding pre-4b fix for the EXP-0030 seed-14 concentration failure mode.
   Track A replay should use the default capped gap-priority path unless a run explicitly records
   a reason to override it.
+
+2026-07-03 - Stage 4b Track A capacity-binding mining — gates + grid built (TDD)
+Status: DONE (code, local). CURRICULUM_GAME_MASTER_APPROACH.md Stage 4b Track A implemented
+  as the two NEW gates + capacity-tight grid, wired into the EXISTING Stage 3/4 machinery
+  (curriculum_mining.grid_pool/mine_hard_cases + gap_attribution unchanged). Vertical TDD, one
+  test->impl per slice, full suite 595 passed / 0 regressions.
+Artifacts:
+  - eval/ceiling_bound.py: `ceiling_bounds(..., include_upgrade_slack=False)` plumbed (default
+    True = EXP-0033 byte-identical). KEY FINDING: the slack tier relaxes upgrades to free/instant
+    (increases*horizon^2), so the ceiling is STRUCTURALLY demand-bound — capacity never binds and a
+    literal "B2<B0" pre-flight would mine nothing. The no-slack (base-capacity) tier is the correct
+    capacity-binding signal: a cell whose base throughput can't meet demand is one where investment
+    skill separates strong from weak.
+  - eval/scale.py: build_scale_config gains opt-in `quantity_max` / `capacity_scale` / `degradation`
+    axes; every rng draw still happens when overridden so defaults are fingerprint-identical.
+  - eval/curriculum_capacity.py (NEW, torch-free): `preflight_cells` (keep cells whose no-slack
+    B2 binds below demand at EVERY world seed of the mine's range — see review-fix below),
+    `capacity_tight_cells()` (shipped grid: ppl 2-3 below envelope, raised quantity,
+    capacity_scale<1, one harsh-decay cell — all bind at every seed 20-119),
+    `is_recoverable`/`recoverable_task_ids`/`filter_archive_recoverable` (recoverability gate over a
+    gap_attribution matrix: keep only dominant∈{producer,producer_partial,orderer,mixed} with
+    component gain ≥0.5u; drops joint-mismatch = the EXP-0031/0032b dead ends), CLI `preflight`
+    (emits a curriculum_mining --grid) + `filter-recoverable`.
+  - tests/test_curriculum_capacity.py (8), + no-slack tier test in test_ceiling_bound.py,
+    + 3 capacity-axis tests in test_scale.py.
+Smoke: preflight emits the 4-cell grid (4/4 capacity-bound); curriculum_mining --dry-run accepts it
+  (params flow into the pool). Tiny torch smoke (1 cell ppl3/qmax16/capscale0.30, 1 seed, horizon 12)
+  vs mpc_search: learner 46 < ref 60, gap 14, class=policy_weakness — a capacity-bound cell surfaces
+  a real weakness the saturated depth-3 family never did. Premise validated.
+Decisions: no domain change (all eval-layer); reuse mining + gap_attribution as-is; no ADR needed
+  (Track A is spec+run per the roadmap). No promotion, no champion change — this only curates tasks.
+
+Review fix (blocking, resolved): the first cut certified a cell at world seed 0 ONLY, but
+  build_scale_config draws capacity per WORLD seed (strong/weak rng split), so a cell capacity-bound
+  at seed 0 can be demand-bound (saturated) at seed 17 — mining sweeps the whole range, so saturated
+  tasks would leak into the archive (the exact failure pre-flight exists to stop). Fix: `cell_ceiling`
+  now bounds EVERY world seed (each with its own `_episode_seeds(ws, eval_seeds)` demand, mirroring
+  curriculum_mining._evaluate) and keeps a cell only if the LOOSEST seed's capacity/demand ratio still
+  binds (`b2_over_b0_worst < 1-margin`); `binds_frac` reports partial-bind cells instead of dropping
+  silently. CLI split `--seeds` into `--world-seeds` (default 20-119, match the mine) + `--eval-seeds`.
+  Regression test added (a cell that binds at seed 0 but not across 0-9 is now dropped). Shipped grid
+  retuned so all 4 cells bind at every seed 20-119. Note (documented): no-slack B2 is a MINING SELECTOR,
+  not a ceiling certificate — real policies CAN upgrade past it; never reuse it as a promotion bound.
+  Minors also fixed: is_recoverable docstring warns to run gap_attribution WITH --orderer-cross (else
+  not_producer silently drops orderer-recoverable tasks); scale.py qd loop de-obscured; quoted
+  annotations dropped; flip-test comment aligned with its assert.
+Blockers: none.
+Next: launch the FULL Track A run on Runpod per CLAUDE.md HARD RULE — preflight (local) -> stage the
+  EXP-0030 producer + EXP-0012 orderer ckpts under tokenomics/_pod_ckpts/ -> curriculum_mining --grid
+  on the pod (wide seed sweep, eval-seeds 3, horizon 100, --workers) -> gap_attribution on the mined
+  archive -> filter-recoverable -> Stage-4 augment replay (capped gap-priority) -> full promotion
+  gates. Materialize as experiments/EXP-0034-stage4b-track-a-*. Then evaluate stage-exit (mined-val
+  improvement now that headroom exists) vs claim-boundary reject.
+
+## Stage 4b Track A FULL cloud run (EXP-0034) — DONE, premise VALIDATED, candidate advisory-fail
+Status: full pipeline run on Runpod (3 fresh 16-vCPU CPU pods, --create-pod --cpu --python python3.12,
+  each auto-terminated), pulled to experiments/EXP-0034-stage4b-track-a. Pre-flight + filter local.
+Pipeline (each stage gated on prior):
+  1. preflight (local, torch-free, 1.5s): 4/4 vetted cells capacity-bound across world seeds 20-119
+     (b2_over_b0_worst<1, binds_frac 1.0 each) -> artifacts/vetted_grid.json. No-slack B2 = SELECTOR.
+  2. mining (curriculum_mining --grid, 400 tasks = 4 cells x seeds 20-119, bar entity_planner+mpc_search,
+     min_gap 2.0 min_win 0.6): 146/400 policy_weakness -> 119 archived (all 4 config cells).
+  3. gap_attribution (orderer-cross ON): producer_closure_ratio 1.026, orderer 0.386; channels
+     producer 83 / orderer 16 / mixed 14 / interaction_or_noise 6.
+  4. filter-recoverable (local): 113/119 kept (dropped 6 interaction_or_noise).
+  5. curriculum_replay --augment --freeze-orderer --depth 3 (champion EXP-0030 producer_candidate,
+     orderer frozen EXP-0012; 57 train / 28 val / 28 blind; champion-matched defaults).
+Result: capacity binding REVIVES producer headroom + the producer lever, closing the Stages-0-4
+  demand-saturated fixed point. Candidate producer: val +14.80u mean (16/28 better), blind +8.33u mean
+  (18/28 better), broad transfer (seeds 6-9) BYTE-IDENTICAL (0 forgetting, 0 transfer regressions,
+  0 contract fails, 0 deaths). NOT Pareto: worst blind task -107u (capacity_scale0.35 ppl2 qmax14 s54)
+  trips the conservative TAIL gate (blind_tail 721.67 < champion 772.33) -> objective_gate_pass=false,
+  promote_recommended=false. FIRST Stage-4 producer replay to move val at all (vs EXP-0031's dead 5.27%
+  closure / 21-of-26 not_producer on the saturated family).
+Fix (blocking, in-run): gap_attribution ProcessPoolExecutor workers had NO thread pinning -> 16 workers
+  x default torch intra-op threads oversubscribed the box (load 157 on 16 vCPU), 0/119 tasks done in
+  62 min, log() never fired. Added to _init_worker: OMP/MKL/OPENBLAS_NUM_THREADS=1 + torch.set_num_
+  threads(1) per worker (mining already pins the same on its subprocess env, curriculum_mining.py:432).
+  Also added a startup banner + per-completion (k/total done) counter that flush under -u. Verified by
+  local 2-task smoke, then relaunched: load 157 -> ~19, full run finished in ~15 min. Stale first pod
+  (wrong ckpt path: staged _pod_ckpts one dir too deep INSIDE the package vs the inner root; driver
+  syncs the inner pkg dir) terminated; corrected path landed ckpts at /workspace/tokenomics/_pod_ckpts.
+Artifacts: experiments/EXP-0034-stage4b-track-a/{RESULT.md, artifacts/(preflight.csv, vetted_grid.json,
+  task_archive.jsonl[119], recoverable_archive.jsonl[113]), summary.csv[400], gap_attribution/, replay/}.
+  gap_attribution.py thread-pin + logging change (no test asserts the log string; curriculum_capacity
+  tests still 9/9 green). .pt candidates need git-lfs on commit. NOT committed.
+Decisions: mirror EXP-0030 recipe (--augment --freeze-orderer, champion-matched defaults); promotion is
+  a HUMAN call (mean-improving tail-trading producer, same posture as the EXP-0030 incumbent override).
+Blockers: none.
+Next (open, human call): (a) promote the Track-A producer candidate (mean up on both held-out
+  capacity-binding splits, broad family untouched) accepting the -107u blind-tail task, OR keep EXP-0030
+  incumbent; (b) if promoting, a tail-robust variant (down-weight/exclude the s54-class outlier, or
+  priority reweighting) before promotion; (c) Track B (harsher-degradation / deeper-chain capacity
+  regimes) if more headroom wanted. Commit EXP-0034 (+ gap_attribution fix) with git-lfs for the .pt.
+
+## 2026-07-04 - EXP-0034 blind-tail task diagnosed (s54, -107u) — real skill trade, not noise
+Status: DONE (local single-task diagnostic; quick-eval class: 1 task, 2 ckpts, 3 paired seeds + 1 per-cycle trace).
+What: reproduced the blind-tail regression exactly (champion 878.0 / candidate 771.33, seeds 54-56) and traced
+  the mechanism. Behavioral, not instability: candidate loses on ALL 3 seeds (-115/-165/-40), 0 deaths,
+  cap_min identical. Mechanism = upgrade misallocation at the layer-0 primal bottleneck: s54's layer-0 is
+  dominated by p0_0 (initial max 48 vs sibling 6; one +31 upgrade costs 35). Champion buys it by cycle 10
+  (max 48->79, held near max); candidate NEVER upgrades p0_0 in 100 cycles (runs 28-46/48) and spends
+  upgrades mid/late-chain (p1_1 193->234; fewer p2 upgrades). Layer-0 starves the chain: repl_rej 135->171,
+  units even to cycle 30 then steady compounding divergence. Track-A replay traded away the champion's
+  "upgrade the tight primal source first" behavior; augment protected the broad family, not this in-family skill.
+Artifacts: EXP-0034 RESULT.md "Diagnosis" section (numbers + reading). Diag script was throwaway (deleted).
+Decisions: none taken - promotion still the open human call, now with the trade-off named: promoting accepts
+  losing small-primal-bottleneck economies (~1/3 regressing tasks likely share the signature - unverified),
+  OR next replay round mixes in primal-tight cells (grid axis: scale down ONE layer-0 producer) to keep both skills.
+Blockers: none.
+Next: human promotion call on the Track-A candidate; if "train past it" chosen, add primal-tight cells to the
+  Track A grid and rerun augment replay on the pod.
+
+## 2026-07-04 - EXP-0034 train-closure diagnostic — harvest bottleneck = DISTILL FIDELITY (new tool + CLAUDE.md rule)
+Status: DONE. New HARD RULE in CLAUDE.md ("Root cause before next strategy"): no new strategy/axis/arc
+  until the failure cause is diagnosed with evidence and written down; discriminating diagnostic first.
+What: built tokenomics/eval/train_closure.py (reusable closure-by-split diagnostic: candidate-only rollouts,
+  champion+bar joined from gap_attribution.csv, worker pool with thread pinning; tests 4/4, local smoke) and
+  ran it on a fresh 16-vCPU pod (image runpod/base:0.7.0-ubuntu2004, --cpu --python python3.12; pod created,
+  ran, pulled, TERMINATED - no idle billing). 57 train tasks x 3 paired seeds, horizon 100.
+Result: train closure 0.159 aggregate / 0.098 median (vs val 0.19, blind 0.12) -> train ~ val ~ blind =
+  NO generalization gap. Sharper: candidate reaches 92.7% of its OWN distill teacher on its OWN train split
+  (teacher stack 1093.3u vs candidate 1013.0u/task; 13% of teacher-champion gap captured; 26/57 train tasks
+  regress vs champion; closure quartiles -0.51/0.10/0.57). EXP-0004 pattern: CLONING-FIDELITY gap.
+Decisions: (a) more Track-A mining rounds ON HOLD - the pre-staged EXP-0035 primal-tight round-2
+  record dir was removed (user call; nothing had launched); the primal_capacity_scale axis, primal_tight_cells()
+  grid and tests stay in the tree, valid + ready if a distill fix revives the round; (b) fidelity wall is on Track B's critical path too (same distill
+  recipe harvests any mined archive); (c) EXP-0034 candidate promotion question unchanged (means real).
+Blockers: none.
+Next (root-cause layer 2, pick one): single-task overfit discriminator - distill on ONE mined task with
+  generous epochs; teacher matched -> optimization/capacity at scale (bigger scorer, staged DAgger a la
+  EXP-0004); not matched -> representability (scorer can't express planner lookahead). THEN decide distill
+  fix vs accept ceiling; only after that Track B / EXP-0035 relaunch.

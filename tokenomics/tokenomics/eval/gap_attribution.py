@@ -312,6 +312,18 @@ def _compute_row(
 
 def _init_worker(producer_ckpt: str, orderer_ckpt: str) -> None:
     global _WORKER_BAR_PROD, _WORKER_CHAMP_ORD, _WORKER_CHAMP_PROD
+    # Pin BLAS/torch to 1 thread PER worker. The pool fans out `workers` processes;
+    # without this each worker spawns its own intra-op thread pool, so 16 workers ×
+    # N threads oversubscribes the box (load >> cores) and every task crawls. Mining
+    # pins the same vars on its subprocess env (curriculum_mining.py); match it here.
+    import os as _os
+    for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+        _os.environ[_v] = "1"
+    try:
+        import torch as _torch
+        _torch.set_num_threads(1)
+    except ImportError:
+        pass
     from ..train.orderer_scorer import load_scorer, scorer_ordering_policy
     from ..train.producer_scorer import load_producer_score_model, scorer_producing_policy
 
@@ -438,16 +450,20 @@ def run_gap_attribution(
             }
             for idx, rec in enumerate(records, start=1)
         ]
+        log(f"gap_attribution: {len(payloads)} tasks over {workers} workers "
+            f"(eval_seeds={eval_seeds}, horizon={horizon}, lookahead={lookahead}); starting...")
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=workers,
             initializer=_init_worker,
             initargs=(str(producer_ckpt), str(orderer_ckpt)),
         ) as pool:
             futures = [pool.submit(_worker_row, payload) for payload in payloads]
+            done = 0
             for future in concurrent.futures.as_completed(futures):
                 row, msg = future.result()
                 rows.append(row)
-                log(msg)
+                done += 1
+                log(f"({done}/{len(payloads)} done) {msg}")
         rows.sort(key=lambda r: int(r["archive_index"]))
 
     csv_path = out_path / "gap_attribution.csv"

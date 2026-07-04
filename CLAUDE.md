@@ -31,6 +31,9 @@ Curriculum/game-master stages use replayable task archives, scorer checkpoints, 
 deterministic reference bars. Do **not** run `tokenomics.train.smoke_ppo` as a
 curriculum-stage smoke check; PPO training was rejected for this stage.
 
+## Root cause before next strategy (HARD RULE)
+An experiment failed or underperformed → do **NOT** propose or start the next strategy/axis/arc until the failure cause is **diagnosed with evidence** (trace, closure-by-split, ablation — not a hypothesis) and written down (EXP `RESULT.md` or `PROGRESS.md`). When competing explanations demand different responses (e.g. distill-fidelity wall → fix training vs generalization gap → mine denser), run the **discriminating diagnostic first**; it decides the move. Every new-strategy proposal must name the diagnosed cause it addresses. (Failure seen: EXP-0034 candidate captured ~15% of mined headroom; jumping to "mine more cells" without knowing WHY the harvest is low would have spent pods on the wrong fix.)
+
 ## Where training + experiments run (HARD RULE)
 **All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `boundary_grid`, `warm_start`/`clone_fidelity` DAgger, `producer_improve`, full `smoke_ppo`/`parallel` sweeps, any multi-topology or multi-iter run.
 

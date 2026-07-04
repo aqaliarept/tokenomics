@@ -63,6 +63,102 @@ def test_scale_config_varies_with_seed_but_is_deterministic():
     assert a != b              # different seed -> different economy (bounded variation)
 
 
+def test_capacity_tight_params_default_is_byte_identical():
+    # Track A capacity axes must be OPT-IN: passing the defaults reproduces the exact
+    # existing economy so the champion / prior experiments stay comparable.
+    from tokenomics.eval.scale import build_scale_config
+
+    for s in (0, 3, 7):
+        base = config_fingerprint(build_scale_config(seed=s))
+        opt_in = config_fingerprint(build_scale_config(
+            seed=s, quantity_max=None, capacity_scale=1.0, degradation=None))
+        assert base == opt_in
+
+
+def test_primal_capacity_scale_default_is_byte_identical():
+    # The layer-0-only tightening axis (Track A round 2) must be opt-in: the default
+    # 1.0 draws the exact prior rng stream, so nothing else drifts.
+    from tokenomics.eval.scale import build_scale_config
+
+    for s in (0, 3, 7):
+        base = config_fingerprint(build_scale_config(seed=s))
+        opt_in = config_fingerprint(build_scale_config(seed=s, primal_capacity_scale=1.0))
+        assert base == opt_in
+
+
+def test_primal_capacity_scale_tightens_only_layer_zero():
+    # scale down ONLY the primal (layer-0) producers; upper layers untouched. This is the
+    # mechanism the s54 blind-tail regression exposed: layer-0 supply caps the whole chain,
+    # so the cheapest lever is upgrading the tight primal source. round 2 mines that regime.
+    from tokenomics.eval.scale import build_scale_config
+
+    plain = build_scale_config(seed=0, producers_per_layer=3)
+    primal = build_scale_config(seed=0, producers_per_layer=3, primal_capacity_scale=0.4)
+    primal.validate()
+
+    def cap_by_layer(cfg):
+        by: dict[int, int] = {}
+        for p in cfg.producer_configs:
+            lvl = int(p.id[1:].split("_")[0])
+            by[lvl] = by.get(lvl, 0) + sum(p.capacities.values())
+        return by
+
+    a, b = cap_by_layer(plain), cap_by_layer(primal)
+    assert b[0] < a[0]                                   # layer-0 capacity shrank
+    assert all(b[lvl] == a[lvl] for lvl in a if lvl != 0)  # every other layer identical
+
+
+def test_primal_tight_cells_bind_at_the_primal_layer():
+    # the round-2 grid: cells whose binding constraint is capacity-0 (the primal layer),
+    # so mining surfaces primal-bottleneck tasks the augment replay must learn to solve.
+    from tokenomics.eval.ceiling_bound import ceiling_bounds
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.eval.curriculum_capacity import primal_tight_cells
+
+    cells = primal_tight_cells()
+    assert len(cells) >= 1
+    seeds = [20, 21, 22]
+    for cell in cells:
+        cfg = build_scale_config(seed=20, **cell)
+        b = ceiling_bounds(cfg, horizon=100, episode_seeds=seeds, include_upgrade_slack=False)
+        assert b["B2"].units < b["B0"].units - 0.5          # capacity binds below demand
+        assert "capacity-0" in b["B2"].binding_constraint   # and it binds at the primal layer
+
+
+def test_capacity_tight_params_set_demand_capacity_and_degradation():
+    from tokenomics.eval.scale import build_scale_config
+
+    cfg = build_scale_config(seed=0, quantity_max=16, capacity_scale=0.3, degradation=9)
+    cfg.validate()                                   # still a runnable economy
+    assert all(c.quantity_max == 16 for c in cfg.consumers)
+    assert all(c.quantity_min <= c.quantity_max for c in cfg.consumers)
+    assert all(p.degradation == 9 for p in cfg.producer_configs)
+    # capacity scaled down vs the untouched economy (per-type total shrinks)
+    plain = build_scale_config(seed=0)
+    tight_cap = sum(sum(p.capacities.values()) for p in cfg.producer_configs)
+    plain_cap = sum(sum(p.capacities.values()) for p in plain.producer_configs)
+    assert tight_cap < plain_cap
+
+
+def test_capacity_tight_params_flip_ceiling_to_capacity_bound():
+    # The whole point of the axes: a tight cell must read capacity-bound under the
+    # no-slack pre-flight tier (Slice 1), where the default cell is demand-bound.
+    from tokenomics.eval.ceiling_bound import ceiling_bounds
+    from tokenomics.eval.scale import build_scale_config
+
+    seeds = [0, 1, 2]
+    default = build_scale_config(seed=0, producers_per_layer=3)
+    d = ceiling_bounds(default, horizon=60, episode_seeds=seeds, include_upgrade_slack=False)
+    assert d["B2"].units >= d["B0"].units - 0.5  # demand-bound: capacity has slack
+
+    tight = build_scale_config(seed=0, producers_per_layer=3, quantity_max=16, capacity_scale=0.25)
+    t = ceiling_bounds(tight, horizon=60, episode_seeds=seeds, include_upgrade_slack=False)
+    assert t["B2"].units < t["B0"].units - 0.5     # capacity binds below demand
+    # the seed-mean binding may read "capacity:capacity-N" or, when different seeds bind on
+    # different types, "mixed:capacity:..." — either way it is a capacity constraint.
+    assert "capacity:" in t["B2"].binding_constraint
+
+
 def test_scale_config_has_several_eligible_producers_per_top_product():
     from tokenomics.eval.scale import build_scale_config
 

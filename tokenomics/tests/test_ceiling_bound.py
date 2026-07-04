@@ -82,6 +82,45 @@ def test_b0_b1_b2_hand_checked_toy_bounds() -> None:
     assert bounds["B2"].binding_constraint == "capacity:c0"
 
 
+def _upgrade_config(cap: int, increases: int, demand: int) -> Configuration:
+    """One-level economy whose producer can expand capacity via upgrade.
+
+    Base capacity is `cap`; the (optimistic, free/instant) upgrade slack adds
+    `increases * horizon * horizon`.  With demand between the two, the ceiling is
+    demand-bound WITH slack but capacity-bound WITHOUT it — the Track A pre-flight
+    discriminator (a cell where investment skill, not demand, is the ceiling).
+    """
+    cfg = Configuration(
+        cycle_emission=1000,
+        process_sheets=[ProcessSheet(product=1, require={"c0": 1})],
+        producer_configs=[
+            ProducingAgentConfig(
+                id="p0",
+                capacities={"c0": cap},
+                degradation=0,
+                restoration=Restoration(require=1, restores=0, type="c0"),
+                upgrade=Upgrade(require=1, increases=increases, type="c0"),
+                produces=frozenset({1}),
+            )
+        ],
+        consumers=[ConsumerConfig(id="c", product=1, quantity_min=demand, quantity_max=demand)],
+    )
+    cfg.validate()
+    return cfg
+
+
+def test_no_upgrade_slack_tier_makes_capacity_bind() -> None:
+    # base c0 = 10*4 = 40; upgrade slack adds 5*4*4 = 80 -> 120.  Demand = 100.
+    cfg = _upgrade_config(cap=10, increases=5, demand=25)  # 25 * horizon 4 = 100 units
+    with_slack = ceiling_bounds(cfg, horizon=4)
+    assert with_slack["B2"].units == 100.0
+    assert with_slack["B2"].binding_constraint == "demand"
+
+    no_slack = ceiling_bounds(cfg, horizon=4, include_upgrade_slack=False)
+    assert no_slack["B2"].units == 40.0
+    assert no_slack["B2"].binding_constraint == "capacity:c0"
+
+
 def test_run_ceiling_audit_writes_exp_layout(tmp_path) -> None:
     archive = tmp_path / "archive.jsonl"
     matrix = tmp_path / "matrix.csv"
