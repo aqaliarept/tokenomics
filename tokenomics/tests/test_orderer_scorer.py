@@ -645,7 +645,7 @@ def test_collect_choice_samples_records_committed_vocab_choice() -> None:
 
     cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
                              num_consumers=1, quantity_max=2)
-    samples, vocab = collect_choice_samples(
+    samples, _, vocab = collect_choice_samples(
         [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
         lookahead=2, horizon=4)
     assert vocab == ["even_split", "blend_0.5", "proportional"]
@@ -654,6 +654,31 @@ def test_collect_choice_samples_records_committed_vocab_choice() -> None:
         assert 0 <= s.choice < len(vocab)
         assert s.margin >= 0.0
         assert s.view.backlog
+
+
+def test_collect_choice_samples_also_records_per_cycle_global_state() -> None:
+    # A0c / D1 discriminator: the same search pass must also snapshot the FULL global state
+    # (env.global_state(), ADR-0004) once per cycle, paired with the committed choice + margin —
+    # the dataset that separates "choice needs global context" from "choice is rollout noise".
+    # Only cycles that produced stream samples are recorded, so the global probe's majority
+    # floor is computed on the same cycle population as the per-stream one.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.orderer_scorer import collect_choice_samples
+
+    cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
+                             num_consumers=1, quantity_max=2)
+    samples, global_samples, vocab = collect_choice_samples(
+        [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
+        lookahead=2, horizon=4)
+    assert vocab == ["even_split", "blend_0.5", "proportional"]
+    assert samples and global_samples
+    # one global sample per cycle with stream samples -> never more than stream samples
+    assert len(global_samples) <= len(samples)
+    dim = global_samples[0].view.shape
+    stream_pairs = {(s.choice, s.margin) for s in samples}
+    for g in global_samples:
+        assert g.view.ndim == 1 and g.view.shape == dim and g.view.dtype == np.float32
+        assert (g.choice, g.margin) in stream_pairs
 
 
 def test_choice_model_fits_and_reports_accuracy_vs_majority() -> None:
@@ -668,7 +693,7 @@ def test_choice_model_fits_and_reports_accuracy_vs_majority() -> None:
 
     cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
                              num_consumers=1, quantity_max=2)
-    samples, vocab = collect_choice_samples(
+    samples, _, vocab = collect_choice_samples(
         [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
         lookahead=2, horizon=4)
     model = OrdererChoiceModel(n_choices=len(vocab))
@@ -681,6 +706,33 @@ def test_choice_model_fits_and_reports_accuracy_vs_majority() -> None:
         assert k in m
     assert m["n"] == len(samples)
     assert 0.0 <= m["majority"] <= 1.0
+    assert m["top1"] >= m["majority"] - 1e-9
+
+
+def test_global_choice_model_fits_from_standardized_global_state() -> None:
+    # A0c machinery: a plain MLP on the FULL global state predicts the committed vocabulary
+    # choice; inputs are standardized with train-set stats (set_norm — EXP-0009 lesson: raw
+    # global_state magnitudes wreck optimization). Reuses fit_choice_model/choice_metrics via
+    # the shared `.view/.choice/.margin` sample shape. On its own training set a converged fit
+    # must at least match the majority floor.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.orderer_scorer import (
+        GlobalChoiceModel, choice_metrics, collect_choice_samples, fit_choice_model)
+
+    cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
+                             num_consumers=1, quantity_max=2)
+    _, gsamples, vocab = collect_choice_samples(
+        [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
+        lookahead=2, horizon=4)
+    assert gsamples
+    model = GlobalChoiceModel(n_choices=len(vocab), state_dim=gsamples[0].view.shape[0])
+    model.set_norm([g.view for g in gsamples])
+    logits = model.forward_view(gsamples[0].view)
+    assert logits.shape == (len(vocab),)
+
+    fit_choice_model(model, gsamples, iters=150)
+    m = choice_metrics(model, gsamples)
+    assert m["n"] == len(gsamples)
     assert m["top1"] >= m["majority"] - 1e-9
 
 
@@ -702,7 +754,10 @@ def test_a0b_diag_row_reports_blend_capture_and_choice_learnability() -> None:
     for k in ("search_cu", "even_split_cu", "search_named_cu", "search_blend_cu",
               "named_capture_frac", "blend_capture_frac", "choice_top1", "choice_majority",
               "choice_top1_decisive", "choice_majority_decisive",
-              "n_choice_train", "n_choice_heldout", "choice_heldout", "vocab"):
+              "n_choice_train", "n_choice_heldout", "choice_heldout", "vocab",
+              # A0c global-state probe (missing-context vs choice-noise discriminator)
+              "gchoice_top1", "gchoice_majority", "gchoice_top1_decisive",
+              "gchoice_majority_decisive", "n_gchoice_train", "n_gchoice_heldout"):
         assert k in row
     # blend vocabulary is a superset of the named one; per-cycle greedy search does not guarantee
     # episode-level monotonicity, so allow the same small trajectory-divergence slack as A0.
@@ -724,8 +779,14 @@ def test_emit_a0b_writes_exp_layout(tmp_path) -> None:
              "choice_top1": 0.8, "choice_majority": 0.55,
              "choice_top1_decisive": 0.85, "choice_majority_decisive": 0.5,
              "n_choice_decisive": 40, "n_choice_train": 200, "n_choice_heldout": 100,
+             "gchoice_top1": 0.7, "gchoice_majority": 0.55,
+             "gchoice_top1_decisive": 0.75, "gchoice_majority_decisive": 0.5,
+             "n_gchoice_train": 80, "n_gchoice_heldout": 40,
              "choice_heldout": True, "vocab": ["even_split", "blend_0.5", "proportional"]}]
     _emit_a0b(tmp_path, rows, meta={"iters": 1000, "alphas": [0.5]})
     assert (tmp_path / "summary.csv").exists() and (tmp_path / "spec.json").exists()
     result = (tmp_path / "RESULT.md").read_text()
     assert "blend_capture_frac" in result and "choice_top1" in result
+    # A0c: the global-state probe (missing-context vs choice-noise) must be in the read order
+    assert "gchoice_top1" in result
+    assert "gchoice_top1" in (tmp_path / "summary.csv").read_text()

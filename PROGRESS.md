@@ -1113,3 +1113,28 @@ Blockers: none.
 Next: global-state probe (cheap; reuse collect_choice_samples with a global-state encoder) to pick
 branch (a) vs (b). Deferred: index EXP-0036 orderer_a0 + orderer_a0b in experiments/README.md;
 champion-collapses-on-mined-tasks (0 units on s77/s45) still flagged separately.
+
+## 2026-07-05 — Stage A0c built + launched: global-state probe (missing-context vs choice-noise discriminator)
+Status: A0c built via TDD (4 cycles, +2 tests -> file 37, full suite 625 passed) and launched on a
+fresh pod. Motivation: A0b's D1 failed 3/3 (held-out choice_top1 < majority floor while train CE
+fits to 0.10-0.17) — two competing causes demand different fixes: (a) missing global context
+(enrich obs) vs (b) rollout-noise choice (soft labels / deploy-time search). A0c discriminates:
+fit the SAME classification protocol from the FULL global state (env.global_state(), ADR-0004).
+- `train/orderer_scorer.py::GlobalChoiceSample` — one per searched cycle (only cycles that yielded
+  stream samples, so both probes share the cycle population); `collect_choice_samples` now returns
+  `(samples, global_samples, names)` from the SAME search pass (no extra search cost).
+- `train/orderer_scorer.py::GlobalChoiceModel(n_choices, state_dim)` — plain MLP + set_norm
+  (train-set mean/std standardization; EXP-0009 lesson: raw global_state magnitudes wreck
+  optimization). `fit_choice_model`/`choice_metrics` reused via duck-typed `.view/.choice/.margin`.
+- `eval/orderer_representability.py::a0b_diag_row` gains gchoice_top1/gchoice_majority (+decisive
+  split, counts); `_emit_a0b` read order now has step 3 = global probe branch logic.
+Artifacts: restaged _pod_ckpts (same producer champion + archive); fresh create-pod launch,
+same --a0b CLI, --out-dir /workspace/tokenomics/orderer_a0c; pulls to
+experiments/EXP-0036-track-a-round2-primal-tight/orderer_a0c. Launch log /tmp/a0c_pod_launch.log.
+Decisions: global sample label/margin identical to the cycle's stream samples (same committed
+choice); probe n is small (~1 per cycle, ~200 train / ~100 heldout per task) — read it as a coarse
+beats-majority-or-not gate, not a precise accuracy estimate.
+Blockers: none.
+Next: read gchoice_top1 vs gchoice_majority per task. Beats floor => D1 wall = missing context ->
+spec obs enrichment (compact global features). Fails => choice is rollout noise -> A1 soft-label /
+margin-filter or A2 deploy-time light search. Then delete tokenomics/_pod_ckpts/.

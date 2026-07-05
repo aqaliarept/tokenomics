@@ -439,8 +439,37 @@ class OrdererChoiceModel(nn.Module):
         return self.choice_head(torch.cat([pooled, g]))  # (n_choices,)
 
 
-def fit_choice_model(model: "OrdererChoiceModel", samples: list["ChoiceSample"], iters: int,
-                     lr: float = 1e-3, log=lambda *a, **k: None) -> "OrdererChoiceModel":
+class GlobalChoiceModel(nn.Module):
+    """Categorical head over the vocabulary from the FULL global state (A0c discriminator).
+
+    Same fit/metrics protocol as `OrdererChoiceModel` (duck-typed `forward_view` on samples
+    carrying `.view/.choice/.margin`), but the input is `env.global_state()` — everything the
+    search could read at decision time. Inputs are standardized with train-set stats
+    (`set_norm`); EXP-0009 showed raw global_state magnitudes wreck optimization."""
+
+    def __init__(self, n_choices: int, state_dim: int, hidden: int = 64) -> None:
+        super().__init__()
+        self.n_choices = n_choices
+        self.encoder = _mlp(state_dim, hidden)
+        self.choice_head = nn.Linear(hidden, n_choices)
+        self.register_buffer("state_mean", torch.zeros(state_dim))
+        self.register_buffer("state_std", torch.ones(state_dim))
+
+    def set_norm(self, states: list[np.ndarray]) -> None:
+        arr = np.nan_to_num(np.asarray(states, dtype=np.float32),
+                            nan=0.0, posinf=_BOUND, neginf=-_BOUND)
+        self.state_mean.copy_(torch.from_numpy(arr.mean(axis=0)))
+        self.state_std.copy_(torch.from_numpy(arr.std(axis=0).clip(min=1e-6)))
+
+    def forward_view(self, view: np.ndarray) -> torch.Tensor:
+        device = next(self.parameters()).device
+        x = _tensor([list(view)], device)[0]
+        x = (x - self.state_mean) / self.state_std
+        return self.choice_head(self.encoder(x))  # (n_choices,)
+
+
+def fit_choice_model(model: nn.Module, samples: list, iters: int,
+                     lr: float = 1e-3, log=lambda *a, **k: None) -> nn.Module:
     """Cross-entropy fit of the categorical head on committed-choice samples."""
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     ce = nn.CrossEntropyLoss()
@@ -459,7 +488,7 @@ def fit_choice_model(model: "OrdererChoiceModel", samples: list["ChoiceSample"],
     return model
 
 
-def _top1_and_majority(model: "OrdererChoiceModel", samples: list["ChoiceSample"]
+def _top1_and_majority(model: nn.Module, samples: list
                        ) -> tuple[float | None, float | None]:
     if not samples:
         return None, None
@@ -469,7 +498,7 @@ def _top1_and_majority(model: "OrdererChoiceModel", samples: list["ChoiceSample"
     return hits / len(samples), float(counts.max()) / len(samples)
 
 
-def choice_metrics(model: "OrdererChoiceModel", samples: list["ChoiceSample"]) -> dict:
+def choice_metrics(model: nn.Module, samples: list) -> dict:
     """Top-1 accuracy of the categorical head vs the majority-class floor, overall and on
     DECISIVE samples only (margin > 0 — cycles where the search's choice carried signal;
     tie cycles are arbitrary, so accuracy on them is noise, not learnability evidence)."""
@@ -490,10 +519,22 @@ class ChoiceSample:
     margin: float  # best minus second-best rollout units — 0 = tie, the search picked arbitrarily
 
 
+@dataclass
+class GlobalChoiceSample:
+    """One per cycle: the FULL global state (ADR-0004 centralized-critic input) paired with the
+    committed vocabulary choice. Field named `view` so `fit_choice_model`/`choice_metrics`
+    duck-type across both sample kinds. A0c discriminator: if a global-state classifier beats
+    the majority floor where the stream-view one failed, the D1 wall is missing CONTEXT (enrich
+    the obs); if it fails too, the choice is rollout NOISE (soft labels / deploy-time search)."""
+    view: np.ndarray  # env.global_state() snapshot at the searched cycle, float32
+    choice: int
+    margin: float
+
+
 def collect_choice_samples(
     configs, seeds, *, prod, alphas: Sequence[float] = (0.75, 0.5, 0.25),
     lookahead: int = 6, horizon: int = 100, log=lambda *a, **k: None,
-) -> tuple[list["ChoiceSample"], list[str]]:
+) -> tuple[list["ChoiceSample"], list["GlobalChoiceSample"], list[str]]:
     """Categorical-teacher dataset (A0b / D1): drive each `(config, seed)` under the frozen
     producer + the per-cycle search restricted to the named+blend vocabulary (`blend_vocabulary`,
     n_samples=0), and snapshot every backlog-holding product-stream view paired with WHICH
@@ -502,8 +543,11 @@ def collect_choice_samples(
     `named_capture_frac` (A0) only proved the headroom is reachable inside this vocabulary via a
     lookahead oracle; this dataset tests the separate learnability question — is the committed
     choice predictable from the stream observation alone? Ties (margin 0) are recorded, not
-    dropped, so metrics can split decisive vs tie-arbitrary rows. Returns `(samples, vocab names)`;
-    the choice index follows the vocabulary insertion order."""
+    dropped, so metrics can split decisive vs tie-arbitrary rows. The same pass also snapshots
+    `env.global_state()` once per cycle (only cycles that yielded stream samples, so both probes
+    share a cycle population) — the A0c missing-context vs choice-noise discriminator. Returns
+    `(samples, global samples, vocab names)`; the choice index follows vocabulary insertion
+    order."""
     from ..env.aec_env import TokenomicsAECEnv
     from ..eval.orderer_oracle import _score_candidates, blend_vocabulary
 
@@ -513,6 +557,7 @@ def collect_choice_samples(
     vocab = blend_vocabulary(alphas)
     names = list(vocab)
     samples: list[ChoiceSample] = []
+    global_samples: list[GlobalChoiceSample] = []
     for cfg, seed in zip(configs, seeds):
         env = TokenomicsAECEnv(config=cfg, horizon=horizon, entity_producer_obs=True,
                                product_stream_ordering=True, corrected_stream_k=True)
@@ -522,11 +567,15 @@ def collect_choice_samples(
         cur = -1
         choice, margin = 0, 0.0
         order_pol = vocab[names[0]]
+        pending_global: GlobalChoiceSample | None = None
+        n_at_cycle = len(samples)
         for agent in env.agent_iter(max_iter=max_iter):
             if env.terminations[agent] or env.truncations[agent]:
                 env.step(None)
                 continue
             if env.current_cycle != cur:  # re-search the committed vocabulary entry once per cycle
+                if pending_global is not None and len(samples) > n_at_cycle:
+                    global_samples.append(pending_global)
                 cur = env.current_cycle
                 scored = _score_candidates(env, prod, vocab, 0, 1.0, lookahead, seed, cur, adim)
                 units = [u for _, _, u in scored]  # vocabulary insertion order preserved
@@ -534,6 +583,9 @@ def collect_choice_samples(
                 ranked = sorted(units, reverse=True)
                 margin = float(ranked[0] - ranked[1]) if len(ranked) > 1 else 0.0
                 order_pol = scored[choice][1]
+                pending_global = GlobalChoiceSample(
+                    np.asarray(env.global_state(), dtype=np.float32), choice, margin)
+                n_at_cycle = len(samples)
             role, aid = env._role[agent]
             if role == "order":
                 view = env.system.product_stream_view(aid)
@@ -542,8 +594,11 @@ def collect_choice_samples(
                     if any(view.producer_products[p].eligible > 0 for p in pids):
                         samples.append(ChoiceSample(view, choice, margin))
             env.step(prod(env, agent) if role == "prod" else order_pol(env, agent))
-        log(f"seed {seed}: {len(samples)} cumulative choice samples")
-    return samples, names
+        if pending_global is not None and len(samples) > n_at_cycle:
+            global_samples.append(pending_global)
+        log(f"seed {seed}: {len(samples)} cumulative choice samples "
+            f"({len(global_samples)} global)")
+    return samples, global_samples, names
 
 
 def fit_scorer(model: "OrdererScoreModel", samples: list["ScorerSample"], iters: int,

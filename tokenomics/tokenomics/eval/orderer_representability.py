@@ -339,7 +339,8 @@ def a0b_diag_row(
     from .baselines import ORDERING_BASELINES
     from .orderer_oracle import search_orderer_episode
     from ..train.orderer_scorer import (
-        OrdererChoiceModel, choice_metrics, collect_choice_samples, fit_choice_model)
+        GlobalChoiceModel, OrdererChoiceModel, choice_metrics, collect_choice_samples,
+        fit_choice_model)
 
     cfg = replay(record)
     seeds = _episode_seeds(record.episode_seed, eval_seeds)
@@ -363,9 +364,10 @@ def a0b_diag_row(
     train_seeds = list(seeds[:-1]) if heldout else list(seeds)
     collect_kw = dict(prod=prod_pol, alphas=alphas, lookahead=_SEARCH["lookahead"],
                       horizon=horizon, log=log)
-    train_samples, vocab = collect_choice_samples([cfg] * len(train_seeds), train_seeds,
-                                                  **collect_kw)
-    heldout_samples, _ = collect_choice_samples([cfg], [seeds[-1]], **collect_kw)
+    train_samples, train_gsamples, vocab = collect_choice_samples(
+        [cfg] * len(train_seeds), train_seeds, **collect_kw)
+    heldout_samples, heldout_gsamples, _ = collect_choice_samples([cfg], [seeds[-1]],
+                                                                  **collect_kw)
     if train_samples:
         model = fit_choice_model(OrdererChoiceModel(n_choices=len(vocab)), train_samples,
                                  iters=iters, log=log)
@@ -373,6 +375,18 @@ def a0b_diag_row(
     else:
         m = {"top1": None, "majority": None, "top1_decisive": None, "majority_decisive": None,
              "n_decisive": 0}
+    # A0c discriminator: same protocol from the FULL global state (one sample per searched
+    # cycle). Beats the majority floor where the stream view failed => the D1 wall is missing
+    # CONTEXT; fails too => the committed choice is rollout NOISE — no observation can help.
+    if train_gsamples:
+        gmodel = GlobalChoiceModel(n_choices=len(vocab),
+                                   state_dim=train_gsamples[0].view.shape[0])
+        gmodel.set_norm([g.view for g in train_gsamples])
+        fit_choice_model(gmodel, train_gsamples, iters=iters, log=log)
+        gm = choice_metrics(gmodel, heldout_gsamples)
+    else:
+        gm = {"top1": None, "majority": None, "top1_decisive": None, "majority_decisive": None,
+              "n_decisive": 0}
 
     return {
         "task_id": record.task_id, "world_seed": record.world_seed,
@@ -385,6 +399,10 @@ def a0b_diag_row(
         "choice_majority_decisive": m["majority_decisive"],
         "n_choice_decisive": m["n_decisive"],
         "n_choice_train": len(train_samples), "n_choice_heldout": len(heldout_samples),
+        "gchoice_top1": gm["top1"], "gchoice_majority": gm["majority"],
+        "gchoice_top1_decisive": gm["top1_decisive"],
+        "gchoice_majority_decisive": gm["majority_decisive"],
+        "n_gchoice_train": len(train_gsamples), "n_gchoice_heldout": len(heldout_gsamples),
         "choice_heldout": heldout, "vocab": vocab,
     }
 
@@ -669,12 +687,20 @@ def _emit_a0b(out_dir, rows: list[dict], meta: dict) -> None:
         "2. **Choice learnability (D1):** held-out `choice_top1` vs `choice_majority` (and the",
         "   decisive-margin split). Near-majority => the categorical target inherits the same",
         "   unpredictability wall (A1b would fail; fall back to A1 denoise / A2 deploy-time search).",
-        "   Well above majority => A1b is green-lit.", "",
+        "   Well above majority => A1b is green-lit.",
+        "3. **Global-state probe (A0c, read only if D1 failed):** held-out `gchoice_top1` vs",
+        "   `gchoice_majority` — the same protocol from the FULL global state, one sample per",
+        "   searched cycle. Beats its majority floor => the D1 wall is missing CONTEXT (enrich the",
+        "   orderer obs with global features). Fails too => the committed choice is rollout NOISE;",
+        "   no observation can predict it — go soft labels / deploy-time search, not enrichment.", "",
         f"**Means:** named_capture_frac={_m('named_capture_frac')}, "
         f"blend_capture_frac={_m('blend_capture_frac')}, choice_top1={_m('choice_top1')}, "
         f"choice_majority={_m('choice_majority')}, "
         f"choice_top1_decisive={_m('choice_top1_decisive')}, "
-        f"choice_majority_decisive={_m('choice_majority_decisive')}.", "",
+        f"choice_majority_decisive={_m('choice_majority_decisive')}, "
+        f"gchoice_top1={_m('gchoice_top1')}, gchoice_majority={_m('gchoice_majority')}, "
+        f"gchoice_top1_decisive={_m('gchoice_top1_decisive')}, "
+        f"gchoice_majority_decisive={_m('gchoice_majority_decisive')}.", "",
         "## Per-task", "", "```json", json.dumps(rows, indent=2), "```", "",
         "## Conclusions", "", "_TODO (human): read blend value first, then learnability; pick the branch._", "",
     ]
