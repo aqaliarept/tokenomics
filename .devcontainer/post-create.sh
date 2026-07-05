@@ -22,3 +22,32 @@ mkdir -p "$SESSIONS_DIR"
 mkdir -p "$HOME/.claude/projects"
 container_slug="$(printf '%s' "$PWD" | sed 's|/|-|g')"
 ln -sfn -- "$SESSIONS_DIR" "$HOME/.claude/projects/$container_slug"
+
+# Keep hook scripts in the devcontainer dir (version-controlled);
+# symlink them into ~/.claude/ where settings.json expects them.
+ln -sfn -- "$PWD/.devcontainer/rtk-hook.sh" "$HOME/.claude/rtk-hook.sh"
+ln -sfn -- "$PWD/.devcontainer/lsp-log-hook.sh" "$HOME/.claude/lsp-log-hook.sh"
+
+# Claude Code plugin paths (known_marketplaces.json, installed_plugins.json) are
+# written by the host process using the host's home path (e.g. /Users/aqaliarept).
+# The bind mount lands at $HOME/.claude, so those paths don't resolve here.
+# Extract the host's .claude path from the JSON and symlink it to $HOME/.claude.
+host_claude_dir=$(python3 - <<'EOF'
+import json, re, os, sys
+try:
+    with open(os.path.expanduser("~/.claude/plugins/known_marketplaces.json")) as f:
+        data = json.load(f)
+    for v in data.values():
+        loc = v.get("installLocation", "")
+        m = re.match(r"(.+/\.claude)/", loc)
+        if m and m.group(1) != os.path.expanduser("~/.claude"):
+            print(m.group(1))
+            sys.exit(0)
+except Exception:
+    pass
+EOF
+)
+if [[ -n "$host_claude_dir" ]]; then
+    sudo mkdir -p "$(dirname "$host_claude_dir")"
+    sudo ln -sfn "$HOME/.claude" "$host_claude_dir"
+fi

@@ -22,3 +22,7 @@ tokenomics/parallel_runs/
 
 # staged pod-input checkpoints (run_pod_training syncs the inner pkg dir; delete after runs)
 tokenomics/_pod_ckpts/
+.claude/lsp-usage.log
+
+# crash debris (qemu/runpodctl core dumps)
+core

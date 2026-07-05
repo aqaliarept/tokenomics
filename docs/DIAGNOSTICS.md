@@ -222,6 +222,66 @@ mid-run, fixed + regression-tested in `test_headroom_row_anchors_at_record_episo
 conclusion stands only via EXP-0033 (family demand-bound by exact-seed analytic ceiling),
 not on its own measurement.
 
+## 11. Distill-from-search fails — is the TEACHER SIGNAL even learnable?
+
+**Problem.** A policy distilled on per-cycle search's committed routings underperforms
+its own teacher on its own training task, with weak in-sample agreement and huge
+run-to-run deploy variance (identical recipe, different torch init → 0 vs 800 units).
+Before blaming the network or the obs contract, check whether the regression TARGET
+carries learnable signal at all: the search commits ONE global routing per cycle, picked
+among near-tied candidates (incl. sampled Gaussian vectors), then that global choice is
+sliced into per-stream local targets — the mapping local-view → committed-routing can be
+mostly noise.
+
+**Check** (local, seconds — needs saved `samples.pkl.gz` from the instrumented probe):
+1. Fraction of flat targets: eligible target vector ≈ 0 after centering (search committed
+   even_split — no routing signal in that row).
+2. Zero-predictor baseline: masked-mse of predicting all-zeros (= route uniformly);
+   variance explained = 1 − model_mse / zero_mse.
+3. Top-1 agreement judged against chance = mean(1/n_eligible), not against 1.0.
+
+**Outcome branches.**
+- Variance explained low (≲ ~25%) on train states → **target/recipe failure**: the
+  informative part of the teacher's decision is global + tie-arbitrary; a local
+  per-stream MSE regressor is fitting noise. Before choosing a SIGNAL fix, run the
+  **representation discriminator (H4)**: does the headroom live inside a NAMED-policy
+  vocabulary or in continuous routings? Re-run the same per-cycle search with the sampled
+  Gaussian candidates OFF (`n_samples=0`, named candidates only, still switching per
+  cycle) → `search_named_cu`; `named_capture_frac = (search_named − even_split) /
+  (search_full − even_split)`.
+    - named_capture ≈ 1 → the single-choice noise is an **output-space** problem: the raw
+      per-producer routing was the wrong target. Change the teacher output to the named
+      policy the search chose (categorical {even_split, proportional, don't-care}, near-ties
+      → soft labels, or a blend coefficient α per stream) — state-reproducible, so the RNG
+      tie-noise vanishes, and a small categorical/scalar output is learnable. Beats denoising.
+    - named_capture ≈ 0 → the win is genuinely continuous → denoise the continuous target
+      (average committed routings over K independent searches, committing the mean to advance;
+      margin-filter/advantage-weight commits that don't beat even_split), add global context,
+      or skip distillation (deploy-time search). Do NOT spend on width/epochs/DAgger.
+  Do NOT read H4 off fixed-policy baselines — a per-cycle CHOICE among named policies is
+  strictly stronger than any single fixed one; only `search_named_cu` (per-cycle named
+  switching) answers it.
+- Variance explained high but deploy still collapses → covariate shift (entry 2's other
+  branch): student drifts off the teacher's state distribution; DAgger-style collection.
+
+**Seen in.** EXP-0036 orderer oracle-relabel probes (probe 1: 5/6 tasks deploy to exactly
+0 units incl. alive worlds; instrumented retry: 42–50% flat targets, variance explained
+25%/10%/64% on s29/s77/s45, top-1 0.50–0.60 vs chance 0.33–0.50; same recipe swung
+0→800u across runs). **A0 gate (orderer_a0/):** H4 named_capture_frac = 1.00 / 0.69 / 0.66
+(s29/s77/s45, mean 0.78) → the single-choice noise is largely an OUTPUT-SPACE problem: a
+per-cycle NAMED-only search (even_split/proportional switching, no Gaussian samples) recovers
+66–100% of the headroom. Denoise (H1) also lifts VE (0.27→0.52, 0.26→0.58, 0.64→0.75) but
+even averaged VE tops out ~0.5–0.75. Champion orderer delivers **0 units on s77 and s45**
+(< even_split's 514 / 200) — the mined tight tasks collapse the memorized champion. Fix chosen:
+named/blend teacher head (Stage A1b), not continuous-vector denoising.
+**A0b gate (orderer_a0b/):** blend value CONFIRMED (mean capture 0.78 named → 0.90 blend;
+s77 0.69→0.95) but choice learnability FAILED 3/3 — held-out top-1 BELOW the majority floor
+on every task (0.27/0.53, 0.38/0.56, 0.34/0.47) while train CE fits to 0.10–0.17: the
+committed choice fits in-episode and anti-transfers across seeds. Pure per-stream
+obs→choice A1b NOT green-lit. Open discriminator: fit the same classifier on the FULL
+GLOBAL STATE — beats majority → missing-context (enrich obs); still fails → choice noise
+(soft labels / deploy-time search), enrichment useless.
+
 ---
 
 ## Unverified problems (plain-English inbox)

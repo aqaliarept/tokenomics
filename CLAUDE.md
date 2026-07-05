@@ -2,6 +2,9 @@
 
 Caveman style here. Terse. Keep technical terms exact.
 
+## Code navigation (HARD RULE)
+**Always use the LSP tool** for code intelligence: go-to-definition, find-references, hover (types/docs), symbol search. Never use grep/find as a substitute for these. Load the tool first with `ToolSearch` query `select:LSP` if not yet in scope.
+
 ## What this is
 Cooperative multi-agent **RL environment** for a tokenomics economy game. Agents learn to fulfil consumer demand by distributing tokens + managing production capacity. Python only. All work lives in `tokenomics/`.
 

@@ -475,6 +475,111 @@ Reject:
   finding, not a failure).
 - Gaps are recoverable by neither component (joint-bar mismatch again).
 
+Amendment (binding, from EXP-0036): learnability-gated orderer harvest.
+
+EXP-0036 mined a real capacity-binding archive (headroom exists), but the first
+orderer harvest attempt failed at the SIGNAL, not the model. Distilling the search's
+per-cycle committed routing gave a target that is mostly noise: on the 3 instrumented
+probe tasks, variance-explained over a route-uniformly baseline was 25.4% / 9.8% /
+64.1% (s29/s77/s45, recomputed from saved samples), 29-50% of rows carried no routing
+lesson (search committed even_split), and the same recipe with a different torch init
+deployed 0 vs 800 units. Root cause (DIAGNOSTICS entry 11): the search commits ONE
+global routing per cycle among near-tied candidates (2 named + 8 per-cycle Gaussian
+vectors), sliced into per-stream local targets — the informative part is global +
+tie-arbitrary, so per-stream MSE fits noise. NOT a representability wall, NOT plain
+covariate shift.
+
+Binding constraints on any orderer harvest from here:
+
+- No learned critic / value model. EXP-0009 already showed units-to-go from
+  `global_state` has NEGATIVE held-out R^2 across topologies ("do not spend cloud
+  rescuing the value model; expect the same wall elsewhere in the arc"). A critic-
+  picks-best actor or critic-gated runtime search rests on a generalization the arc
+  disproved. Deploy-time search, if used, is gated by a CHEAP HEURISTIC trigger
+  (capacity reserve low / rejection rate high), never a learned death-risk head.
+- No categorical soft-labels over named routes A/B/C. Candidates are per-cycle random
+  Gaussian vectors (`eval/orderer_oracle.py:_candidate_list`), re-drawn each cycle;
+  the deploy action is a continuous per-stream simplex. There is no stable route to
+  label. Denoising is value-weighted regression, not classification.
+
+The harvest is gated on the discriminating diagnostic first — it can FAIL and end the
+orderer track:
+
+Stage A0 (one instrumented pod run; build/`--dry-run` local on 1 task). On the 3
+probe tasks emit one decision table:
+
+```text
+1. Headroom (H3, evaluate FIRST): cumulative consumer units under
+   even_split, proportional, search-oracle, champion.
+   oracle ~= even_split  -> STOP: no orderer headroom in this regime;
+                            accept champion or re-mine tighter. Falsifiable gate.
+   oracle >> even_split   -> proceed.
+2. Representation (H4): is the search's headroom a per-cycle CHOICE among named
+   policies, or genuinely-continuous producer weightings? Run the SAME per-cycle
+   search restricted to named candidates only (n_samples=0, still switching
+   even_split/proportional per cycle, no Gaussian samples) -> search_named_cu.
+   named_capture_frac = (search_named - even_split) / (search_full - even_split).
+   ~1 -> the lever is per-cycle named-policy choice (a LEARNABLE categorical/blend
+         teacher captures it; the raw continuous vector was the wrong output space) -> A1b.
+   ~0 -> the win is continuous routings a named vocabulary would throw away -> keep the
+         continuous target, go to Denoise (H1).
+   NOTE: do NOT read this off the fixed-policy columns. even_split_cu / proportional_cu
+   are single policies held all episode; a per-cycle CHOICE among them is strictly
+   stronger and sits between max(fixed named) and search_full. Only search_named_cu
+   (per-cycle named switching) answers H4.
+3. Denoise (H1): per visited state run K=4 independent searches (different sample
+   RNG), commit the mean vector to advance (cross-trajectory averaging is invalid;
+   committed routing diverges the trajectory after cycle 0). Recompute
+   VE = 1 - model_mse/zero_mse for single vs averaged targets.
+4. Global-context upper bound (H2): refit the student with a small system-summary
+   feature block (capacity reserve by layer, downstream backlog) and recompute VE.
+   NOTE: per-stream deciders are independent; global features raise an upper bound
+   but do not reconstruct a jointly-committed routing — H2-positive means the obs
+   contract, not the loss, is the lever.
+```
+
+Branches (read in order): named_capture ~1 -> H4, representation is the fix -> Stage A1b
+(categorical/blend head). Else averaged VE jumps -> H1, denoise suffices -> Stage A1.
+Only averaged+global jumps -> H2, obs change needed -> Stage A1 with global obs. Neither
+moves but headroom exists -> Stage A2 (deploy-time search is the only lever). Neither moves
+and no headroom -> orderer track done, report claim boundary.
+
+Stage A1 (only if A0 green): distill the denoised target with the existing per-stream
+orderer, loss = advantage-weighted regression, advantage = `search_score -
+even_split_score` computed OFFLINE from search rollouts (not a learned critic). Flat /
+near-tie rows down-weight for free. Gate: deployed consumer units >= champion on the
+held-out mined suite (standard candidate gate + Stage 4b promotion gates).
+
+Stage A1b (only if H4 positive — named-policy teacher representation): the single-choice
+noise is an OUTPUT-SPACE problem, not just a label-noise problem. Instead of regressing a
+raw per-producer routing vector (whose tie-arbitrary winner among near-tied Gaussian
+candidates is unlearnable RNG), change the teacher output to a small, state-reproducible
+vocabulary and have the student predict THAT:
+  - Categorical head: per stream, classify {even_split, proportional, don't-care} (the
+    committed named policy the per-cycle search chose). Near-ties become well-defined soft
+    labels (e.g. even_split 0.5 / proportional 0.5) — the very thing rejected earlier ONLY
+    because candidates were Gaussian; a named vocabulary makes soft labels legitimate.
+    `don't-care` is the no-lesson (true-tie) class named explicitly, not down-weighted.
+  - Blend head (middle ground if named_capture is close-but-<1): output one interpolation
+    coefficient alpha per stream, route alpha*even_split + (1-alpha)*proportional. 1 scalar/
+    stream — far more learnable than the P-vector, more expressive than hard classification.
+  Decode by EXECUTING the chosen/blended named policy (reproducible, no simplex regression).
+  Gate: deployed consumer units >= champion on the held-out mined suite (same as A1). Why it
+  beats A1 when H4 holds: kills the RNG noise at the source (reproducible targets) AND shrinks
+  the output space (categorical/1-scalar), so the student learns the actual per-cycle-switching
+  policy the search runs. If named_capture ~0, this stage is skipped — the vocabulary does not
+  contain the headroom.
+
+Stage A2 (fallback / guaranteed harvest): deploy-time light search (2-4 candidates)
+fired only on the heuristic danger trigger above; measure units gained vs search-calls
+per cycle (cost knob). The `~1000u` deploy-time headroom is the known floor.
+
+Accept (orderer harvest): A0 shows headroom AND a downstream stage (A1b categorical/blend,
+A1 continuous-denoise, or A2 deploy-time) clears the champion bar on held-out mined tasks.
+Reject: A0 shows oracle ~= even_split (no headroom), OR named_capture ~0 AND VE columns stay
+at the noise floor with no deploy-time win — report as a claim-boundary finding, do not spend
+on width/epochs/DAgger (the wall is upstream).
+
 ### Track B: Scripted Demand And Shock Traces
 
 Purpose: test and train closed-loop adaptivity — the historically weakest documented

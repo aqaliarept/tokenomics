@@ -340,6 +340,212 @@ def collect_oracle_orderer_samples(
     return samples
 
 
+# Stride between the per-search seeds of the K-averaged collector: each of the K searches at one
+# state must draw an INDEPENDENT sampled-routing set (RNG seeded by (seed, cycle) in _candidate_list),
+# so search k uses seed + k*stride; k=0 keeps the single-search seed for strict parity.
+_K_SEARCH_SEED_STRIDE = 1_000_003
+
+
+def collect_averaged_oracle_orderer_samples(
+    configs, seeds, *, prod, k_searches: int = 4,
+    candidates: Sequence[str] = ("even_split", "proportional"),
+    n_samples: int = 8, sample_scale: float = 1.0, lookahead: int = 6, horizon: int = 100,
+    log=lambda *a, **k: None,
+) -> list["ScorerSample"]:
+    """Denoised oracle relabel (Stage A0 / H1, EXP-0036). Same as `collect_oracle_orderer_samples`
+    but each cycle runs `k_searches` INDEPENDENT searches (RNG stride `_K_SEARCH_SEED_STRIDE`) and
+    commits their MEAN routing vector — both as the teacher target and to advance the trajectory.
+
+    The mined failure was that a single per-cycle search commits one routing among near-tied
+    candidates (2 named + `n_samples` per-cycle Gaussian vectors), so the per-stream target is
+    tie-arbitrary noise. Averaging K independent searches cancels the tie-arbitrariness while
+    keeping the systematic routing; comparing VE(averaged) to VE(single) is A0's discriminating
+    check. Cross-trajectory averaging is invalid (committed routing diverges the trajectory after
+    cycle 0), so the mean is committed to advance a SINGLE trajectory. With `k_searches=1` this is
+    byte-identical to the single-search collector (nothing to average)."""
+    from ..env.aec_env import TokenomicsAECEnv
+    from ..eval.baselines import ORDERING_BASELINES
+    from ..eval.orderer_oracle import _search_best_pol
+
+    configs, seeds = list(configs), list(seeds)
+    if len(configs) != len(seeds):
+        raise ValueError(f"configs ({len(configs)}) must align 1:1 with seeds ({len(seeds)})")
+    if k_searches < 1:
+        raise ValueError(f"k_searches must be >= 1, got {k_searches}")
+    cand = {name: ORDERING_BASELINES[name] for name in candidates}
+    samples: list[ScorerSample] = []
+    for cfg, seed in zip(configs, seeds):
+        env = TokenomicsAECEnv(config=cfg, horizon=horizon, entity_producer_obs=True,
+                               product_stream_ordering=True, corrected_stream_k=True)
+        env.reset(seed=seed)
+        spec = env.spec_
+        adim = spec.ordering_action_dim
+        max_iter = env.horizon * len(env.possible_agents) * 3 + 100
+        cur = -1
+        k_pols: list = []
+        for agent in env.agent_iter(max_iter=max_iter):
+            if env.terminations[agent] or env.truncations[agent]:
+                env.step(None)
+                continue
+            if env.current_cycle != cur:  # K independent searches, once per cycle
+                cur = env.current_cycle
+                k_pols = [
+                    _search_best_pol(env, prod, cand, n_samples, sample_scale, lookahead,
+                                     seed + k * _K_SEARCH_SEED_STRIDE, cur, adim)[0]
+                    for k in range(k_searches)
+                ]
+            role, aid = env._role[agent]
+            if role == "order":
+                mean_act = np.mean([np.asarray(p(env, agent), dtype=np.float32) for p in k_pols],
+                                   axis=0).astype(np.float32)
+                view = env.system.product_stream_view(aid)
+                if view.backlog:
+                    pids = sorted(view.producers)
+                    mask = np.array([view.producer_products[p].eligible > 0 for p in pids])
+                    if mask.any():
+                        reduced = _reduce_committed(mean_act, spec.k_stream, spec.num_producers,
+                                                    len(view.backlog))
+                        samples.append(ScorerSample(view, _center_clip_eligible(reduced, mask), mask))
+                env.step(mean_act)
+            else:
+                env.step(prod(env, agent))
+        log(f"seed {seed}: {len(samples)} cumulative samples (k={k_searches})")
+    return samples
+
+
+class OrdererChoiceModel(nn.Module):
+    """Per-stream categorical head over the named+blend vocabulary (A0b / D1).
+
+    Same product/row encoders as `OrdererScoreModel`, but producer rows are mean-pooled into one
+    stream embedding (order-invariant, any producer count) and a linear head emits one logit per
+    vocabulary entry. Tests whether the search's committed choice is predictable from the stream
+    view alone — the learnability question `named_capture_frac` cannot answer."""
+
+    def __init__(self, n_choices: int, hidden: int = 64) -> None:
+        super().__init__()
+        self.n_choices = n_choices
+        self.global_encoder = _mlp(_PRODUCT_DIM, hidden)
+        self.row_encoder = _mlp(_PRODUCER_ROW_DIM, hidden)
+        self.choice_head = nn.Linear(2 * hidden, n_choices)
+
+    def forward_view(self, view: ProductStreamView) -> torch.Tensor:
+        device = next(self.parameters()).device
+        g = self.global_encoder(_tensor([_product_features(view.product_stats)], device))[0]
+        rows = [
+            _producer_row_features(view.producers[p], view.producer_products[p])
+            for p in sorted(view.producers)
+        ]
+        pooled = self.row_encoder(_tensor(rows, device)).mean(dim=0)
+        return self.choice_head(torch.cat([pooled, g]))  # (n_choices,)
+
+
+def fit_choice_model(model: "OrdererChoiceModel", samples: list["ChoiceSample"], iters: int,
+                     lr: float = 1e-3, log=lambda *a, **k: None) -> "OrdererChoiceModel":
+    """Cross-entropy fit of the categorical head on committed-choice samples."""
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    ce = nn.CrossEntropyLoss()
+    model.train()
+    device = next(model.parameters()).device
+    for it in range(iters):
+        opt.zero_grad()
+        logits = torch.stack([model.forward_view(s.view) for s in samples])
+        target = torch.tensor([s.choice for s in samples], dtype=torch.long, device=device)
+        loss = ce(logits, target)
+        loss.backward()
+        opt.step()
+        if it % max(1, iters // 10) == 0 or it == iters - 1:
+            log(f"iter {it}: choice-ce {loss.item():.4f}")
+    model.eval()
+    return model
+
+
+def _top1_and_majority(model: "OrdererChoiceModel", samples: list["ChoiceSample"]
+                       ) -> tuple[float | None, float | None]:
+    if not samples:
+        return None, None
+    with torch.no_grad():
+        hits = sum(int(int(model.forward_view(s.view).argmax()) == s.choice) for s in samples)
+    counts = np.bincount([s.choice for s in samples], minlength=model.n_choices)
+    return hits / len(samples), float(counts.max()) / len(samples)
+
+
+def choice_metrics(model: "OrdererChoiceModel", samples: list["ChoiceSample"]) -> dict:
+    """Top-1 accuracy of the categorical head vs the majority-class floor, overall and on
+    DECISIVE samples only (margin > 0 — cycles where the search's choice carried signal;
+    tie cycles are arbitrary, so accuracy on them is noise, not learnability evidence)."""
+    model.eval()
+    top1, majority = _top1_and_majority(model, samples)
+    decisive = [s for s in samples if s.margin > 0.0]
+    top1_d, majority_d = _top1_and_majority(model, decisive)
+    return {
+        "top1": top1, "majority": majority, "n": len(samples),
+        "top1_decisive": top1_d, "majority_decisive": majority_d, "n_decisive": len(decisive),
+    }
+
+
+@dataclass
+class ChoiceSample:
+    view: ProductStreamView
+    choice: int    # committed vocabulary index this cycle (global per cycle, tiled per stream)
+    margin: float  # best minus second-best rollout units — 0 = tie, the search picked arbitrarily
+
+
+def collect_choice_samples(
+    configs, seeds, *, prod, alphas: Sequence[float] = (0.75, 0.5, 0.25),
+    lookahead: int = 6, horizon: int = 100, log=lambda *a, **k: None,
+) -> tuple[list["ChoiceSample"], list[str]]:
+    """Categorical-teacher dataset (A0b / D1): drive each `(config, seed)` under the frozen
+    producer + the per-cycle search restricted to the named+blend vocabulary (`blend_vocabulary`,
+    n_samples=0), and snapshot every backlog-holding product-stream view paired with WHICH
+    vocabulary entry the search committed plus the decisiveness margin.
+
+    `named_capture_frac` (A0) only proved the headroom is reachable inside this vocabulary via a
+    lookahead oracle; this dataset tests the separate learnability question — is the committed
+    choice predictable from the stream observation alone? Ties (margin 0) are recorded, not
+    dropped, so metrics can split decisive vs tie-arbitrary rows. Returns `(samples, vocab names)`;
+    the choice index follows the vocabulary insertion order."""
+    from ..env.aec_env import TokenomicsAECEnv
+    from ..eval.orderer_oracle import _score_candidates, blend_vocabulary
+
+    configs, seeds = list(configs), list(seeds)
+    if len(configs) != len(seeds):
+        raise ValueError(f"configs ({len(configs)}) must align 1:1 with seeds ({len(seeds)})")
+    vocab = blend_vocabulary(alphas)
+    names = list(vocab)
+    samples: list[ChoiceSample] = []
+    for cfg, seed in zip(configs, seeds):
+        env = TokenomicsAECEnv(config=cfg, horizon=horizon, entity_producer_obs=True,
+                               product_stream_ordering=True, corrected_stream_k=True)
+        env.reset(seed=seed)
+        adim = env.spec_.ordering_action_dim
+        max_iter = env.horizon * len(env.possible_agents) * 3 + 100
+        cur = -1
+        choice, margin = 0, 0.0
+        order_pol = vocab[names[0]]
+        for agent in env.agent_iter(max_iter=max_iter):
+            if env.terminations[agent] or env.truncations[agent]:
+                env.step(None)
+                continue
+            if env.current_cycle != cur:  # re-search the committed vocabulary entry once per cycle
+                cur = env.current_cycle
+                scored = _score_candidates(env, prod, vocab, 0, 1.0, lookahead, seed, cur, adim)
+                units = [u for _, _, u in scored]  # vocabulary insertion order preserved
+                choice = int(np.argmax(units))     # first max wins ties (mirrors _search_best_pol)
+                ranked = sorted(units, reverse=True)
+                margin = float(ranked[0] - ranked[1]) if len(ranked) > 1 else 0.0
+                order_pol = scored[choice][1]
+            role, aid = env._role[agent]
+            if role == "order":
+                view = env.system.product_stream_view(aid)
+                if view.backlog:
+                    pids = sorted(view.producers)
+                    if any(view.producer_products[p].eligible > 0 for p in pids):
+                        samples.append(ChoiceSample(view, choice, margin))
+            env.step(prod(env, agent) if role == "prod" else order_pol(env, agent))
+        log(f"seed {seed}: {len(samples)} cumulative choice samples")
+    return samples, names
+
+
 def fit_scorer(model: "OrdererScoreModel", samples: list["ScorerSample"], iters: int,
                lr: float = 1e-3, log=lambda *a, **k: None) -> "OrdererScoreModel":
     """Masked MSE distillation: scorer scores -> teacher logits over eligible rows."""
@@ -365,6 +571,66 @@ def fit_scorer(model: "OrdererScoreModel", samples: list["ScorerSample"], iters:
             log(f"iter {it}: masked-mse {loss.item():.4f}")
     model.eval()
     return model
+
+
+def masked_variance_explained(target: np.ndarray, pred: np.ndarray) -> float | None:
+    """Variance the fit explains over a route-uniform baseline, on already-masked (eligible-only)
+    entries (Stage A0 / EXP-0036 diagnostic). `1 - mean((pred-target)^2) / mean(target^2)`.
+
+    Targets are centered per stream by `_center_clip_eligible`, so `mean(target^2)` is exactly the
+    residual a zero (route-uniform) predictor leaves — the denominator the diagnosis recomputed by
+    hand. `None` when the target carries no variance (degenerate: nothing to explain)."""
+    target = np.asarray(target, dtype=np.float64)
+    pred = np.asarray(pred, dtype=np.float64)
+    zero_mse = float((target ** 2).mean()) if target.size else 0.0
+    if zero_mse <= 0.0:
+        return None
+    model_mse = float(((pred - target) ** 2).mean())
+    return 1.0 - model_mse / zero_mse
+
+
+def scorer_sample_metrics(model: "OrdererScoreModel", samples: list["ScorerSample"]) -> dict:
+    """Training-state diagnostics for an orderer scorer fit.
+
+    These metrics evaluate the fitted scorer on the exact teacher states it trained on.
+    If they are good but rollout units collapse, the failure is deploy-time dynamics
+    rather than inability to regress the logged targets.
+    """
+    model.eval()
+    sse = 0.0
+    n = 0
+    top1 = 0
+    top1_n = 0
+    masked_preds: list[np.ndarray] = []
+    masked_targets: list[np.ndarray] = []
+    with torch.no_grad():
+        for s in samples:
+            pred = model.forward_view(s.view).detach().cpu().numpy()
+            mask = np.asarray(s.mask, dtype=bool)
+            if not mask.any():
+                continue
+            target = np.asarray(s.target, dtype=np.float32)
+            diff = pred[mask] - target[mask]
+            sse += float((diff ** 2).sum())
+            n += int(mask.sum())
+            masked_preds.append(pred[mask])
+            masked_targets.append(target[mask])
+
+            elig = np.flatnonzero(mask)
+            if len(elig) > 0:
+                pred_top = int(elig[int(np.argmax(pred[elig]))])
+                target_top = int(elig[int(np.argmax(target[elig]))])
+                top1 += int(pred_top == target_top)
+                top1_n += 1
+    ve = (masked_variance_explained(np.concatenate(masked_targets), np.concatenate(masked_preds))
+          if masked_targets else None)
+    return {
+        "sample_masked_mse": round(sse / max(n, 1), 6),
+        "sample_masked_n": n,
+        "sample_variance_explained": round(ve, 6) if ve is not None else None,
+        "sample_top1_match": round(top1 / top1_n, 6) if top1_n else None,
+        "sample_top1_n": top1_n,
+    }
 
 
 def save_scorer(model: "OrdererScoreModel", path: str, *,

@@ -1,0 +1,7 @@
+{
+  "trace_cycles": 300,
+  "trace_dead": false,
+  "trace_first_dead_cycle": null,
+  "trace_first_zero_capacity_cycle": null,
+  "trace_min_capacity_type_current": 13
+}

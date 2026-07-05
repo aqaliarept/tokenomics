@@ -1,0 +1,124 @@
+# run_pod detached mirror
+# pod pjw7prk43xbq47 | remote /workspace/train.log | started 2026-07-04T14:03:10Z
+# cmd: -u -m tokenomics.eval.orderer_representability --archive /workspace/tokenomics/_pod_ckpts/combined_archive.jsonl --producer-ckpt /workspace/tokenomics/_pod_ckpts/producer_champion_exp0035.pt --orderer-ckpt /workspace/tokenomics/_pod_ckpts/orderer_scorer.pt --task-ids mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77,mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45,mine-build_scale_config-capacity_scale0.6-degradation9-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max20-s45,mine-build_scale_config-capacity_scale0.6-degradation9-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max20-s62,mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max16-s68,mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29,mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max16-s77,mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s71,mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s39,mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s101 --iters 1000 --eval-seeds 3 --horizon 100 --out-dir /workspace/tokenomics/orderer_probe_r2
+# (setting up venv + syncing code; remote output streams below)
+
+seed 77: 1627 cumulative samples
+seed 78: 3419 cumulative samples
+seed 79: 5127 cumulative samples
+mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77: 5127 oracle samples
+iter 0: masked-mse 153.2362
+iter 100: masked-mse 0.2771
+iter 200: masked-mse 0.2585
+iter 300: masked-mse 0.2523
+iter 400: masked-mse 0.2473
+iter 500: masked-mse 0.2436
+iter 600: masked-mse 0.2411
+iter 700: masked-mse 0.2390
+iter 800: masked-mse 0.2360
+iter 900: masked-mse 0.2336
+iter 999: masked-mse 0.2314
+[repr] {'task_id': 'mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77', 'world_seed': 77, 'champ_cu': 0, 'search_cu': 997.33, 'oracle_cu': 0, 'bar_cu': 973.33, 'teacher_headroom': 997.33, 'bar_headroom': 973.33, 'recovered': 0, 'recovered_vs_teacher': 0.0, 'recovered_vs_bar': 0.0, 'n_samples': 5127}
+seed 45: 1508 cumulative samples
+seed 46: 3085 cumulative samples
+seed 47: 4608 cumulative samples
+mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45: 4608 oracle samples
+iter 0: masked-mse 9.8215
+iter 100: masked-mse 0.7809
+iter 200: masked-mse 0.6158
+iter 300: masked-mse 0.5598
+iter 400: masked-mse 0.5060
+iter 500: masked-mse 0.4648
+iter 600: masked-mse 0.4367
+iter 700: masked-mse 0.4168
+iter 800: masked-mse 0.3942
+iter 900: masked-mse 0.3722
+iter 999: masked-mse 0.3576
+[repr] {'task_id': 'mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45', 'world_seed': 45, 'champ_cu': 0, 'search_cu': 981.67, 'oracle_cu': 560.33, 'bar_cu': 870.67, 'teacher_headroom': 981.67, 'bar_headroom': 870.67, 'recovered': 560.33, 'recovered_vs_teacher': 0.571, 'recovered_vs_bar': 0.644, 'n_samples': 4608}
+seed 45: 1761 cumulative samples
+seed 46: 3484 cumulative samples
+seed 47: 5263 cumulative samples
+mine-build_scale_config-capacity_scale0.6-degradation9-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max20-s45: 5263 oracle samples
+iter 0: masked-mse 234.5501
+iter 100: masked-mse 1.0866
+iter 200: masked-mse 0.8705
+iter 300: masked-mse 0.8200
+iter 400: masked-mse 0.7844
+iter 500: masked-mse 0.7529
+iter 600: masked-mse 0.7235
+iter 700: masked-mse 0.7002
+iter 800: masked-mse 0.6821
+iter 900: masked-mse 0.6649
+iter 999: masked-mse 0.6474
+[repr] {'task_id': 'mine-build_scale_config-capacity_scale0.6-degradation9-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max20-s45', 'world_seed': 45, 'champ_cu': 0, 'search_cu': 716.67, 'oracle_cu': 0, 'bar_cu': 735, 'teacher_headroom': 716.67, 'bar_headroom': 735, 'recovered': 0, 'recovered_vs_teacher': 0.0, 'recovered_vs_bar': 0.0, 'n_samples': 5263}
+seed 62: 1868 cumulative samples
+seed 63: 3776 cumulative samples
+seed 64: 5806 cumulative samples
+mine-build_scale_config-capacity_scale0.6-degradation9-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max20-s62: 5806 oracle samples
+iter 0: masked-mse 21.4593
+iter 100: masked-mse 1.1664
+iter 200: masked-mse 1.1220
+iter 300: masked-mse 1.0868
+iter 400: masked-mse 1.0564
+iter 500: masked-mse 1.0272
+iter 600: masked-mse 0.9977
+iter 700: masked-mse 0.9722
+iter 800: masked-mse 0.9483
+iter 900: masked-mse 0.9228
+iter 999: masked-mse 0.8990
+[repr] {'task_id': 'mine-build_scale_config-capacity_scale0.6-degradation9-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max20-s62', 'world_seed': 62, 'champ_cu': 0.67, 'search_cu': 428, 'oracle_cu': 0, 'bar_cu': 240, 'teacher_headroom': 427.33, 'bar_headroom': 239.33, 'recovered': -0.67, 'recovered_vs_teacher': -0.002, 'recovered_vs_bar': -0.003, 'n_samples': 5806}
+seed 68: 1706 cumulative samples
+seed 69: 2276 cumulative samples
+seed 70: 4038 cumulative samples
+mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max16-s68: 4038 oracle samples
+iter 0: masked-mse 436.5825
+iter 100: masked-mse 0.3457
+iter 200: masked-mse 0.2862
+iter 300: masked-mse 0.2763
+iter 400: masked-mse 0.2717
+iter 500: masked-mse 0.2682
+iter 600: masked-mse 0.2645
+iter 700: masked-mse 0.2613
+iter 800: masked-mse 0.2583
+iter 900: masked-mse 0.2547
+iter 999: masked-mse 0.2514
+[repr] {'task_id': 'mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max16-s68', 'world_seed': 68, 'champ_cu': 253, 'search_cu': 582, 'oracle_cu': 0, 'bar_cu': 553, 'teacher_headroom': 329, 'bar_headroom': 300, 'recovered': -253, 'recovered_vs_teacher': -0.769, 'recovered_vs_bar': -0.843, 'n_samples': 4038}
+seed 29: 1246 cumulative samples
+seed 30: 2424 cumulative samples
+seed 31: 3709 cumulative samples
+mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29: 3709 oracle samples
+iter 0: masked-mse 28.8207
+iter 100: masked-mse 0.2978
+iter 200: masked-mse 0.2807
+iter 300: masked-mse 0.2662
+iter 400: masked-mse 0.2500
+iter 500: masked-mse 0.2366
+iter 600: masked-mse 0.2317
+iter 700: masked-mse 0.2293
+iter 800: masked-mse 0.2275
+iter 900: masked-mse 0.2255
+iter 999: masked-mse 0.2239
+[repr] {'task_id': 'mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29', 'world_seed': 29, 'champ_cu': 952.67, 'search_cu': 1070.67, 'oracle_cu': 0, 'bar_cu': 1086, 'teacher_headroom': 118.0, 'bar_headroom': 133.33, 'recovered': -952.67, 'recovered_vs_teacher': -8.073, 'recovered_vs_bar': -7.145, 'n_samples': 3709}
+seed 77: 1780 cumulative samples
+seed 78: 3515 cumulative samples
+seed 79: 5172 cumulative samples
+mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max16-s77: 5172 oracle samples
+iter 0: masked-mse 19.6465
+iter 100: masked-mse 0.4820
+iter 200: masked-mse 0.4031
+iter 300: masked-mse 0.3798
+iter 400: masked-mse 0.3587
+iter 500: masked-mse 0.3437
+iter 600: masked-mse 0.3312
+iter 700: masked-mse 0.3204
+iter 800: masked-mse 0.3118
+iter 900: masked-mse 0.3048
+iter 999: masked-mse 0.2964
+[repr] {'task_id': 'mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.25-producers_per_layer3-quantity_max16-s77', 'world_seed': 77, 'champ_cu': 973, 'search_cu': 1091, 'oracle_cu': 191.33, 'bar_cu': 1023.67, 'teacher_headroom': 118, 'bar_headroom': 50.67, 'recovered': -781.67, 'recovered_vs_teacher': -6.624, 'recovered_vs_bar': -15.428, 'n_samples': 5172}
+seed 71: 1215 cumulative samples
+seed 72: 2447 cumulative samples
+seed 73: 3721 cumulative samples
+mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s71: 3721 oracle samples
+iter 0: masked-mse 43.5110
+iter 100: masked-mse 1.2655
+iter 200: masked-mse 0.8913

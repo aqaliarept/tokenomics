@@ -41,7 +41,7 @@ from ..train.smoke_ppo import staged_config
 # EXP-0009: a value fn maps a system state (`env.global_state()`) to estimated consumer units
 # over a future window — the learned terminal value the value-guided planner adds to a short
 # rollout. Kept torch-free here (the planner only calls it); the model lives in train.value_model.
-from typing import Callable
+from typing import Callable, Sequence
 
 ValueFn = Callable[[np.ndarray], float]
 
@@ -110,6 +110,20 @@ def _const_policy(vec: np.ndarray) -> Policy:
     def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
         return vec
     return pol
+
+
+def blend_vocabulary(alphas: "Sequence[float]" = ()) -> dict[str, Policy]:
+    """The named+blend candidate vocabulary (Stage A1b / A0b diagnostic): even_split, the
+    `ordering_blend` interpolations at the given alphas (highest alpha = closest to even_split
+    first), then proportional. Insertion order is the categorical label order — `_score_candidates`
+    preserves it, so a choice index is stable across the collector and the search."""
+    from .baselines import ORDERING_BASELINES, ordering_blend
+
+    vocab: dict[str, Policy] = {"even_split": ORDERING_BASELINES["even_split"]}
+    for a in sorted(alphas, reverse=True):
+        vocab[f"blend_{a:g}"] = ordering_blend(a)
+    vocab["proportional"] = ORDERING_BASELINES["proportional"]
+    return vocab
 
 
 def _rollout_units(

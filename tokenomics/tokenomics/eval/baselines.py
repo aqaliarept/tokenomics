@@ -313,6 +313,20 @@ def ordering_proportional(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     return mat.flatten()
 
 
+def ordering_blend(alpha: float) -> Policy:
+    """Logit-space blend `alpha*even_split + (1-alpha)*proportional` (Stage A1b vocabulary).
+
+    even_split emits zero logits, so the blend is a temperature on the proportional logits —
+    softmax shares ~ throughput^(1-alpha), spanning uniform (alpha=1) to proportional (alpha=0).
+    Chosen over probability-space mixing because it is exactly the family a per-stream blend
+    head can emit at deploy time, so the search vocabulary and the deployable head coincide."""
+    def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        blend = (alpha * ordering_even_split(env, agent)
+                 + (1.0 - alpha) * ordering_proportional(env, agent))
+        return blend.astype(np.float32)
+    return policy
+
+
 def random_action(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     return env.action_space(agent).sample()
 

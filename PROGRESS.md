@@ -766,3 +766,350 @@ Artifacts: experiments/EXP-0036-track-a-round2-primal-tight/{spec.json, RESULT.m
 Blockers: none. Probe ETA hours (sequential search collection ~30 min/task x 10).
 Next: probe verdict -> recovered_vs_teacher high = full orderer oracle-relabel replay on the 81-task
   archive (plan to user first); low = architecture discussion, no new strategy without root-cause.
+
+## 2026-07-04 - Repo-root docs: ARCHITECTURE.md + GLOSSARY.md (plain-English training architecture)
+Status: DONE.
+Task: user asked for a comprehensive plain-English document of the existing training architecture
+  (components + roles) for a non-technical reader, with full experiment-history narrative, plus a
+  glossary of the training/eval terms used. No invented terms - repo vocabulary only.
+Artifacts: ARCHITECTURE.md (repo root) - what the project is; how training works (imitation/
+  distillation pipeline, champion/candidate/gates, game-master loop); 12 component sections
+  (domain, env, baselines/planners, search bar, the two score models, distillation methods,
+  champion+gates, curriculum pipeline, eval harness, cloud infra, records system, legacy);
+  one-round walkthrough; 6-arc history EXP-0001..0036; current state. GLOSSARY.md (repo root) -
+  training/eval/curriculum/infra terms grouped in 5 sections; domain terms deliberately NOT
+  duplicated, deferred to CONTEXT.md (user call). Cross-links to docs/rl-training-architecture.md
+  (technical RL internals), CURRICULUM_GAME_MASTER_APPROACH.md, experiments/README.md.
+Decisions (user): scope = active + legacy + history narrative; glossary = training terms only,
+  link CONTEXT.md; audience = non-technical stakeholder.
+Blockers: none. EXP-0036 probe still running in parallel (separate entry above).
+Next: none for docs; keep ARCHITECTURE.md section 6 (current state) fresh on promotions.
+
+## 2026-07-04 - ARCHITECTURE.md rewritten DEEP (rl-training-architecture.md style) + GLOSSARY extended
+Status: DONE.
+Task: user feedback on the first ARCHITECTURE.md draft - components not explained deeply enough
+  (how the searcher acts, how teachers behave, mining/eval examples). Rewrote in the style of
+  docs/rl-training-architecture.md: execution-order narrative, worked numeric examples, tables,
+  alternatives-considered tables.
+Artifacts: ARCHITECTURE.md v2 - 12 sections. New depth (all verified against code, not memory):
+  planner score formulas from domain/producer_planner.py (restore threshold 0.60, stock target 3,
+  tie-group replenishment); orderer model shape + 9/31 feature split + softmax/largest-remainder
+  worked routing example (train/orderer_scorer.py, env/allocator); mpc_search mechanics
+  (10 candidates = even_split+proportional+8 sampled, seeded by (seed,cycle), deepcopy ~3ms,
+  lookahead 6, 60x cost arithmetic) from eval/orderer_oracle.py; teacher targets (log makeable
+  qty; oracle relabel reduce-over-backlog + center-clip); gate heads story (11442/24000 FPs);
+  mining gates/ranking math (min_gap 2.0, win_frac 0.6, score = 1.0*norm_gap + 0.5*novelty,
+  novelty d/(1+d) on descriptor) from eval/curriculum_mining.py; failure-class precedence table;
+  ceiling bound B0/B1/B2; gap-attribution 4-stack table; replay priorities (0.01+gap)^eta +
+  gap-not-score lesson; closure formula (sum-based); EXP-0036 as the running worked example
+  (s77: champ 0 dead / bar 973.3 / cross 997.3), one-round summary table. GLOSSARY.md: added
+  entity view, product stream, logit/softmax, gate head, masked loss, lookahead/rollout,
+  win fraction, normalized gap, novelty; mpc_search entry expanded.
+Blockers: none. EXP-0036 probe still running (separate thread).
+Next: keep ARCHITECTURE.md section 12 (current state) fresh on promotions.
+
+## 2026-07-04 - EXP-0036 orderer representability probe ABORTED at 6/10 (verdict forced) + partial results archived
+Status: DONE (probe stopped early on purpose; diagnosis OPEN).
+Task: user flagged bad probe results mid-run; assessed and agreed to stop. 5/6 completed rows
+  show zero-or-negative recovery, so the "high recovery on most tasks" green-light branch was
+  already mathematically dead - the remaining 4 rows could not change the verdict. Killed the
+  local monitor task, stopped + terminated pod pjw7prk43xbq47. Probe writes summary.csv only
+  after ALL tasks, so the 6 [repr] log rows were hand-assembled into
+  experiments/EXP-0036-track-a-round2-primal-tight/orderer_probe/ (summary.csv + NOTE.md +
+  probe.log). No distilled ckpts/samples existed on the pod (module never saves them) - nothing
+  else was lost by aborting.
+Artifacts: orderer_probe/summary.csv (6 rows), NOTE.md (read + diagnosis status), probe.log.
+Key numbers: recovered_vs_teacher = 0.0 (s77 death), 0.571 (s45 death - the ONE success, 560 of
+  982u), 0.0 (deg9-s45 death), -0.002 (deg9-s62), -0.769 (s68 alive, oracle 0 vs champ 253),
+  -8.073 (s29 alive, oracle 0 vs champ 953). Pattern: distilled orderer delivers EXACTLY 0 units
+  on 5/6 tasks incl. alive worlds; final masked-mse anti-correlates with deploy outcome (best
+  fit 0.224 -> worst deploy).
+Decisions: verdict = NOT a green light for full oracle-relabel replay; per DIAGNOSTICS entry 2
+  the failure sits in the "representability or recipe" branch - lead hypothesis collect-vs-deploy
+  covariate shift (trained only on search-trajectory states; deploy drift + capacity-tight worlds
+  -> system death -> 0 units), NOT yet proven. Root-cause rule: no next strategy until the
+  discriminating check runs.
+Blockers: probe saves no artifacts; rerun needs module change (save samples + distilled ckpt,
+  report in-sample routing agreement, deployed-episode death/capacity trace).
+Next: proposed discriminating diagnostic (needs user go, pod ~1.5-2h): instrumented rerun on 3
+  tasks (s29 alive-catastrophic, s77 death-0.0, p0.22-s45 death-0.571) to split covariate shift
+  vs representability; then pick fix (DAgger-style deploy-state collection vs obs/arch change).
+
+## 2026-07-05 - EXP-0036 orderer representability DIAGNOSED: oracle-relabel targets are mostly noise (target/recipe failure)
+Status: DONE (diagnosis complete, evidence-backed). Arc decision OPEN (user).
+Task: instrumented probe retry (pod 842xx0vutkdhln, 3 tasks s29/s77/s45, saved samples +
+  distilled ckpts + deploy traces) came back failing the gate (mean recovered_vs_teacher
+  -0.159). Analyzed the saved samples locally to settle DIAGNOSTICS entry-2's branch.
+Evidence (new DIAGNOSTICS entry 11):
+  - 42-50% of oracle targets are FLAT (search committed even_split -> centered target = zeros).
+  - Variance explained vs a zero-predictor (= route uniformly) on TRAIN states: 25% (s29),
+    10% (s77), 64% (s45) - the converged student barely beats uniform routing in-sample.
+  - Top-1 teacher agreement 0.50-0.60 vs chance 0.33-0.50 (2-3 eligible producers/stream).
+  - Identical recipe, different torch init: deploy swung 0 -> 800 units (s29) between probe 1
+    and retry - fitting noise, unstable by construction.
+Diagnosis: the search commits ONE global routing per cycle among near-tied candidates (incl.
+  sampled Gaussian vectors); sliced into per-stream local targets, the informative part is
+  global + tie-arbitrary -> per-stream MSE regression has little learnable signal. NOT a
+  representability wall (s45 recovered 370-560u twice), NOT plain covariate shift.
+Artifacts: orderer_probe_retry/ (summary.csv, per-task debug/), orderer_probe/NOTE.md updated
+  with resolution, docs/DIAGNOSTICS.md entry 11 added.
+Decisions: full orderer oracle-relabel replay on the 81-task archive = REJECTED as designed
+  (would distill noise). Next lever = user choice: (a) denoise teacher signal (average committed
+  routings over repeated searches / margin-filter / drop Gaussian candidates), (b) global
+  context in orderer obs, (c) deploy-time light search (known ~1000u headroom, cost knob).
+Blockers: none.
+Next: user picks harvest lever; then wrap EXP-0036 (RESULT.md probe section, README index row,
+  memory update, delete tokenomics/_pod_ckpts, commit).
+
+## 2026-07-05 - New project skill: /challenge (adversarial review of proposals + EXP results)
+Status: DONE.
+Task: created `.claude/skills/challenge/SKILL.md`. Puts the agent in hostile-reviewer mode
+  over a proposal or EXP record: trust hierarchy (raw artifacts > producing code > RESULT.md
+  prose > chat claims; only raw evidence admissible without reverification), reverify every
+  number from summary.csv/logs, audit the driver/script for correctness bugs (leakage, seed
+  handling, config mismatch, metric bugs, selection bias), attack the inference (alternative
+  explanations, DIAGNOSTICS.md match, falsifiability), verdict per claim
+  (UPHELD/OVERTURNED/UNVERIFIED with cited evidence). Cheap checks run now; anything needing
+  a real run stays UNVERIFIED with the exact pod command (pod-only rule respected).
+Artifacts: .claude/skills/challenge/SKILL.md
+Decisions: review-only skill - delivers verdict, does not fix; fixes offered only after.
+Blockers: none.
+Next: use as `/challenge <EXP dir | proposal | last result>`; natural first target = the
+  EXP-0036 probe diagnosis or the next harvest-lever proposal before it goes to the pod.
+
+## 2026-07-05 - /challenge on the "search-as-judge / actor-critic" harvest proposal + learnability-gated plan into Stage 4b Track A
+Status: DONE (review delivered; plan recorded). Arc decision still OPEN (user picks whether to run Stage A0).
+Task: user ran /challenge on a proposed orderer-harvest fix (soft-label candidate tables,
+  a learned critic, advantage-weighted actor, global context, critic-gated deploy-time search).
+  Reviewed adversarially against raw evidence, then wrote my own plan and inserted it as a
+  binding amendment to Stage 4b Track A.
+Review verdicts (all cited to raw artifacts, not prose):
+  - Recomputed the EXP-0036 diagnosis from raw samples.pkl.gz: variance-explained over a
+    route-uniformly baseline = 25.4%/9.8%/64.1% (s29/s77/s45) — reproduces DIAGNOSTICS entry 11
+    (25/10/64) exactly; flat-target frac 43/50/29%, chance-top1 0.50/0.33/0.33. Diagnosis UPHELD.
+  - Learned critic (proposal steps 3,6) OVERTURNED: EXP-0009 RESULT shows units-to-go from
+    global_state has NEGATIVE held-out R^2 across topologies (ridge -0.10..-6.6, MLP -2.5..-3.4;
+    best held-out corr ~0.15) and explicitly says "do not rescue the value model; expect the same
+    wall elsewhere in the arc." Critic-picks-best / critic-gated search depend on the one
+    generalization the arc disproved.
+  - Candidate soft-labels over routes A/B/C (steps 1-2) OVERTURNED: eval/orderer_oracle.py
+    _candidate_list emits 2 named + 8 per-cycle Gaussian vectors re-drawn each cycle (seeded by
+    (seed,cycle)); no stable route to label; deploy action is a continuous per-stream simplex.
+  - Global context (step 5) OVERTURNED as motivated: its rationale is the covariate-shift story
+    the diagnosis ruled out; real mechanism is global-commit-sliced-to-per-stream (coupling), and
+    per-stream deciders stay independent, so global features raise an upper bound but don't
+    reconstruct a joint routing.
+  - Advantage-weighting from OFFLINE search scores (step 4) = the one salvageable idea (no critic,
+    inside entry-11's denoise branch); folded into my plan as the loss form.
+  - No falsifiable bar in the proposal (7-step roadmap, no gate) — flagged.
+Plan recorded (CURRICULUM_GAME_MASTER_APPROACH.md, Stage 4b Track A amendment "learnability-gated
+  orderer harvest"): three competing hypotheses (H1 high-variance labels / H2 global coupling /
+  H3 no headroom), each a different fix; Stage A0 = one instrumented pod run emitting a decision
+  table (headroom evaluated FIRST as a STOP gate: oracle~=even_split -> done; then single-vs-
+  averaged-vs-+global variance-explained); Stage A1 = distill denoised target with advantage-
+  weighted regression, gate on deployed units >= champion; Stage A2 = deploy-time light search on
+  a CHEAP heuristic trigger (never a learned critic). Binding constraints: no learned value model
+  (EXP-0009), no route-classification (Gaussian candidates). The cheapest run (A0) can end the
+  orderer track — discriminating-diagnostic-first per the HARD RULE.
+Artifacts: CURRICULUM_GAME_MASTER_APPROACH.md (Track A amendment); this entry. No code, no runs.
+Decisions: proposal's critic + soft-label mechanics rejected on evidence; harvest gated on the A0
+  learnability probe before any cloud training on architecture/global-context.
+Blockers: none.
+Next (user go needed): build the Stage A0 probe driver (extend the instrumented probe to emit the
+  headroom row + single/averaged/+global VE table), TDD'd locally on 1 task via --dry-run, then
+  launch full on the pod.
+
+---
+
+## 2026-07-05 — Stage A0 orderer-harvest probe: built (TDD) + launched on pod
+
+Status: DONE (build) / RUNNING (pod). Implemented the Stage A0 learnability gate from the
+CURRICULUM_GAME_MASTER_APPROACH.md Track A amendment, TDD'd locally, full suite green (617
+passed), and launched the decision-gating run on a fresh CPU pod (user approved pod start).
+
+What A0 answers (plain English): the EXP-0036 orderer harvest failed at the SIGNAL — distilling
+the search's single per-cycle committed routing gave a per-stream target that is mostly noise
+(variance-explained 25/10/64% on the 3 probe tasks). A0 emits one decision table per task to pick
+the branch: (H3) is there any orderer headroom at all — does the search-oracle beat even_split? if
+not, STOP; (H1) does AVERAGING K=4 independent per-cycle searches (committing the mean vector to
+advance a single trajectory) raise variance-explained over the single search? a jump => the single
+target was tie-arbitrary noise the search can denoise => proceed to Stage A1. H2 (global-context
+obs) deferred: it is an obs-contract change and the amendment makes it conditional on H1 staying
+flat.
+
+New code (all TDD, one test -> one impl):
+- `train/orderer_scorer.py::masked_variance_explained` — VE = 1 - model_mse/zero_mse over eligible
+  entries (the metric the diagnosis recomputed by hand from samples.pkl.gz); now first-class.
+- `scorer_sample_metrics` now emits `sample_variance_explained`.
+- `train/orderer_scorer.py::collect_averaged_oracle_orderer_samples` — the H1 denoiser: K
+  independent searches/cycle (RNG stride 1_000_003), commit the MEAN routing to advance + as
+  target. Invariant test: k_searches=1 is byte-identical to the single-search collector.
+- `eval/orderer_representability.py::headroom_row` gains `even_split_cu` / `proportional_cu` (H3
+  STOP-gate table); `a0_probe_row` (headroom + VE_single vs VE_averaged); `run_a0_probe` + `_emit_a0`
+  (pullable EXP layout, headroom-first RESULT.md); CLI `--a0 --k-searches`.
+
+Artifacts: 5 new tests in tokenomics/tests/test_orderer_scorer.py (29 in file, all pass; full
+suite 617 passed). Staged pod inputs under tokenomics/_pod_ckpts/ (producer_champion_exp0035.pt =
+EXP-0035 replay/producer_candidate.pt; orderer_scorer.pt = EXP-0012; task_archive.jsonl = EXP-0036
+mine). Pod x1vvuz1zg3lekp (fresh, 16 vCPU cpu5c), --a0 --k-searches 4 --iters 1000 --horizon 100
+--eval-seeds 3 on the 3 probe tasks (s29/s77/s45); pulls to
+experiments/EXP-0036-track-a-round2-primal-tight/orderer_a0. Launch log /tmp/a0_pod_launch.log.
+Decisions: kept iters=1000 + the 3 probe tasks to match the EXP-0036 retry probe fidelity so VE is
+comparable; H2 not built (conditional lever). No champion ckpt touched (producer frozen throughout).
+Blockers: none.
+Next: when the pod pulls back, READ HEADROOM FIRST (search_cu vs even_split_cu per task) then the
+VE jump (ve_averaged vs ve_single). Branch per the amendment: H1 jump -> Stage A1 (advantage-
+weighted distill of the denoised target, gate deployed units >= champion); no jump + headroom ->
+Stage A2 (deploy-time search); no jump + no headroom -> orderer track done (claim-boundary). Then
+delete tokenomics/_pod_ckpts/.
+
+---
+
+## 2026-07-05 — A0 probe: added named-policy representation comparison; relaunched
+
+Status: DONE (build) / RUNNING (pod ua7llllthh9kol). User asked whether the teacher could return a
+NAMED policy (don't-care / even_split / proportional / blend) instead of a single continuous
+per-producer routing. Assessed: it attacks the single-choice noise from a cleaner angle (named
+policies are state-reproducible, so the RNG-tie-arbitrary noise vanishes; small categorical output
+is more learnable; "don't-care" names the no-lesson rows) and it reverses my earlier soft-label
+rejection (that assumed Gaussian candidates — named candidates make soft labels well-defined). The
+one thing that decides viability: does the search headroom live INSIDE the named vocabulary
+(per-cycle even_split/proportional switching) or in the continuous Gaussian routings? The A0
+`even_split_cu`/`proportional_cu` columns DON'T answer it — those are FIXED policies (~810-840 on
+s29); a per-cycle CHOICE among named policies is strictly stronger and sits between that and the
+full search (1070).
+
+Added the discriminating column to the A0 probe (TDD, +1 test, file now 30 pass):
+- `eval/orderer_representability.py::_named_search_units` — per-cycle search with `n_samples=0`
+  (named candidates only, still switching per cycle, no Gaussian samples).
+- `a0_probe_row` now emits `search_named_cu` + `named_capture_frac = (search_named - even_split) /
+  (search_full - even_split)`. ~1 => named-policy teacher captures the lever (switch to a
+  categorical/blend head, your idea); ~0 => continuous routings matter (keep continuous target, H1).
+- `_emit_a0` RESULT.md read order now: headroom -> representation -> denoise. CLI print + means updated.
+
+Ops: terminated the first in-flight pod x1vvuz1zg3lekp (only s29 done) so one clean pull carries all
+three answers per task; first relaunch hit a transient RunPod `pod get` race (driver auto-cleaned the
+pod ob2iu0u6bkaykw and bailed); retry succeeded on pod ua7llllthh9kol (same --a0 --k-searches 4
+--iters 1000 command). Champion untouched, producer frozen.
+Decisions: relaunch (not a cheap 2nd run) chosen for one authoritative artifact; ~1h of s29 recompute
+accepted (cheap CPU). Blend variant (alpha*even_split + (1-alpha)*proportional, 1 coeff/stream) noted
+as the middle-ground representation if named_capture is close-but-not-1.
+Blockers: none.
+Next: on pull, read summary.csv per task in order headroom -> named_capture_frac -> ve jump. If
+named_capture ~1 => spec the categorical/blend orderer head (new mini-arc); elif ve_averaged jumps
+=> Stage A1 continuous-denoise distill; elif headroom but neither => Stage A2; else track done. Then
+delete tokenomics/_pod_ckpts/.
+
+---
+
+## 2026-07-05 — Docs: policy-choice (named-teacher) proposal written into the roadmap + DIAGNOSTICS
+
+Status: DONE (docs). Wrote the named-policy teacher-representation proposal into the two owning docs
+(was only in chat + code columns before).
+- CURRICULUM_GAME_MASTER_APPROACH.md Stage 4b Track A amendment: A0 decision table gains step "2.
+  Representation (H4)" (named_capture_frac via n_samples=0 search; explicit warning not to read it off
+  the fixed-policy columns); Branches now read representation-first; new "Stage A1b (categorical/blend
+  orderer head)" describes the fix (per-stream classify {even_split, proportional, don't-care} with
+  soft-labelled near-ties + explicit don't-care class, OR a per-stream blend coefficient alpha;
+  decode by executing the named policy); Accept/Reject updated to cover A1b + named_capture~0.
+- docs/DIAGNOSTICS.md entry 11: added the H4 representation discriminator to the low-VE branch
+  (named_capture~1 => output-space fix / named teacher; ~0 => continuous denoise), with the
+  fixed-policy read-off warning.
+Artifacts: CURRICULUM_GAME_MASTER_APPROACH.md, docs/DIAGNOSTICS.md. No code, no runs.
+Blockers: none. Next: unchanged — A0 pod run (ua7llllthh9kol) still in flight; on pull, read
+headroom -> named_capture_frac -> ve jump and pick A1b / A1 / A2 / done. Update entry 11 "Seen in"
+with the named_capture numbers once they land.
+
+---
+
+## 2026-07-05 — Stage A0 orderer-harvest gate: COMPLETE (pulled). Verdict = named/blend teacher (A1b)
+
+Status: DONE. Pod ua7llllthh9kol run finished + pulled to
+experiments/EXP-0036-track-a-round2-primal-tight/orderer_a0/{a0,debug} (flattened a double-nested
+rsync). Pod terminated, tokenomics/_pod_ckpts/ deleted.
+
+Authoritative summary.csv (frozen champion producer, 3 mined tight probe tasks, eval_seeds=3, K=4):
+  task  champ  search  even_split  proportional  search_named  named_capture  ve_single->averaged
+  s29   952.7  1070.7  809         837.7         1070.7         1.00           0.27 -> 0.52
+  s77   0      997.3   513.7       681.3         847.7          0.69           0.26 -> 0.58
+  s45   0      981.7   199.7       367           716.7          0.66           0.64 -> 0.75
+  means: teacher_headroom=699, named_capture=0.784, ve_single=0.389, ve_averaged=0.618
+
+Reads (headroom -> representation -> denoise):
+1. Headroom: LARGE on all three. On s77 and s45 the deployed CHAMPION orderer delivers 0 units
+   (< even_split's 514 / 200) — the memorized champion collapses on the mined capacity-binding
+   regime (operating-point failure, [[generalization-overfit]]). ~1000u to harvest on 2/3 tasks.
+2. Representation (H4, user's proposal): named_capture 1.00 / 0.69 / 0.66 (mean 0.78). A per-cycle
+   NAMED-only search (even_split/proportional switching, no Gaussian samples) captures 66-100% of
+   the search headroom. The single-choice noise is largely an OUTPUT-SPACE problem, not label noise.
+3. Denoise (H1): averaging lifts VE on all three, but averaged VE tops out ~0.5-0.75 — the raw
+   continuous target stays only partly learnable.
+
+Decision: primary harvest = Stage A1b, the BLEND orderer head (per-stream alpha between even_split
+and proportional). Rationale: captures the per-cycle named switching that IS 66-100% of the lever,
+with a state-reproducible target (kills the RNG tie-noise that made the continuous vector
+unlearnable), and the continuous alpha also grabs part of s77/s45's ~1/3 continuous residual. A1
+continuous-denoise = fallback for the residual only. Near-free sanity win to bank first: even_split
+already beats the champion by 500-1000u on s77/s45 — the champion is worse than a naive baseline on
+the mined tasks.
+Artifacts: orderer_a0/ (summary.csv, RESULT.md, spec.json, debug/*/samples_{single,averaged}.pkl.gz);
+docs/DIAGNOSTICS.md entry 11 "Seen in" updated with A0 numbers.
+Blockers: none.
+Next: (a) index EXP-0036 orderer_a0 result + fill RESULT.md Conclusions (human read first); (b) spec
+the blend orderer head (Stage A1b) — new mini-arc, TDD the head + advantage-weighted fit, gate
+deployed units >= champion on the held-out mined suite; (c) flag separately that the champion orderer
+collapses (0u) on mined tight tasks — the harvest bar is ~even_split, not the champion.
+
+## 2026-07-05 — Stage A0b built + launched: the two pre-A1b checks (blend value + choice learnability)
+Status: A0b diagnostic built via TDD (5 new tests, file 35, full suite 623 passed) and launched on a
+fresh pod. Motivation: A0's named_capture_frac only proved the headroom is REACHABLE inside a named
+vocabulary via the lookahead oracle — it did NOT prove (a) the alpha-blend family adds anything over
+hard even_split/proportional selection (the search never blended), nor (b) the committed choice is
+PREDICTABLE from the stream observation (oracle uses 6-cycle rollouts the student won't have). A1b
+rests on both; A0b tests both before spending the training arc.
+- `eval/baselines.py::ordering_blend(alpha)` — logit-space blend `a*even_split+(1-a)*proportional`;
+  even_split = zero logits, so the family is a temperature on proportional logits (shares ~
+  throughput^(1-a)) — exactly what a per-stream blend head can deploy (vocab == deployable head).
+- `eval/orderer_oracle.py::blend_vocabulary(alphas)` — named+blend candidate vocabulary, insertion
+  order = categorical label order; `_named_search_units` gains `alphas` (byte-identical when empty).
+- `train/orderer_scorer.py::collect_choice_samples` (per-stream view + committed vocab choice +
+  decisiveness margin, ties kept + split in metrics), `OrdererChoiceModel` (same encoders, mean-
+  pooled rows -> vocab logits), `fit_choice_model` (CE), `choice_metrics` (held-out top-1 vs
+  majority floor, overall + decisive-only).
+- `eval/orderer_representability.py::a0b_diag_row` / `run_a0b_diag` / `_emit_a0b`; CLI `--a0b
+  --alphas` (needs no orderer ckpt — no champion involved). D2 = blend_capture_frac vs
+  named_capture_frac; D1 = held-out choice_top1 vs choice_majority (train seeds[:-1], hold out last).
+Artifacts: staged _pod_ckpts (producer_champion_exp0035.pt = EXP-0035 replay candidate;
+task_archive.jsonl = EXP-0036 mine); pod mwiodimxu9oo2d (fresh 16 vCPU cpu5c), `--a0b --iters 1000
+--horizon 100 --eval-seeds 3 --alphas 0.75,0.5,0.25` on the 3 probe tasks (s29/s77/s45); pulls to
+experiments/EXP-0036-track-a-round2-primal-tight/orderer_a0b. Launch log /tmp/a0b_pod_launch2.log.
+Decisions: blend in LOGIT space (not probability space) so search vocabulary == what the head emits;
+choice samples keep tie rows (margin=0) and metrics split decisive vs all — accuracy on ties is
+noise, not learnability evidence.
+Blockers: none.
+Next: read blend value first (blend_capture >> named_capture => keep alpha head; ~equal => plain
+categorical), then learnability (choice_top1 ~ majority on held-out => A1b inherits the wall, fall
+back to A1/A2; well above => A1b green-lit). Then delete tokenomics/_pod_ckpts/.
+
+## 2026-07-05 — Stage A0b RESULT: blend vocabulary confirmed, choice NOT learnable from stream view — A1b not green-lit
+Status: A0b pod run complete (pod mwiodimxu9oo2d, stopped+terminated; pulled to
+experiments/EXP-0036-track-a-round2-primal-tight/orderer_a0b/). Both questions answered:
+- **D2 blend value: YES, keep the alpha-blend vocabulary.** Mean capture 0.784 (named) -> 0.901
+  (blend). On the tasks with a residual: s77 0.69->0.95, s45 0.66->0.78; s29 (named already 1.0)
+  blend 0.97 = trajectory noise. Caveat: s45 leaves ~21% of headroom outside the blend family.
+- **D1 choice learnability: FAIL 3/3.** Held-out top-1 BELOW the majority floor on every task
+  (0.27/0.53 s29, 0.38/0.56 s77, 0.34/0.47 s45); decisive-only split no better. Train CE ends
+  0.157/0.171/0.097 -> fits training episodes near-perfectly, anti-transfers to the held-out seed.
+  Wall = transfer, not fit.
+Decisions: Stage A1b as a pure per-stream obs->choice head is NOT green-lit (would imitate an
+unpredictable target). Representation is right; the mapping from LOCAL obs is not learnable.
+Two competing causes (root-cause rule, discriminate before next arc): (a) missing global context
+(H2) vs (b) choice noise (lookahead margins within rollout noise). Discriminating check = fit the
+SAME classifier on the FULL GLOBAL STATE on the same samples: beats majority -> (a) enrich obs;
+still fails -> (b) soft labels / deploy-time light search (A2), enrichment useless.
+Artifacts: orderer_a0b/{RESULT.md (Conclusions filled), summary.csv, spec.json}; DIAGNOSTICS.md
+entry 11 amended with the A0b gate. _pod_ckpts/ deleted.
+Blockers: none.
+Next: global-state probe (cheap; reuse collect_choice_samples with a global-state encoder) to pick
+branch (a) vs (b). Deferred: index EXP-0036 orderer_a0 + orderer_a0b in experiments/README.md;
+champion-collapses-on-mined-tasks (0 units on s77/s45) still flagged separately.

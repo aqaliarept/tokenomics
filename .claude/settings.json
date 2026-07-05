@@ -1,0 +1,18 @@
+{
+  "enabledPlugins": {
+    "pyright-lsp@claude-plugins-official": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "LSP",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/lsp-log-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

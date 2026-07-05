@@ -1,0 +1,6 @@
+{
+  "sample_masked_mse": 0.23256,
+  "sample_masked_n": 15381,
+  "sample_top1_match": 0.502438,
+  "sample_top1_n": 5127
+}
