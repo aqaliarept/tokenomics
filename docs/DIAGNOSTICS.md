@@ -281,6 +281,13 @@ committed choice fits in-episode and anti-transfers across seeds. Pure per-strea
 obs→choice A1b NOT green-lit. Open discriminator: fit the same classifier on the FULL
 GLOBAL STATE — beats majority → missing-context (enrich obs); still fails → choice noise
 (soft labels / deploy-time search), enrichment useless.
+**A0c gate (orderer_a0c/):** discriminator ANSWERED — global state fails too (held-out
+gchoice_top1 vs floor: 0.31/0.53, 0.29/0.54, 0.40/0.42; 2/3 clear fails, 1/3 tie). The wall
+is NOT missing context: the deterministic search's choice hinges on lookahead consequences
+that don't compress into a state-readable pattern. Obs enrichment is DEAD as a fix for this
+symptom. Fix directions: A2 deploy-time light search (realizes headroom by construction) or
+A1 soft/advantage labels (validate critic held-out ranking first — decisive-cycle fails say
+ranking from state is hard too).
 
 ---
 

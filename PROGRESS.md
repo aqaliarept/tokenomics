@@ -1138,3 +1138,24 @@ Blockers: none.
 Next: read gchoice_top1 vs gchoice_majority per task. Beats floor => D1 wall = missing context ->
 spec obs enrichment (compact global features). Fails => choice is rollout noise -> A1 soft-label /
 margin-filter or A2 deploy-time light search. Then delete tokenomics/_pod_ckpts/.
+
+## 2026-07-05 — Stage A0c RESULT: global state fails too — obs enrichment is dead, branch = target/deployment
+Status: A0c pod run complete (fresh pod 71jew6yf5pr0vb, stopped+terminated; pulled to
+experiments/EXP-0036-track-a-round2-primal-tight/orderer_a0c/). The discriminator answered:
+- Held-out gchoice_top1 vs majority floor: s29 0.31/0.53, s77 0.29/0.54 (both clear FAIL),
+  s45 0.40/0.42 (tie within n=100 noise). Nowhere does the FULL global state beat its floor.
+- D2/D1 reproduce A0b exactly (deterministic domain; search_cu identical).
+Decisions: the D1 wall is NOT missing context — no orderer obs enrichment can fix it (even the
+ADR-0004 centralized-critic input fails). The committed choice is a function of state in
+principle (n_samples=0 search is deterministic) but hinges on 6-cycle-lookahead consequences
+that don't compress into a learnable pattern at this sample size. Branch (b):
+- A2 deploy-time light search = primary lever (5-candidate vocabulary search realizes 0.90 mean
+  blend capture by construction; EXP-0009 showed short rollouts suffice).
+- A1 soft/advantage labels = secondary; gate it on a critic's held-out candidate-RANKING check
+  first (decisive-cycle fails suggest ranking from state is hard too).
+Artifacts: orderer_a0c/{RESULT.md Conclusions filled, summary.csv, spec.json}; DIAGNOSTICS.md
+entry 11 A0c gate appended. _pod_ckpts/ deleted.
+Blockers: none.
+Next (user decision): spec Stage A2 (deploy-time vocabulary search as the orderer, cost profile +
+acceptance vs champion on mined tight tasks) vs A1 critic-ranking gate. Deferred: index EXP-0036
+orderer_a0/a0b/a0c in experiments/README.md; champion-collapses-on-mined-tasks flag still open.
