@@ -1,0 +1,21 @@
+{
+  "version": "value-routed-orderer-v0",
+  "date": "2026-07-15",
+  "driver": "TBD",
+  "question": "Can a trained orderer learn direct value-based producer routing weights, instead of selecting among predefined capacity-shaped blend policies?",
+  "params": {
+    "gate_tasks": ["s29", "s77", "s45"],
+    "floor": "blend_0.5",
+    "candidate_policy": "blend_0.5 + clipped learned residual logits",
+    "primary_metric": "deployed consumer_completed_units"
+  },
+  "configs": {
+    "source": "EXP-0036 primal-tight gate tasks"
+  },
+  "compute": {
+    "where": "not run",
+    "wall_time": "n/a"
+  },
+  "reproduce": "TBD"
+}
+

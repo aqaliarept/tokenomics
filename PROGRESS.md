@@ -1442,3 +1442,34 @@ Next (owner decision): NOT the full 81-row archive on this path, and NOT a thres
 pursued, is spec Stage **A2 deploy-time light search** over the blend vocabulary (a COMPUTE
 lever, not a learned policy), with the fixed mid-blend as the zero-cost acceptance floor A0w
 just established. Owner call whether to open A2 or close EXP-0036's orderer arc here.
+
+---
+
+## 2026-07-15 — EXP-0037 opened: value-routed orderer branch
+
+Status: SCAFFOLD ONLY. EXP-0036 closure committed as `65898d9` (`Close EXP-0036 orderer
+probe arc`). New experiment directory:
+`experiments/EXP-0037-value-routed-orderer/`.
+
+Question: did EXP-0036 solve the wrong trained-orderer problem by selecting among
+predefined capacity-shaped policies? New branch tests direct value-based producer routing:
+
+```text
+(order, eligible producer, context) -> marginal value score
+softmax over eligible producers -> routing weights
+```
+
+Proposed safe policy shape:
+
+```text
+base_logits = blend_0.5
+final_logits = base_logits + clipped learned residual logits
+```
+
+The acceptance floor is fixed `blend_0.5`, not the old champion and not
+`closure_vs_search`. First gate remains the decisive EXP-0036 trio s29/s77/s45. Stop if the
+deployed residual router does not beat fixed `blend_0.5` on at least 2 of 3 tasks.
+
+Next implementation task: build an offline residual-router probe that perturbs routing
+weights around `blend_0.5` and learns per-order/per-producer value scores, instead of
+training another selector over `even_split`/blend/proportional policies.
