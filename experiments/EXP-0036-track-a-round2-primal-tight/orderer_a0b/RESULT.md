@@ -125,6 +125,10 @@ causes remain, demanding different fixes (root-cause rule):
   arbitrary even on "decisive" cycles → fix = value-aware soft labels / margin filtering
   (A1 denoise) or deploy-time light search (A2); obs enrichment would buy nothing.
 
-**Discriminating check (next, cheap):** fit the SAME classifier on the full global state
-vector on the same samples. Beats majority held-out → (a), enrichment justified. Still
-fails → (b), no observation can predict the target; go soft-label / deploy-search.
+**Discriminating check (next, cheap):** fit the SAME classifier on the ADR-0004 global
+state vector on the same samples. Beats majority held-out → (a), enrichment justified.
+Still fails → enrichment with the existing global features is dead. *(Post-hoc note,
+2026-07-05: a fail does NOT establish (b) — `encode_global` is a lossy roll-up (capacity
+summed across types, no queue/TTL/inventory-composition/history) and the probe saw only
+~200 cycles/task, so unpredictability-from-any-observation remains open; see
+`orderer_a0c/RESULT.md` Conclusions and the A0d complete-state probe.)*

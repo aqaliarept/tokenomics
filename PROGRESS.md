@@ -1159,3 +1159,286 @@ Blockers: none.
 Next (user decision): spec Stage A2 (deploy-time vocabulary search as the orderer, cost profile +
 acceptance vs champion on mined tight tasks) vs A1 critic-ranking gate. Deferred: index EXP-0036
 orderer_a0/a0b/a0c in experiments/README.md; champion-collapses-on-mined-tasks flag still open.
+
+## 2026-07-05 — A0c verdict CORRECTED on user review: "obs enrichment dead" overclaimed; A0d complete-state probe is the discriminator
+Status: user challenged the A0c conclusion on two fronts: (1) no trace-level teacher-vs-probe
+comparison was ever done (only aggregate top-1 vs majority; per-sample margins not persisted);
+(2) "even if the orderer sees the whole world, can it extract the signal? maybe the gap is
+aggregated/historical observations, not emulation". Code check confirmed the challenge:
+- `encode_global` (env/encode.py:455, ADR-0004) is NOT the full state — per-producer capacity is
+  SUMMED ACROSS TYPES (bottlenecks/death on primal-tight tasks are per-type), no order-queue/TTL
+  state, inventory as unit count not composition, no history. The "FULL global state" claim in
+  the A0c write-up was false.
+- Sample starvation confound: probe trained on ~200 cycles/task — failing a ~50% majority floor
+  from 200 samples of a high-dim 5-way problem is weak evidence of impossibility.
+- Domain+search deterministic => the committed choice IS an exact function of the FULL env
+  state; the target function provably exists. A0c only killed enrichment with the EXISTING
+  global features.
+Decisions: withdrew "branch (b) picked / obs enrichment DEAD / A2 primary". Three causes now
+standing (root-cause rule): lossy snapshot | missing temporal/aggregated features (history
+recovers hidden state given a lossy snapshot; trend features = backward proxies for what the
+lookahead unrolls) | genuine incompressibility. Discriminator = A0d complete-state probe: same
+protocol, LOSSLESS env-state serialization, ± k-cycle history stack, ~10x mined cycles. Fails =>
+incompressibility diagnosed with evidence, A2/A1 branch confirmed. Passes => enrichment alive,
+find compact features (temporal aggregates first).
+Artifacts: orderer_a0c/RESULT.md Conclusions rewritten (correction dated, original verdict kept
+struck in prose); orderer_a0b/RESULT.md discriminating-check para post-hoc note;
+eval/orderer_representability.py emitter template + A0c code comment fixed (future runs won't
+emit the overclaim); DIAGNOSTICS.md entry 11 A0c gate rewritten; experiments/README.md EXP-0036
+row updated with the full orderer probe ladder (A0/A0b/A0c + correction) — clears the deferred
+index item.
+Blockers: none.
+Next: spec + TDD A0d complete-state probe (lossless serialization, history stack, 10x cycles) ->
+pod. Trace-level teacher-vs-probe read + margin persistence fold into A0d instrumentation.
+Deferred: champion-collapses-on-mined-tasks flag still open.
+
+## 2026-07-13 — Stage A0t built + launched: trace-regret analysis (which decisions go wrong vs the teacher, and what they cost)
+Status: user direction: before adding observation metrics blindly, analyze TRACES — find the
+decisions the student gets wrong vs the search teacher, read what the teacher saw, and infer the
+missing features from evidence. Built TDD (4 red-green cycles, suite 629 passed; +4 tests):
+- `train/orderer_scorer.py::CycleTrace` — per searched cycle: the FULL candidate score table the
+  argmax threw away, decisiveness margin, `champion_units` (champion orderer scored at the SAME
+  state by the same lookahead-6 rollout), and `_cycle_state_snapshot(env)` — JSON-readable
+  decision-time state with the per-type detail the encoders roll up (per-type capacities/reserved/
+  requested, inventory + inbound by product, investment flags, live order book with ages, open
+  demand). `collect_choice_samples` now returns `(samples, gsamples, traces, names)` + `champion=`
+  kwarg; determinism test: champion==proportional reproduces the proportional table column exactly.
+- `eval/orderer_representability.py::a0t_diag_row/run_a0t_diag/_emit_a0t`; CLI `--a0t` (needs
+  --orderer-ckpt). Per held-out cycle: probe_regret = units[teacher argmax] − units[global-probe
+  pick] (≥0 by construction); champ_regret = units[teacher argmax] − champion rollout (<0 =
+  champion beats the whole vocabulary there); local_headroom = units[teacher] − units[even_split].
+  regret_frac = Σregret/Σheadroom — cost-weighted misses, ties stop polluting the read. RESULT.md
+  dumps top-5 regret cycles per task WITH candidate tables + state snapshots; full traces →
+  artifacts/traces.json.gz.
+Artifacts: local tiny smoke passed (1 task, horizon 12, iters 3 — CLI+layout verified; smoke rows
+already show real cost shape: cycle-2 even_split=0 vs blend_0.5=21, champion regret 9). Staged
+_pod_ckpts (producer_champion_exp0035.pt, orderer_scorer.pt = EXP-0012, task_archive.jsonl);
+fresh cpu5c pod via --create-pod; `--a0t --iters 1000 --horizon 100 --eval-seeds 3 --alphas
+0.75,0.5,0.25` on s29/s77/s45; pulls to experiments/EXP-0036-.../orderer_a0t. Launch log
+/tmp/a0t_pod_launch.log. NOT committed (user hold: fix observation + rerun before committing).
+Decisions: per-cycle units are lookahead-window units (local proxy, not episode units) — RESULT
+read order states this; champion scored at TEACHER-visited states (aligned comparison; its own-
+trajectory drift is a separate, later read).
+Blockers: none.
+Next: read probe_regret_frac first (≈0 despite low top-1 => D1 wall costs nothing); then read the
+top-regret cycle dumps and NAME the missing feature from what the teacher saw (inbound arrivals /
+per-type bottleneck / TTL cliffs); champ_regret_frac + n_champ_better situate the champion and the
+vocabulary ceiling. Then decide: obs enrichment (A0d candidates) vs deploy-time search (A2).
+
+## 2026-07-13 — Stage A0t RESULT: misses are expensive, no system-level feature separates the classes, champion beats the vocab at 40% of states
+Status: A0t pod run complete (pod b6y3ke45teehw1 created+terminated; pulled to
+experiments/EXP-0036-track-a-round2-primal-tight/orderer_a0t/, Conclusions filled). Reads:
+- probe_regret_frac 0.98/0.86/0.56 (s29/s77/s45) — the D1 wall costs real units, not tie noise.
+  Dominant miss: picking even_split when it's not in the tied-winner set (154–166u per task).
+  margin==0 cycles can carry 52u regret → "decisive=margin>0" was the wrong split; tie cycles
+  have a winner SET target.
+- champ_regret_frac 0.52/0.20/0.17 at teacher states; n_champ_better 40/47/41 of 100 — champion
+  per-decision is decent where the teacher goes and BEATS the whole 5-entry vocabulary at ~40% of
+  states → its 0-unit episodes are trajectory-level compounding, and the vocabulary is not a
+  behavior cover.
+- Feature inference from LOSSLESS snapshots: system-level aggregates (min per-type ratio, cap
+  imbalance, inbound, inventory, order count/age, open demand, phase) are FLAT between even-wins
+  and concentration-wins cycles — the asked-for "infer the metric from wrong decisions" search
+  found none at this granularity.
+- Temporal: choice persistence 59–63%, sticky repeat-last-pick still loses 24–50% of edge, edge
+  lag-1 autocorr 0.35–0.44 with 13–23 large sign flips per 100 cycles → history features capture
+  only the slow component.
+Decisions: evidence weakens both enrichment sub-hypotheses (lossy-snapshot AND temporal) and
+strengthens A2 deploy-time light search with candidate set = {blend vocabulary + CHAMPION} (union
+dominates both; covers the champion-better 40%). A0d complete-state probe now low-prior (would
+need relational features, not more inputs). Analysis scripts were ad-hoc (in-chat python over
+traces.json.gz); traces persisted for re-analysis.
+Blockers: none. Working tree intentionally UNCOMMITTED (user hold from 2026-07-05 continues).
+Next (user decision): spec Stage A2 with the champion-augmented candidate set (cost profile +
+full-episode acceptance vs champion on mined tight tasks + broad-family no-regression) — or a
+relational-feature probe first if the enrichment path should be exhausted.
+
+## 2026-07-14 — Stage A0f (HANDOVER Task 1) DONE: missing-observation probe — no TESTED block family helps; per-cycle choice reads as seed-idiosyncratic label noise
+Status: executed HANDOVER.md Task 1 (+ the flat-relational slice of Task 2 and the soft-target
+slice of Task 4 in the same evidence set). Built TDD (6 new tests, suite 638 passed):
+- `train/orderer_scorer.py`: `cycle_feature_blocks(env)` (named decision-time blocks: gstate /
+  pooled stream / per-type capacity / order-book+TTL / inventory / inbound / relational recipe
+  ratios / compact), `history_features` (k-cycle stack, seed-boundary safe),
+  `ValueTableModel`+`fit_value_table`+`value_table_metrics` (predict the FULL candidate table,
+  regret-first metrics — HANDOVER: accuracy is the wrong primary metric),
+  `collect_choice_samples(..., with_features=True)`, `CycleTrace.features`.
+- `eval/orderer_representability.py`: `a0f_feature_row`/`run_a0f_probe`/`_emit_a0f`, CLI `--a0f
+  --k-history`; local tiny smoke, then full run on fresh cpu5c pod (3f6606gset773e,
+  created+terminated), pulled to experiments/EXP-0036-.../orderer_a0f/ (traces+features persisted
+  to artifacts/feature_traces.json.gz; local re-fit script analysis_followup.py + .log).
+Reads (RESULT.md Conclusions filled; wording tightened on user review 2026-07-14 — original
+"no missing observation exists / train 0.0 everywhere / constants beat every probe" overclaimed):
+- NO tested block set gives a STABLE held-out regret reduction: per task 0.90–1.14 (s29),
+  0.76–1.26 (s77), 0.365–0.89 (s45 — best = its two SMALLEST sets, stream 0.365/gstate 0.407;
+  every added block hurts s45: small-sample overfitting signature). train_regret_frac 0.0 for
+  every set with dim >= 109; only the 81-dim stream block underfits (0.53/0.49/0.81) →
+  memorizes train, transfers nothing.
+- Constant mid-blend picks match or beat the fitted probes ALMOST everywhere (always-blend_0.5 →
+  0.90/0.97/0.29 s29/s77/s45); sole exception s77 +order_queue 0.7555 vs constant blend_0.75
+  0.7821 — a 0.027 one-task/one-held-out-seed edge, not a stable reduction.
+  train-majority=even_split → 1.0.
+- Learning curve wrong-signed: 1→2 train seeds RAISES held-out regret 3/3 (0.88→0.97, 1.06→1.13,
+  0.62→0.80) → anti-transfer, not sample starvation.
+- Task 4 soft targets (winner-set BCE, margin-weighted CE) don't rescue (best 0.65 vs 0.29
+  constant floor).
+Decisions (root-cause rule satisfied, claim SCOPED): for the TESTED families / probe models /
+data scale the A0c discriminator lands on (3): the per-cycle lookahead-6 winner on a NEW demand
+seed behaves as noise around a stable "mid-blend > even_split" mean preference. Closes HANDOVER
+Task 1 (the tested ladder), NOT all possible observations/models (e.g. a graph/relational
+encoder is untested — but it has no positive signal here to build on). A0d complete-state probe
+superseded (A0f is that check, stronger: value targets + block ladder + constant floors +
+learning curve). HANDOVER Task 3 (learner-trajectory DAgger) moot for this wall — train and
+held-out are both teacher trajectories, only the demand seed differs; deployment always faces
+new seeds. DIAGNOSTICS entry 11 extended (A0t + A0f gates); experiments/README.md EXP-0036 row
+updated.
+Artifacts: orderer_a0f/{RESULT.md, summary.csv, spec.json, analysis_followup.py+.log,
+artifacts/feature_traces.json.gz}; tests in tests/test_orderer_scorer.py. Working tree still
+UNCOMMITTED (user hold from 2026-07-05 continues). _pod_ckpts/ deleted.
+Blockers: none.
+Next (user decision): spec Stage A2 deploy-time light search — candidate set = blend vocabulary
++ champion (covers the champion-better 40% of states, A0t) — cost profile + full-episode
+acceptance vs champion on mined tight tasks + broad-family no-regression; include FIXED
+blend_0.5/blend_0.75 policies in the comparison as the zero-cost floor A0f measured.
+
+## 2026-07-14 — Stage A0g: producer-count-agnostic value table (HANDOVER "Proposed Model") implemented; set bias does NOT change the A0f verdict
+Status: DONE (user-directed: implement the HANDOVER Proposed Model).
+Artifacts:
+- `train/orderer_scorer.py`: `ProducerSetValueModel` (shared per-producer MLP → masked
+  mean+max pool → head on [context ‖ pooled] → fixed candidate table; HANDOVER invariants:
+  producer-permutation invariant, count never changes model shape, mask-0 rows exactly
+  absent, output fixed by vocabulary), `fit_set_value_table` (same per-row-centered
+  value-table MSE as the flat probe — deltas read as inductive bias, not objective),
+  `set_value_table_metrics` (+ shared `_table_pick_metrics` refactor),
+  `set_features_from_blocks` (lossless reshape of the A0f blocks: producer row = per-type
+  capacity ‖ inventory ‖ inbound ‖ relational column, 108 dims; context = stream ‖
+  order_queue ‖ compact, 230 dims), `cycle_set_features` (live path, unit-tested identical
+  to trace reconstruction). 3 new tests; module 53 passed, full suite green.
+- `experiments/EXP-0036-.../orderer_a0g/`: probe_set_value.py + .log, summary.csv,
+  spec.json, RESULT.md. Local run = saved-artifact recompute over
+  orderer_a0f/artifacts/feature_traces.json.gz (HANDOVER-allowed local; seconds-scale fits).
+Reads (same 3 tasks, same traces, same target/iters/init as A0f):
+- Train regret_frac ~0.0 every variant; held-out at/near the constant mid-blend floors.
+  s45 decisive: EVERY set variant 0.51–0.75 vs constant blend_0.5 0.2926 (and flat stream
+  0.365) — more structure hurt where less already hurt.
+- Only sub-floor readings are ~0.03 edges in DIFFERENT variants on different tasks (s29
+  set+history 0.8652 vs floor 0.8965; s77 set+history 1-seed 0.7476 vs 0.7821) — same
+  noise magnitude as A0f's s77 exception, not a stable reduction.
+- Learning curve still wrong-signed: 1-seed beats 2-seed held-out on s77 (0.7476 vs
+  0.9922) and s45 (0.6008 vs 0.6429).
+- Cross-task pooled fit (600 rows; possible ONLY in the set view — identical row/context
+  dims across tasks, P=6 vs 9 handled by mask) does not rescue: 0.9141/1.0815/0.5147
+  (s77 WORSE than even_split).
+Decisions (scoped): the HANDOVER "Proposed Model" as specified (mean+max pool,
+centered-table MSE, features reconstructible from saved traces) is implemented, invariant-
+tested, and does not beat the constant mid-blend floor on these traces — consistent with
+the A0f diagnosis (per-cycle lookahead winner on a new demand seed ≈ seed-idiosyncratic
+noise around a stable mid-blend preference). Untested: attention pooling, ranking/winner-set
+losses on the set encoder, per-producer routed/completed/rejected history (not in saved
+traces). The model stays as the portable distillation head if a future arc (e.g. A2
+deploy-time search traces) finds learnable signal. DIAGNOSTICS entry 11 A0g gate added;
+experiments/README.md EXP-0036 row extended.
+Blockers: none. Working tree still UNCOMMITTED (user hold from 2026-07-05 continues).
+Next (user decision, unchanged): spec Stage A2 deploy-time light search (blend vocabulary
++ champion candidates, fixed mid-blends as the zero-cost acceptance floor).
+
+---
+
+## 2026-07-15 — Stage A0w: window/episode-level blend-policy distillation (HANDOVER Task 5) — driver implemented + TDD + local smoke; full run is a pod job
+
+Status: DONE (code + tests + local smoke). The real multi-seed / multi-task / full-horizon
+run is a CLOUD job (CLAUDE.md HARD RULE) and has NOT been run — the driver is built, TDD'd,
+and smoke-verified locally, and the pod command is staged below.
+
+What Task 5 changes vs A0f/A0g: A0f/A0g predicted a PER-CYCLE candidate value table whose
+winner ordering does not transfer across demand seeds. A0w changes the target TIME SCALE —
+the value of each CONSTANT blend policy over an episode / rolling window (5/10/20 cycles),
+one row per window instead of per searched cycle. Deployment picks ONE constant blend via a
+conservative switch rule (default blend, switch only when the predicted advantage clears a
+threshold), and is scored by DEPLOYED ROLLOUT against the best constant blend — not by table
+error alone.
+
+Artifacts (code):
+- `tokenomics/train/orderer_scorer.py`: `aggregate_set_window` (window feature summary:
+  context = concat[mean, last]; producer rows = mean-over-window — the same summary the
+  deployed policy builds from its rolling buffer), `blend_decision` (conservative default-
+  sticky switch rule, threshold in the model's centered/std-scaled output units),
+  `set_table_ordering_policy` (deploy the window head as a meta-orderer: per-cycle rolling
+  window → predict table → pick one constant blend → act). Reuses the A0g
+  `ProducerSetValueModel` / `fit_set_value_table` / `set_value_table_metrics` unchanged.
+- `tokenomics/eval/orderer_representability.py`: `--a0w` mode — `_fixed_blend_episode`
+  (full-episode fixed-policy per-cycle unit deltas + reference-trajectory set features),
+  `episode_value_table` / `window_value_rows` (constant-policy targets; dead policies padded
+  to the reference length with 0), `_const_regret_frac` / `_decision_regret_frac` (best-
+  constant-blend baseline + deploy-rule regret), `a0w_task5_row` / `run_a0w_task5` /
+  `_emit_a0w` (per-granularity fit + deployed rollout + closure vs search; EXP layout).
+- Tests: `tests/test_a0w_task5.py` (4: episode/window target construction, dead-policy
+  padding, const & decision regret math) + 2 in `tests/test_orderer_scorer.py`
+  (`aggregate_set_window`, `blend_decision`). All pass.
+- Local smoke (1 task s29, eval-seeds 2, horizon 12, window 5, iters 20) emits the full EXP
+  layout to /tmp/a0w_smoke (episode + window5 + deploy rows, all metrics populated; deploy
+  showed default blend_0.5 = 26u vs the toy-trained meta-orderer switching to even_split = 0u,
+  champ 2u, search 69u) — pipeline verified end-to-end, numbers are smoke-garbage by design.
+
+Reads: none yet — no real result. The definition of done (does the learned window/episode
+model beat the best CONSTANT blend by more than seed noise, on table regret AND deployed
+units) is answered only by the pod run.
+
+Decisions: build/TDD/smoke local per the HANDOVER local-allowance; the decision-gating run
+goes to Runpod. No DIAGNOSTICS entry or RESULT conclusion yet — RESULT.md ships with a
+human-TODO conclusion, filled after the pod run produces a verdict.
+
+Blockers: none. Working tree still UNCOMMITTED (user hold from 2026-07-05 continues).
+
+Next: launch the full A0w pod run (stage producer champion + orderer champion ckpts under
+`tokenomics/_pod_ckpts/`, wrap with run_pod_training.py, `--pull` the EXP dir back to
+`experiments/EXP-0036-.../orderer_a0w/`), over the three A0t tasks first (s29/s77/s45 — the
+same decisive trio A0f/A0g used) at `--iters 1000 --horizon 100 --eval-seeds 3 --windows
+5,10,20`; then fill RESULT.md's Conclusions and (if it settles the verdict) a DIAGNOSTICS
+entry. Owner decision whether to also run the full 81-row archive.
+
+---
+
+## 2026-07-15 — Stage A0w RESULT: trained-orderer path STOPPED — learned window/episode meta-orderer loses to a fixed blend_0.5 on all 3 tasks
+
+Status: DONE. Narrow 3-task A0w pod run complete (fresh 16-vCPU CPU pod xt414xetp10l4f,
+runpod/base:0.7.0-ubuntu2004, --cpu python3.12; created → ran → pulled → terminated).
+`--a0w` over s29/s77/s45 at --iters 1000 --horizon 100 --eval-seeds 3 --windows 5,10,20
+--deploy-window 10 --threshold 0.25. Artifacts: `experiments/EXP-0036-.../orderer_a0w/`
+(RESULT.md, summary.csv, spec.json).
+
+Verdict (owner's rule = deployed rollout, NOT table regret): learned_cu vs default(blend_0.5)
+vs best_const —
+- s29: 810 vs 960 vs 768(blend_0.25) — loses to default.
+- s77: 666 vs 749 vs 893(blend_0.25) — loses to BOTH.
+- s45: 588 vs 621 vs 621(blend_0.5) — loses to BOTH.
+Learned < default 3/3, < best_const 2/3. Rule (stop if loses to default/best-constant on
+2 of 3) → **STOP the trained-orderer path.**
+
+Reads:
+- The default fixed blend_0.5 is strong and is the deployable policy: 960/749/621 units,
+  near champion on s29 (1004) and FAR above the *dead* memorized champion on tight s77/s45
+  (champ = 0, system death — the A0 collapse). No learned switcher needed.
+- Switching destroys value: deployed switch rate 0.40–0.88; s29 drops 960→810 purely from
+  switching. threshold 0.25 too eager, but direction is wrong not just magnitude (best-const
+  beats learned on s77, 893 vs 666).
+- Table regret does NOT predict deploy value (the trap the rule warns of): longer windows
+  lower held-out regret_frac (s77 0.54→0.30; s77 episode 0.0) yet deploy still loses; where
+  table looked best (s77) the best CONSTANT blend's regret was lower still (0.34/0.20/0.10 <
+  learned 0.54/0.46/0.30).
+- closure_vs_search 0.65/0.60 on s77/s45 is a red herring — recovery over a DEAD champion;
+  honest baselines beat learned outright.
+
+Decisions: A0w closes the last untested lever (target TIME SCALE) from the A0f/A0g arc. Across
+the whole ladder (A0b/A0c/A0f/A0g/A0w) the deployable learned orderer never beats a fixed
+mid-blend on held-out demand → the per-cycle/window search winner is seed-idiosyncratic noise
+around a stable mid-blend preference; no stable supervised target for a learned orderer here.
+Ship/compare against fixed blend_0.5 (or per-task best-constant). DIAGNOSTICS entry 11 A0w gate
+added; experiments/README.md EXP-0036 row extended.
+
+Blockers: none. Working tree still UNCOMMITTED (user hold from 2026-07-05 continues).
+
+Next (owner decision): NOT the full 81-row archive on this path, and NOT a threshold sweep
+(only warranted if A0w looked promising — it didn't). The remaining EXP-0036 headroom, if
+pursued, is spec Stage **A2 deploy-time light search** over the blend vocabulary (a COMPUTE
+lever, not a learned policy), with the fixed mid-blend as the zero-cost acceptance floor A0w
+just established. Owner call whether to open A2 or close EXP-0036's orderer arc here.

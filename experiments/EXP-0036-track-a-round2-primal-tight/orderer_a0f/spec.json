@@ -1,0 +1,32 @@
+{
+  "producer_ckpt": "/workspace/tokenomics/_pod_ckpts/producer_champion_exp0035.pt",
+  "task_ids": [
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29",
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77",
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45"
+  ],
+  "iters": 1000,
+  "horizon": 100,
+  "eval_seeds": 3,
+  "alphas": [
+    0.75,
+    0.5,
+    0.25
+  ],
+  "k_history": 4,
+  "search": {
+    "candidates": [
+      "even_split",
+      "proportional"
+    ],
+    "n_samples": 8,
+    "sample_scale": 1.0,
+    "lookahead": 6
+  },
+  "complete": true,
+  "completed_task_ids": [
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45",
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77",
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29"
+  ]
+}

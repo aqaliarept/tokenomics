@@ -1,0 +1,45 @@
+
+=== s29  vocab=['even_split', 'blend_0.75', 'blend_0.5', 'blend_0.25', 'proportional']  n_train=200 n_heldout=100
+heldout all-tied rows: 23.00%
+  constant even_split   heldout regret_frac 1.0
+  constant blend_0.75   heldout regret_frac 0.9609
+  constant blend_0.5    heldout regret_frac 0.8965
+  constant blend_0.25   heldout regret_frac 1.1191
+  constant proportional heldout regret_frac 1.207
+  train-majority (even_split) heldout regret_frac 1.0
+  value-probe full-ladder 1-seed (n=100): heldout regret_frac 0.877
+  value-probe full-ladder 2-seed (n=200): heldout regret_frac 0.9688
+  winner-set BCE (ladder): heldout regret_frac 1.0762
+  margin-wt CE  (ladder): heldout regret_frac 0.9707
+  winner-set BCE (gstate): heldout regret_frac 0.8594
+  margin-wt CE  (gstate): heldout regret_frac 1.0176
+
+=== s77  vocab=['even_split', 'blend_0.75', 'blend_0.5', 'blend_0.25', 'proportional']  n_train=200 n_heldout=100
+heldout all-tied rows: 10.00%
+  constant even_split   heldout regret_frac 1.0
+  constant blend_0.75   heldout regret_frac 0.7821
+  constant blend_0.5    heldout regret_frac 0.9687
+  constant blend_0.25   heldout regret_frac 1.2586
+  constant proportional heldout regret_frac 1.4514
+  train-majority (even_split) heldout regret_frac 1.0
+  value-probe full-ladder 1-seed (n=100): heldout regret_frac 1.0627
+  value-probe full-ladder 2-seed (n=200): heldout regret_frac 1.1301
+  winner-set BCE (ladder): heldout regret_frac 1.0
+  margin-wt CE  (ladder): heldout regret_frac 0.8903
+  winner-set BCE (gstate): heldout regret_frac 0.8668
+  margin-wt CE  (gstate): heldout regret_frac 1.1881
+
+=== s45  vocab=['even_split', 'blend_0.75', 'blend_0.5', 'blend_0.25', 'proportional']  n_train=200 n_heldout=100
+heldout all-tied rows: 20.00%
+  constant even_split   heldout regret_frac 1.0
+  constant blend_0.75   heldout regret_frac 0.365
+  constant blend_0.5    heldout regret_frac 0.2926
+  constant blend_0.25   heldout regret_frac 0.5695
+  constant proportional heldout regret_frac 0.7025
+  train-majority (even_split) heldout regret_frac 1.0
+  value-probe full-ladder 1-seed (n=100): heldout regret_frac 0.6233
+  value-probe full-ladder 2-seed (n=200): heldout regret_frac 0.8033
+  winner-set BCE (ladder): heldout regret_frac 0.7564
+  margin-wt CE  (ladder): heldout regret_frac 0.7544
+  winner-set BCE (gstate): heldout regret_frac 0.6526
+  margin-wt CE  (gstate): heldout regret_frac 0.7025

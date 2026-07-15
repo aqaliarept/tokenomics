@@ -11,7 +11,7 @@ count P (no fixed `K*P` action head). Mirror of `producer_scorer.ProducerScoreMo
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -520,6 +520,468 @@ class ChoiceSample:
 
 
 @dataclass
+class CycleTrace:
+    """One per searched cycle (A0t trace analysis, EXP-0036): the FULL candidate score table
+    the committed argmax throws away, the champion orderer scored at the SAME state by the
+    same lookahead rollout (None when no champion handed in), and a JSON-serializable domain
+    snapshot at decision time carrying the per-type detail the encoded views roll up. Together
+    they turn aggregate top-1 accuracy into per-cycle REGRET (units[teacher] - units[student])
+    and let a human read WHY the teacher chose differently at the cycles that cost units.
+    `features` (A0f, opt-in via `with_features`) carries the named decision-time observation
+    blocks the missing-observation probe fits on."""
+    seed: int
+    cycle: int
+    cand_units: list[float]   # rollout units per vocabulary entry, insertion order
+    choice: int               # argmax (first max wins ties — mirrors _search_best_pol)
+    margin: float             # best minus second-best
+    champion_units: float | None
+    state: dict
+    features: dict[str, np.ndarray] | None = None
+
+
+def _cycle_state_snapshot(env) -> dict:
+    """Readable decision-time snapshot for CycleTrace: per-type capacities/reserved/requested,
+    inventory + inbound by product, investment flags, the live order book with ages, and open
+    consumer demand. Field names follow CONTEXT.md so a trace reads without the encoder."""
+    producers = {}
+    for pid, p in env.system.producing_agents.items():
+        reserved = p.reserved_capacity()
+        producers[pid] = {
+            "capacities": {t: int(c) for t, c in p.capacities.items()},
+            "max_capacities": {t: int(c) for t, c in p.max_capacities.items()},
+            "reserved": {t: int(c) for t, c in reserved.items() if c},
+            "requested_by_type": {t: int(c) for t, c in p.requested_capacity_by_type.items() if c},
+            "inventory": {g: int(n) for g, n in p.inventory.items() if n},
+            "inbound": {g: int(n) for g, n in p.outstanding_inbound.items() if n},
+            "investing": [name for name, on in (
+                ("restoration", p.restoration_running), ("upgrade", p.upgrade_running),
+                ("inventory_expansion", p.inventory_expansion_running)) if on],
+        }
+    orders = [
+        {"product": o.product, "qty": int(o.quantity), "accepted": int(o.accepted_qty),
+         "completed": int(o.completed_qty), "failed": int(o.failed_qty),
+         "tokens": float(o.tokens), "age": int(o.cycle_counter),
+         "type": ("consumer" if o.consumer_request is not None
+                  else "investment" if o.investment_request is not None
+                  else "replenishment")}
+        for o in env.system.orders.values()
+    ]
+    open_demand = {
+        prod: [int(q), float(tok)] for prod, (q, tok) in env._open_consumer_demand().items()}
+    return {"cycle": int(env.current_cycle), "producers": producers, "orders": orders,
+            "open_demand": open_demand}
+
+
+def _sanitize32(vals: Sequence[float] | np.ndarray) -> np.ndarray:
+    """Same NaN/inf policy as `_tensor`, as a flat float32 vector (feature blocks)."""
+    return np.nan_to_num(np.asarray(vals, dtype=np.float32),
+                         nan=0.0, posinf=_BOUND, neginf=-_BOUND)
+
+
+def cycle_feature_blocks(env) -> dict[str, np.ndarray]:
+    """Named decision-time observation blocks for the A0f missing-observation probe
+    (EXP-0036 Task 1 / HANDOVER): identify which observation FAMILY the D1 wall is missing by
+    fitting a value-table probe on cumulative block sets and reading held-out regret per set.
+
+    Blocks (deterministic layout: sorted producers x sorted capacity types x sorted products):
+    - `gstate`: the lossy ADR-0004 global snapshot — the A0c reference input.
+    - `stream`: what the deployed orderer sees, pooled per cycle — mean+max over
+      backlog-holding product-stream views of [product features || mean-pooled producer rows].
+    - `per_type_capacity`: per producer x type [current, max, reserved, requested] — the
+      per-type detail `encode_global` sums away (bottlenecks/death on primal-tight tasks are
+      per-type).
+    - `order_queue`: per product live order-book aggregates incl. age/TTL composition.
+    - `inventory` / `inbound`: per producer x product unit counts (composition, not totals).
+    - `relational`: per product x producer recipe-aware ratios (capacity current/free/max vs
+      recipe need, input availability, makeable-now) — the product x eligible-producer x
+      capacity-type family, collapsed over required types by min (the binding constraint).
+    - `compact`: small per-cycle system summary — not a probe block itself; `history_features`
+      stacks the previous k cycles of it into the `history` block."""
+    from ..domain import metrics as dmetrics
+
+    system = env.system
+    producers = sorted(system.producing_agents)
+    types = sorted({t for p in system.producing_agents.values() for t in p.max_capacities})
+    products = sorted(system.process_sheets)
+    orders = list(system.orders.values())
+
+    stream_vecs: list[np.ndarray] = []
+    for aid in sorted(system.stream_products):
+        view = system.product_stream_view(aid)
+        if not view.backlog:
+            continue
+        rows = _sanitize32([
+            _producer_row_features(view.producers[p], view.producer_products[p])
+            for p in sorted(view.producers)]).reshape(len(view.producers), -1)
+        stream_vecs.append(np.concatenate([
+            _sanitize32(_product_features(view.product_stats)), rows.mean(axis=0)]))
+    if stream_vecs:
+        arr = np.stack(stream_vecs)
+        stream = np.concatenate([arr.mean(axis=0), arr.max(axis=0),
+                                 np.asarray([len(stream_vecs)], dtype=np.float32)])
+    else:
+        stream = np.zeros(2 * (_PRODUCT_DIM + _PRODUCER_ROW_DIM) + 1, dtype=np.float32)
+
+    cap: list[float] = []
+    for pid in producers:
+        p = system.producing_agents[pid]
+        reserved = p.reserved_capacity()
+        for t in types:
+            cap += [p.capacities.get(t, 0), p.max_capacities.get(t, 0),
+                    reserved.get(t, 0), p.requested_capacity_by_type.get(t, 0)]
+
+    queue: list[float] = []
+    for g in products:
+        po = [o for o in orders if o.product == g]
+        queue += [
+            len(po),
+            sum(o.unresolved_quantity() for o in po),
+            sum(o.accepted_qty for o in po),
+            sum(o.completed_qty for o in po),
+            sum(o.failed_qty for o in po),
+            sum(o.available_tokens() for o in po),
+            max((o.cycle_counter for o in po), default=0),
+            sum(o.unresolved_quantity() for o in po if o.cycle_counter >= 1),
+            sum(1 for o in po if o.consumer_request is not None),
+            sum(1 for o in po if o.replenishment_request is not None),
+            sum(1 for o in po if o.investment_request is not None),
+        ]
+    queue += [len(orders), sum(o.unresolved_quantity() for o in orders)]
+
+    inv = [system.producing_agents[pid].inventory.get(g, 0)
+           for pid in producers for g in products]
+    inb = [system.producing_agents[pid].outstanding_inbound.get(g, 0)
+           for pid in producers for g in products]
+
+    rel: list[float] = []
+    for g in products:
+        sheet = system.process_sheets[g]
+        need = {t: c for t, c in sheet.require.items() if c > 0}
+        for pid in producers:
+            p = system.producing_agents[pid]
+            reserved = p.reserved_capacity()
+            cur = min((p.capacities.get(t, 0) / need[t] for t in need), default=_BOUND)
+            free = min(((p.capacities.get(t, 0) - reserved.get(t, 0)) / need[t]
+                        for t in need), default=_BOUND)
+            mx = min((p.max_capacities.get(t, 0) / need[t] for t in need), default=_BOUND)
+            inp = (min((p.inventory.get(i, 0) + p.outstanding_inbound.get(i, 0)) / n
+                       for i, n in sheet.inputs.items())
+                   if sheet.inputs else _BOUND)
+            rel += [1.0 if g in p.produces else 0.0,
+                    min(cur, _BOUND), max(min(free, _BOUND), -_BOUND),
+                    min(mx, _BOUND), min(inp, _BOUND),
+                    dmetrics.makeable_qty_now(p, g)]
+
+    totals = {t: [0.0, 0.0, 0.0] for t in types}
+    inventory_units = inbound_units = 0
+    for pid in producers:
+        p = system.producing_agents[pid]
+        reserved = p.reserved_capacity()
+        inventory_units += p.inventory_units()
+        inbound_units += p.outstanding_inbound_units()
+        for t in types:
+            totals[t][0] += p.capacities.get(t, 0)
+            totals[t][1] += reserved.get(t, 0)
+            totals[t][2] += p.requested_capacity_by_type.get(t, 0)
+    open_demand = env._open_consumer_demand()
+    compact = [x for t in types for x in totals[t]] + [
+        inventory_units, inbound_units, len(orders),
+        sum(o.unresolved_quantity() for o in orders),
+        sum(q for q, _ in open_demand.values()),
+        sum(tok for _, tok in open_demand.values()),
+    ]
+
+    return {
+        "gstate": _sanitize32(env.global_state()),
+        "stream": _sanitize32(stream),
+        "per_type_capacity": _sanitize32(cap),
+        "order_queue": _sanitize32(queue),
+        "inventory": _sanitize32(inv),
+        "inbound": _sanitize32(inb),
+        "relational": _sanitize32(rel),
+        "compact": _sanitize32(compact),
+    }
+
+
+def history_features(traces: list["CycleTrace"], k: int = 4,
+                     block: str = "compact") -> np.ndarray:
+    """A0f history block: per trace, the previous `k` cycles' `block` vectors from the SAME
+    episode seed, most recent first, zero-padded at episode start (history is the backward
+    proxy for what the search's lookahead unrolls forward). Traces must be in collection
+    order (per-seed ascending cycles — what `collect_choice_samples` returns)."""
+    if not traces:
+        return np.zeros((0, 0), dtype=np.float32)
+    dim = traces[0].features[block].shape[0]
+    out = np.zeros((len(traces), k * dim), dtype=np.float32)
+    prev: dict[int, list[np.ndarray]] = {}
+    for i, t in enumerate(traces):
+        hist = prev.setdefault(t.seed, [])
+        for j, vec in enumerate(reversed(hist[-k:])):
+            out[i, j * dim:(j + 1) * dim] = vec
+        hist.append(t.features[block])
+    return out
+
+
+_REL_PAIR_DIM = 6  # relational block features per (product, producer) pair
+
+
+def set_features_from_blocks(blocks: dict[str, np.ndarray], *, n_producers: int,
+                             n_types: int, n_products: int) -> dict[str, np.ndarray]:
+    """Reshape the flat A0f blocks into the set view of the EXP-0036 HANDOVER "Proposed
+    Model": a fixed-dim `context` (stream ‖ order_queue ‖ compact) plus one `producers` row
+    per producer (its per-type capacities ‖ inventory ‖ inbound ‖ per-product relational
+    column). Same information, different factorization — so saved A0f traces re-fit the set
+    probe without a pod re-run, and the set-vs-flat regret delta reads as inductive bias."""
+    P, T, G = n_producers, n_types, n_products
+    rel = blocks["relational"].reshape(G, P, _REL_PAIR_DIM)  # block is product-major
+    producers = np.concatenate([
+        blocks["per_type_capacity"].reshape(P, 4 * T),
+        blocks["inventory"].reshape(P, G),
+        blocks["inbound"].reshape(P, G),
+        rel.transpose(1, 0, 2).reshape(P, _REL_PAIR_DIM * G),
+    ], axis=1)
+    context = np.concatenate([blocks["stream"], blocks["order_queue"], blocks["compact"]])
+    return {"context": context.astype(np.float32), "producers": producers.astype(np.float32)}
+
+
+def cycle_set_features(env) -> dict[str, np.ndarray]:
+    """Decision-time set view straight from a live env (deploy/collection path); delegates to
+    `set_features_from_blocks` so live and trace-reconstructed features are byte-identical."""
+    system = env.system
+    return set_features_from_blocks(
+        cycle_feature_blocks(env),
+        n_producers=len(system.producing_agents),
+        n_types=len({t for p in system.producing_agents.values() for t in p.max_capacities}),
+        n_products=len(system.process_sheets))
+
+
+class ValueTableModel(nn.Module):
+    """A0f value-table probe (EXP-0036 Task 1 / HANDOVER Task 4 target form): regress the
+    teacher's FULL per-cycle candidate value table from a flat feature vector, instead of
+    classifying its argmax — so near-tied candidates stop injecting label noise and a miss is
+    scored by REGRET against the true table, not by exact-argmax accuracy. Inputs are
+    standardized with train-set stats (`set_norm`; EXP-0009: raw magnitudes wreck
+    optimization); targets are per-row centered at fit time (only within-row differences
+    drive the pick)."""
+
+    def __init__(self, state_dim: int, n_choices: int, hidden: int = 64) -> None:
+        super().__init__()
+        self.n_choices = n_choices
+        self.encoder = _mlp(state_dim, hidden)
+        self.value_head = nn.Linear(hidden, n_choices)
+        self.register_buffer("state_mean", torch.zeros(state_dim))
+        self.register_buffer("state_std", torch.ones(state_dim))
+
+    def set_norm(self, states: np.ndarray) -> None:
+        arr = np.nan_to_num(np.asarray(states, dtype=np.float32),
+                            nan=0.0, posinf=_BOUND, neginf=-_BOUND)
+        self.state_mean.copy_(torch.from_numpy(arr.mean(axis=0)))
+        self.state_std.copy_(torch.from_numpy(arr.std(axis=0).clip(min=1e-6)))
+
+    def forward_states(self, x: torch.Tensor) -> torch.Tensor:
+        x = (x - self.state_mean) / self.state_std
+        return self.value_head(self.encoder(x))  # (n, n_choices)
+
+
+def fit_value_table(model: "ValueTableModel", states: np.ndarray, tables: np.ndarray,
+                    iters: int, lr: float = 1e-3, log=lambda *a, **k: None
+                    ) -> "ValueTableModel":
+    """MSE fit of the value-table probe on per-row-centered, globally-scaled targets."""
+    x = torch.from_numpy(np.asarray(states, dtype=np.float32))
+    y = np.asarray(tables, dtype=np.float32)
+    y = y - y.mean(axis=1, keepdims=True)
+    y = torch.from_numpy(y / max(float(y.std()), 1e-6))
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    model.train()
+    for it in range(iters):
+        opt.zero_grad()
+        loss = ((model.forward_states(x) - y) ** 2).mean()
+        loss.backward()
+        opt.step()
+        if it % max(1, iters // 10) == 0 or it == iters - 1:
+            log(f"iter {it}: value-mse {loss.item():.4f}")
+    model.eval()
+    return model
+
+
+def value_table_metrics(model: "ValueTableModel", states: np.ndarray, tables: np.ndarray,
+                        even_idx: int) -> dict:
+    """Regret-first read of a value-table probe (HANDOVER: accuracy is the wrong primary
+    metric). Per row: regret = units[true argmax] - units[probe argmax]; headroom =
+    units[true argmax] - units[even_split]; `regret_frac` = sum(regret)/sum(headroom).
+    `winner_hit` credits any member of the tied-winner set."""
+    with torch.no_grad():
+        pred = model.forward_states(
+            torch.from_numpy(np.asarray(states, dtype=np.float32))).cpu().numpy()
+    return _table_pick_metrics(pred, tables, even_idx)
+
+
+def _table_pick_metrics(pred: np.ndarray, tables: np.ndarray, even_idx: int) -> dict:
+    y = np.asarray(tables, dtype=np.float64)
+    picks = pred.argmax(axis=1)
+    best = y.max(axis=1)
+    picked = y[np.arange(len(y)), picks]
+    regret = best - picked
+    headroom = best - y[:, even_idx]
+    n = len(y)
+    return {
+        "n": n,
+        "top1": round(float((picks == y.argmax(axis=1)).mean()), 4) if n else None,
+        "winner_hit": round(float((picked >= best - 1e-6).mean()), 4) if n else None,
+        "regret_total": round(float(regret.sum()), 2),
+        "headroom_total": round(float(headroom.sum()), 2),
+        "regret_frac": (round(float(regret.sum() / headroom.sum()), 4)
+                        if headroom.sum() > 1e-9 else None),
+    }
+
+
+class ProducerSetValueModel(nn.Module):
+    """EXP-0036 HANDOVER "Proposed Model": variable number of producers in, fixed candidate
+    value table out. A shared MLP encodes each producer's feature row; masked mean+max
+    pooling (permutation-invariant, count-agnostic) aggregates the set; the head reads
+    [context ‖ pooled set] into one scalar per routing candidate. Invariants: reordering
+    producer rows cannot change the table, producer count never changes model shape, a
+    mask-0 (padded/ineligible) row is exactly absent, and the output size is fixed by the
+    candidate vocabulary. Inputs standardized with train stats like `ValueTableModel`."""
+
+    def __init__(self, context_dim: int, producer_dim: int, n_choices: int,
+                 hidden: int = 64) -> None:
+        super().__init__()
+        self.n_choices = n_choices
+        self.producer_encoder = _mlp(producer_dim, hidden)
+        self.head = _mlp(context_dim + 2 * hidden, hidden)
+        self.value_head = nn.Linear(hidden, n_choices)
+        self.register_buffer("context_mean", torch.zeros(context_dim))
+        self.register_buffer("context_std", torch.ones(context_dim))
+        self.register_buffer("producer_mean", torch.zeros(producer_dim))
+        self.register_buffer("producer_std", torch.ones(producer_dim))
+
+    def set_norm(self, contexts: np.ndarray, producers: np.ndarray) -> None:
+        ctx = _sanitize32(contexts).reshape(len(contexts), -1)
+        rows = _sanitize32(producers).reshape(-1, self.producer_mean.shape[0])
+        self.context_mean.copy_(torch.from_numpy(ctx.mean(axis=0)))
+        self.context_std.copy_(torch.from_numpy(ctx.std(axis=0).clip(min=1e-6)))
+        self.producer_mean.copy_(torch.from_numpy(rows.mean(axis=0)))
+        self.producer_std.copy_(torch.from_numpy(rows.std(axis=0).clip(min=1e-6)))
+
+    def forward_tables(self, contexts: torch.Tensor, producers: torch.Tensor,
+                       mask: torch.Tensor | None = None) -> torch.Tensor:
+        """contexts (n, dc), producers (n, P, dp), mask (n, P) with 1=real row; any P."""
+        h = self.producer_encoder((producers - self.producer_mean) / self.producer_std)
+        if mask is None:
+            mask = torch.ones(producers.shape[:2], dtype=h.dtype, device=h.device)
+        m = mask.unsqueeze(-1)
+        pooled_mean = (h * m).sum(dim=1) / m.sum(dim=1).clamp(min=1.0)
+        pooled_max = (h + (m - 1.0) * 1e9).max(dim=1).values
+        ctx = (contexts - self.context_mean) / self.context_std
+        return self.value_head(self.head(
+            torch.cat([ctx, pooled_mean, pooled_max], dim=1)))  # (n, n_choices)
+
+
+def fit_set_value_table(model: "ProducerSetValueModel", contexts: np.ndarray,
+                        producers: np.ndarray, tables: np.ndarray, iters: int,
+                        lr: float = 1e-3, mask: np.ndarray | None = None,
+                        log=lambda *a, **k: None) -> "ProducerSetValueModel":
+    """Set-view twin of `fit_value_table`: same per-row-centered, globally-scaled MSE target,
+    so set-vs-flat regret deltas on the same traces read as inductive bias, not objective."""
+    ctx = torch.from_numpy(np.asarray(contexts, dtype=np.float32))
+    rows = torch.from_numpy(np.asarray(producers, dtype=np.float32))
+    msk = None if mask is None else torch.from_numpy(np.asarray(mask, dtype=np.float32))
+    y = np.asarray(tables, dtype=np.float32)
+    y = y - y.mean(axis=1, keepdims=True)
+    y = torch.from_numpy(y / max(float(y.std()), 1e-6))
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    model.train()
+    for it in range(iters):
+        opt.zero_grad()
+        loss = ((model.forward_tables(ctx, rows, msk) - y) ** 2).mean()
+        loss.backward()
+        opt.step()
+        if it % max(1, iters // 10) == 0 or it == iters - 1:
+            log(f"iter {it}: set-value-mse {loss.item():.4f}")
+    model.eval()
+    return model
+
+
+def set_value_table_metrics(model: "ProducerSetValueModel", contexts: np.ndarray,
+                            producers: np.ndarray, tables: np.ndarray, even_idx: int,
+                            mask: np.ndarray | None = None) -> dict:
+    """Regret-first read of the set probe — same keys/semantics as `value_table_metrics`."""
+    with torch.no_grad():
+        pred = model.forward_tables(
+            torch.from_numpy(np.asarray(contexts, dtype=np.float32)),
+            torch.from_numpy(np.asarray(producers, dtype=np.float32)),
+            None if mask is None else torch.from_numpy(
+                np.asarray(mask, dtype=np.float32))).cpu().numpy()
+    return _table_pick_metrics(pred, tables, even_idx)
+
+
+# --- Task 5: window/episode-level blend-policy value table (EXP-0036 HANDOVER) ---
+# A0f/A0g predicted a PER-CYCLE candidate table whose winner ordering did not transfer
+# across demand seeds. Task 5 changes the target time scale: the value of each CONSTANT
+# blend policy over an episode/window. The set head (ProducerSetValueModel) is reused with
+# one row per window instead of per searched cycle; deployment picks ONE constant blend via
+# a conservative switch rule rather than chasing per-cycle winner flips.
+
+
+def aggregate_set_window(feats: Sequence[dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
+    """Summarize a window of per-cycle set features (each `{context, producers}` from
+    `cycle_set_features` / `set_features_from_blocks`) into one window row. Context is
+    concat[mean-over-window, last-in-window] (the regime's average state plus where it
+    ended up — the same summary the deployed policy computes from its rolling buffer);
+    producer rows are mean-over-window (per-producer, so still permutation-set-shaped).
+    Producer count P is fixed within a topology, so the stack is well defined."""
+    if not feats:
+        raise ValueError("aggregate_set_window needs at least one cycle of features")
+    ctx = np.stack([f["context"] for f in feats]).astype(np.float32)
+    prod = np.stack([f["producers"] for f in feats]).astype(np.float32)  # (W, P, dp)
+    context = np.concatenate([ctx.mean(axis=0), ctx[-1]]).astype(np.float32)
+    return {"context": context, "producers": prod.mean(axis=0).astype(np.float32)}
+
+
+def blend_decision(table: np.ndarray, default_idx: int, threshold: float) -> int:
+    """Conservative deploy rule (HANDOVER Task 5): stay on the default blend unless another
+    candidate's predicted value beats the default by more than `threshold` — then take the
+    best such candidate (first max wins ties). `threshold` is in the model's output units
+    (the centered, globally std-scaled value table it was fit on), so it reads as "switch
+    only when the advantage over the default is large", not a raw-unit gap."""
+    t = np.asarray(table, dtype=np.float64).reshape(-1)
+    adv = t - t[default_idx]
+    better = np.where(adv > threshold)[0]
+    if better.size == 0:
+        return default_idx
+    return int(better[np.argmax(t[better])])
+
+
+def set_table_ordering_policy(model: "ProducerSetValueModel", vocab: dict[str, "Callable"],
+                              default_idx: int, threshold: float, window: int
+                              ) -> "Callable":
+    """Deploy the window value-table head as a meta-orderer: each cycle, aggregate the last
+    `window` cycles of set features (matching the training-time window summary), predict the
+    blend-policy value table, pick ONE constant blend via `blend_decision`, and act with it
+    for the whole cycle. The default blend is held until a switch clears the threshold — the
+    "do not chase noisy cycle-by-cycle winner flips" rule. `model` is topology-specific (its
+    context/producer dims match the task it was fit on), like the A0f/A0g probes."""
+    names = list(vocab)
+    model.eval()
+    state: dict = {"cycle": None, "hist": [], "pol": vocab[names[default_idx]]}
+
+    def policy(env, agent: str) -> np.ndarray:
+        if env.current_cycle != state["cycle"]:
+            state["cycle"] = env.current_cycle
+            state["hist"].append(cycle_set_features(env))
+            win = aggregate_set_window(state["hist"][-window:])
+            with torch.no_grad():
+                pred = model.forward_tables(
+                    torch.from_numpy(win["context"][None].astype(np.float32)),
+                    torch.from_numpy(win["producers"][None].astype(np.float32))).cpu().numpy()[0]
+            state["pol"] = vocab[names[blend_decision(pred, default_idx, threshold)]]
+        return state["pol"](env, agent)
+
+    return policy
+
+
+@dataclass
 class GlobalChoiceSample:
     """One per cycle: the FULL global state (ADR-0004 centralized-critic input) paired with the
     committed vocabulary choice. Field named `view` so `fit_choice_model`/`choice_metrics`
@@ -533,8 +995,9 @@ class GlobalChoiceSample:
 
 def collect_choice_samples(
     configs, seeds, *, prod, alphas: Sequence[float] = (0.75, 0.5, 0.25),
-    lookahead: int = 6, horizon: int = 100, log=lambda *a, **k: None,
-) -> tuple[list["ChoiceSample"], list["GlobalChoiceSample"], list[str]]:
+    lookahead: int = 6, horizon: int = 100, champion=None, with_features: bool = False,
+    log=lambda *a, **k: None,
+) -> tuple[list["ChoiceSample"], list["GlobalChoiceSample"], list["CycleTrace"], list[str]]:
     """Categorical-teacher dataset (A0b / D1): drive each `(config, seed)` under the frozen
     producer + the per-cycle search restricted to the named+blend vocabulary (`blend_vocabulary`,
     n_samples=0), and snapshot every backlog-holding product-stream view paired with WHICH
@@ -545,11 +1008,14 @@ def collect_choice_samples(
     choice predictable from the stream observation alone? Ties (margin 0) are recorded, not
     dropped, so metrics can split decisive vs tie-arbitrary rows. The same pass also snapshots
     `env.global_state()` once per cycle (only cycles that yielded stream samples, so both probes
-    share a cycle population) — the A0c missing-context vs choice-noise discriminator. Returns
-    `(samples, global samples, vocab names)`; the choice index follows vocabulary insertion
-    order."""
+    share a cycle population) — the A0c missing-context vs choice-noise discriminator — and a
+    `CycleTrace` per cycle (full candidate table + state snapshot; `champion` scored by the same
+    lookahead rollout when provided) — the A0t regret dataset. Returns `(samples, global
+    samples, traces, vocab names)`; the choice index follows vocabulary insertion order."""
+    import copy
+
     from ..env.aec_env import TokenomicsAECEnv
-    from ..eval.orderer_oracle import _score_candidates, blend_vocabulary
+    from ..eval.orderer_oracle import _rollout_units, _score_candidates, blend_vocabulary
 
     configs, seeds = list(configs), list(seeds)
     if len(configs) != len(seeds):
@@ -558,6 +1024,7 @@ def collect_choice_samples(
     names = list(vocab)
     samples: list[ChoiceSample] = []
     global_samples: list[GlobalChoiceSample] = []
+    traces: list[CycleTrace] = []
     for cfg, seed in zip(configs, seeds):
         env = TokenomicsAECEnv(config=cfg, horizon=horizon, entity_producer_obs=True,
                                product_stream_ordering=True, corrected_stream_k=True)
@@ -567,24 +1034,33 @@ def collect_choice_samples(
         cur = -1
         choice, margin = 0, 0.0
         order_pol = vocab[names[0]]
-        pending_global: GlobalChoiceSample | None = None
+        pending: tuple[GlobalChoiceSample, CycleTrace] | None = None
         n_at_cycle = len(samples)
         for agent in env.agent_iter(max_iter=max_iter):
             if env.terminations[agent] or env.truncations[agent]:
                 env.step(None)
                 continue
             if env.current_cycle != cur:  # re-search the committed vocabulary entry once per cycle
-                if pending_global is not None and len(samples) > n_at_cycle:
-                    global_samples.append(pending_global)
+                if pending is not None and len(samples) > n_at_cycle:
+                    global_samples.append(pending[0])
+                    traces.append(pending[1])
                 cur = env.current_cycle
+                snapshot = _cycle_state_snapshot(env)  # decision-time state, pre-search
+                feats = cycle_feature_blocks(env) if with_features else None  # pre-search too
                 scored = _score_candidates(env, prod, vocab, 0, 1.0, lookahead, seed, cur, adim)
                 units = [u for _, _, u in scored]  # vocabulary insertion order preserved
                 choice = int(np.argmax(units))     # first max wins ties (mirrors _search_best_pol)
                 ranked = sorted(units, reverse=True)
                 margin = float(ranked[0] - ranked[1]) if len(ranked) > 1 else 0.0
+                champ_units = (float(_rollout_units(copy.deepcopy(env), prod, champion, lookahead))
+                               if champion is not None else None)
                 order_pol = scored[choice][1]
-                pending_global = GlobalChoiceSample(
-                    np.asarray(env.global_state(), dtype=np.float32), choice, margin)
+                pending = (
+                    GlobalChoiceSample(
+                        np.asarray(env.global_state(), dtype=np.float32), choice, margin),
+                    CycleTrace(seed=seed, cycle=cur, cand_units=[float(u) for u in units],
+                               choice=choice, margin=margin, champion_units=champ_units,
+                               state=snapshot, features=feats))
                 n_at_cycle = len(samples)
             role, aid = env._role[agent]
             if role == "order":
@@ -594,11 +1070,79 @@ def collect_choice_samples(
                     if any(view.producer_products[p].eligible > 0 for p in pids):
                         samples.append(ChoiceSample(view, choice, margin))
             env.step(prod(env, agent) if role == "prod" else order_pol(env, agent))
-        if pending_global is not None and len(samples) > n_at_cycle:
-            global_samples.append(pending_global)
+        if pending is not None and len(samples) > n_at_cycle:
+            global_samples.append(pending[0])
+            traces.append(pending[1])
         log(f"seed {seed}: {len(samples)} cumulative choice samples "
             f"({len(global_samples)} global)")
-    return samples, global_samples, names
+    return samples, global_samples, traces, names
+
+
+def collect_deploy_traces(
+    configs, seeds, *, prod, champion, alphas: Sequence[float] = (0.75, 0.5, 0.25),
+    lookahead: int = 6, horizon: int = 100, log=lambda *a, **k: None,
+) -> tuple[list[dict], list[str]]:
+    """Champion-trajectory failure chains (A0u, EXP-0036): drive each `(config, seed)` with the
+    CHAMPION orderer — the badly-played game itself — and at every cycle of its OWN trajectory
+    score the blend vocabulary AND the champion by the same lookahead rollout. The per-cycle
+    counterfactual (`choice` = what the teacher would pick HERE, `champion_units` = what the
+    champion's continuation earns) localizes where the game goes wrong; the snapshot (plus a
+    cumulative `progress` line) explains it. Complements `collect_choice_samples`, whose traces
+    follow the TEACHER's trajectory and so never visit the champion's failure states.
+
+    Returns `(episodes, vocab names)`; each episode carries seed, outcome stats, and its
+    `CycleTrace` list (every searched cycle — no stream gating; a failure chain needs ALL)."""
+    import copy
+
+    from ..env.aec_env import TokenomicsAECEnv
+    from ..eval.orderer_oracle import _rollout_units, _score_candidates, blend_vocabulary
+
+    configs, seeds = list(configs), list(seeds)
+    if len(configs) != len(seeds):
+        raise ValueError(f"configs ({len(configs)}) must align 1:1 with seeds ({len(seeds)})")
+    vocab = blend_vocabulary(alphas)
+    names = list(vocab)
+    episodes: list[dict] = []
+    for cfg, seed in zip(configs, seeds):
+        env = TokenomicsAECEnv(config=cfg, horizon=horizon, entity_producer_obs=True,
+                               product_stream_ordering=True, corrected_stream_k=True)
+        env.reset(seed=seed)
+        adim = env.spec_.ordering_action_dim
+        max_iter = env.horizon * len(env.possible_agents) * 3 + 100
+        cur = -1
+        traces: list[CycleTrace] = []
+        for agent in env.agent_iter(max_iter=max_iter):
+            if env.terminations[agent] or env.truncations[agent]:
+                env.step(None)
+                continue
+            if env.current_cycle != cur:  # counterfactual search once per champion cycle
+                cur = env.current_cycle
+                snapshot = _cycle_state_snapshot(env)
+                snapshot["progress"] = {
+                    "units_delivered": int(env.episode_stats["consumer_completed_units"]),
+                    "units_rejected": int(env.episode_stats["consumer_rejected_units"]),
+                }
+                scored = _score_candidates(env, prod, vocab, 0, 1.0, lookahead, seed, cur, adim)
+                units = [float(u) for _, _, u in scored]
+                choice = int(np.argmax(units))
+                ranked = sorted(units, reverse=True)
+                margin = float(ranked[0] - ranked[1]) if len(ranked) > 1 else 0.0
+                champ_units = float(_rollout_units(copy.deepcopy(env), prod, champion, lookahead))
+                traces.append(CycleTrace(seed=seed, cycle=cur, cand_units=units, choice=choice,
+                                         margin=margin, champion_units=champ_units,
+                                         state=snapshot))
+            role, _aid = env._role[agent]
+            env.step(prod(env, agent) if role == "prod" else champion(env, agent))
+        episodes.append({
+            "seed": seed, "traces": traces,
+            "consumer_completed_units": int(env.episode_stats["consumer_completed_units"]),
+            "consumer_rejected_units": int(env.episode_stats["consumer_rejected_units"]),
+            "dead": bool(env.episode_stats["dead"]),
+            "cycles": int(env.episode_stats["cycles"]),
+        })
+        log(f"seed {seed}: {len(traces)} deploy traces, "
+            f"units {episodes[-1]['consumer_completed_units']}, dead {episodes[-1]['dead']}")
+    return episodes, names
 
 
 def fit_scorer(model: "OrdererScoreModel", samples: list["ScorerSample"], iters: int,

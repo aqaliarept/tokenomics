@@ -645,7 +645,7 @@ def test_collect_choice_samples_records_committed_vocab_choice() -> None:
 
     cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
                              num_consumers=1, quantity_max=2)
-    samples, _, vocab = collect_choice_samples(
+    samples, _, _, vocab = collect_choice_samples(
         [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
         lookahead=2, horizon=4)
     assert vocab == ["even_split", "blend_0.5", "proportional"]
@@ -667,7 +667,7 @@ def test_collect_choice_samples_also_records_per_cycle_global_state() -> None:
 
     cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
                              num_consumers=1, quantity_max=2)
-    samples, global_samples, vocab = collect_choice_samples(
+    samples, global_samples, _, vocab = collect_choice_samples(
         [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
         lookahead=2, horizon=4)
     assert vocab == ["even_split", "blend_0.5", "proportional"]
@@ -693,7 +693,7 @@ def test_choice_model_fits_and_reports_accuracy_vs_majority() -> None:
 
     cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
                              num_consumers=1, quantity_max=2)
-    samples, _, vocab = collect_choice_samples(
+    samples, _, _, vocab = collect_choice_samples(
         [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
         lookahead=2, horizon=4)
     model = OrdererChoiceModel(n_choices=len(vocab))
@@ -721,7 +721,7 @@ def test_global_choice_model_fits_from_standardized_global_state() -> None:
 
     cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
                              num_consumers=1, quantity_max=2)
-    _, gsamples, vocab = collect_choice_samples(
+    _, gsamples, _, vocab = collect_choice_samples(
         [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
         lookahead=2, horizon=4)
     assert gsamples
@@ -790,3 +790,542 @@ def test_emit_a0b_writes_exp_layout(tmp_path) -> None:
     # A0c: the global-state probe (missing-context vs choice-noise) must be in the read order
     assert "gchoice_top1" in result
     assert "gchoice_top1" in (tmp_path / "summary.csv").read_text()
+
+
+def test_collect_choice_samples_records_cycle_traces_with_candidate_tables() -> None:
+    # A0t trace analysis (EXP-0036): the same search pass must persist, per searched cycle, the
+    # FULL candidate score table the argmax throws away — plus a JSON-serializable domain-state
+    # snapshot readable without the encoder. This turns "top-1 vs majority" into per-cycle
+    # REGRET (units[teacher pick] - units[student pick]) and lets a human read WHY the teacher
+    # chose differently at the cycles that cost units.
+    import json
+
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.orderer_scorer import collect_choice_samples
+
+    cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
+                             num_consumers=1, quantity_max=2)
+    samples, gsamples, traces, vocab = collect_choice_samples(
+        [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
+        lookahead=2, horizon=4)
+    assert samples and traces
+    # traces share the global-sample cycle population 1:1 (same majority-floor basis)
+    assert len(traces) == len(gsamples)
+    for t, g in zip(traces, gsamples):
+        assert len(t.cand_units) == len(vocab)
+        assert t.choice == g.choice == int(np.argmax(t.cand_units))
+        assert t.margin == g.margin and t.margin >= 0.0
+        assert t.champion_units is None  # no champion policy handed in
+        assert t.seed == 0 and 0 <= t.cycle < 4
+        json.dumps(t.state)  # snapshot must be JSON-serializable
+        prods = t.state["producers"]
+        assert prods
+        for p in prods.values():
+            assert p["capacities"] and p["max_capacities"]  # per-TYPE detail, not summed
+        assert "orders" in t.state and "open_demand" in t.state
+        assert t.state["cycle"] == t.cycle
+
+
+def test_collect_choice_samples_scores_champion_at_the_searched_states() -> None:
+    # A0t champion regret: handing a `champion` ordering policy in must score it per searched
+    # cycle by the SAME lookahead rollout as the vocabulary candidates — the direct measure of
+    # what each champion routing decision costs vs the teacher at the teacher's own states.
+    # Determinism gives an exact oracle: a "champion" that IS the proportional baseline must
+    # reproduce the proportional column of the candidate table.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.orderer_scorer import collect_choice_samples
+
+    cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
+                             num_consumers=1, quantity_max=2)
+    _, _, traces, vocab = collect_choice_samples(
+        [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
+        lookahead=2, horizon=4, champion=ORDERING_BASELINES["proportional"])
+    assert traces
+    prop = vocab.index("proportional")
+    for t in traces:
+        assert t.champion_units is not None
+        assert t.champion_units == t.cand_units[prop]
+
+
+def test_a0t_diag_row_reports_heldout_regret_for_probe_and_champion() -> None:
+    # A0t decision row: replaces "top-1 vs majority" with what a miss COSTS. On the held-out
+    # seed, fit the global-state probe on train seeds, then per searched cycle read
+    # probe_regret = units[teacher pick] - units[probe pick] (>= 0 by argmax construction) and
+    # champ_regret = units[teacher pick] - champion rollout units (negative = champion beats
+    # the whole vocabulary at that state). Per-cycle detail keeps the candidate table + state
+    # snapshot so a human can read the expensive cycles.
+    from tokenomics.eval.curriculum import TaskRecord
+    from tokenomics.eval.orderer_representability import a0t_diag_row
+
+    rec = TaskRecord(
+        task_id="t", task_family="scale", generator_version="test", serializer_version="v1",
+        world_seed=0, episode_seed=0,
+        world_spec={"generator": "build_scale_config", "params": {"depth": 2}},
+    )
+    row, detail = a0t_diag_row(rec, PRODUCING_BASELINES["stock_aware"],
+                               ORDERING_BASELINES["proportional"], iters=3, horizon=12,
+                               eval_seeds=2, alphas=(0.5,))
+    for k in ("task_id", "world_seed", "vocab", "n_traces_train", "n_traces_heldout",
+              "probe_top1", "probe_regret_total", "probe_regret_mean", "probe_regret_max",
+              "n_probe_miss", "champ_regret_total", "champ_regret_mean", "champ_regret_max",
+              "n_champ_worse", "n_champ_better", "local_headroom_total",
+              "probe_regret_frac", "champ_regret_frac"):
+        assert k in row
+    cycles = detail["cycles"]
+    assert len(cycles) == row["n_traces_heldout"] > 0
+    for c in cycles:
+        assert c["probe_regret"] >= 0.0  # teacher is the argmax of the same table
+        assert c["probe_regret"] == c["cand_units"][c["choice"]] - c["cand_units"][c["probe_pred"]]
+        assert c["champ_regret"] == c["cand_units"][c["choice"]] - c["champion_units"]
+        assert "state" in c and "margin" in c
+
+
+def test_emit_a0t_writes_exp_layout_with_top_regret_dump(tmp_path) -> None:
+    # A0t writes a pullable EXP layout; RESULT.md must lead with the regret read (not top-1)
+    # and dump the highest-regret held-out cycles WITH their state snapshots — the material a
+    # human reads to infer which missing observation would have explained the teacher's pick.
+    # Full per-cycle traces go to artifacts/traces.json.gz.
+    import gzip
+    import json
+
+    from tokenomics.eval.orderer_representability import _emit_a0t
+
+    vocab = ["even_split", "blend_0.5", "proportional"]
+    cyc = [{"seed": 0, "cycle": 3, "cand_units": [10.0, 12.0, 7.0], "choice": 1, "margin": 2.0,
+            "probe_pred": 2, "probe_regret": 5.0, "champion_units": 6.0, "champ_regret": 6.0,
+            "local_headroom": 2.0, "state": {"cycle": 3, "producers": {"p0": {}}, "orders": [],
+                                             "open_demand": {}}},
+           {"seed": 0, "cycle": 4, "cand_units": [9.0, 9.0, 9.0], "choice": 0, "margin": 0.0,
+            "probe_pred": 0, "probe_regret": 0.0, "champion_units": 9.0, "champ_regret": 0.0,
+            "local_headroom": 0.0, "state": {"cycle": 4, "producers": {"p0": {}}, "orders": [],
+                                             "open_demand": {}}}]
+    rows = [{"task_id": "t1", "world_seed": 0, "vocab": vocab, "n_traces_train": 20,
+             "n_traces_heldout": 2, "probe_top1": 0.5, "probe_regret_total": 5.0,
+             "probe_regret_mean": 2.5, "probe_regret_max": 5.0, "n_probe_miss": 1,
+             "champ_regret_total": 6.0, "champ_regret_mean": 3.0, "champ_regret_max": 6.0,
+             "n_champ_worse": 1, "n_champ_better": 0, "local_headroom_total": 2.0,
+             "probe_regret_frac": 2.5, "champ_regret_frac": 3.0}]
+    details = [{"task_id": "t1", "world_seed": 0, "vocab": vocab, "heldout_seed": 2,
+                "cycles": cyc}]
+    _emit_a0t(tmp_path, rows, details, meta={"iters": 5})
+    assert (tmp_path / "summary.csv").exists() and (tmp_path / "spec.json").exists()
+    result = (tmp_path / "RESULT.md").read_text()
+    assert "probe_regret" in result and "champ_regret" in result
+    assert "Top-regret" in result or "top-regret" in result
+    # the highest-regret cycle appears with its state snapshot rendered
+    assert '"cycle": 3' in result and "producers" in result
+    with gzip.open(tmp_path / "artifacts" / "traces.json.gz", "rt") as f:
+        assert json.load(f)[0]["cycles"][0]["cand_units"] == [10.0, 12.0, 7.0]
+
+
+def test_collect_deploy_traces_follows_the_champion_trajectory() -> None:
+    # A0u failure chains: drive the episode with the CHAMPION orderer (not the searched policy)
+    # and, at every cycle of ITS OWN trajectory, score the vocabulary + the champion by the same
+    # lookahead rollout. This is the dataset that answers where a 0-unit game goes wrong: the
+    # counterfactual teacher pick exists per cycle, regret localizes the failure, the snapshot
+    # explains it. Determinism oracle: champion==proportional => its rollout score reproduces
+    # the proportional table column, and the episode equals a plain proportional episode.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.eval.joint_stack import joint_stack_env
+    from tokenomics.eval.runner import run_episode
+    from tokenomics.train.orderer_scorer import collect_deploy_traces
+
+    cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
+                             num_consumers=1, quantity_max=2)
+    episodes, vocab = collect_deploy_traces(
+        [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"],
+        champion=ORDERING_BASELINES["proportional"], alphas=(0.5,), lookahead=2, horizon=4)
+    assert vocab == ["even_split", "blend_0.5", "proportional"]
+    (ep,) = episodes
+    assert ep["seed"] == 0 and ep["traces"]
+    prop = vocab.index("proportional")
+    prev_delivered = 0
+    for t in ep["traces"]:
+        assert t.champion_units == t.cand_units[prop]
+        assert t.choice == int(np.argmax(t.cand_units))  # counterfactual teacher pick
+        d = t.state["progress"]["units_delivered"]
+        assert d >= prev_delivered  # cumulative progress line, non-decreasing
+        prev_delivered = d
+    # episode outcome must equal a plain proportional episode (same trajectory)
+    ref = run_episode(joint_stack_env(cfg, 4), PRODUCING_BASELINES["stock_aware"],
+                      ORDERING_BASELINES["proportional"], seed=0)
+    assert ep["consumer_completed_units"] == ref["consumer_completed_units"]
+    assert ep["dead"] == bool(ref["dead"])
+
+
+def test_a0u_rows_localize_failure_onset_from_deploy_traces() -> None:
+    # A0u chain rows: per (task, seed) episode, champ_regret[c] = max(vocab table + champion) -
+    # champion (>= 0: the counterfactual best includes the champion itself), onset = first cycle
+    # where regret clears the threshold, peak = its argmax. These localize WHERE the badly-played
+    # game starts losing; the trace detail keeps tables + snapshots for reading WHY.
+    from tokenomics.eval.orderer_representability import a0u_rows
+    from tokenomics.train.orderer_scorer import CycleTrace
+
+    def tr(cycle, units, champ):
+        return CycleTrace(seed=7, cycle=cycle, cand_units=units, choice=int(np.argmax(units)),
+                          margin=0.0, champion_units=champ,
+                          state={"cycle": cycle, "producers": {}, "orders": [],
+                                 "open_demand": {}, "progress": {"units_delivered": 0,
+                                                                 "units_rejected": 0}})
+    episodes = [{
+        "seed": 7,
+        "traces": [tr(0, [10.0, 9.0, 8.0], 10.0),   # regret 0 (champion == best)
+                   tr(1, [12.0, 11.0, 8.0], 11.0),  # regret 1 (below onset threshold)
+                   tr(2, [30.0, 20.0, 10.0], 12.0), # regret 18 -> onset
+                   tr(3, [25.0, 40.0, 10.0], 15.0)],# regret 25 -> peak
+        "consumer_completed_units": 3, "consumer_rejected_units": 50,
+        "dead": True, "cycles": 4,
+    }]
+    rows, details = a0u_rows("task-x", 45, episodes, ["even_split", "blend_0.5", "proportional"],
+                             onset=5.0)
+    (row,), (det,) = rows, details
+    assert row["task_id"] == "task-x" and row["seed"] == 7 and row["dead"] is True
+    assert row["champ_cu"] == 3 and row["cycles"] == 4
+    assert row["regret_total"] == 0.0 + 1.0 + 18.0 + 25.0
+    assert row["onset_cycle"] == 2 and row["peak_cycle"] == 3 and row["regret_max"] == 25.0
+    assert row["n_regret_pos"] == 3
+    assert [c["champ_regret"] for c in det["cycles"]] == [0.0, 1.0, 18.0, 25.0]
+    assert det["cycles"][2]["teacher_pick"] == "even_split"
+
+
+def test_emit_a0u_writes_failure_chain_dump(tmp_path) -> None:
+    # A0u layout: per-episode chain sections must render a progress line (delivered units +
+    # regret along the champion's own game) and the top-regret cycles with snapshots; full
+    # chains go to artifacts/deploy_traces.json.gz.
+    import gzip
+    import json
+
+    from tokenomics.eval.orderer_representability import _emit_a0u
+
+    vocab = ["even_split", "blend_0.5", "proportional"]
+    cycles = [{"cycle": 0, "cand_units": [10.0, 9.0, 8.0], "choice": 0,
+               "teacher_pick": "even_split", "margin": 1.0, "champion_units": 10.0,
+               "champ_regret": 0.0,
+               "state": {"cycle": 0, "producers": {"p0": {}}, "orders": [], "open_demand": {},
+                         "progress": {"units_delivered": 0, "units_rejected": 0}}},
+              {"cycle": 1, "cand_units": [30.0, 20.0, 10.0], "choice": 0,
+               "teacher_pick": "even_split", "margin": 10.0, "champion_units": 12.0,
+               "champ_regret": 18.0,
+               "state": {"cycle": 1, "producers": {"p0": {}}, "orders": [], "open_demand": {},
+                         "progress": {"units_delivered": 0, "units_rejected": 9}}}]
+    rows = [{"task_id": "t1", "world_seed": 45, "seed": 7, "champ_cu": 0, "rejected_units": 50,
+             "dead": True, "cycles": 2, "n_traces": 2, "regret_total": 18.0, "regret_max": 18.0,
+             "onset_cycle": 1, "peak_cycle": 1, "n_regret_pos": 1}]
+    details = [{"task_id": "t1", "world_seed": 45, "seed": 7, "vocab": vocab, "cycles": cycles}]
+    _emit_a0u(tmp_path, rows, details, meta={"onset": 5.0})
+    assert (tmp_path / "summary.csv").exists() and (tmp_path / "spec.json").exists()
+    result = (tmp_path / "RESULT.md").read_text()
+    assert "onset_cycle" in result and "champ_regret" in result
+    assert "Failure chain" in result or "failure chain" in result
+    assert '"units_rejected": 9' in result  # snapshot of the onset cycle is rendered
+    with gzip.open(tmp_path / "artifacts" / "deploy_traces.json.gz", "rt") as f:
+        assert json.load(f)[0]["cycles"][1]["champ_regret"] == 18.0
+
+
+def test_cycle_feature_blocks_named_layout_with_per_type_truth() -> None:
+    # A0f missing-observation probe (EXP-0036 Task 1): per decision-time cycle, a dict of NAMED
+    # flat observation blocks so a probe can be fit on cumulative block sets and rank which
+    # missing observation family carries the teacher's choice. Layout is deterministic (sorted
+    # producers x sorted capacity types x sorted products); every block is finite float32. The
+    # per-type capacity block must carry the PER-TYPE truth the lossy global_state sums away.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.orderer_scorer import cycle_feature_blocks
+
+    cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
+                             num_consumers=1, quantity_max=2)
+    env = TokenomicsAECEnv(config=cfg, horizon=4, entity_producer_obs=True,
+                           product_stream_ordering=True, corrected_stream_k=True)
+    env.reset(seed=0)
+    blocks = cycle_feature_blocks(env)
+    expected = {"gstate", "stream", "per_type_capacity", "order_queue", "inventory",
+                "inbound", "relational", "compact"}
+    assert set(blocks) == expected
+    for name, arr in blocks.items():
+        assert arr.ndim == 1 and arr.dtype == np.float32, name
+        assert np.isfinite(arr).all(), name
+
+    producers = sorted(env.system.producing_agents)
+    types = sorted({t for p in env.system.producing_agents.values() for t in p.max_capacities})
+    products = sorted(env.system.process_sheets)
+    assert blocks["gstate"].shape == np.asarray(env.global_state(), dtype=np.float32).shape
+    assert blocks["per_type_capacity"].shape == (len(producers) * len(types) * 4,)
+    assert blocks["inventory"].shape == (len(producers) * len(products),)
+    assert blocks["inbound"].shape == (len(producers) * len(products),)
+    # first producer, first type: [current, max, reserved, requested] from the live domain state
+    p0 = env.system.producing_agents[producers[0]]
+    assert blocks["per_type_capacity"][0] == float(p0.capacities.get(types[0], 0))
+    assert blocks["per_type_capacity"][1] == float(p0.max_capacities.get(types[0], 0))
+
+
+def test_collect_choice_samples_attaches_feature_blocks_when_requested() -> None:
+    # A0f dataset: `with_features=True` must attach the decision-time feature blocks to every
+    # CycleTrace (same key set + dims across traces, so block matrices stack); the default
+    # keeps traces lean (features None) for the existing A0t/A0u callers.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.orderer_scorer import collect_choice_samples
+
+    cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
+                             num_consumers=1, quantity_max=2)
+    _, _, plain, _ = collect_choice_samples(
+        [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
+        lookahead=2, horizon=4)
+    assert plain and all(t.features is None for t in plain)
+
+    _, _, traces, _ = collect_choice_samples(
+        [cfg], [0], prod=PRODUCING_BASELINES["stock_aware"], alphas=(0.5,),
+        lookahead=2, horizon=4, with_features=True)
+    assert traces
+    keys = set(traces[0].features)
+    assert "per_type_capacity" in keys and "stream" in keys
+    dims = {k: v.shape for k, v in traces[0].features.items()}
+    for t in traces:
+        assert set(t.features) == keys
+        assert {k: v.shape for k, v in t.features.items()} == dims
+
+
+def test_history_features_stack_previous_cycles_zero_padded_per_seed() -> None:
+    # A0f history block: per trace, the concatenation of the previous k cycles' `compact`
+    # vectors (most recent first), zero-padded at episode start and NEVER leaking across
+    # episode seeds — history is a backward proxy for what the lookahead unrolls forward.
+    from tokenomics.train.orderer_scorer import CycleTrace, history_features
+
+    def tr(seed, cycle, val):
+        return CycleTrace(seed=seed, cycle=cycle, cand_units=[0.0], choice=0, margin=0.0,
+                          champion_units=None, state={},
+                          features={"compact": np.asarray([val, -val], dtype=np.float32)})
+
+    traces = [tr(0, 0, 1.0), tr(0, 1, 2.0), tr(0, 2, 3.0), tr(1, 0, 7.0), tr(1, 1, 8.0)]
+    h = history_features(traces, k=2)
+    assert h.shape == (5, 4) and h.dtype == np.float32
+    np.testing.assert_array_equal(h[0], [0, 0, 0, 0])          # episode start: all padding
+    np.testing.assert_array_equal(h[1], [1, -1, 0, 0])         # cycle-1 first, then padding
+    np.testing.assert_array_equal(h[2], [2, -2, 1, -1])        # cycle-1, cycle-2
+    np.testing.assert_array_equal(h[3], [0, 0, 0, 0])          # new seed: no cross-episode leak
+    np.testing.assert_array_equal(h[4], [7, -7, 0, 0])
+
+
+def test_value_table_model_recovers_a_linear_candidate_table() -> None:
+    # A0f probe head: regress the FULL candidate value table (not a hard argmax) from a flat
+    # feature vector; the pick is the predicted argmax but quality is measured by REGRET
+    # against the true table, so tied winners are free (HANDOVER: ties are sets, accuracy is
+    # the wrong metric). On a noiseless linear table the fit must drive train regret ~0.
+    import torch
+    from tokenomics.train.orderer_scorer import (
+        ValueTableModel, fit_value_table, value_table_metrics)
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(80, 6)).astype(np.float32)
+    W = rng.normal(size=(6, 3)).astype(np.float32)
+    Y = (X @ W).astype(np.float32)
+    torch.manual_seed(0)
+    model = ValueTableModel(state_dim=6, n_choices=3)
+    model.set_norm(X)
+    assert model.forward_states(torch.from_numpy(X[:2])).shape == (2, 3)
+
+    fit_value_table(model, X, Y, iters=400)
+    m = value_table_metrics(model, X, Y, even_idx=0)
+    for k in ("top1", "winner_hit", "regret_total", "regret_frac", "headroom_total", "n"):
+        assert k in m
+    assert m["n"] == 80
+    assert m["regret_frac"] is not None and m["regret_frac"] < 0.1
+    assert m["winner_hit"] >= m["top1"]  # winner-set credit can only add to exact-argmax credit
+
+
+def test_a0f_feature_row_emits_cumulative_block_ladder() -> None:
+    # A0f decision rows: per task, one row per block set — the lossy `gstate` reference, the
+    # local `stream` block, then the handover ladder added cumulatively — each carrying train
+    # AND held-out regret_frac (train regret separates "cannot even fit" from "does not
+    # generalize"). Dims must strictly grow along the cumulative ladder.
+    from tokenomics.eval.curriculum import TaskRecord
+    from tokenomics.eval.orderer_representability import a0f_feature_row
+
+    rec = TaskRecord(
+        task_id="t", task_family="scale", generator_version="test", serializer_version="v1",
+        world_seed=0, episode_seed=0,
+        world_spec={"generator": "build_scale_config", "params": {"depth": 2}},
+    )
+    rows, detail = a0f_feature_row(rec, PRODUCING_BASELINES["stock_aware"], iters=3,
+                                   horizon=12, eval_seeds=2, alphas=(0.5,), k_history=2)
+    names = [r["block_set"] for r in rows]
+    assert names == ["gstate", "stream", "+per_type_capacity", "+order_queue", "+inventory",
+                     "+inbound", "+history", "+relational"]
+    for r in rows:
+        for k in ("task_id", "world_seed", "block_set", "blocks", "dim", "n_train",
+                  "n_heldout", "train_regret_frac", "train_top1", "regret_frac", "top1",
+                  "winner_hit", "regret_total", "headroom_total"):
+            assert k in r
+        assert r["n_heldout"] > 0
+    ladder = [r["dim"] for r in rows[1:]]
+    assert all(a < b for a, b in zip(ladder, ladder[1:]))
+    # detail persists the traces (with features) for local re-analysis without a pod re-run
+    assert detail["task_id"] == "t" and detail["vocab"] == ["even_split", "blend_0.5",
+                                                            "proportional"]
+    assert len(detail["train"]) == rows[0]["n_train"]
+    assert len(detail["heldout"]) == rows[0]["n_heldout"]
+    c = detail["heldout"][0]
+    assert "cand_units" in c and "features" in c and isinstance(
+        c["features"]["stream"], list)
+
+
+def test_emit_a0f_writes_exp_layout_with_regret_ladder(tmp_path) -> None:
+    # A0f layout: summary.csv + spec.json + RESULT.md leading with the per-block regret_frac
+    # ladder (the Task 1 definition of done: a table with regret_frac per feature block);
+    # traces with features go to artifacts for local re-fitting.
+    import gzip
+    import json
+
+    from tokenomics.eval.orderer_representability import _emit_a0f
+
+    rows = [{"task_id": "t1", "world_seed": 0, "block_set": "gstate", "blocks": ["gstate"],
+             "dim": 40, "n_train": 200, "n_heldout": 100, "train_regret_frac": 0.05,
+             "train_top1": 0.9, "regret_frac": 0.9, "top1": 0.3, "winner_hit": 0.4,
+             "regret_total": 450.0, "headroom_total": 500.0},
+            {"task_id": "t1", "world_seed": 0, "block_set": "+per_type_capacity",
+             "blocks": ["stream", "per_type_capacity"], "dim": 150, "n_train": 200,
+             "n_heldout": 100, "train_regret_frac": 0.02, "train_top1": 0.95,
+             "regret_frac": 0.4, "top1": 0.6, "winner_hit": 0.7, "regret_total": 200.0,
+             "headroom_total": 500.0}]
+    details = [{"task_id": "t1", "world_seed": 0, "vocab": ["even_split", "proportional"],
+                "heldout_seed": 2, "train": [], "heldout": []}]
+    _emit_a0f(tmp_path, rows, details, meta={"iters": 5, "k_history": 4})
+    assert (tmp_path / "summary.csv").exists() and (tmp_path / "spec.json").exists()
+    result = (tmp_path / "RESULT.md").read_text()
+    assert "regret_frac" in result and "+per_type_capacity" in result
+    assert "block" in result.lower()
+    with gzip.open(tmp_path / "artifacts" / "feature_traces.json.gz", "rt") as f:
+        assert json.load(f)[0]["task_id"] == "t1"
+
+
+def test_cycle_set_features_reshape_named_blocks_into_producer_rows() -> None:
+    # Producer-count-agnostic value table (EXP-0036 HANDOVER "Proposed Model"): the set view
+    # is the SAME information as the flat A0f blocks, reshaped — a fixed-dim stream/system
+    # context plus one feature row per producer — so probes on both views isolate the set
+    # inductive bias, not a feature change. Rows must slice back to the flat block values.
+    from tokenomics.eval.scale import build_scale_config
+    from tokenomics.train.orderer_scorer import (
+        cycle_feature_blocks, cycle_set_features, set_features_from_blocks)
+
+    cfg = build_scale_config(0, depth=2, products_per_layer=2, producers_per_layer=2,
+                             num_consumers=1, quantity_max=2)
+    env = TokenomicsAECEnv(config=cfg, horizon=4, entity_producer_obs=True,
+                           product_stream_ordering=True, corrected_stream_k=True)
+    env.reset(seed=0)
+    blocks = cycle_feature_blocks(env)
+    got = cycle_set_features(env)
+    assert set(got) == {"context", "producers"}
+
+    P = len(env.system.producing_agents)
+    T = len({t for p in env.system.producing_agents.values() for t in p.max_capacities})
+    G = len(env.system.process_sheets)
+    assert got["producers"].shape == (P, 4 * T + 2 * G + 6 * G)
+    assert got["context"].shape == (blocks["stream"].shape[0]
+                                    + blocks["order_queue"].shape[0]
+                                    + blocks["compact"].shape[0],)
+    np.testing.assert_array_equal(
+        got["context"],
+        np.concatenate([blocks["stream"], blocks["order_queue"], blocks["compact"]]))
+    # producer 0's row = its per-type-capacity slice ‖ inventory row ‖ inbound row ‖ its
+    # relational column gathered across products (relational block is product-major)
+    row0 = got["producers"][0]
+    np.testing.assert_array_equal(row0[:4 * T], blocks["per_type_capacity"][:4 * T])
+    np.testing.assert_array_equal(row0[4 * T:4 * T + G], blocks["inventory"][:G])
+    np.testing.assert_array_equal(row0[4 * T + G:4 * T + 2 * G], blocks["inbound"][:G])
+    rel = blocks["relational"].reshape(G, P, 6)
+    np.testing.assert_array_equal(row0[4 * T + 2 * G:], rel[:, 0, :].reshape(-1))
+    # reconstruction from serialized flat blocks (the saved A0f traces) must be identical
+    rebuilt = set_features_from_blocks(blocks, n_producers=P, n_types=T, n_products=G)
+    np.testing.assert_array_equal(rebuilt["producers"], got["producers"])
+    np.testing.assert_array_equal(rebuilt["context"], got["context"])
+
+
+def test_producer_set_value_model_is_permutation_invariant_and_count_agnostic() -> None:
+    # HANDOVER invariants: reordering producer IDs must not change candidate values; adding /
+    # removing producers changes only the input set, never the model shape; padded rows with
+    # mask 0 are exactly absent; the candidate table size is fixed by the vocabulary.
+    import torch
+    from tokenomics.train.orderer_scorer import ProducerSetValueModel
+
+    rng = np.random.default_rng(0)
+    ctx = rng.normal(size=(4, 7)).astype(np.float32)
+    rows = rng.normal(size=(4, 3, 5)).astype(np.float32)
+    torch.manual_seed(0)
+    model = ProducerSetValueModel(context_dim=7, producer_dim=5, n_choices=5)
+    model.set_norm(ctx, rows)
+    model.eval()
+    with torch.no_grad():
+        out = model.forward_tables(torch.from_numpy(ctx), torch.from_numpy(rows))
+        assert out.shape == (4, 5)
+        perm = model.forward_tables(torch.from_numpy(ctx),
+                                    torch.from_numpy(rows[:, [2, 0, 1], :]))
+        torch.testing.assert_close(out, perm)
+        # same model, different producer count — no shape change
+        more = model.forward_tables(torch.from_numpy(ctx),
+                                    torch.from_numpy(rng.normal(size=(4, 6, 5))
+                                                     .astype(np.float32)))
+        assert more.shape == (4, 5)
+        # a masked pad row must not alter the table
+        padded = np.concatenate([rows, np.full((4, 1, 5), 99.0, dtype=np.float32)], axis=1)
+        mask = torch.tensor([[1.0, 1.0, 1.0, 0.0]] * 4)
+        masked = model.forward_tables(torch.from_numpy(ctx), torch.from_numpy(padded), mask)
+        torch.testing.assert_close(out, masked)
+
+
+def test_fit_set_value_table_recovers_pooled_linear_table() -> None:
+    # The set probe must be able to LEARN a table that depends on the producer set through a
+    # symmetric pool (here: mean over rows) plus context — the function class the HANDOVER
+    # model claims. Noiseless target → train regret_frac ~0, metrics keyed like the flat probe.
+    import torch
+    from tokenomics.train.orderer_scorer import (
+        ProducerSetValueModel, fit_set_value_table, set_value_table_metrics)
+
+    rng = np.random.default_rng(1)
+    ctx = rng.normal(size=(80, 4)).astype(np.float32)
+    rows = rng.normal(size=(80, 3, 6)).astype(np.float32)
+    Wp = rng.normal(size=(6, 3)).astype(np.float32)
+    Wc = rng.normal(size=(4, 3)).astype(np.float32)
+    Y = (rows.mean(axis=1) @ Wp + ctx @ Wc).astype(np.float32)
+    torch.manual_seed(0)
+    model = ProducerSetValueModel(context_dim=4, producer_dim=6, n_choices=3)
+    model.set_norm(ctx, rows)
+    fit_set_value_table(model, ctx, rows, Y, iters=400)
+    m = set_value_table_metrics(model, ctx, rows, Y, even_idx=0)
+    for k in ("top1", "winner_hit", "regret_total", "regret_frac", "headroom_total", "n"):
+        assert k in m
+    assert m["n"] == 80
+    assert m["regret_frac"] is not None and m["regret_frac"] < 0.1
+
+
+def test_aggregate_set_window_means_context_and_producers() -> None:
+    # Window summary the Task-5 rows and the deployed policy both use: context =
+    # concat[mean-over-window, last], producers = mean-over-window (per producer row).
+    from tokenomics.train.orderer_scorer import aggregate_set_window
+
+    feats = [
+        {"context": np.array([0.0, 2.0], np.float32),
+         "producers": np.array([[1.0], [3.0]], np.float32)},
+        {"context": np.array([2.0, 4.0], np.float32),
+         "producers": np.array([[3.0], [5.0]], np.float32)},
+    ]
+    out = aggregate_set_window(feats)
+    # context: mean=[1,3], last=[2,4]
+    np.testing.assert_allclose(out["context"], [1.0, 3.0, 2.0, 4.0])
+    # producers: per-row mean over the two cycles
+    np.testing.assert_allclose(out["producers"], [[2.0], [4.0]])
+    assert out["producers"].shape == (2, 1)
+    with pytest.raises(ValueError):
+        aggregate_set_window([])
+
+
+def test_blend_decision_is_conservative() -> None:
+    # Default stickiness: a candidate must beat the default by MORE than the threshold to win.
+    from tokenomics.train.orderer_scorer import blend_decision
+
+    default = 2
+    # nothing clears +1.0 over the default value (table[2]=0.5): stay on default
+    assert blend_decision(np.array([1.0, 1.2, 0.5, 1.4, 0.0]), default, threshold=1.0) == default
+    # candidate 3 clears default+1.0 (2.0 - 0.5 = 1.5 > 1.0); it's the best over-threshold one
+    assert blend_decision(np.array([1.0, 1.7, 0.5, 2.0, 0.3]), default, threshold=1.0) == 3
+    # exactly at threshold does NOT switch (strict >)
+    assert blend_decision(np.array([0.0, 0.0, 0.0, 1.0, 0.0]), default, threshold=1.0) == default
+    # ties among over-threshold candidates: first max wins
+    assert blend_decision(np.array([5.0, 5.0, 0.0, 0.0, 0.0]), default, threshold=1.0) == 0

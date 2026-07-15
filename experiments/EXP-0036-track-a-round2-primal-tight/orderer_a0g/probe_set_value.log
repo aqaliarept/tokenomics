@@ -1,0 +1,26 @@
+
+=== s29  P=6 T=3 G=12  row_dim=108 ctx_dim=230  n_train=200 n_heldout=100
+  constant floors (heldout): {'even_split': 1.0, 'blend_0.75': 0.9609, 'blend_0.5': 0.8965, 'blend_0.25': 1.1191, 'proportional': 1.207}
+  set                  n_fit=200  train regret_frac 0.0  heldout regret_frac 0.9961  top1 0.19  winner_hit 0.51
+  set+history          n_fit=200  train regret_frac 0.0  heldout regret_frac 0.8652  top1 0.25  winner_hit 0.56
+  set+history 1-seed   n_fit=100  train regret_frac 0.0  heldout regret_frac 0.9688  top1 0.19  winner_hit 0.51
+
+=== s77  P=9 T=3 G=12  row_dim=108 ctx_dim=230  n_train=200 n_heldout=100
+  constant floors (heldout): {'even_split': 1.0, 'blend_0.75': 0.7821, 'blend_0.5': 0.9687, 'blend_0.25': 1.2586, 'proportional': 1.4514}
+  set                  n_fit=200  train regret_frac 0.0  heldout regret_frac 0.8495  top1 0.25  winner_hit 0.49
+  set+history          n_fit=200  train regret_frac 0.0  heldout regret_frac 0.9922  top1 0.17  winner_hit 0.46
+  set+history 1-seed   n_fit=100  train regret_frac 0.0  heldout regret_frac 0.7476  top1 0.21  winner_hit 0.45
+
+=== s45  P=9 T=3 G=12  row_dim=108 ctx_dim=230  n_train=200 n_heldout=100
+  constant floors (heldout): {'even_split': 1.0, 'blend_0.75': 0.365, 'blend_0.5': 0.2926, 'blend_0.25': 0.5695, 'proportional': 0.7025}
+  set                  n_fit=200  train regret_frac 0.0  heldout regret_frac 0.7534  top1 0.15  winner_hit 0.48
+  set+history          n_fit=200  train regret_frac 0.0015  heldout regret_frac 0.6429  top1 0.28  winner_hit 0.52
+  set+history 1-seed   n_fit=100  train regret_frac 0.0  heldout regret_frac 0.6008  top1 0.31  winner_hit 0.54
+
+=== pooled set+history: one model, 600 train rows across 3 tasks (P padded to 9 with mask)
+  train          regret_frac 0.0  top1 0.77  winner_hit 1.0
+  heldout s29    regret_frac 0.9141  top1 0.2  winner_hit 0.52
+  heldout s77    regret_frac 1.0815  top1 0.16  winner_hit 0.38
+  heldout s45    regret_frac 0.5147  top1 0.29  winner_hit 0.53
+
+wrote /workspaces/tokenomics/experiments/EXP-0036-track-a-round2-primal-tight/orderer_a0g/summary.csv

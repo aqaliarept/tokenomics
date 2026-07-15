@@ -15,10 +15,12 @@ stream observation — the two assumptions Stage A1b's head rests on. This run t
    unpredictability wall (A1b would fail; fall back to A1 denoise / A2 deploy-time search).
    Well above majority => A1b is green-lit.
 3. **Global-state probe (A0c, read only if D1 failed):** held-out `gchoice_top1` vs
-   `gchoice_majority` — the same protocol from the FULL global state, one sample per
+   `gchoice_majority` — the same protocol from the ADR-0004 global snapshot, one sample per
    searched cycle. Beats its majority floor => the D1 wall is missing CONTEXT (enrich the
-   orderer obs with global features). Fails too => the committed choice is rollout NOISE;
-   no observation can predict it — go soft labels / deploy-time search, not enrichment.
+   orderer obs with global features). Fails too => enrichment with THESE features is dead —
+   but see Conclusions: the snapshot is a lossy roll-up, so a fail does NOT prove the choice
+   is unpredictable from any observation. *(This paragraph originally overclaimed "rollout
+   NOISE; no observation can predict it" — corrected 2026-07-05, emitter template fixed.)*
 
 **Means:** named_capture_frac=0.7839, blend_capture_frac=0.9008, choice_top1=0.3400446576781035, choice_majority=0.5191927114636595, choice_top1_decisive=0.27742211830071123, choice_majority_decisive=0.4139432909595889, gchoice_top1=0.3333333333333333, gchoice_majority=0.4966666666666667, gchoice_top1_decisive=0.23737867239919225, gchoice_majority_decisive=0.41870236466679694.
 
@@ -124,31 +126,59 @@ stream observation — the two assumptions Stage A1b's head rests on. This run t
 
 ## Conclusions
 
-**A0c verdict: the D1 wall is NOT missing context — the committed choice is unpredictable
-even from the FULL global state.** Held-out gchoice_top1 vs gchoice_majority:
+**A0c verdict (CORRECTED on review, 2026-07-05 — the original verdict overclaimed): the
+ADR-0004 rolled-up global snapshot cannot predict the committed choice at ~200 train
+cycles/task; whether ANY observation can is still OPEN.** Held-out gchoice_top1 vs
+gchoice_majority:
 
 - s29: 0.31 vs 0.53 (decisive 0.19 vs 0.40) — clear FAIL
 - s77: 0.29 vs 0.54 (decisive 0.20 vs 0.55) — clear FAIL
 - s45: 0.40 vs 0.42 (decisive 0.33 vs 0.30) — at the floor (within n=100 binomial noise)
 
-2/3 clear fails, 1/3 statistical tie; nowhere does the global state beat its majority floor.
+2/3 clear fails, 1/3 statistical tie; nowhere does the probe beat its majority floor.
 D2 and D1 reproduce A0b exactly (deterministic domain — same search_cu / captures; stream
 choice_top1 varies only with torch init).
 
-**Branch picked: (b) — stop chasing observation features.** Since even the centralized-critic
-input (ADR-0004 global_state) cannot predict the search's committed choice, no obs enrichment
-of the orderer can either. Interpretation: with n_samples=0 the search is deterministic, so
-the choice IS a function of state — but it hinges on fine-grained 6-cycle-lookahead
-consequences that do not compress into a pattern learnable from ~200 cycles/task. The lever
-is the TARGET or the DEPLOYMENT, not the observation:
+**Why the original "no observation can predict it / branch (b) picked" conclusion was
+withdrawn:** the probe input `env.global_state()` (`encode_global`, ADR-0004) is NOT the
+full env state — it is a lossy roll-up:
 
-- **A2 deploy-time light search (primary):** the per-cycle vocabulary search realizes the
-  headroom by construction (blend capture 0.90 mean); the vocabulary is only 5 candidates ×
-  lookahead-6 rollouts per cycle, and EXP-0009 already showed short rollouts suffice.
-- **A1 soft/advantage labels (secondary):** train on the per-candidate score table instead of
-  the argmax. Caveat: A0c's decisive-cycle fails suggest even ranking candidates from state is
-  hard — validate a critic's held-out ranking correlation before investing in a student.
+- per-producer capacity is **summed across types** (`sum(v.capacities.values())`) — but
+  bottlenecks and system death on these primal-tight tasks are per-type;
+- **no order-queue state** (no in-progress orders, no per-order TTL/age, no backlog
+  composition — the stream obs carries per-slot TTL; the global vector does not);
+- inventory appears as a **unit count**, not composition by product;
+- **no history** — an instantaneous snapshot; given a lossy snapshot, temporal aggregates
+  are exactly how hidden state gets recovered.
 
-Open caveat: per-sample margins were not persisted; "decisive" = margin > 0, which can still
-sit within rollout-noise scale. A margin-distribution read would sharpen the noise story but
-does not change the branch (both sub-branches assume the argmax is not a clean target).
+On top of the lossiness, the probe trained on only ~200 cycles/task (n_gchoice_train=200,
+held-out 100): failing to beat a ~50% majority floor from 200 samples of a high-dim 5-way
+problem is weak evidence of impossibility. Since domain + search are deterministic
+(n_samples=0), the committed choice IS an exact function of the FULL env state — the target
+function provably exists; A0c only shows the ADR-0004 roll-up at n=200 does not learn it.
+
+**What A0c DID close:** enriching the orderer obs by concatenating the *existing* global
+feature vector — that exact information content was tested and failed.
+
+**Three causes still standing (root-cause rule: run the discriminating check before
+committing to a branch):**
+
+1. **lossy snapshot** → probe from a lossless env-state serialization (per-type capacities,
+   queue/TTL detail, inventory composition by product);
+2. **missing temporal features** → k-cycle history stack / hand aggregates (degradation
+   trend, rejection rate by layer, capacity deltas) — backward-looking proxies for the very
+   dynamics the lookahead unrolls forward;
+3. **genuine incompressibility** at feasible sample sizes → A2 deploy-time light search
+   (realizes blend capture 0.90 mean by construction; EXP-0009 showed short rollouts
+   suffice) or A1 soft/advantage labels (gated on a critic held-out ranking check —
+   decisive-cycle fails suggest ranking from state is hard too).
+
+**Next (A0d): complete-state probe** — same protocol, lossless env-state serialization,
+± k-cycle history stack, ~10× mined cycles. Still fails → incompressibility is diagnosed
+with evidence and A2 is confirmed. Passes → enrichment is back alive; the follow-up is
+which compact features carry the signal (temporal aggregates first).
+
+Open caveats: per-sample margins still not persisted ("decisive" = margin > 0, which can
+sit within rollout-noise scale). No trace-level teacher-vs-probe comparison was done (only
+aggregate top-1); decisive-cycle accuracy being WORSE than overall (0.19 vs 0.31 on s29)
+says the errors are not near-tie noise, but which cycles fail and why has not been read.

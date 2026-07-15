@@ -1,0 +1,10 @@
+{
+  "stage": "a0g",
+  "question": "does the set (producer-count-agnostic) value-table model of the HANDOVER 'Proposed Model' section beat the flat A0f probes on the same traces?",
+  "traces": "orderer_a0f/artifacts/feature_traces.json.gz",
+  "iters": 1000,
+  "k_history": 4,
+  "model": "ProducerSetValueModel(hidden=64, mean+max pool)",
+  "target": "per-row-centered value-table MSE (fit_set_value_table)",
+  "metric": "heldout regret_frac vs even_split headroom"
+}

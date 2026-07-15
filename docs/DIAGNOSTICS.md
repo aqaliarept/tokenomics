@@ -281,13 +281,86 @@ committed choice fits in-episode and anti-transfers across seeds. Pure per-strea
 obs→choice A1b NOT green-lit. Open discriminator: fit the same classifier on the FULL
 GLOBAL STATE — beats majority → missing-context (enrich obs); still fails → choice noise
 (soft labels / deploy-time search), enrichment useless.
-**A0c gate (orderer_a0c/):** discriminator ANSWERED — global state fails too (held-out
-gchoice_top1 vs floor: 0.31/0.53, 0.29/0.54, 0.40/0.42; 2/3 clear fails, 1/3 tie). The wall
-is NOT missing context: the deterministic search's choice hinges on lookahead consequences
-that don't compress into a state-readable pattern. Obs enrichment is DEAD as a fix for this
-symptom. Fix directions: A2 deploy-time light search (realizes headroom by construction) or
-A1 soft/advantage labels (validate critic held-out ranking first — decisive-cycle fails say
-ranking from state is hard too).
+**A0c gate (orderer_a0c/), verdict CORRECTED on review 2026-07-05:** the ADR-0004 global
+snapshot fails too (held-out gchoice_top1 vs floor: 0.31/0.53, 0.29/0.54, 0.40/0.42; 2/3
+clear fails, 1/3 tie) — but this only kills enrichment with the EXISTING global features,
+NOT observation enrichment in general. The original "no observation can predict it / obs
+enrichment DEAD" read overclaimed: `encode_global` is a lossy roll-up (per-producer capacity
+SUMMED ACROSS TYPES — bottlenecks/death on tight tasks are per-type; no order-queue/TTL
+state; inventory as unit count not composition; no history), and the probe saw only ~200
+cycles/task. Since domain+search are deterministic, the choice IS an exact function of the
+FULL env state. Three causes standing: (1) lossy snapshot, (2) missing temporal/aggregated
+features (history recovers hidden state given a lossy snapshot), (3) genuine
+incompressibility at feasible sample size. Discriminating check = **A0d complete-state
+probe**: same protocol, lossless env-state serialization ± k-cycle history stack, ~10× mined
+cycles. Fails → (3) diagnosed with evidence, go A2 deploy-time light search / A1
+soft-advantage labels (critic ranking gate first). Passes → enrichment alive; find the
+compact features (temporal aggregates first). Trace-level teacher-vs-probe comparison also
+still unread (decisive-cycle accuracy WORSE than overall says errors are not near-tie noise).
+**A0t gate (orderer_a0t/):** the trace-regret read — misses are EXPENSIVE, not tie noise
+(probe_regret_frac 0.98/0.86/0.56); no system-level aggregate separates even-wins from
+concentration-wins cycles; champion beats the whole 5-entry vocabulary at ~40% of teacher
+states (its 0-unit episodes are trajectory-level compounding).
+**A0f gate (orderer_a0f/) — closes the TESTED missing-observation ladder (HANDOVER Task 1);
+for these families/models/scale the discriminator lands on cause (3).** Cumulative
+feature-block VALUE-TABLE probe (predicts the full candidate table, so argmax tie noise is
+out of the label) over stream / per-type capacity / order-book+TTL / inventory / inbound /
+4-cycle history / relational recipe-ratio blocks, 3 tasks x 3 anchored seeds: (a) NO block
+set gives a stable held-out regret reduction — per task 0.90–1.14 (s29), 0.76–1.26 (s77),
+0.365–0.89 (s45, where the two SMALLEST sets are best and every added block hurts: the
+small-sample overfitting signature); train_regret_frac 0.0 for every set with dim >= 109
+(only the 81-dim stream block underfits, 0.53/0.49/0.81) — memorizes train, transfers
+nothing; (b) CONSTANT mid-blend picks match or beat the fitted probes almost everywhere
+(always-blend_0.5 → 0.90/0.97/0.29; sole exception s77 +order_queue 0.7555 vs 0.7821 — a
+0.027, one-task/one-seed edge); (c) 1-seed→2-seed training RAISES held-out regret on all 3
+tasks (anti-transfer, not a starvation slope); (d) winner-set BCE and margin-weighted CE
+don't rescue it. Diagnosis (scoped): the per-cycle lookahead table on a new demand seed
+behaves as seed-idiosyncratic noise around a stable "mid-blend > even_split" mean preference
+— none of the TESTED observation families, target forms, or (at this scale) more data makes
+the per-cycle switch learnable; untested richer models (e.g. a graph encoder) have no
+positive signal here to build on. Learner-trajectory DAgger is moot for this wall
+(train/held-out are both teacher trajectories; only the demand seed differs). Branch: A2
+deploy-time light search (vocabulary + champion candidates), with FIXED mid-blend policies
+in the acceptance comparison as the cheap floor they proved to be. Re-fit tooling:
+`orderer_a0f/analysis_followup.py` over `artifacts/feature_traces.json.gz` (local, seconds).
+**A0g gate (orderer_a0g/) — the HANDOVER "Proposed Model" (producer-count-agnostic set
+value table) does NOT change the A0f verdict on the same traces.** `ProducerSetValueModel`
+(shared per-producer MLP → masked mean+max pool → fixed 5-candidate head; permutation/count
+invariants unit-tested) fit on the identical A0f data reshaped losslessly into
+[context ‖ producer-row set] (`set_features_from_blocks`): train regret ~0.0 everywhere,
+held-out at/near the constant floors — s45 decisive (every set variant 0.51–0.75 vs
+constant blend_0.5 0.2926); the two sub-floor readings are ~0.03 edges in DIFFERENT
+variants on different tasks (s29 set+history 0.8652 vs 0.8965; s77 1-seed 0.7476 vs
+0.7821); 1-seed beats 2-seed held-out on s77/s45 (anti-transfer again); cross-task pooling
+(600 rows, possible only in the set view) doesn't rescue (s77 1.08 > even_split). Scope:
+mean+max pool + centered-table MSE + reconstructible features; attention pooling, ranking
+losses, and per-producer routed/completed/rejected history not tested. The deployable
+model/feature path stays in `train/orderer_scorer.py` (`cycle_set_features`,
+`fit_set_value_table`) as the portable distillation head if a later arc (e.g. A2 traces)
+finds signal worth learning.
+
+**A0w gate (orderer_a0w/) — changing the target TIME SCALE (episode/window blend-policy
+returns, HANDOVER Task 5) does NOT rescue the trained orderer; the deployed learned
+meta-orderer loses to a fixed blend_0.5 on all 3 tasks.** This is the discriminating
+check the others could not give: instead of table error, DEPLOY the model and measure
+units. `--a0w` fits the A0g set head on episode/window value tables (value of each CONSTANT
+blend over a window, not the per-cycle search argmax), then rolls out champion producer +
+the learned meta-orderer (conservative default-sticky switch rule) on the held-out seed.
+Verdict by deployed units (the real metric — table regret is NOT trusted): learned vs
+default(blend_0.5) vs best_const = s29 810/960/768, s77 666/749/893, s45 588/621/621 —
+learned < default 3/3, < best_const 2/3 → STOP. The fixed blend_0.5 is strong (near champion
+on s29; far above the *dead* champion on tight s77/s45) and switching only costs units (s29
+960→810). Critically, table regret improved with longer windows (s77 episode regret 0.0) yet
+deploy still lost, and `closure_vs_search` 0.65/0.60 was a red herring (recovery over a dead
+champion). Branch outcomes: this closes the last untested lever of the A0f/A0g arc — across
+A0b/A0c/A0f/A0g/A0w the deployable learned orderer never beats a fixed mid-blend on held-out
+demand, so the per-cycle/window search winner is not a stable supervised target at any tested
+time scale. Ship/compare against a fixed mid-blend; remaining headroom is a deploy-time light
+search (Stage A2, a compute lever), not a learned policy. Scope: single threshold 0.25 (no
+sweep — unwarranted since A0w didn't look promising), narrow s29/s77/s45 trio (not the 81-row
+archive), attention pooling / ranking losses / per-producer routing history still untested.
+Driver + deploy path: `--a0w` in `eval/orderer_representability.py`, `set_table_ordering_policy`
+in `train/orderer_scorer.py`.
 
 ---
 
