@@ -364,6 +364,57 @@ in `train/orderer_scorer.py`.
 
 ---
 
+## 12. Actor fits the teacher badly — missing observation, or an unlearnable target?
+
+**Problem.** A learned policy underperforms and its regression/fit loss is flat-high (never
+drops). Tempting to blame the network, but the first question is whether the TARGET is a function
+of the observation the actor actually gets. A per-decision label that is a *difference of two full
+multi-agent rollouts* (marginal value of a logit bump, per-cycle advantage, etc.) can depend on
+other orders, other actors, bottlenecks, and future fulfilment. Identical local observations can
+therefore carry very different labels. The fix might be deployable observation enrichment, or it
+might require teacher emulation/future rollout information that cannot be used in the real
+application. Related to entries 11 (search-committed routing target) and 6 (memorizing).
+
+**Check** (local, seconds — needs the per-decision dump: teacher label + actor score + exact
+feature row per eligible producer, from `eval.value_router_errors`):
+1. **Flat-target fraction.** Decisions where every eligible producer's label is equal (after
+   centering) → the teacher has no preference there; nothing to learn. If most decisions are flat,
+   the signal is sparse regardless of the actor.
+2. **Mistake locality.** Among real mistakes (actor-best ≠ teacher-best, regret > 0), do the two
+   producers differ on a *visible* feature? If they differ ≫ they're identical, the actor already
+   has the info and missing-observation is NOT the story (a small identical-feature fraction rules
+   out per-producer aliasing).
+3. **Target-is-a-function test.** Hash each exact feature row; for rows seen many times, measure the
+   spread of the teacher label across occurrences. Near-zero spread → label is a function of the
+   features (fit failure is the actor/training). Large spread → the current observation aliases the
+   target; add candidate deployable observation blocks and repeat before declaring the target dead.
+
+**Outcome branches.**
+- Large label spread at the **current** features + mistakes mostly on distinguishable producers →
+  the current observation aliases the target. Continue with a deployable observation ladder
+  (order/system/history/global context). STOP this teacher only if the label remains unstable after
+  the candidate deployable observation blocks; if only oracle/future/rollout facts stabilize it,
+  the teacher is not deployable as an actor target.
+- Small label spread but low top-1 / flat loss → actor/training failure (capacity, optimization,
+  covariate shift) → fix the model/fit, not the target.
+- High identical-feature fraction on mistakes (pure aliasing) → genuine **missing per-producer
+  observation** → the dump names which field separates the tied producers; add exactly that.
+- Mostly flat targets → the teacher rarely prefers anything → the lever is weak; re-examine whether
+  the floor policy is already near-optimal (it usually is when flat-fraction is high).
+
+**Seen in.** EXP-0038 actor/teacher error microscope (marginal-value residual orderer, gate tasks
+s29/s77/s45, 13,940 decisions). Flat-teacher 69.4%; on the 30.6% real choices top-1 0.451, mean
+regret 4.32 (top 5% of all decisions = 65% of regret). Mistakes: only 3.9% between identical
+current-feature producers, 96.1% differ on a current visible feature. Exact current 7-feature rows
+(seen ≥5×) receive teacher labels with median range 10 / mean 14.3 units, 66.9% > 1 unit, worst 90
+units. Loss flat at ~12.9 is explained for the current row. This is NOT final proof that all
+deployable observations fail: adding logged product/quantity/context reduces fixed-feature
+conflict. Continuation: EXP-0038A missing-observation audit. Driver so far:
+`tokenomics.eval.value_router_errors` (`decisions.csv`, `producers.csv`, `top_mistakes.csv`,
+`alias_groups.csv`, `summary.csv`).
+
+---
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

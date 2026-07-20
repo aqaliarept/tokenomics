@@ -153,6 +153,30 @@ Prefer one of:
 - Failure cases show whether the residuals are too small, too noisy, or directionally wrong.
 - If it loses to `blend_0.5` on 2 of 3, stop this branch.
 
+## Final Outcome
+
+Status: **CLOSED**.
+
+The 3-task gate ran on 2026-07-16 and failed the stop rule:
+
+```text
+task  learned_cu  blend_0.5_cu  delta
+s29      856.3        891.0      -34.7
+s77      696.0        692.3       +3.7
+s45      175.0        400.0     -225.0
+```
+
+Only 1 of 3 tasks beat fixed `blend_0.5`; s45 also had higher death under the residual
+router. Treat EXP-0037 as closed for this residual-router implementation.
+
+Audit caveat: the pulled `gate/` artifacts are from the original pre-P2 pod run, so they
+contain `summary.csv`, `spec.json`, and `residual_scorer.pt`, but not the later
+`loss_history.csv` / `gate_rows.csv` audit files. The code now emits those on rerun.
+
+Next work should not be another blind feature addition. Build EXP-0038's error microscope:
+compare teacher marginal labels to actor residual scores on the same decisions, inspect the
+largest mistakes, and identify whether order/backlog/TTL context is actually missing.
+
 ## Non-Goals
 
 - Do not add another selector over `even_split` / blends / `proportional`.

@@ -1473,3 +1473,305 @@ deployed residual router does not beat fixed `blend_0.5` on at least 2 of 3 task
 Next implementation task: build an offline residual-router probe that perturbs routing
 weights around `blend_0.5` and learns per-order/per-producer value scores, instead of
 training another selector over `even_split`/blend/proportional policies.
+
+---
+
+## 2026-07-16 — EXP-0037 residual-router probe INFRA built (TDD)
+
+Status: probe infrastructure implemented, unit-tested, tiny local smoke green. NO real gate
+run yet (that is a pod job). Built the value-routed orderer per HANDOVER "Recommended First
+Task": a residual score over fixed `blend_0.5`, trained on marginal-value-of-logit-bump
+labels, judged by deployed rollout — differing from EXP-0012 (throughput teacher) and
+EXP-0032 (noisy per-cycle search vector) in all three required ways.
+
+Artifacts:
+- `tokenomics/tokenomics/eval/value_router.py` (torch-free): `residual_router`,
+  `marginal_value_labels` (teacher), `evaluate_router_gate` (DoD instrument, deployed rollout
+  vs blend_0.5 at anchored seeds).
+- `tokenomics/tokenomics/train/value_router.py` (torch): `producer_row_features` (white-box
+  value features), `ResidualScoreModel` (producer-count-agnostic shared row scorer),
+  `fit_residual_scorer` (masked MSE on centered marginal labels), `to_score_fn` deploy
+  adapter, `collect_router_samples`, `run_value_router` driver + CLI.
+- `tests/test_value_router.py` (5) + `tests/test_value_router_train.py` (3).
+- EXP-0037 `spec.json` (driver + pod reproduce cmd) and `RESULT.md` (Status/What-was-built)
+  updated.
+
+Decisions:
+- Label objective = marginal value of a `+delta` logit bump (owner pick over pairwise / PG).
+- Session scope = probe infra + tiny smoke; the real s29/s77/s45 gate runs on Runpod.
+- `residual_router` zero-score == blend_0.5 byte-identical is the safety floor (pinned).
+
+Tests: full suite **655 passed** (+8). Local CLI smoke on real s29 archive task ran end to
+end (190 labeled decisions, tiny knobs) — pipeline only, not model evidence.
+
+Blockers: none. Worktree still UNCOMMITTED (user hold continues).
+
+Next: launch the real 3-task gate on a pod (`spec.json` reproduce: `--delta 1.0 --lookahead 8
+--eval-seeds 3 --horizon 100 --epochs 300 --clip 2.0`), stage `task_archive.jsonl` +
+`producer_champion_exp0035.pt` under `tokenomics/_pod_ckpts/`, pass full s29/s77/s45 task ids,
+pull into `experiments/EXP-0037-.../gate`. Stop rule: beat fixed `blend_0.5` on >=2 of 3 by
+deployed units, else close the branch.
+
+---
+
+## 2026-07-16 — EXP-0037 review: three P1 correctness fixes (pre-pod)
+
+Status: review of the probe infra found three P1s that would have made any gate result
+untrustworthy; all fixed test-first, full suite green.
+
+1. **Confounded labels** — `marginal_value_labels`/`_one_cycle_bump` gated the `+delta` bump on
+   `env.current_cycle` only, so in the joint-stack env (many product-stream ordering agents per
+   cycle) the nudge leaked into every other agent sharing that stream/producer index. Now gated
+   on the labeled `agent` too (regression `test_bump_perturbs_only_the_labeled_agent`).
+2. **Wrong env contract** — gate + collector built plain `TokenomicsAECEnv`; EXP-0036 measured
+   its `blend_0.5` floor in `joint_stack_env` (entity producer obs + corrected v4 product-stream
+   ordering). Both now use `joint_stack_env` + `run_episode` → `blend_cu` comparable to the floor.
+3. **Wrong producer loader** — `--prod-ckpt` used `_load_prod_closure` (legacy GaussianActor); the
+   EXP-0035 champion is a producer *scorer* ckpt. Now `scorer_producing_policy(
+   load_producer_score_model(...))`, matching EXP-0036. Verified against
+   `EXP-0035-distill-epochs/replay/artifacts/producer_candidate.pt`.
+
+Artifacts: `eval/value_router.py`, `train/value_router.py`, `tests/test_value_router.py` (+1),
+EXP-0037 `RESULT.md` (Review corrections) + `spec.json` reproduce updated to `--prod-ckpt` the
+scorer champion.
+
+Tests: full suite **656 passed**. CLI smoke on real s29 with the frozen scorer producer on
+joint_stack_env ran end to end (202 labeled decisions) — pipeline only.
+
+Blockers: none. Worktree still UNCOMMITTED. Next unchanged: launch the real s29/s77/s45 gate on
+a pod (stage `task_archive.jsonl` + `producer_champion_exp0035.pt` under `_pod_ckpts/`), stop
+rule = beat fixed `blend_0.5` on >=2 of 3 by deployed units.
+
+---
+
+## 2026-07-16 — EXP-0037 gate RUN on pod: FAIL, branch CLOSED
+
+Status: full 3-task gate ran on Runpod CPU pod `ymys3x82siomyk` (16 vCPU, base:0.7.0, --cpu
+python3.12; created → smoked → ran → pulled → TERMINATED). ~40 min. Verdict **1/3 beats fixed
+blend_0.5** → predeclared ≥2/3 stop rule fired → value-routed-orderer branch CLOSED.
+
+Numbers (learned vs blend_0.5, deployed rollout, in-sample s29/s77/s45 × 3 anchored seeds):
+- s29: 856.3 vs 891.0 (Δ −34.7, −3.9%) — loses
+- s77: 696.0 vs 692.3 (Δ +3.7, +0.5%) — wins (seed noise)
+- s45: 175.0 vs 400.0 (Δ −225, −56%), death 0.67 vs 0.33 — loses hard, residual KILLS economy
+
+Root cause (evidence, not hypothesis):
+1. Target low-signal — training loss flat/rising (ep0 13.16 → ep299 12.97 centered MSE); the
+   shared-row scorer cannot fit the marginal-value labels. Same failure family as EXP-0036's
+   noisy per-cycle routing targets, reproduced from the new value-residual action space.
+2. Learned residual adds harmful noise not stable improvement — lone win is +0.5% in-sample
+   noise; on s45 it drives more system deaths than the floor. blend_0.5 base + ±2.0 clip bounded
+   but did not prevent damage.
+
+Did NOT run the 81-row archive (handover Non-Goal: only if 3-task gate passes). blend_0.5 stays
+the zero-cost orderer floor; no learned orderer (EXP-0036 blend-selector or EXP-0037
+value-residual) beats it on primal-tight worlds.
+
+Two P1 correctness fixes landed pre-run (label agent-isolation, joint_stack env + scorer
+producer loader), plus a pod-surfaced batching bug fixed test-first: samples from different-
+topology tasks have different producer counts P → `fit_residual_scorer` np.stack failed;
+fixed by pad-to-max-P + mask (regression `test_fit_handles_samples_with_different_producer_counts`);
+added per-(task,seed) collection progress logging (the run was previously blind).
+
+Artifacts: `experiments/EXP-0037-value-routed-orderer/gate/{summary.csv,spec.json,residual_scorer.pt}`,
+RESULT.md Conclusions + spec.json compute filled. Pod terminated, `_pod_ckpts/` cleaned.
+
+Tests: 11 new value_router tests; full suite green (run post-changes).
+
+Blockers: none. Worktree still UNCOMMITTED. Next (owner call): EXP-0037 is closed. Open orderer
+question stands — search headroom on primal-tight worlds does not compress into any learned
+orderer tried; either accept blend_0.5 as the deployed floor or pursue a deploy-time light
+search (EXP-0036 Stage A2, a compute lever not a learned policy).
+
+---
+
+## 2026-07-18 — EXP-0037 P2 auditability review: code fixed, verdict unchanged
+
+Status: a second review (4× P2) said the headline gate numbers are consistent with summary.csv
+but the *supporting* evidence wasn't reproducible/auditable from the pulled dir. Addressed all
+four; the deployed-rollout verdict (1/3, branch CLOSED) is unchanged — it never depended on the
+loss trajectory.
+
+- P2 seed: `run_value_router`/CLI now take `--seed` (default 0), seed torch model init, record it
+  in `spec.json` → fit + `learned_cu` + 2-of-3 count reproducible. Test
+  `test_run_value_router_is_reproducible_under_a_fixed_seed`.
+- P2 loss history: driver writes per-epoch `loss_history.csv` (was: only `final_loss`); spec now
+  keeps loss_first/last/min. The cited ep0=13.16/ep299=12.97 are from the ORIGINAL pod stdout
+  (pre-fix), flagged as such in RESULT.
+- P2 per-seed rows: `router_gate` returns `(aggregate, per_seed)` in one rollout pass; driver
+  writes `gate_rows.csv` (task,seed,policy,cu,dead) so the s77 "seed noise" read + s45 death
+  counts are checkable from raw rows. `evaluate_router_gate` kept as aggregate-only wrapper.
+  Test `test_run_value_router_persists_audit_artifacts`.
+- P2 feature scope: RESULT conclusion 2 narrowed — the flat fit is over the producer-only feature
+  row (no order-age/TTL/backlog), so it is CONSISTENT WITH but does not PROVE an unlearnable
+  marginal-value target (feature aliasing not excluded). Verdict rests on deployed rollout instead.
+
+Note: the existing `gate/` artifacts are from the original pre-fix pod run, so they don't contain
+`loss_history.csv`/`gate_rows.csv`; those are produced by re-running the reproduce command. Did
+NOT re-run the pod (closed negative branch; a re-run only regenerates auditable supporting
+artifacts, doesn't change the verdict) — left as an owner call.
+
+Artifacts: `tokenomics/eval/value_router.py` (router_gate + per-seed), `tokenomics/train/value_router.py`
+(--seed, loss_history.csv, gate_rows.csv), 2 new tests in `tests/test_value_router_train.py`,
+RESULT.md auditability-corrections section.
+
+Tests: value_router suites green (confirmed). Blockers: none. Worktree still UNCOMMITTED.
+
+---
+
+## 2026-07-19 — EXP-0037 finalized; EXP-0038 opened for actor/teacher error analysis
+
+Status: documentation finalized and next diagnostic scaffolded.
+
+EXP-0037 final read: branch remains CLOSED. The deployed gate failed 1/3 against fixed
+`blend_0.5` (s29 856.3 < 891, s77 696 > 692.3 by only +0.5%, s45 175 < 400 with higher death).
+The result now explicitly says the verdict rests on deployed rollout, while the flat-loss read is
+scoped to the tried producer-only feature row and does not prove all possible observations fail.
+`spec.json` reproduce now includes `--seed 0` for the post-P2 deterministic fit path. The pulled
+`gate/` artifact remains the original pre-P2 pod output (`summary.csv`, `spec.json`,
+`residual_scorer.pt` only); the code emits `loss_history.csv` and `gate_rows.csv` on rerun.
+
+EXP-0038 created: `experiments/EXP-0038-actor-teacher-error-microscope/`.
+
+Purpose: before adding features or another actor, compare teacher marginal values and actor
+residual scores on the same routing decisions. The diagnostic should dump decision rows,
+producer rows, top mistakes, alias groups, and a summary. Read: if high-regret mistakes separate
+by order/backlog/TTL fields, observation enrichment is justified; if current features alias
+conflicting labels, name the missing fields; if labels remain inconsistent, target noise remains
+the blocker.
+
+Handoff prep: EXP-0038 `HANDOVER.md` now has a concrete first implementation pass, expected CSV
+schemas, local-smoke size, and non-goals. No EXP-0038 code, smoke, pod run, or commit was made in
+this prep step. A targeted value-router pytest command was started during finalization and then
+intentionally interrupted by the user; treat the last completed targeted result as the prior
+12-pass run and rerun the targeted suite before behavior changes.
+
+Next implementation task: build the EXP-0038 dump generator on a tiny local smoke, then run the
+s29/s77/s45 diagnostic on a pod only if the local output has all required audit tables.
+
+---
+
+## 2026-07-19 — EXP-0038 dump generator built (TDD), local smoke green
+
+Status: diagnostic driver implemented and smoke-proven locally. No pod run yet.
+
+Built `tokenomics.eval.value_router_errors` (measurement only, torch-free core; torch used
+only to hold/reproduce the actor). Reuses the EXP-0037 teacher (`marginal_value_labels`) and the
+EXP-0037 actor (`ResidualScoreModel` via `train.value_router`), so labels + scores match the gate.
+
+Public surface (TDD, one behavior per test):
+- `decision_metrics(labels, scores, eligible_cols)` — teacher-best vs actor-best over the eligible
+  set, `decision_regret` (teacher value the actor pick forgoes, >= 0), `top1_match`,
+  `rank_correlation` (spearman, 0.0 when < 2 eligible / constant side).
+- `summarize` (top1-match rate + mean/max regret), `top_mistakes` (sort by regret),
+  `alias_groups` (identical actor feature_hash -> conflicting teacher `teacher_pos`, label_variance).
+- `collect_error_records` — drive fixed blend_0.5 on each task/seed; at every decision with >= 2
+  eligible producers record teacher labels, actor scores, actor-visible feature rows, and order
+  identity (cycle, order, product, qty, order_age/ttl from `env.system.orders[oid].cycle_counter`,
+  backlog + same-product backlog).
+- `decision_row` / `producer_rows` render the two base CSVs; `fit_reproducible_actor` reproduces the
+  gate actor via the seeded collect+fit (HANDOVER "seeded rerun path", pre-P2 gate/ artifact avoided).
+- `run_value_router_errors` + `main()` emit the full dump layout: `decisions.csv`, `producers.csv`,
+  `top_mistakes.csv`, `alias_groups.csv`, `summary.csv`, `spec.json`. CLI: `--actor-ckpt` to
+  microscope the pulled gate scorer, else seed-rerun the fit.
+
+Design correction during build: the driver microscopes the ALREADY-TRAINED actor (required `model`
+arg / seeded rerun), not a random-init model — a fresh net would say nothing about why the trained
+actor fits the teacher badly.
+
+Tests: `tests/test_value_router_errors.py` (8, torch-free) + `tests/test_value_router_errors_run.py`
+(3, torch-guarded) green; full suite 670 passed, 1 deselected. Local smoke dump (2 depth-3 scale
+tasks, horizon 16) writes all 6 files; schema + mistake/alias extraction confirmed (byte-identical
+producer feature rows get identical actor scores while the teacher splits them -> 121 alias groups).
+These toy-task numbers are SCHEMA PROOF only, not decision evidence.
+
+Blockers: none. Worktree UNCOMMITTED.
+Next: run the real s29/s77/s45 dump on a pod (CPU, `--python python3.12`) via
+`run_pod_training.py`, pull into EXP-0038, then read top_mistakes/alias_groups for the DoD verdict
+(enrich obs / change teacher / stop). Pod run only on user go — it's a decision-gating diagnostic.
+
+---
+
+## 2026-07-19 — EXP-0038 review fixes (P1 CLI import, P2 rank-corr + alias precision)
+
+Status: three review findings on the dump generator fixed, TDD, suites green.
+
+- P1 (blocker): `main()` imported the producer scorer from `.producer_scorer` (tokenomics.eval),
+  but the EXP-0035 scorer loader lives in `tokenomics.train.producer_scorer` — the pod CLI would
+  have crashed after arg parsing, before writing any CSV. Fixed the import; also moved
+  `_load_archive` to `.curriculum_replay`. New test `test_cli_resolves_the_producer_scorer_and_
+  archive_loaders` pins the exact deferred imports the CLI performs.
+- P2a: `_spearman` judged constancy on argsort ranks, but argsort of a constant vector still yields
+  distinct ordinal ranks, so flat all-zero teacher labels (a core failure mode this microscope
+  diagnoses) got a spurious +1 correlation. Now judges constancy on the raw values (`np.ptp`) and
+  ranks tie-aware (average ranks) via new `_rankdata`. Verified in-pipeline: all 448 flat-label
+  decisions now report rank_correlation 0.0 (was ±0.x).
+- P2b: `_alias_item` rounded feature rows to 2 decimals before hashing, so rows differing in the
+  3rd/4th decimal collapsed into false aliases — manufacturing the "missing observation" signal.
+  Now hashes the EXACT float32 rows; only byte-identical actor features share a feature_hash.
+
+Tests: `test_value_router_errors*` 15 passed; value_router+errors suites 27 passed. CLI loads via
+`python -m tokenomics.eval.value_router_errors --help`. Blockers: none. Worktree UNCOMMITTED.
+Next unchanged: real s29/s77/s45 dump on a CPU pod on user go.
+
+---
+
+## 2026-07-19 — EXP-0038 pod run DONE: current actor-row aliases marginal-value target
+
+Status: diagnostic complete for the current 7-feature actor row. Later review narrowed the
+conclusion on 2026-07-20; see EXP-0038A.
+
+Ran `tokenomics.eval.value_router_errors` on a fresh CPU pod (`--create-pod`,
+runpod/base:0.7.0-ubuntu2004, `--cpu python3.12`, 16 vCPU; stopped+terminated after pull) over the
+three EXP-0036/0037 gate tasks. Exact task_ids recovered from EXP-0037 `gate/summary.csv` (the
+"s29/s77/s45" nicknames are long ids; `-s45` collided). Seeded actor rerun (seed 0, delta 1.0,
+lookahead 8, eval-seeds 3, horizon 100, epochs 300) reproduces the EXP-0037 gate actor. 13,940
+labeled decisions. Dump pulled to `experiments/EXP-0038-actor-teacher-error-microscope/dump/`.
+
+Scoped verdict: **the current actor observation is insufficient.** Three-step read (see RESULT.md):
+1. 69.4% of decisions have a flat teacher (blend_0.5 already optimal; nothing to learn). Only 30.6%
+   are real choices; top-1 there 0.451, regret concentrated (top 5% of decisions = 65% of regret).
+2. Of 1,975 real mistakes, only 3.9% are between identical current-row producers; 96.1% differ on a
+   current feature (makeable/headroom/reserved). This rules out pure local producer-row aliasing,
+   but does not rule out richer order/system context.
+3. Decisive: exact feature rows seen ≥5× receive teacher labels ranging median 10 / mean 14.3 / max
+   90 units (66.9% > 1u) — the per-decision marginal value of a logit bump is a global
+   path-dependent quantity, not a function of the current 7-feature row. Explains the flat ~12.9
+   fit loss for the current actor. Consistent with EXP-0009 (value-from-global_state didn't
+   generalize), but not final proof that all deployable observations fail.
+
+Concrete next action after review: run EXP-0038A's deployable observation ladder before training any
+new actor. `blend_0.5` remains the orderer floor. Registry entry: DIAGNOSTICS.md #12 (actor fits
+teacher badly — missing obs vs unlearnable target). Records later narrowed in RESULT.md,
+spec.json, experiments/README.md row.
+
+Artifacts: `dump/{summary,top_mistakes,alias_groups}.csv` + `spec.json` small (track directly);
+`dump/{decisions.csv 2.5M, producers.csv 6.5M}` heavy (git-lfs if committed). Staged `_pod_ckpts/`
+removed. Tests green (670). Blockers: none. Worktree UNCOMMITTED.
+
+---
+
+## 2026-07-20 — EXP-0038 narrowed; EXP-0038A opened for missing-observation audit
+
+Status: EXP-0038 is no longer treated as final proof that observation enrichment is dead.
+
+Review of the pulled dump upheld the current-row failure but overturned the overclaim. The
+EXP-0037 actor only sees a 7-feature producer row. Repeated current rows have large teacher-label
+spread (median 10, mean 14.3, worst 90), and the residual actor explains only ~1-2% of centered
+label variance, so the current observation cannot fit the marginal-value teacher. But adding logged
+decision context (especially product/quantity and other context fields) reduces fixed-feature label
+conflict, so richer deployable observations remain a live explanation.
+
+Docs updated:
+- `EXP-0038/RESULT.md`, `HANDOVER.md`, `spec.json` narrowed to "current-row aliasing" rather than
+  "all observations fail."
+- `docs/DIAGNOSTICS.md` entry 12 now says to repeat the label≈f(obs) test over candidate
+  deployable observation blocks before stopping a teacher.
+- New continuation folder:
+  `experiments/EXP-0038A-missing-observation-audit/` with `HANDOVER.md`, `RESULT.md`, and
+  `spec.json`.
+
+EXP-0038A goal: identify which teacher information is missing from actor input, and separate
+deployable observations (order/system/history/global context) from oracle-only rollout/future
+facts. No new actor training is licensed until a deployable observation block materially reduces
+held-out label conflict and real-choice regret on at least 2/3 gate tasks.

@@ -1,0 +1,22 @@
+{
+  "version": "missing-observation-audit-v1",
+  "date": "2026-07-20",
+  "status": "open",
+  "source_experiment": "EXP-0038-actor-teacher-error-microscope",
+  "question": "Which deployable observations, if any, make the EXP-0037 marginal-value teacher label a stable function of actor input?",
+  "driver": "TBD",
+  "inputs": {
+    "initial_dump": "experiments/EXP-0038-actor-teacher-error-microscope/dump",
+    "gate_tasks": ["s29", "s77", "s45"],
+    "floor": "blend_0.5",
+    "teacher": "marginal_value_labels(delta=1.0, lookahead=8)"
+  },
+  "planned_outputs": [
+    "block_summary.csv",
+    "alias_by_block.csv",
+    "probe_by_block.csv",
+    "top_mistakes_by_block.csv",
+    "spec.json"
+  ],
+  "decision_gate": "A deployable observation block is useful only if it materially reduces held-out label conflict and held-out real-choice regret on at least 2 of 3 gate tasks. Oracle-only rollout/future facts are an upper bound, not deployable policy input."
+}
