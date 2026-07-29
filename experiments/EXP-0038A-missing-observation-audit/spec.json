@@ -1,10 +1,11 @@
 {
   "version": "missing-observation-audit-v1",
-  "date": "2026-07-20",
-  "status": "open",
+  "date": "2026-07-27",
+  "status": "closed-for-dump-blocks",
   "source_experiment": "EXP-0038-actor-teacher-error-microscope",
   "question": "Which deployable observations, if any, make the EXP-0037 marginal-value teacher label a stable function of actor input?",
-  "driver": "TBD",
+  "driver": "tokenomics.eval.observation_ladder",
+  "verdict": "Deployable blocks the dump logs (current_row, +order, +local_queue) do NOT license enrichment. +order collapses exact-alias label conflict (median range 10->0, frac>1 0.669->0.224) but this is a between-decision LEVEL artifact: order/queue fields are constant across a decision's eligible producers so they carry no within-decision contrast. Held-out routing (metric: real-choice decisions only, decision-centered labels, decision-weighted pooled folds, tie-aware top1) FAILS gate condition 2 for EVERY block on EVERY task: no probe beats the deployed current_row-only actor floor on a single task (0/3 for both ridge and kNN); +order kNN is the closest (4.78/6.15/4.68 vs actor 3.93/4.75/4.12). Probes beat the random floor (not noise) but are strictly worse than the incumbent. Centered within-decision r2 ~ 0 (ridge) / slightly negative (kNN) everywhere: the deployable observations explain essentially none of the within-decision label contrast. 96.7% of top actor mistakes differ on the current row (producers ARE distinguishable, actor just ranks wrong) -> not a missing per-producer observation. Still open: per-producer blocks full_producer_state (4) + history (7) need a live re-dump; system_demand (5)/recipe_bottleneck (6) are decision-constant like +order. NOTE: an earlier metric cut (raw labels, all decisions, fold-mean averaging, inconsistent top1) spuriously reported +order kNN 1/3; corrected 2026-07-27.",
   "inputs": {
     "initial_dump": "experiments/EXP-0038-actor-teacher-error-microscope/dump",
     "gate_tasks": ["s29", "s77", "s45"],

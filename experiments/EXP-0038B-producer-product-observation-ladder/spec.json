@@ -1,0 +1,173 @@
+{
+  "version": "producer-product-observation-ladder-v2",
+  "date": "2026-07-28",
+  "status": "both-phases-failed-target-retired",
+  "result": {
+    "n_decisions": 13940,
+    "n_candidate_rows": 37804,
+    "pp_columns": 60,
+    "sys_columns": 32,
+    "alias_collapse": "Both phases reduce exact repeated-row label conflict (median range 10.0 -> 0.0) but repeated-row coverage collapses as continuous columns are added (28,383 rows / 902 groups at current_row -> 543 / 93 at +sys_demand), so alias collapse is secondary evidence only; the held-out routing gate is decisive.",
+    "gate": "BOTH PHASES FAILED — every tested deployable block (6 Phase-1 pp_/h_ + 5 Phase-2 sys_) beats the deployed actor floor 0/3 tasks for BOTH ridge+interactions and kNN; centered within-decision r2 <= 0 (Phase-2 ridge drifts more negative as blocks accumulate: -0.02 -> -0.18 -> -0.22 -> -0.21 -> -0.25; knn ~ -0.05); adding blocks raises or holds held-out routing regret at/above the random floor.",
+    "actor_floor_regret": {"s45": 3.93, "s77": 4.75, "s29": 4.12},
+    "sys_block_regret_ridge": {"+sys_demand": 5.93, "+sys_capacity": 5.81, "+sys_recipe": 5.62, "+sys_cutoff": 5.67, "+sys_actor": 5.77},
+    "verdict": "Neither deployable class — per-producer/product (Phase 1) nor system-wide interaction context (Phase 2) — makes the EXP-0037 marginal-value teacher label a learnable within-decision routing target. The teacher's producer preference is not a function of any tested decision-time observation; it lives in the 8-cycle rollout. Retiring the marginal-value target as an actor objective is LICENSED. blend_0.5 remains the orderer floor.",
+    "actor_trained": false,
+    "actor_training_note": "No enriched actor was trained (gate never passed). A learned orderer must emulate the rollout (a compute lever) or optimise a different, obs-measurable objective."
+  },
+  "source_experiments": [
+    "EXP-0038-actor-teacher-error-microscope",
+    "EXP-0038A-missing-observation-audit"
+  ],
+  "question": "Do any deployable metrics — per-producer/product (Phase 1) or system-wide interaction context (Phase 2) — make the EXP-0037 marginal-value teacher label learnable for within-decision routing?",
+  "driver": "tokenomics.eval.value_router_errors --feature-set producer_product_v1 | producer_product_system_v1 (dump) + tokenomics.eval.observation_ladder (audit); blocks built in tokenomics.eval.producer_product_features (pp_* Phase 1, sys_* Phase 2)",
+  "gate_tasks": ["s29", "s77", "s45"],
+  "teacher": {
+    "floor": "blend_0.5",
+    "labeler": "marginal_value_labels",
+    "delta": 1.0,
+    "lookahead": 8
+  },
+  "phase_order": [
+    "per_producer_product_metrics_first",
+    "system_wide_interaction_metrics_second",
+    "oracle_only_upper_bound_last"
+  ],
+  "per_producer_blocks": {
+    "P0_current_row": [
+      "feat_0 eligibility",
+      "feat_1 makeable quantity now",
+      "feat_2 free capacity binding ratio",
+      "feat_3 reserved capacity binding ratio",
+      "feat_4 capacity headroom binding ratio",
+      "feat_5 input inventory plus inbound binding ratio",
+      "feat_6 output product inventory"
+    ],
+    "P1_throughput": [
+      "dedicated current units for target product",
+      "dedicated free units after reservations",
+      "dedicated max units",
+      "dedicated headroom units",
+      "per-required-capacity min/mean/max/std",
+      "order quantity over free/current/max units",
+      "binding capacity slack",
+      "zero binding capacity indicator"
+    ],
+    "P2_opportunity_cost": [
+      "alternate product throughput on same producer",
+      "capacity overlap with alternate products",
+      "demand-weighted alternate throughput",
+      "target versus best alternate margin",
+      "capacity opportunity cost",
+      "scarcity-weighted capacity opportunity cost"
+    ],
+    "P3_dependency_cover": [
+      "target-product input cover units",
+      "inventory-only input cover",
+      "inbound input cover",
+      "missing input units for order",
+      "bottleneck input cover",
+      "transitive input cover",
+      "upstream replenish speed",
+      "estimated cycles to cover missing inputs"
+    ],
+    "P4_base_cutoff_margin": [
+      "base logit",
+      "base softmax weight",
+      "base rank",
+      "margin to best base producer",
+      "margin to next base producer",
+      "cutoff price if present",
+      "price or score margin to cutoff if present",
+      "expected wait cost proxy"
+    ],
+    "P5_history_5": [
+      "last-5-cycle routed/completed/rejected/failed/expired units for target product",
+      "last-5-cycle completion and rejection rates for target product",
+      "last-5-cycle completion latency for target product",
+      "producer-total routed/completed/rejected units",
+      "producer-total completion rate",
+      "capacity utilization summary",
+      "input received units",
+      "output inventory delta for target product"
+    ],
+    "P6_fulfilment_speed": [
+      "order quantity over recent target-product rate",
+      "estimated cycles to produce quantity",
+      "estimated cycles until inputs ready",
+      "estimated cycles to complete order",
+      "ttl minus estimated completion",
+      "completion feasible before ttl",
+      "recent dependency-chain success rate"
+    ]
+  },
+  "system_wide_blocks": {
+    "S1_demand": [
+      "target queued quantity",
+      "target order count",
+      "consumer pressure",
+      "oldest target age",
+      "minimum target ttl",
+      "same-product demand at other orderers",
+      "competing product queued quantity",
+      "producer-specific summary of demand competing for the producer capacity"
+    ],
+    "S2_capacity_scarcity": [
+      "global target free/current/max/reserved/headroom units",
+      "eligible producer count",
+      "capacity concentration",
+      "target bottleneck capacity slack",
+      "required-type global scarcity min/mean"
+    ],
+    "S3_recipe_bottleneck": [
+      "product depth",
+      "downstream demand unlocked by target product",
+      "downstream inventory pressure",
+      "transitive required input count",
+      "transitive input cover",
+      "upstream capacity cover",
+      "dependency-chain completion speed",
+      "recipe bottleneck depth"
+    ],
+    "S4_cutoff_urgency": [
+      "cutoff price if present",
+      "market price if present",
+      "price margin if present",
+      "order urgency score",
+      "expected lost units if waiting",
+      "ttl pressure bucket"
+    ],
+    "S5_other_actors": [
+      "other orderer count with target product",
+      "other orderer queued quantity for target product",
+      "other orderer competing quantity for same producers",
+      "other orderer minimum ttl for target product",
+      "other orderer recent routed/completed target units"
+    ]
+  },
+  "oracle_only_blocks": [
+    "base rollout units",
+    "bumped rollout units for candidate",
+    "future target demand",
+    "realized downstream fulfilment after decision"
+  ],
+  "metric_gate": {
+    "fit_target": "decision-centered teacher labels",
+    "scored_population": "real-choice decisions only",
+    "aggregation": "decision-weighted pooled held-out folds",
+    "top1": "tie-aware",
+    "probe_families": ["ridge_with_interactions", "knn"],
+    "incumbent_floor": "deployed EXP-0037 actor_score argmax",
+    "pass_condition": "A deployable block must beat the actor floor on at least 2 of 3 tasks for both probes, with positive centered within-decision r2 on at least 2 of 3 tasks and material regret reduction."
+  },
+  "planned_outputs": [
+    "dump/decisions.csv",
+    "dump/producers.csv",
+    "dump/summary.csv",
+    "audit/block_summary.csv",
+    "audit/alias_by_block.csv",
+    "audit/probe_by_block.csv",
+    "audit/top_mistakes_by_block.csv",
+    "audit/spec.json"
+  ]
+}

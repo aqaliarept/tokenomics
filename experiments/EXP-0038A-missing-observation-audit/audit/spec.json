@@ -1,0 +1,60 @@
+{
+  "source_dump": "/workspaces/tokenomics/experiments/EXP-0038-actor-teacher-error-microscope/dump",
+  "tasks": [
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45",
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77",
+    "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29"
+  ],
+  "min_count": 5,
+  "blocks": [
+    "current_row",
+    "+order",
+    "+local_queue"
+  ],
+  "floors": {
+    "random": {
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45": {
+        "kind": "random",
+        "mean_regret": 5.238601823708207,
+        "top1_match": 0.43617021276595747,
+        "n_decisions": 1316
+      },
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77": {
+        "kind": "random",
+        "mean_regret": 6.241200230813618,
+        "top1_match": 0.4448932487016734,
+        "n_decisions": 1733
+      },
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29": {
+        "kind": "random",
+        "mean_regret": 5.3803453947368425,
+        "top1_match": 0.5,
+        "n_decisions": 1216
+      }
+    },
+    "actor": {
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45": {
+        "kind": "actor",
+        "mean_regret": 3.9346504559270516,
+        "top1_match": 0.5182370820668692,
+        "r2": 0.029408461535837982,
+        "n_decisions": 1316
+      },
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77": {
+        "kind": "actor",
+        "mean_regret": 4.754183496826313,
+        "top1_match": 0.5302942873629544,
+        "r2": 0.02444734742802579,
+        "n_decisions": 1733
+      },
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29": {
+        "kind": "actor",
+        "mean_regret": 4.120065789473684,
+        "top1_match": 0.5625,
+        "r2": 0.02414962823776501,
+        "n_decisions": 1216
+      }
+    }
+  },
+  "gate": "deployable block licenses enrichment only if alias conflict collapses AND BOTH probes beat the deployed-actor floor on >= 2/3 tasks"
+}

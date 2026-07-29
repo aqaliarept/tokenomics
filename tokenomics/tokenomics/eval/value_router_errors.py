@@ -30,6 +30,7 @@ from .joint_stack import joint_stack_env
 from .value_router import marginal_value_labels
 
 if TYPE_CHECKING:  # torch only needed to hold the actor; keep the metric API torch-free
+    from ..env.aec_env import TokenomicsAECEnv
     from ..train.value_router import ResidualScoreModel
 
 
@@ -161,6 +162,204 @@ class ErrorRecord:
     labels: np.ndarray   # [P] teacher marginal values (0 for ineligible)
     scores: np.ndarray   # [P] actor residual scores (0 for ineligible)
     rows: np.ndarray     # [P, F] actor-visible producer feature rows
+    full_rows: "dict | None" = None  # EXP-0038A: {pid -> block-4/block-7 named cols} when full=True
+
+
+_FS_BOUND = 10.0  # match producer_row_features' _BOUND clip
+
+
+def producer_fullstate_row(env: TokenomicsAECEnv, oid: str, view, pid: str) -> dict:
+    """EXP-0038A blocks 4+7 for one eligible producer — the deployable per-producer facts the
+    current 7-feature row throws away (HANDOVER: "do not collapse to min ratios only").
+
+    Block 4 (full producer state): for the order product's required capacity types and inputs, the
+    per-type ratios (capacity/reserved/max/headroom over the per-unit requirement; input
+    inventory+inbound over the per-unit need) summarised as min/max/mean/std — dispersion the
+    binding-min feature hides, which CAN re-rank two producers a decision otherwise ties. Block 7
+    (history): `env.system.telemetry` folded EMAs — routed/completed/rejected recent throughput and
+    the producer's acceptance/completion/rejection rates. Folded = strictly past-cycle, so deployable
+    at decision time (no current-cycle leakage)."""
+    from ..domain import metrics as dmetrics
+
+    oi = view.incoming[oid]
+    product = oi.product
+    sheet = env.system.process_sheets[product]
+    need = {t: c for t, c in sheet.require.items() if c > 0}
+    p = env.system.producing_agents[pid]
+    reserved = p.reserved_capacity()
+
+    def clip(x: float) -> float:
+        return float(np.clip(x, -_FS_BOUND, _FS_BOUND))
+
+    cap = [p.capacities.get(t, 0) / c for t, c in need.items()]
+    resv = [reserved.get(t, 0) / c for t, c in need.items()]
+    mx = [p.max_capacities.get(t, 0) / c for t, c in need.items()]
+    head = [(p.max_capacities.get(t, 0) - p.capacities.get(t, 0)) / c for t, c in need.items()]
+    inp = [(p.inventory.get(i, 0) + p.outstanding_inbound.get(i, 0)) / n
+           for i, n in sheet.inputs.items()]
+
+    def stats(vals: list[float], prefix: str, *, with_std: bool = True) -> dict:
+        a = np.array(vals, dtype=np.float64) if vals else np.zeros(1)
+        out = {f"{prefix}_min": clip(float(a.min())), f"{prefix}_max": clip(float(a.max())),
+               f"{prefix}_mean": clip(float(a.mean()))}
+        if with_std:
+            out[f"{prefix}_std"] = clip(float(a.std()))
+        return out
+
+    row: dict = {}
+    for vals, pre in ((cap, "b4_cap"), (resv, "b4_resv"), (mx, "b4_max"), (head, "b4_head")):
+        row.update(stats(vals, pre))
+    row.update(stats(inp if inp else [_FS_BOUND], "b4_inp", with_std=False))  # primal: no inputs
+    row["b4_n_req_types"] = float(len(need))
+    row["b4_n_inputs"] = float(len(sheet.inputs))
+    row["b4_out_inv"] = clip(p.inventory.get(product, 0))
+    row["b4_total_inv"] = clip(sum(p.inventory.values()))
+    row["b4_makeable"] = clip(dmetrics.makeable_qty_now(p, product))
+    row.update(history_block(env.system.telemetry, pid, product))
+    return row
+
+
+def history_block(telemetry, pid: str, product: int) -> dict:
+    """Block-7 / P5 telemetry history for one producer/product (EXP-0038A block 7, reused as the
+    EXP-0038B P5 block): routed/completed/rejected recent throughput EMAs + producer
+    acceptance/completion/rejection rates. Folded EMAs = strictly past-cycle, so deployable at
+    decision time (no current-cycle leakage). This env keeps no exact 5-cycle window, so P5 rides the
+    EMA per the HANDOVER fallback."""
+    def clip(x: float) -> float:
+        return float(np.clip(x, -_FS_BOUND, _FS_BOUND))
+
+    t = telemetry
+    return {
+        "h_routed_ema": clip(t.routed_ema(pid, product)),
+        "h_completed_ema": clip(t.completed_ema(pid, product)),
+        "h_rejfail_ema": clip(t.rejected_or_failed_ema(pid, product)),
+        "h_success_rate": clip(t.success_rate(pid, product)),
+        "h_completion_latency": clip(t.completion_latency(pid, product)),
+        "h_prod_acceptance_rate": clip(t.producer_acceptance_rate(pid)),
+        "h_prod_completion_rate": clip(t.producer_completion_rate(pid)),
+        "h_prod_rejection_rate": clip(t.producer_rejection_rate(pid)),
+    }
+
+
+_PP_BOUND = 50.0  # generous clip for pp_* unit features: guards outliers without flattening the
+# throughput/cover dispersion the EXP-0038B ladder is meant to measure (the ladder standardizes).
+_SYS_CLIP = 1.0e6  # sys_* counts/qtys are economy-scale (can far exceed _PP_BOUND at s29/s77/s45),
+# so clip only to guard non-finite values, never to flatten the demand/capacity magnitudes; the
+# ladder standardizes every column anyway.
+
+
+def _sanitize(x: float, bound: float) -> float:
+    """Finite, bounded float for a CSV feature cell — a non-finite value (should never occur; the
+    sys_* builders guard every division) becomes 0.0 rather than poisoning the ladder's standardizer."""
+    v = float(x)
+    if not np.isfinite(v):
+        return 0.0
+    return float(np.clip(v, -bound, bound))
+
+
+def producer_product_rows(env: TokenomicsAECEnv, oid: str, view, eligible, *,
+                          base_logits: dict, ttl_remaining: int, system: bool = False) -> dict:
+    """EXP-0038B `producer_product_v1` observation: the deployable per-producer/product Phase-1
+    ladder for one decision, one merged column dict per eligible producer. Unlike order/queue context
+    (constant across a decision, EXP-0038A), these blocks vary across candidate producers and can
+    re-rank within a decision — the whole point of the re-dump.
+
+    P1 pp_throughput_ (dedicated throughput dispersion), P2 pp_opp_ (opportunity cost vs competing
+    products), P3 pp_dep_ (input cover in target units), P4 pp_base_ (base-routing margin, from the
+    base policy's per-producer logits), P6 pp_fulfill_ (TTL feasibility), plus the reused P5 h_
+    history. Every value clipped to `_PP_BOUND`. `base_logits` maps eligible pid -> base-policy logit
+    for this order-stream; `open_qty` for P2 is the orderer's queued quantity by product (deployable
+    decision-time demand).
+
+    `system=True` (EXP-0038B Phase 2, `producer_product_system_v1`) also appends the SYSTEM-WIDE
+    `sys_*` blocks (S1 demand / S2 capacity / S3 recipe / S4 cutoff-urgency / S5 other-actor). Most
+    sys_* values are decision-CONSTANT (one value across the decision's producers) — the ladder scores
+    them as interaction context, not additive terms (observation_ladder); only the few producer-
+    varying sys_* fields (`*_competing_for_p_capacity_qty`) differ across producers. Computed once per
+    decision from live economy state (all orders, all producers, folded telemetry)."""
+    from . import producer_product_features as ppf
+
+    oi = view.incoming[oid]
+    product, quantity = oi.product, oi.quantity
+    open_qty: dict[int, int] = {}
+    for o in view.incoming.values():
+        open_qty[o.product] = open_qty.get(o.product, 0) + o.quantity
+    tel = env.system.telemetry
+    elig = list(eligible)
+    base_rows = ppf.pp_base_block({pid: base_logits[pid] for pid in elig})
+
+    def clip(x: float) -> float:
+        return float(np.clip(x, -_PP_BOUND, _PP_BOUND))
+
+    sys_ctx = _system_context(env, view, elig, product=product, ttl_remaining=ttl_remaining) if system else None
+
+    out: dict = {}
+    for pid in elig:
+        p = env.system.producing_agents[pid]
+        row: dict = {}
+        row.update(ppf.pp_throughput_block(p, product=product, quantity=quantity))
+        row.update(ppf.pp_opp_block(p, product=product, quantity=quantity, open_qty=open_qty))
+        row.update(ppf.pp_dep_block(p, product=product, quantity=quantity))
+        row.update(ppf.pp_fulfill_block(p, product=product, quantity=quantity,
+                                        ttl_remaining=ttl_remaining, telemetry=tel))
+        row.update(base_rows[pid])
+        row = {k: clip(v) for k, v in row.items()}
+        row.update(history_block(tel, pid, product))  # h_ already clipped to _FS_BOUND
+        if sys_ctx is not None:
+            row.update({k: _sanitize(v, _SYS_CLIP) for k, v in _system_rows(env, p, sys_ctx).items()})
+        out[pid] = row
+    return out
+
+
+def _system_context(env: TokenomicsAECEnv, view, elig, *, product: int, ttl_remaining: int) -> dict:
+    """Precompute the per-decision system-wide facts the `sys_*` blocks share (EXP-0038B Phase 2), so
+    the per-producer loop only fills in the producer-varying fields. Reads all live orders (economy
+    queued demand), the eligible producers' full state, and folded telemetry — all deployable at
+    decision time."""
+    from . import producer_product_features as ppf
+
+    sheets = env.system.process_sheets
+    all_orders = env.system.orders
+    open_qty = ppf.system_open_qty(all_orders)
+    target_orders = [o for o in all_orders.values()
+                     if o.product == product and o.unresolved_quantity() > 0]
+    this_qty = sum(o.quantity for o in view.incoming.values() if o.product == product)
+    eligible_agents = [env.system.producing_agents[pid] for pid in elig]
+    all_agents = list(env.system.producing_agents.values())
+    oldest_age = max((o.cycle_counter for o in target_orders), default=0)
+    return {
+        "sheets": sheets, "open_qty": open_qty, "target_orders": target_orders,
+        "this_qty": this_qty, "eligible_agents": eligible_agents, "all_agents": all_agents,
+        "product": product, "ttl_remaining": ttl_remaining, "oldest_age": oldest_age,
+        "telemetry": env.system.telemetry,
+        # capacity/recipe blocks are pure decision-constant — build once, reuse for every producer
+        "capacity": ppf.sys_capacity_block(eligible_agents, product=product, sheets=sheets,
+                                            all_agents=all_agents, open_qty=open_qty),
+        "recipe": ppf.sys_recipe_block(product=product, sheets=sheets, open_qty=open_qty,
+                                       all_agents=all_agents),
+    }
+
+
+def _system_rows(env: TokenomicsAECEnv, p, ctx: dict) -> dict:
+    """The `sys_*` columns for one eligible producer: the decision-constant capacity/recipe/cutoff
+    blocks (shared) plus the demand/actor blocks (which carry the producer-varying
+    `*_competing_for_p_capacity_qty` fields)."""
+    from . import producer_product_features as ppf
+
+    # quantity for the cutoff urgency proxy: the target's total queued qty this decision
+    qty = int(ctx["open_qty"].get(ctx["product"], 0))
+    row: dict = {}
+    row.update(ppf.sys_demand_block(p, product=ctx["product"], sheets=ctx["sheets"],
+                                    open_qty=ctx["open_qty"], target_orders=ctx["target_orders"],
+                                    this_orderer_target_qty=ctx["this_qty"]))
+    row.update(ctx["capacity"])
+    row.update(ctx["recipe"])
+    row.update(ppf.sys_cutoff_block(quantity=qty, ttl_remaining=ctx["ttl_remaining"],
+                                    oldest_age=ctx["oldest_age"]))
+    row.update(ppf.sys_actor_block(p, product=ctx["product"], open_qty=ctx["open_qty"],
+                                   telemetry=ctx["telemetry"], all_agents=ctx["all_agents"],
+                                   this_orderer_target_qty=ctx["this_qty"]))
+    return row
 
 
 def _actor_scores(model: "ResidualScoreModel", rows: np.ndarray, eligible: np.ndarray) -> np.ndarray:
@@ -177,7 +376,8 @@ def _actor_scores(model: "ResidualScoreModel", rows: np.ndarray, eligible: np.nd
 def collect_error_records(
     records: Sequence[TaskRecord], prod: Policy, model: "ResidualScoreModel", *,
     delta: float, lookahead: int, eval_seeds: int, horizon: int,
-    base: "Policy | None" = None, log: Callable[..., None] = lambda *a, **k: None,
+    base: "Policy | None" = None, full: bool = False, feature_set: "str | None" = None,
+    log: Callable[..., None] = lambda *a, **k: None,
 ) -> list[ErrorRecord]:
     """Drive the fixed blend_0.5 trajectory on each task/seed (the states the deployed router
     visits) and, at every ordering decision with >= 2 eligible producers, record the teacher labels
@@ -218,13 +418,25 @@ def collect_error_records(
                     age = order.cycle_counter if order is not None else -1
                     ttl = max(0, ORDER_TTL - age) if age >= 0 else -1
                     same_prod = sum(1 for o in incoming if view.incoming[o].product == oi.product)
+                    if feature_set in ("producer_product_v1", "producer_product_system_v1"):
+                        base_mat = np.asarray(base(env, agent), dtype=np.float64).reshape(
+                            env.spec_.k_stream, env.spec_.num_producers)
+                        base_logits = {p: float(base_mat[k, env.spec_.producer_ids.index(p)])
+                                       for p in elig}
+                        full_rows = producer_product_rows(
+                            env, oid, view, elig, base_logits=base_logits, ttl_remaining=ttl,
+                            system=(feature_set == "producer_product_system_v1"))
+                    elif full:
+                        full_rows = {p: producer_fullstate_row(env, oid, view, p) for p in elig}
+                    else:
+                        full_rows = None
                     out.append(ErrorRecord(
                         task_id=rec.task_id, seed=s, cycle=env.current_cycle, agent=agent,
                         order_id=oid, stream_index=k, product=oi.product, quantity=oi.quantity,
                         order_age=age, ttl_remaining=ttl, backlog_size=len(incoming),
                         same_product_backlog=same_prod, eligible_cols=cols,
                         producer_ids=list(env.spec_.producer_ids), labels=labels, scores=scores,
-                        rows=rows))
+                        rows=rows, full_rows=full_rows))
                 env.step(base(env, agent))
             log(f"[errors] {rec.task_id} seed {s}: {len(out)} decisions so far")
     return out
@@ -265,6 +477,9 @@ def producer_rows(rec: ErrorRecord) -> list[dict]:
         }
         for fi, val in enumerate(rec.rows[col]):
             r[f"feat_{fi}"] = round(float(val), 4)
+        if rec.full_rows is not None:  # EXP-0038A blocks 4+7 ride along when full=True
+            for name, val in rec.full_rows[rec.producer_ids[col]].items():
+                r[name] = round(float(val), 4)
         rows.append(r)
     return rows
 
@@ -326,18 +541,23 @@ def fit_reproducible_actor(
 def run_value_router_errors(
     records: Sequence[TaskRecord], *, prod: Policy, model: "ResidualScoreModel",
     delta: float, lookahead: int, eval_seeds: int, horizon: int, out_dir: str,
-    seed: int = 0, top_n: int = 50, base: "Policy | None" = None,
+    seed: int = 0, top_n: int = 50, base: "Policy | None" = None, full: bool = False,
+    feature_set: "str | None" = None,
     log: Callable[..., None] = print,
 ) -> dict:
     """The microscope dump (HANDOVER first pass): microscope the ALREADY-TRAINED EXP-0037 actor
     `model` against the teacher — collect every contested blend_0.5 decision with both signals and
     write the base CSVs (`decisions`, `producers`) plus the derived `top_mistakes`, `alias_groups`,
     `summary`, and a `spec.json` (`seed` records the actor's fit provenance). Returns the summary
-    dict. Local-smoke sized by default; the s29/s77/s45 dump runs on a pod only if needed."""
+    dict. Local-smoke sized by default; the s29/s77/s45 dump runs on a pod only if needed.
+
+    `full=True` (EXP-0038A) additionally logs per-producer block-4 (full per-type state) + block-7
+    (telemetry history) columns into `producers.csv` for the observation-ladder re-dump."""
     from ..train.value_router import PRODUCER_FEATURES
 
     recs = collect_error_records(records, prod, model, delta=delta, lookahead=lookahead,
-                                 eval_seeds=eval_seeds, horizon=horizon, base=base, log=log)
+                                 eval_seeds=eval_seeds, horizon=horizon, base=base, full=full,
+                                 feature_set=feature_set, log=log)
     d_rows = [decision_row(r) for r in recs]
     p_rows = [pr for r in recs for pr in producer_rows(r)]
     mistakes = top_mistakes(d_rows, top_n)
@@ -357,6 +577,7 @@ def run_value_router_errors(
         json.dump({"task_ids": [r.task_id for r in records], "delta": delta,
                    "lookahead": lookahead, "eval_seeds": eval_seeds, "horizon": horizon,
                    "seed": seed, "feat_dim": PRODUCER_FEATURES, "floor": "blend_0.5",
+                   "full": full, "feature_set": feature_set,
                    "n_decisions": summary["n_decisions"], "n_alias_groups": len(aliases)},
                   f, indent=2)
     log(f"{summary['n_decisions']} decisions, top1 {summary['top1_match_rate']:.2f}, "
@@ -383,6 +604,15 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=300, help="fit epochs for the seeded actor rerun")
     ap.add_argument("--seed", type=int, default=0, help="torch seed for the actor fit (provenance)")
     ap.add_argument("--top-n", type=int, default=50)
+    ap.add_argument("--full", action="store_true",
+                    help="EXP-0038A: also log per-producer block-4 (full state) + block-7 (history)")
+    ap.add_argument("--feature-set", default=None,
+                    choices=["producer_product_v1", "producer_product_system_v1"],
+                    help="EXP-0038B: 'producer_product_v1' logs the deployable per-producer/product "
+                         "Phase-1 blocks (pp_throughput_/pp_opp_/pp_dep_/pp_base_/pp_fulfill_) + h_ "
+                         "history into producers.csv, superseding --full for the 0038B re-dump; "
+                         "'producer_product_system_v1' additionally logs the Phase-2 system-wide "
+                         "sys_* blocks (demand/capacity/recipe/cutoff/actor)")
     ap.add_argument("--out-dir", required=True)
     args = ap.parse_args()
 
@@ -411,7 +641,7 @@ def main() -> None:
     run_value_router_errors(
         records, prod=prod, model=model, delta=args.delta, lookahead=args.lookahead,
         eval_seeds=args.eval_seeds, horizon=args.horizon, out_dir=args.out_dir, seed=args.seed,
-        top_n=args.top_n)
+        top_n=args.top_n, full=args.full, feature_set=args.feature_set)
 
 
 if __name__ == "__main__":

@@ -389,12 +389,42 @@ feature row per eligible producer, from `eval.value_router_errors`):
    features (fit failure is the actor/training). Large spread → the current observation aliases the
    target; add candidate deployable observation blocks and repeat before declaring the target dead.
 
+**Between-decision LEVEL vs within-decision CONTRAST (the alias-collapse trap).** When a candidate
+block shrinks the exact-alias label spread, that is necessary but NOT sufficient to license it. A
+*routing* decision is a within-decision argmax over the eligible producers; a feature that is
+**constant across a decision's eligible producers** (order quantity/TTL/product, backlog, most
+system/recipe aggregates) can only shift the *level* of that decision's labels, which is exactly
+what collapses the *between-decision* alias spread — while carrying **zero within-decision contrast**
+to say which producer is best. So an alias-spread collapse can be a pure level artifact. Second,
+discriminating check: fit a held-out probe (leave-one-seed-out; ridge WITH current×context
+interactions AND a nonparametric kNN, so a decision-constant field is at least *given the chance* to
+re-rank) and compare its **real-choice regret** to the incumbent floor (the *deployed* actor's own
+`actor_score` argmax, which already sees the base features). License enrichment only if the enriched
+probe **beats that incumbent floor on ≥2/3 tasks for BOTH probe families**. If centered within-decision
+`r2` ≈ 0 and the incumbent wins, the block resolved level, not routing → do not enrich.
+
+**Score the check correctly or it lies (EXP-0038A hazard).** This probe/floor comparison is only
+trustworthy if probe and floor use an *identical* metric: (1) restrict to **real-choice decisions**
+(≥2 eligible AND non-flat teacher) — flat decisions dilute every method equally and mask the signal;
+(2) **decision-center** the labels before fitting (the between-decision level is the confound you are
+trying to strip); score `r2` on that within-decision contrast; (3) **decision-weight** by pooling
+held-out folds (each decision scored once), never average fold-means — fold-mean averaging weights
+small and large folds equally and is not comparable to a decision-weighted floor; (4) make top-1
+**tie-aware** on both sides. A first cut of EXP-0038A violated 1–4 and spuriously reported "+order kNN
+beats actor 1/3"; corrected, it is 0/3 for both probes on every task.
+
 **Outcome branches.**
 - Large label spread at the **current** features + mistakes mostly on distinguishable producers →
   the current observation aliases the target. Continue with a deployable observation ladder
-  (order/system/history/global context). STOP this teacher only if the label remains unstable after
-  the candidate deployable observation blocks; if only oracle/future/rollout facts stabilize it,
-  the teacher is not deployable as an actor target.
+  (order/system/history/global context) — but score each block by held-out within-decision regret
+  vs the incumbent floor, not alias spread alone (see the level-vs-contrast trap above). STOP this
+  teacher only if the label remains unstable after the candidate deployable observation blocks; if
+  only oracle/future/rollout facts stabilize it, the teacher is not deployable as an actor target.
+- **Alias spread collapses when a block is added, but held-out routing does NOT beat the incumbent
+  floor (and r2 stays negative)** → the added block resolved the between-decision *level*, not the
+  within-decision *choice*; it is (usually) a decision-constant field → not licensed. Only
+  per-producer blocks (full per-type producer state, per-producer history) can re-rank within a
+  decision — test those before declaring the ladder exhausted.
 - Small label spread but low top-1 / flat loss → actor/training failure (capacity, optimization,
   covariate shift) → fix the model/fit, not the target.
 - High identical-feature fraction on mistakes (pure aliasing) → genuine **missing per-producer
@@ -409,9 +439,56 @@ current-feature producers, 96.1% differ on a current visible feature. Exact curr
 (seen ≥5×) receive teacher labels with median range 10 / mean 14.3 units, 66.9% > 1 unit, worst 90
 units. Loss flat at ~12.9 is explained for the current row. This is NOT final proof that all
 deployable observations fail: adding logged product/quantity/context reduces fixed-feature
-conflict. Continuation: EXP-0038A missing-observation audit. Driver so far:
+conflict. Continuation: EXP-0038A missing-observation audit. Driver:
 `tokenomics.eval.value_router_errors` (`decisions.csv`, `producers.csv`, `top_mistakes.csv`,
 `alias_groups.csv`, `summary.csv`).
+
+EXP-0038A (`tokenomics.eval.observation_ladder`, cumulative deployable-observation ladder over the
+same dump) then hit the alias-collapse trap head-on: adding +order context collapsed the exact-alias
+median label range 10→0 (frac>1 0.669→0.224) BUT the held-out routing probes (ridge+interactions and
+kNN, leave-one-seed-out, scored real-choice-only / decision-centered / decision-weighted / tie-aware)
+never beat the deployed current_row-only actor floor — **0/3 for BOTH probes on every task** (+order
+kNN closest at 4.78/6.15/4.68 vs actor 3.93/4.75/4.12); probes cleared the random floor but centered
+within-decision r2 ≈ 0. Order/queue fields are decision-constant → level only, no within-decision
+contrast. 96.7% of top actor mistakes differed on the current row (distinguishable producers ranked
+wrong, not a missing per-producer feature). Verdict: the dump's deployable blocks do not license
+enrichment; only richer per-producer/product observations remain live. Continuation:
+EXP-0038B opens a producer/product ladder: dedicated target-product throughput, multi-capacity
+dispersion, capacity opportunity cost, dependency cover/fulfilment speed, base/cutoff margins, and
+last-5-cycle producer history first; system-wide demand/capacity/recipe context second and only as
+interaction context.
+
+EXP-0038B Phase 1 (fresh CPU-pod re-dump, 60 deployable `pp_*` columns over the same 13,940
+decisions, scored with the identical corrected gate) **fails the per-producer/product ladder but does
+not retire the target.** Exact-alias conflict falls on repeated rows: median label range at fixed
+features 10.0→0.0, frac>1 0.669→0.034 (+pp_throughput)→0.012 (+pp_base). This is secondary evidence
+only because repeated-row coverage collapses as continuous `pp_*`/`h_*` columns are added (75.1% at
+current_row, 26.2% at +pp_throughput, 8.7% at +pp_base, 4.6% at +history). The licensing metric still
+fails on **every** tested per-producer/product block: 0/3 beats-actor for BOTH probes, centered
+within-decision r² ≈ 0 (ridge best 0.0027, mostly negative; kNN always negative), and adding pp_
+blocks raises regret (ridge 5.31→5.66, kNN 5.20→5.52). Deployed actor floor regret s45/s77/s29 =
+3.93/4.75/4.12; no probe on any Phase-1 block approaches it. **Verdict: do not train an enriched
+actor from Phase 1; keep `blend_0.5` as the orderer floor while continuing to Phase 2.** Phase 2 must
+test system-wide demand/capacity/recipe/other-actor context as `sys_*` interaction features because
+decision-constant context cannot re-rank producers additively. Retiring the marginal-value teacher is
+licensed only if those system-wide interaction blocks also fail the same held-out regret gate.
+Driver: `tokenomics.eval.observation_ladder` over the `--feature-set producer_product_v1` dump.
+
+EXP-0038B Phase 2 (fresh CPU-pod re-dump `5gi98ku7gfnf2e`, 32 deployable `sys_*` columns added over
+the same 13,940 decisions, scored with the identical gate) **also fails — so the target is now
+retired.** The `sys_*` blocks (S1 demand / S2 capacity / S3 recipe / S4 cutoff-urgency / S5
+other-actor) are mostly decision-constant, so `observation_ladder._split_cols` scores them as ridge
+interaction *context* for the producer-varying columns (kNN reads them as distance dims — the additive
+cross-check). Every `sys_*` block is **0/3 beats-actor for BOTH probes**, centered within-decision r²
+≤ 0 and *worsening* as blocks accumulate (ridge −0.02→−0.18→−0.22→−0.21→−0.25; kNN ≈ −0.05); ridge
+regret 5.6–5.9, kNN 5.5–5.7 — at/above the random floor (5.24/6.24/5.38), never near the actor floor
+(3.93/4.75/4.12). Alias collapse is not a pass (repeated-row coverage falls to 543 rows / 93 groups at
++sys_demand). **Verdict: neither deployable class (per-producer/product NOR system-wide interaction)
+makes the marginal-value teacher label a within-decision function of the observation — it lives in the
+8-cycle rollout. Retiring the marginal-value teacher as an actor training target is LICENSED
+(EXP-0038B planned read). A learned orderer must emulate the rollout (a compute lever) or optimise a
+different, obs-measurable objective; `blend_0.5` stays the orderer floor.** Driver:
+`tokenomics.eval.observation_ladder` over the `--feature-set producer_product_system_v1` dump.
 
 ---
 

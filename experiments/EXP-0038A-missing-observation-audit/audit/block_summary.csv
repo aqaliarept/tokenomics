@@ -1,0 +1,4 @@
+block,median_alias_range,frac_gt1,n_alias_groups,ridge_regret,ridge_beats_actor_ntasks,ridge_r2,knn_regret,knn_beats_actor_ntasks,knn_r2
+current_row,10.0,0.669,902,5.5285,0,0.0006,5.4553,0,-0.0423
++order,0.0,0.224,1021,5.3062,0,0.0008,5.203,0,-0.0162
++local_queue,0.0,0.225,1019,5.2965,0,0.0006,5.2633,0,-0.0166

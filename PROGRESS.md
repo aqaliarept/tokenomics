@@ -1775,3 +1775,250 @@ EXP-0038A goal: identify which teacher information is missing from actor input, 
 deployable observations (order/system/history/global context) from oracle-only rollout/future
 facts. No new actor training is licensed until a deployable observation block materially reduces
 held-out label conflict and real-choice regret on at least 2/3 gate tasks.
+
+---
+
+## 2026-07-27 — EXP-0038A missing-observation audit DONE: deployable dump blocks do NOT license enrichment
+
+Status: audit closed for the blocks the EXP-0038 dump already logs (current_row, +order,
++local_queue). Verdict: observation enrichment NOT licensed. New driver, TDD, suites green.
+
+Built `tokenomics.eval.observation_ladder` (torch-free; reuses EXP-0038 `dump/`, no re-sim). Reads
+the 13,940 decisions / 37,804 eligible-producer rows over s29/s77/s45 and walks a cumulative
+deployable-observation ladder with two metrics per block:
+- **Exact-alias label spread** (`alias_spread`): group producer rows by the block's feature tuple;
+  for groups seen >=5x, teacher-label range. current_row median 10 / frac>1 0.669 → **+order median
+  0 / frac>1 0.224** (collapses; +local_queue identical).
+- **Held-out routing probe** (`heldout_probe`, leave-one-seed-out per task): two families, per the
+  user's cross-check choice — **ridge** (standardized block feats + current×order-context
+  interactions) AND **kNN** — scored by within-decision real-choice regret + top1 + centered r2 vs
+  two floors (`floor_metrics`): random and the DEPLOYED EXP-0037 actor (`actor_score` argmax).
+
+Decision gate (both conditions; probes must agree >=2/3):
+1. Label conflict collapses — PASS for +order.
+2. Held-out routing beats floor on >=2/3, both probes — **FAIL for every block.** Deployed
+   current_row-only actor floor (regret s45 1.313 / s77 1.378 / s29 1.248) already beats the +order
+   ridge probe 3/3 and kNN 2/3; best deployable +order-kNN beats actor on only 1/3, ridge 0/3;
+   probes never agree; **held-out r2 negative everywhere**. Numbers materialized in
+   `audit/{block_summary,alias_by_block,probe_by_block,top_mistakes_by_block}.csv` (all <10KB,
+   tracked directly).
+
+Mechanism (why alias-collapse ≠ routing): order/queue fields are CONSTANT across a decision's
+eligible producers → they shift the between-decision LEVEL (collapsing the alias spread) but carry
+zero within-decision contrast to pick WHICH producer is best. Corroboration: 96.7% of the top-60
+deployed-actor mistakes have teacher-best ≠ actor-best DIFFERING on the current row — producers are
+already distinguishable, the actor just ranks them wrong. Not a missing per-producer observation;
+the teacher's within-decision preference is not a learnable function of these features (global
+path-dependent rollout quantity; consistent with EXP-0009 + EXP-0038).
+
+DIAGNOSTICS #12 refined: added the "between-decision level vs within-decision contrast" trap +
+discriminating check (score blocks by held-out routing regret vs the incumbent actor floor, both
+probe families, not alias spread alone). RESULT.md / spec.json / README row updated to CLOSED.
+
+Still open (HANDOVER non-goal upheld — ladder not exhausted): per-producer blocks
+full_producer_state (4) + history (7) are the only remaining candidates that could re-rank within a
+decision; they need a live re-dump (extend `value_router_errors`). system_demand (5) /
+recipe_bottleneck (6) are decision-constant like +order. Not computed: near-neighbor label spread
+(supplementary; exact-alias coverage adequate, routing probe is the decisive metric — cannot change
+verdict). `blend_0.5` stays the orderer floor; no actor trained.
+
+Tests: `tokenomics/tests/test_observation_ladder.py` (8, torch-free) green; full suite green.
+Blockers: none. Worktree UNCOMMITTED.
+Next (superseded by EXP-0038B): the per-producer/product re-dump happened and Phase 1 failed. The
+remaining continuation is Phase 2 system-wide interaction metrics; retiring the target requires that
+Phase 2 fail too.
+
+---
+
+## 2026-07-27 — EXP-0038A probe metric CORRECTED (review P1/P2/P3); verdict stronger (0/3)
+
+Status: review of the EXP-0038A intermediate tables found the probe metric did not match the stated
+gate. Fixed all three, regenerated `audit/`, updated RESULT/spec/README/DIAGNOSTICS. Verdict
+direction unchanged but cleaner and stronger.
+
+Bugs (in `tokenomics.eval.observation_ladder`):
+- **P1 metric ≠ gate.** Probe fit RAW `teacher_label` and scored EVERY contested decision (incl.
+  flat-teacher rows), while RESULT claimed "centered r2 / real-choice regret". Fix: fit
+  decision-centered labels (`_decision_centered`); score only real-choice decisions (≥2 eligible AND
+  non-flat) in `_routing_metrics`; centered within-decision r2.
+- **P2 inconsistent aggregation.** Probe averaged unweighted FOLD-MEANS; actor floor was
+  decision-weighted over the whole task → not comparable (this manufactured the spurious "+order kNN
+  beats actor 1/3"). Fix: `heldout_probe` now POOLS held-out folds (each decision once) →
+  decision-weighted, matching floors; actor floor now runs through the same `_routing_metrics`.
+- **P3 top1 tie handling.** Probe required pick==argmax(labels); floor accepted any tie at best. Fix:
+  tie-aware on both sides.
+
+Regenerated numbers (real-choice-only, decision-weighted, per-task regret; lower better):
+actor floor 3.93/4.75/4.12 (s45/s77/s29), random floor 5.24/6.24/5.38. **No deployable block, either
+probe, beats the actor floor on ANY task → 0/3 everywhere** (+order kNN closest 4.78/6.15/4.68).
+Probes DO beat the random floor (not noise). Centered within-decision r2 ≈ 0 (ridge) / slightly neg
+(kNN) for all blocks → deployable obs explain ~none of the within-decision contrast. Alias collapse
+(median 10→0) upheld = between-decision level artifact. Attribution unchanged (96.7% of top mistakes
+differ on current row).
+
+Tests: `test_observation_ladder.py` now 12 (added flat-exclusion/tie-aware + floor-consistency
+regressions; relaxed the additive-r2 threshold to the honest centered-with-shrinkage value 0.7).
+All green. DIAGNOSTICS #12 gained a "score the check correctly or it lies" subsection.
+
+Blocks 4+7 driver (value_router_errors `--full`) + ladder support (built earlier today) unchanged and
+still green. Pod re-dump for blocks 4+7 is HELD pending user approval (pod 629uddqwwrh3d9 created then
+STOPPED before training on user request; not terminated). Blockers: none. Worktree UNCOMMITTED.
+Next: on approval, resume the blocks 4+7 pod re-dump and run the (now-correct) gate on them.
+
+---
+
+## 2026-07-27 — EXP-0038B opened: producer/product observation ladder
+
+Status: new diagnostic experiment created; no run launched and no actor trained.
+
+User pointed out the old `current_row` is too compressed for the real routing question: products
+can require several capacity types, producers can use the same capacity for competing products, raw
+inventory can satisfy multiple products, and historical fulfilment speed may matter. EXP-0038B
+created to test that richer class of deployable per-producer/product metrics before retiring the
+marginal-value teacher.
+
+New folder: `experiments/EXP-0038B-producer-product-observation-ladder/` with `HANDOVER.md`,
+`RESULT.md`, and `spec.json`. The handover prioritizes per-producer blocks first: dedicated
+target-product throughput, per-capacity dispersion, capacity opportunity cost, dependency input
+cover and fulfilment speed, base/cutoff margins, and last-5-cycle producer/product history. Only
+after those are measured should system-wide demand/capacity/recipe/other-actor context be added,
+and then only through producer interactions because most system fields are decision-constant.
+
+Gate unchanged from corrected EXP-0038A: decision-centered labels, real-choice decisions only,
+decision-weighted held-out folds, tie-aware top1, ridge+interactions and kNN, compared against the
+deployed actor floor. No new actor training unless a deployable block beats the actor floor on at
+least 2/3 tasks for both probes.
+
+---
+
+## 2026-07-27 — EXP-0038B instrumentation built (Phase-1 per-producer/product ladder), local smoke green
+
+Status: DONE (local build + TDD + schema smoke). No actor trained (HANDOVER non-goal upheld). Pod
+re-dump = user's next step (all real runs on pod).
+
+Built the deployable Phase-1 per-producer/product observation blocks the EXP-0038B handover
+prioritized — the missing class that can re-rank producers *within* one decision (EXP-0038A proved
+order/queue context only shifts the between-decision level).
+
+Artifacts:
+- `tokenomics/eval/producer_product_features.py` (NEW, torch-free, pure): P1 `pp_throughput_`
+  (dedicated throughput dispersion), P2 `pp_opp_` (opportunity cost vs competing products), P3
+  `pp_dep_` (input cover in target units + primal sentinel), P4 `pp_base_` (base-policy routing
+  margin), P6 `pp_fulfill_` (TTL feasibility). Each block = one pure fn on a `ProducingAgent` + sheets.
+- `tokenomics/eval/value_router_errors.py`: `producer_product_rows` orchestrator + `--feature-set
+  producer_product_v1` (preserves `--full`); rides pp_* + reused `h_*` (P5) into producers.csv.
+  Factored `history_block` out of `producer_fullstate_row` (existing behavior unchanged).
+- `tokenomics/eval/observation_ladder.py`: `PP_BLOCKS`; `ladder_for`/`load_dump` discover the pp_
+  prefixes and score `+pp_throughput/+pp_opportunity/+pp_dependency/+pp_base/+pp_fulfilment/+history`
+  cumulatively with the corrected EXP-0038A gate metric.
+- Tests: `test_producer_product_features.py` (7, torch-free — multi-cap dispersion, target-unit cover
+  vs raw inventory, primal sentinel, capacity-shared opportunity cost, base rank/margin, TTL
+  feasibility, history-past-cycles-only), +2 integration in `test_value_router_errors_run.py`, +1
+  ladder-discovery in `test_observation_ladder.py`. **Full suite: 699 passed.**
+
+Local schema smoke (2-task depth-3, horizon 14): dump emits 60 pp_ columns; ladder discovers all six
+blocks and scores each vs the actor floor end-to-end. Pipeline proven; NOT a gate read.
+
+Deliberate deployability deviations from the handover ladder (documented in RESULT):
+- P3 transitive/upstream-speed cols OMITTED — need recipe graph + other producers' state (Phase-2
+  system concern, not a per-producer deployable fact).
+- P4 price cols OMITTED — this env has no decision-time cut-off/market price; base logit is the proxy.
+- P5 uses folded telemetry EMAs (no exact 5-cycle window exists); handover-sanctioned fallback.
+
+Blockers: none. Worktree UNCOMMITTED.
+Next (user): stage `_pod_ckpts/{gate_archive.jsonl,producer_candidate.pt}`, run the CPU-pod re-dump
+with `--feature-set producer_product_v1` (command in RESULT.md), pull `dump/`, run
+`observation_ladder` audit, then read the gate and fill in RESULT Conclusions.
+
+## 2026-07-28 — EXP-0038B Phase 1 pod re-dump + audit: gate FAILED; Phase 2 remains open
+
+Status: DONE for Phase 1 per-producer/product metrics. Diagnostic-only; no enriched actor trained
+because the gate did not pass. Do NOT mark the marginal-value teacher retired from this result alone.
+
+Ran the s29/s77/s45 re-dump on a fresh CPU pod `s8spjt6z0xs5s6` (create-pod,
+runpod/base:0.7.0-ubuntu2004, --cpu python3.12, 16 vCPU; stopped+terminated after pull) with
+`--feature-set producer_product_v1`, same params as EXP-0038 (delta 1.0, lookahead 8, eval-seeds 3,
+horizon 100, epochs 300, seed 0). 13,940 decisions (identical to EXP-0038 — provenance holds),
+37,804 candidate rows, 60 `pp_*` + 8 `h_*` columns. Then `eval.observation_ladder` scored the
+cumulative Phase-1 ladder locally with the corrected EXP-0038A gate. A local rerun of the audit to
+`/tmp/exp0038b-review-audit` reproduced the recorded audit CSVs byte-for-byte.
+
+Result: every tested Phase-1 block fails held-out within-decision routing regret vs the deployed
+actor floor (s45/s77/s29 = 3.93/4.75/4.12): 0/3 beats-actor for BOTH ridge+interactions and kNN,
+centered within-decision r² ≈ 0 (ridge best 0.0027, mostly negative; kNN always negative), and adding
+pp_ blocks raises regret (ridge 5.31→5.66, kNN 5.20→5.52 — overfit noise). Exact-alias conflict falls
+on repeated rows (median range 10.0→0.0; frac>1 0.669→0.034 at +pp_throughput→0.012 at +pp_base), but
+this is secondary evidence only: repeated-row coverage collapses as continuous pp_/h_ features are
+added (75.1% current_row, 26.2% +pp_throughput, 8.7% +pp_base, 4.6% +history). Do not claim the label
+is deterministic over the full observation space from exact-alias collapse alone.
+
+Corrected conclusion after review: Phase 1 per-producer/product enrichment is NOT licensed and no
+enriched actor should be trained from it. However, EXP-0038B has NOT tested Phase 2 system-wide
+demand/capacity/recipe/other-actor metrics (`sys_*`), so retiring the marginal-value teacher as a
+target is still premature. `blend_0.5` remains the orderer floor while Phase 2 is evaluated.
+
+Artifacts: dump/ + audit/ under experiments/EXP-0038B-*; RESULT.md/spec.json/DIAGNOSTICS/README
+updated to the narrowed conclusion. Worktree UNCOMMITTED. `tokenomics/_pod_ckpts/` staged
+(gate_archive.jsonl + producer_candidate.pt) — safe to delete when no longer needed.
+
+Next: implement Phase 2 system-wide interaction ladder. Add a feature set such as
+`producer_product_system_v1`; append `sys_*` columns; update `observation_ladder` so `sys_*` is
+treated as context for ridge interactions; keep the same held-out gate. Retire the marginal-value
+teacher only if the Phase 2 interaction blocks also fail.
+
+---
+
+2026-07-28 - EXP-0038B Phase 2 system-wide interaction ladder (DONE — both phases failed, target retired)
+
+Status: COMPLETE. Implemented the Phase-2 system-wide (`sys_*`) observation ladder per the
+HANDOVER and ran it to a gate read on a fresh CPU pod. BOTH EXP-0038B phases now fail the same
+corrected held-out routing gate → the EXP-0037 marginal-value teacher is retired as an actor
+training target. No actor was trained (gate never passed). `blend_0.5` remains the orderer floor.
+
+What was built (all green, full suite 708 passed):
+- `eval/producer_product_features.py`: 5 torch-free `sys_*` builders — sys_demand (S1), sys_capacity
+  (S2, incl. free-throughput HHI + required-type global scarcity), sys_recipe (S3, depth /
+  downstream-demand-unlocked / transitive inputs / upstream cover), sys_cutoff (S4, urgency proxies —
+  env has NO decision-time price, explicit absence flag, no faked price), sys_actor (S5). Plus
+  helpers system_open_qty / transitive_inputs / _global_free_units. Most fields decision-constant;
+  the producer-varying ones are `*_competing_for_p_capacity_qty`.
+- `eval/value_router_errors.py`: new `--feature-set producer_product_system_v1` (preserves
+  producer_product_v1); `producer_product_rows(system=True)` appends sys_ cols; `_system_context`
+  precomputes per-decision shared facts once (all orders / all producers / folded telemetry).
+- `eval/observation_ladder.py`: `SYS_BLOCKS`; `ladder_for` appends sys blocks after +history;
+  `_split_cols` routes `sys_*` into ridge interaction CONTEXT (they cannot re-rank additively — kNN
+  is the additive cross-check); `load_dump` discovers `sys_` prefix.
+- Tests: +5 sys builder unit tests, +2 dump integration tests, +3 ladder tests (split-cols routing,
+  interaction-recovery mechanism, sys ladder discovery).
+
+Run: pod `5gi98ku7gfnf2e` (create-pod, runpod/base:0.7.0-ubuntu2004, --cpu python3.12, 16 vCPU;
+stopped+terminated after pull). `--feature-set producer_product_system_v1`, same params as EXP-0038
+(delta 1.0, lookahead 8, eval-seeds 3, horizon 100, epochs 300, seed 0). 13,940 decisions / 37,804
+rows / 92 pp_+h_ + 32 sys_ cols; top1 0.49, mean regret 1.322 — byte-identical trajectory to
+EXP-0038. Then `eval.observation_ladder` scored the full 14-block ladder locally.
+
+Result: every `sys_*` block is 0/3 beats-actor for BOTH ridge+interactions and kNN. Actor floor
+regret s45/s77/s29 = 3.93/4.75/4.12; sys blocks ridge 5.6-5.9 / kNN 5.5-5.7 (at/above the random
+floor 5.24/6.24/5.38). Centered within-decision r² <= 0 and worsening as blocks accumulate (ridge
+-0.02→-0.18→-0.22→-0.21→-0.25; kNN ~-0.05). Alias collapse is not a pass: repeated-row coverage
+falls to 543 rows / 93 groups at +sys_demand (from 28,383 / 902 at current_row).
+
+Decisions: Retire the marginal-value teacher as an actor target (HANDOVER planned read: license
+retirement iff Phase-2 interaction blocks also fail — they do). The teacher's within-decision
+producer preference is not a function of ANY tested deployable observation (per-producer/product OR
+system-wide interaction context) — it is produced by the 8-cycle rollout. A learned orderer must
+either emulate the rollout (a compute lever, cf. EXP-0009 value-guided planner) or optimise a
+different, obs-measurable objective. This confirms + extends memory exp0038-marginal-value-target-
+unlearnable and DIAGNOSTICS entry 12.
+
+Artifacts: dump_sys/ + audit_sys/ under experiments/EXP-0038B-*; RESULT.md / spec.json / DIAGNOSTICS
+entry 12 / experiments/README.md all updated to the both-phases-failed / target-retired conclusion.
+Worktree UNCOMMITTED (commit only on request). `tokenomics/_pod_ckpts/` + `tokenomics/_pod_inputs/`
+staged (producer_candidate.pt + gate_archive.jsonl) — safe to delete when no longer needed.
+
+Blockers: none.
+
+Next: marginal-value-target arc is closed. If the orderer lever is revisited, either (a) pursue the
+rollout-emulation / compute lever (short-horizon planner, EXP-0009 family) rather than obs
+enrichment, or (b) define a different, obs-measurable orderer objective. Do NOT train an actor on the
+marginal-value target.
