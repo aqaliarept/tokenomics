@@ -490,6 +490,171 @@ makes the marginal-value teacher label a within-decision function of the observa
 different, obs-measurable objective; `blend_0.5` stays the orderer floor.** Driver:
 `tokenomics.eval.observation_ladder` over the `--feature-set producer_product_system_v1` dump.
 
+## 13. A supervised probe FAILS — is the input even valid, or is the fit real?
+
+**Problem.** Before you trust a representability probe's negative result (e.g. "the target is not a
+function of this observation → retire it"), the probe's *inputs* must be sound. Two silent input
+defects both bias a probe toward a FALSE FAIL and neither shows up in the loss curve:
+1. **Non-finite features from a mis-declared transform.** `log1p` applied to a field that can go
+   negative (`free = current − reserved` when a prior-cycle reservation outlives degraded capacity;
+   any `a − b` "headroom/slack" count) yields `NaN`/`−inf` (`log1p(x≤−1)`), which poisons every
+   downstream activation and the loss. A field is only `log1p`-safe if it is provably ≥ 0.
+2. **Flat-decision domination (within-decision probes).** For a *within-decision* argmax target
+   (routing preference), a decision whose candidate labels are all equal carries **no** signal. If
+   flats are the majority (EXP-0038 dump: 69% of 13,940) and training weights every decision equally,
+   the model is rewarded for predicting ties and the real (non-flat) contrast is swamped — a FAIL that
+   is a training-composition artifact, not a representability fact.
+
+**Check** (seconds, before any pod spend):
+- **Finite assert.** After encoding, assert every node/edge feature tensor `np.isfinite(...).all()`;
+  make the dump raise on the first non-finite value. Any signable count uses a sign-preserving
+  transform (`signed_log1p(x)=sign(x)·log1p(|x|)`), not `log1p`.
+- **Flat fraction + training filter.** Report the flat-decision fraction; train PRIMARILY on non-flat
+  decisions (exclude flats or downweight so they cannot dominate) and record how many were excluded.
+- **Fold-local standardization present.** Continuous columns fit mean/std on the *training fold only*,
+  applied to held-out; binary/one-hot columns untouched. A probe over unstandardized mixed-scale
+  features (log1p tokens vs 0/1 flags) underfits for a reason unrelated to representability.
+
+**Outcome.** If any input defect is present, the FAIL is **invalid** — fix inputs and re-run before
+concluding anything about the target. Only a probe with finite inputs, a non-flat-dominated training
+set, and fold-local standardization can license retiring (or promoting) an observation/target.
+(Seen: EXP-0039 GNN probe pre-flight — `free` declared `log1p` produced `−inf`; the gate trained on all
+13,940 decisions including 9,675 flats; no standardization. All three fixed before the pod run.)
+
+**And don't trust a PASS either — audit the verdict, not just the inputs.** A "mechanical" gate can
+false-PASS or become unauditable in three ways, all worth checking before a read licenses the next
+experiment: (a) **dispersion must cover every metric.** A seed-mean that averages an unstable metric
+hides it — require each pre-registered condition to hold for the mean AND independently for each of
+the ≥3 training seeds (r² = −100/−100/201 averages positive but two seeds are negative → must be
+no-pass). (b) **The read must be recomputable from saved predictions**, without a checkpoint or
+re-running the simulator: persist per-candidate `predictions.csv` (decision, candidate, producer,
+pred, teacher, actor) + the per-fold normalization *actually used to train* (not an all-data refit
+that leaks held-out/flats) + loss history + checkpoint provenance. (c) **Validate the dump before
+scoring it**: require the schema file, match its hash, and check per-decision candidate
+coverage/index/count/producer-alignment — a global row-count check passes even when every candidate
+is collapsed onto one decision. (d) **Validate metadata against the authority, and enforce the
+pre-registered shape.** Each candidate row's task/seed/cycle/order must equal the decisions.csv row
+(intra-group consistency is not enough — a flipped seed still passes); and the gate's own shape
+(exactly N tasks × ≥K seeds) is a *pass condition* — a "≥2 of 3" threshold trivially passes on 2
+tasks, so a partial dump must be rejected, not scored. (e) **Certify determinism on the TARGET
+device.** A licensing read must be reproducible: pin BLAS to one thread for bitwise-exact CPU, and run
+a same-seed twice-trained preflight that aborts if predictions diverge beyond a *declared* tolerance
+(CUDA `index_add_` is order-nondeterministic → don't run the deterministic read on GPU without a
+recorded tolerance). (Seen: EXP-0039 second+third reviews — verdict averaged r² while checking only
+regret dispersion; `_load_dump` accepted a missing schema, mis-grouped candidates, and a flipped
+candidate seed; `_verdict` passed on 2 tasks; persisted normalization was an all-graph refit; CPU
+predictions jittered ~5e-4 across runs until BLAS was pinned to 1 thread. All fixed before the pod
+run.)
+
+**And the labels must be bound to the RIGHT graph, generated by the RIGHT config.** Two more ways a
+dump that passes every count/alignment check can still carry mislabeled or wrong-trajectory data:
+(f) **bind each graph payload to its decision row.** Per-decision *metadata* agreeing with itself does
+not prove `graphs[di]` is the graph built for decision `di` — swap two structurally-identical decisions
+(same candidate set, different live features) and coverage/count/producer-alignment all still pass while
+every dynamic feature is now mislabeled. Stamp each graph with a `decision_digest` of its identity
+`(task_id, seed, cycle, order_id)` as a **separate audit array** (never a model tensor, preserving
+identity isolation), and have the loader recompute it from the authority CSV and reject a mismatch.
+(g) **validate the dump was produced on the pre-registered config.** The decision *count* and
+`decisions.csv` can be byte-identical while the teacher (`delta`/`lookahead`), task set, or horizon
+differ — which changes every *label* silently. Read the dump's own `spec.json` and reject any deviation
+from the pinned gate config (exact task-ids set, teacher params, horizon, seed count, floor, has-actor),
+and enforce **exactly** the anchored trajectory-seed count (not "≥") so leave-one-seed-out stays
+"train-two-hold-one". Also: whatever floor the verdict actually used (a derived actor floor or an
+override) must appear in the metrics table + a floor artifact with its source, or an overridden read
+contradicts its own table. (Seen: EXP-0039 fourth review — `_load_dump` accepted a shard with graph
+payloads 0↔35 swapped and accepted a dump with changed task-ids/delta/lookahead/horizon; an override
+floor of 999 sat next to a table reporting the derived 0.33. All fixed before the pod run; schema hash
+unchanged since the fixes are audit-binding/validation, not observation changes.)
+
+**And bind the actual INPUT files, exact seeds, and full-precision floor — names/shapes aren't
+provenance.** A dump can pass config, task-id, seed-count, digest and alignment checks and still be built
+from the wrong models on the wrong seeds: (h) **fingerprint the input files, don't just name them.** A
+producer or actor checkpoint of the right *shape* but wrong *content* silently changes the teacher labels
+(producer) or the licensing floor (actor); "has_actor: true" cannot tell them apart. Record a SHA-256 of
+every input (archive, producer ckpt, actor ckpt) in the dump manifest and validate it against the frozen
+pre-registered hashes at read time. (i) **enforce the exact seed VALUES, not the count.** "Exactly three
+anchored seeds" still accepts any three integers; pin the real sets (here `range(episode_seed,+3)` →
+s29={29,30,31}, …) and check them against both the dump manifest and the scored rows. (j) **the
+reproduction artifact must keep full precision.** A floor CSV rounded to 4 dp can turn a `1.000049` PASS
+into a `1.0` FAIL — write the verdict-deciding floor at round-trippable precision (`repr(float)`) and
+record any override's source path+hash, so the CSV reproduces the verdict independently. And (k) **don't
+overclaim the determinism scope**: a single full-epoch fold repeated is a *representative* certification
+(sound because CPU bitwise determinism is by construction), not a re-run of the whole multi-fold,
+multi-seed gate — say which one you did. (Seen: EXP-0039 fifth review — the dump bound only `has_actor`,
+accepted any three seed values, and `floor_by_task.csv` rounded a floor that could flip the verdict. All
+fixed before the pod run.)
+
+Three more sources of a rigged-but-green run, all about what the artifacts are *licensed against* rather
+than their numbers: (l) **bind the run to an immutable code revision, not just the schema.** The
+observation-schema hash is blind to changes in training/metric/verdict code, and a pod rsync that excludes
+`.git/` means the artifact carries no revision at all — record a git-independent SHA-256 over the bytes of
+the producing modules (reproducible on the pod) plus the injected commit, in every dump/probe spec, and
+commit the source before launch. (m) **a fallback bar must be authoritative, not caller-supplied.** An
+override floor read from an arbitrary `{task: regret}` JSON lets an inflated value silently make the bar
+easier (the verdict wants model-regret < floor-regret); pin the canonical floor artifact by hash, derive
+the override mechanically from it, and abort if a supplied override disagrees. (n) **validate expensive
+inputs before you spend on them, not after.** Recording input hashes only helps at read time — the wrong
+staged checkpoint has already burned the full rollout; re-check the hashes at the *start* of the dump CLI
+so a mismatch fails at launch. (Seen: EXP-0039 sixth review — core files were uncommitted with no source
+hash in artifacts, `--actor-floor-json` accepted any values, and input hashes were checked only after the
+~4-core-hour dump. All fixed before the pod run.)
+
+Provenance that is *recorded* but not *enforced* is not provenance — three ways a green run is still
+rigged: (o) **make the source identity a required cross-stage invariant, not audit metadata.** Stamping a
+source hash into the spec does nothing if the reader never checks it — a dump with a zeroed hash and a
+bogus commit sails through, so a dump from source A earns a verdict under source B. Compare the dump's
+recorded hash to the *live* fingerprint of the code now reading it, **before** training, and require a
+real commit (reject `None` and `not-a-git-object` by shape). And fingerprint the **whole synced tree**,
+not a hand-picked module list — a subset silently ignores changes to the teacher, env, curriculum, and
+domain deps that produce the very labels being scored. (p) **a canonical-value check needs exact equality,
+not a tolerance.** `abs(v - pinned) <= 1e-6` still lets a `+5e-7` inflation through, and a strict `<`
+verdict gate can flip inside that interval; compare exactly (canonical floats round-trip exactly from
+repr/JSON) and, better, *substitute* the pinned constant into the verdict so no supplied drift survives.
+(q) **a fallback must be reachable in the environment that needs it.** A default artifact path under
+`experiments/…` does not exist on a pod that syncs only the package tree — ship the fallback as an in-code
+pinned constant (a flag that needs no file), or the documented recovery path fails exactly when used.
+(Seen: EXP-0039 seventh review — `_load_dump` never validated the recorded source, the floor check used a
+`1e-6` tolerance, and the canonical-floor artifact was outside the synced pod tree. All fixed before the
+pod run.)
+
+Even an enforced identity is only as good as what it's bound to — two last gaps: (r) **a recorded commit
+must be a real, clean revision, not a well-shaped string.** Accepting any 7–40 hex id lets a dirty tree be
+stamped with a bogus commit whose tree hash still matches — the artifact is not recoverable from the
+claimed revision. On the machine that HAS git (the launcher, not the pod), resolve the full 40-char HEAD,
+verify the object exists (`git cat-file -e`) AND the producing tree is clean (`git status --porcelain`),
+and inject that; reject abbreviations pod-side. And validate the commit's shape at the *start* of the
+expensive stage, not only in the later reader. (s) **capture and compare the runtime, not just the code.**
+Open dependency bounds installed fresh per run mean two stages can execute different numpy/torch/pettingzoo
+versions that silently disagree on labels or the fit; record a version manifest (python + the libraries
+that shape the trajectory and training) in both stages' specs and compare them exactly at read time, or
+pin a lockfile / reuse one immutable image. (Seen: EXP-0039 eighth review — `_validate_commit` accepted
+`a1b2c3d`/`deadbee`/forty zeros, the dump CLI never checked the commit before spending, and only
+`torch_version` was recorded. All fixed before the pod run.)
+
+A control that lives in prose is not a control — the last two: (t) **enforce the binding in the launcher,
+not in a manual pre-command.** A helper that resolves+verifies a clean commit does nothing if the launch
+script never calls it — the operator can still pass a hand-typed (or bypassed) value, and the remote side,
+lacking `.git`, only checks shape. Do the resolution+verification in the launcher itself, before the code
+is shipped, and inject the result into the remote command (placeholder substitution); a dirty/non-repo
+tree must abort the launch. (u) **an environment gate must cover the machine, not just package versions.**
+Identical `numpy`/`torch` versions on a different CPU architecture or math backend (MKL vs OpenBLAS) are
+not the same numerical environment; gate at least machine arch and a BLAS/build identity (e.g. a hash of
+`torch.__config__`), and record the image digest — otherwise a cross-arch or cross-backend mismatch passes.
+(Seen: EXP-0039 ninth review — `resolve_verified_commit` was never wired into `run_pod_training.py`, and
+the env gate ignored arch/BLAS so a `machine="other-arch"` manifest was accepted. Both fixed; a recorded
+test-count error was also corrected against actual collection.)
+
+Last mile — the verified set must include the verifier, and advertised fields must be filled: (v) **the
+launcher is producing code too.** Verifying the cleanliness of only the synced payload misses the launch
+script itself, which resolves the commit, rewrites the command, and performs the launch — a launcher
+modified after HEAD yields a "clean" commit that does not describe what ran. Include the launcher file in
+the cleanliness check (scoped to payload + launcher, not the whole repo, so intentionally-dirty pulled
+artifacts don't block a later stage). (w) **a manifest field nobody populates is worse than none** — it
+reads as provenance while carrying `null`. If the manifest advertises an image/digest, the launcher must
+actually obtain it (e.g. REST `imageName`) and export it into the run's environment; otherwise drop the
+field. (Seen: EXP-0039 tenth review — `resolve_clean_commit` excluded `run_pod_training.py`, and
+`EXP0039_POD_IMAGE` was read by the manifest but never set by the launcher. Both fixed before the pod run.)
+
 ---
 
 ## Unverified problems (plain-English inbox)

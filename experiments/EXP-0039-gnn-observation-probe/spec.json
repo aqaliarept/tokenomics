@@ -1,0 +1,98 @@
+{
+  "version": "gnn-observation-probe-v1",
+  "date": "2026-07-29",
+  "schema": "graph_primitives_v1",
+  "driver": "tokenomics.eval.graph_value_router_dump",
+  "probe": "tokenomics.train.graph_router_probe",
+  "question": "Can a graph model over raw deployable economy state (graph_primitives_v1) recover the EXP-0037 marginal-value teacher's within-decision producer preference that the EXP-0038B hand-metric ladder missed? Supervised representability probe only — not an orderer, not a deployed gate.",
+  "params": {
+    "source_experiment": "EXP-0038B-producer-product-observation-ladder",
+    "gate_tasks": ["s29", "s77", "s45"],
+    "gate_task_ids": [
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29",
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77",
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45"
+    ],
+    "archive": "tokenomics/_pod_inputs/gate_archive.jsonl",
+    "producer_ckpt": "experiments/EXP-0035-distill-epochs/replay/artifacts/producer_candidate.pt",
+    "actor_ckpt": "experiments/EXP-0037-value-routed-orderer/gate/residual_scorer.pt",
+    "floor": "blend_0.5",
+    "teacher": "marginal_value_labels(delta=1.0, lookahead=8)",
+    "delta": 1.0,
+    "lookahead": 8,
+    "eval_seeds": 3,
+    "horizon": 100,
+    "commitment_visibility": "pending_bid + reservation exposed via domain EconomyGraphView (causal pre-action state)",
+    "task_seeds": {
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29": [29, 30, 31],
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77": [77, 78, 79],
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45": [45, 46, 47]
+    },
+    "input_sha256": {
+      "archive": "bc6ca4ebacff6835571453cf7c0bf10de5c366cc208674f44cf3a5860b778ceb",
+      "producer_ckpt": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea",
+      "actor_ckpt": "666533e4e6beaa845437e4c7bba09dcb8c3824ec3c88015d72c1aefb23ee96f1"
+    }
+  },
+  "model": {
+    "kind": "pure-torch relational GNN",
+    "layers": 4,
+    "hidden": 64,
+    "aggregation": "sum",
+    "embeddings": "schema-role only (node-type + relation-type); no per-identity embeddings",
+    "loss": "decision-weighted MSE on decision-centered candidate labels",
+    "training_seeds": [0, 1, 2]
+  },
+  "gate": {
+    "split": "leave-one-seed-out per task, pooled held-out decisions",
+    "metrics": "decision-weighted, tie-aware top1, real-choice decisions only (observation_ladder._routing_metrics)",
+    "pass_conditions": [
+      "GNN mean regret beats deployed actor floor on >= 2 of 3 tasks",
+      "centered within-decision r2 > 0 on >= 2 of 3 tasks",
+      "avg relative regret reduction vs actor floor >= 10% across the three tasks",
+      "no task worse than actor floor by more than 5%",
+      "stable across >= 3 training seeds (else no-pass)"
+    ]
+  },
+  "expected_counts": {
+    "decisions": 13940,
+    "eligible_candidates": 37804,
+    "note": "decisions.csv byte-identical to EXP-0038 dump/decisions.csv"
+  },
+  "corrections": {
+    "note": "two review rounds (DIAGNOSTICS #13) — schema hash changed from 76bf1d42a75cd622 to 9918b12f69760bcd",
+    "finite": "free/headroom use signed_log1p (were log1p -> -inf); dump + load assert finiteness",
+    "non_flat_training": "gate trains primarily on non-flat decisions; flats excluded per fold, counted (HANDOVER 204-207)",
+    "fold_standardization": "FoldNormalizer fits train-fold continuous columns, applied to held-out; binary untouched (ARCH 290-291)",
+    "verdict_stability": "verdict applies a per-seed dispersion rule to EVERY gate metric (mean AND each of >=3 seeds must pass); r2 -100/-100/201 no longer false-passes (HANDOVER 241)",
+    "dump_validation": "_load_dump REQUIRES graph_schema.json and validates per-decision coverage/index/count/producer-alignment/task-seed, not just row totals (ARCH 343)",
+    "persisted_normalization": "spec.json stores the actual per-fold train stats (not an all-graph refit over held-out+flats)",
+    "audit_artifacts": "predictions.csv (gate recomputable w/o checkpoint or sim, HANDOVER 408) + per-fold loss + checkpoints/*.pt",
+    "device_aware": "probe runs cuda-if-available else cpu",
+    "metadata_alignment": "_load_dump validates each candidate task/seed/cycle/order_id against decisions.csv authority, not just intra-group",
+    "shape_guard": "run_probe(require_shape) enforces 3 tasks x EXACTLY 3 anchored traj seeds x >=3 model seeds AND the exact s29/s77/s45 task ids; _verdict has a three_tasks condition; --expect-decisions/-candidates validated",
+    "determinism": "train_gnn pins BLAS to 1 thread (CPU bitwise-exact); _determinism_preflight trains one REAL leave-one-seed-out fold at FULL epochs twice and aborts if max_abs_diff > tol (0 CPU / 1e-4 CUDA); device/torch/tol/epochs/fold recorded",
+    "actor_floor_override": "--actor-floor-json replaces the derived floor IN the verdict (EXP-0038B fallback); deterministic gate read on a CPU pod",
+    "graph_decision_binding": "each graph payload carries a decision_digest(task_id,seed,cycle,order_id) as a separate shard array (not a model tensor); _load_dump recomputes from decisions.csv and rejects a swapped/mislabeled payload (round 4, Finding 1)",
+    "dump_config_enforced": "_load_dump reads the dump's own spec.json and rejects any deviation from the pre-registered gate config (task_ids/delta/lookahead/horizon/eval_seeds/floor/has_actor); GATE_CONFIG/GATE_TASK_IDS pinned in the probe (round 4, Finding 2)",
+    "floor_consistency": "metrics_by_task.csv + floor_by_task.csv report the verdict-deciding floor + source; an override no longer contradicts the derived floor in the table/recompute artifacts (round 4, Finding 3)",
+    "compute_budget": "single-thread-BLAS fits are single-core; 27 fits x 200 epochs ~4 core-hours on the CPU pod; launch detached (round 4, Finding 5, not an invalidation)",
+    "input_fingerprints": "dump records SHA-256 of archive+producer+actor ckpt (sha256_file); probe validates against pinned GATE_INPUT_SHA256 so a wrong/unfingerprinted input is rejected (round 5, Finding 1)",
+    "task_seed_sets": "dump records anchored task->seed sets; probe enforces exact s29={29,30,31}/s77={77,78,79}/s45={45,46,47} (GATE_TASK_SEEDS) on both manifest and scored candidates.csv, not just count (round 5, Finding 2)",
+    "floor_precision": "floor_by_task.csv writes derived+verdict floors at FULL precision (repr float) + override path/sha256, so the verdict reproduces from that CSV (was 4dp round -> 1.000049->1.0 flip) (round 5, Finding 3)",
+    "determinism_claim_scoped": "preflight is a REPRESENTATIVE full-epoch fold (CPU bitwise by construction), not a whole-27-fit re-run; claim corrected (round 5, Finding 4)",
+    "source_revision": "dump + probe specs record a `source` fingerprint: SHA-256 over the bytes of the WHOLE synced tokenomics package tree (every .py; widened from 4 modules in round 7 to cover transitive producers) + git --source-commit; git-independent, reproducible on the pod (round 6 Finding 1, scope widened round 7 Finding 1)",
+    "source_enforced": "recording the source was audit-only; _load_dump now ENFORCES it before training via assert_source_matches (dump tree_sha256 must equal the live probe fingerprint; commit must be a valid git object id via _validate_commit AND equal the probe's --source-commit) so a dump from source A cannot earn a verdict under source B; require_shape requires a non-null commit (round 7, Finding 1)",
+    "authoritative_floor": "actor-floor override must EQUAL the pinned canonical EXP-0038B floor (GATE_ACTOR_FLOOR_0038B; canonical_actor_floor derives it mechanically, SHA-gated by GATE_FLOOR_SHA256); check is EXACT equality (round 7 dropped the 1e-6 tol — a +5e-7 inflation flipped a strict < gate) and run_probe SUBSTITUTES the pinned constants into the verdict (round 6 Finding 2, tightened round 7 Finding 2)",
+    "pod_safe_fallback": "--actor-floor-canonical uses the in-code pinned floor directly (no artifact file); --actor-floor-exp0038b's artifact lives outside the synced pod tree so it would fail on a clean pod (round 7, Finding 3)",
+    "commit_bound_to_clean_tree": "_validate_commit now requires a FULL 40-char sha (rejected 7-40 hex abbreviations like a1b2c3d/deadbee); resolve_verified_commit (launcher-side, needs git) resolves HEAD, verifies it EXISTS (git cat-file -e) and the producing tree is CLEAN, so the artifact is recoverable from the claimed revision (--verify-source-commit on both CLIs); dump CLI validates the commit shape BEFORE run_graph_dump under --require-gate-inputs (round 8, Finding 1)",
+    "environment_manifest": "both specs record env (environment_manifest: python/platform/machine/implementation + numpy/torch/pettingzoo/gymnasium + numpy_blas + torch_build + image); _load_dump compares the gated keys exactly under require_shape so a probe cannot score a dump built under a different runtime (deps are open lower bounds installed fresh on the pod) (round 8, Finding 2)",
+    "launcher_enforced_commit": "run_pod_training.py --verify-source-commit resolves+verifies the clean 40-char commit BEFORE rsync (the only place with .git) and substitutes it for a {SOURCE_COMMIT} placeholder in --train, so the binding no longer depends on a manual pre-command; dirty/non-repo aborts the launch (round 9, Finding 1)",
+    "env_gates_arch_and_blas": "_ENV_GATED_KEYS now also gates machine ARCH + numpy_blas + torch_build (identical versions on a different CPU arch or math backend are NOT the same numerical env; a prior manifest let platform/blas differences through); image tag/digest recorded for audit (round 9, Finding 2)",
+    "test_counts_corrected": "recorded graph-test counts were wrong (claimed dump 14/probe 20/42 total); actual is dump 13 + probe 19 + view 7 + smoke 1 = 40 graph tests, plus launcher binding tests in test_run_pod_detached.py; repo suite is the source of truth (round 9, Finding 3)",
+    "launcher_in_verified_set": "resolve_clean_commit now checks the synced tree AND run_pod_training.py itself (the launcher resolves the commit + rewrites the command + launches, so a launcher dirtied after HEAD must abort) — but NOT the whole repo (Phase-7 pulls dirty experiments/); apply_source_commit is the tested placeholder-injection helper (round 10, Finding 1)",
+    "pod_image_recorded": "the launcher resolves the pod image (resolve_pod_image -> REST GET /v1/pods/<id> imageName) and exports EXP0039_POD_IMAGE into the remote run (both detached+foreground), so env.image is populated instead of null; best-effort (unresolved -> null, never fatal) (round 10, Finding 2)",
+    "input_check_before_spend": "dump CLI --require-gate-inputs validates archive/producer/actor SHA-256 against GATE_INPUT_SHA256 BEFORE run_graph_dump, so a wrong staged input fails at launch not after ~4 core-hours (round 6, Finding 3)"
+  },
+  "status": "local build + TDD complete + ten review rounds applied (finite guard, non-flat training, fold standardization, per-seed-dispersion verdict, full dump validation, per-fold artifact persistence, predictions.csv recompute path, metadata/shape/determinism/actor-override hardening, graph-decision binding, dump-config enforcement, floor consistency, full-epoch determinism cert, input SHA-256 fingerprints, exact task->seed sets, full-precision floor CSV, whole-tree source fingerprint ENFORCED cross-stage, exact-equality pinned actor floor, pod-safe canonical fallback, pre-spend input check, full-40 commit bound to a clean tree, LAUNCHER-enforced clean-commit injection incl. the launcher file itself, env manifest gating arch+BLAS+torch-build, pod image resolved+exported into the run); 40 graph tests + launcher binding tests, end-to-end smoke green (schema hash unchanged since round 1); real s29/s77/s45 dump (CPU) + deterministic probe read (CPU) staged for Runpod (Phases 7-8) -- launch both stages with run_pod_training.py --verify-source-commit (verifies clean tree+launcher, injects the commit, exports the pod image) + {SOURCE_COMMIT} placeholder in --train, same image both stages"
+}

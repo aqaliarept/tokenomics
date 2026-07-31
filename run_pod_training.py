@@ -136,6 +136,45 @@ def run(cmd: list[str], *, check: bool = True, capture: bool = False) -> subproc
     )
 
 
+def resolve_clean_commit(tree_dir: Path, *also_paths: Path) -> str:
+    """Launcher-side (pre-rsync) source binding (Finding-9.1/10.1). The pod excludes `.git`, so this is
+    the ONLY place a commit can be checked against real git: return the full 40-char HEAD of the repo
+    containing `tree_dir`, but only if HEAD EXISTS and EVERY producing path is CLEAN (no modified/
+    untracked files). The producing set is the synced tree PLUS `also_paths` — the launcher itself
+    (`run_pod_training.py`) lives outside the synced subtree yet resolves the commit, rewrites the
+    command, and performs the launch, so a launcher modified after HEAD must also abort (Finding-10.1).
+    Scoped to these paths, NOT the whole repo, because Phase-7 pulls intentionally dirty `experiments/`
+    before Phase-8. The resolved sha is injected into `--train` (`{SOURCE_COMMIT}`). Mirrors the
+    package's `resolve_verified_commit`, kept inline so the launcher needs no numpy/torch import."""
+    d = str(tree_dir)
+
+    def git(*a: str) -> subprocess.CompletedProcess[str]:
+        return run(["git", "-C", d, *a], check=False, capture=True)
+
+    head = git("rev-parse", "--verify", "HEAD")
+    if head.returncode != 0:
+        raise SystemExit(f"--verify-source-commit: cannot resolve HEAD in {d}: "
+                         f"{head.stderr.strip() or 'not a git repo'}")
+    sha = head.stdout.strip()
+    if len(sha) != 40 or git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+        raise SystemExit(f"--verify-source-commit: HEAD {sha!r} is not a full existing commit object")
+    check = [str(Path(p).resolve()) for p in (tree_dir, *also_paths)]
+    dirty = git("status", "--porcelain", "--", *check).stdout.strip()
+    if dirty:
+        raise SystemExit(f"--verify-source-commit: producing tree is dirty — commit before launch so "
+                         f"the artifact is recoverable from {sha} (checked {check}):\n{dirty}")
+    return sha
+
+
+def apply_source_commit(train_args: str, sha: str) -> str:
+    """Substitute the launcher-verified commit for the `{SOURCE_COMMIT}` placeholder in the train
+    command (Finding-9.1/10.1). Requiring the placeholder makes the binding explicit — a
+    `--verify-source-commit` launch with no placeholder is a mistake, so it aborts."""
+    if "{SOURCE_COMMIT}" not in train_args:
+        raise SystemExit("--verify-source-commit needs a {SOURCE_COMMIT} placeholder in --train")
+    return train_args.replace("{SOURCE_COMMIT}", sha)
+
+
 def pod_status(pod_id: str) -> str:
     """Current desiredStatus for the pod (RUNNING / EXITED / ...)."""
     out = run(["runpodctl", "pod", "get", pod_id], capture=True).stdout
@@ -375,6 +414,23 @@ def fetch_pod_spec(template_id: str) -> PodSpec:
     spec = pod_spec_from_json(raw)
     log(f"cloning spec from {template_id}: {spec}")
     return spec
+
+
+def resolve_pod_image(pod_id: str) -> str:
+    """Best-effort pod image identifier via REST `GET /v1/pods/<id>` -> `imageName` (Finding-10.2).
+    Exported as `EXP0039_POD_IMAGE` into the remote run so its `env` manifest records the image the
+    code actually ran under. Returns "" on any failure — the manifest then records `image: null`
+    rather than aborting the run (the source/version gates remain the hard controls)."""
+    try:
+        req = urllib.request.Request(
+            f"{RUNPOD_REST}/pods/{pod_id}",
+            headers={"Authorization": f"Bearer {_runpod_api_key()}"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = json.loads(resp.read().decode())
+        return raw.get("imageName") or raw.get("image") or ""
+    except Exception as e:  # noqa: BLE001 — provenance nicety, never fatal
+        log(f"warning: could not resolve pod image ({e}); env manifest will record image: null")
+        return ""
 
 
 def create_pod(spec: PodSpec, name: str) -> str:
@@ -798,6 +854,13 @@ def build_poll_cmd(log_file: str, pid_file: str, exit_file: str, offset: int) ->
     )
 
 
+def _env_prefix(env_exports: "dict[str, str] | None") -> str:
+    """Shell `VAR=val ` prefix that sets env for the immediately-following command (the python run).
+    Used to inject the resolved pod image (`EXP0039_POD_IMAGE`) so the run's env manifest records the
+    image the code actually ran under (Finding-10.2)."""
+    return "".join(f"{k}={_shquote(v)} " for k, v in (env_exports or {}).items() if v)
+
+
 def build_launch_cmd(
     remote_dir: str,
     python_bin_path: str,
@@ -805,6 +868,7 @@ def build_launch_cmd(
     log_file: str,
     pid_file: str,
     exit_file: str,
+    env_exports: "dict[str, str] | None" = None,
 ) -> str:
     """Remote shell command that launches training *detached* from the SSH session.
 
@@ -822,7 +886,7 @@ def build_launch_cmd(
     channel the instant the job is detached."""
     inner = (
         f"echo $$ > {pid_file}; "
-        f"{python_bin_path} {train_args} > {log_file} 2>&1; "
+        f"{_env_prefix(env_exports)}{python_bin_path} {train_args} > {log_file} 2>&1; "
         f"echo $? > {exit_file}"
     )
     return (
@@ -837,13 +901,14 @@ def _shquote(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
 
 
-def train(ssh: Ssh, remote_dir: str, train_args: str, log_file: str) -> None:
+def train(ssh: Ssh, remote_dir: str, train_args: str, log_file: str,
+          env_exports: "dict[str, str] | None" = None) -> None:
     log(f"running training: {train_args}")
     # Run in foreground so output streams and the SSH session blocks until done;
     # tee to a log file on the pod for later inspection.
     cmd = (
         f"cd {remote_dir} && "
-        f".venv/bin/python {train_args} 2>&1 | tee {log_file}"
+        f"{_env_prefix(env_exports)}.venv/bin/python {train_args} 2>&1 | tee {log_file}"
     )
     ssh_run(ssh, cmd)
 
@@ -911,6 +976,11 @@ def main() -> int:
         default="-m tokenomics.train.smoke_ppo --iters 50 --steps 1024 --seed 0",
         help="args passed to the pod's `.venv/bin/python` (default: a smoke PPO run)",
     )
+    ap.add_argument("--verify-source-commit", action="store_true",
+                    help="before rsync, resolve the LOCAL git HEAD, verify it exists AND the synced "
+                         "tree is clean, and substitute the resolved 40-char sha for a {SOURCE_COMMIT} "
+                         "placeholder in --train (Finding-9.1: launcher-enforced clean-commit binding, "
+                         "since the pod has no .git). Aborts on a dirty/non-repo tree")
     ap.add_argument("--local-dir", type=Path, default=DEFAULT_LOCAL_DIR, help="local project dir to sync")
     ap.add_argument("--remote-dir", default=DEFAULT_REMOTE_DIR, help="remote project dir")
     ap.add_argument("--ssh-key", default=None, help="override SSH private key path")
@@ -967,6 +1037,16 @@ def main() -> int:
         log(f"ERROR: local dir not found: {args.local_dir}")
         return 2
 
+    # Launcher-enforced clean-commit binding (Finding-9.1): resolve+verify the commit HERE (the only
+    # place with .git) and inject it into --train, so the invariant no longer depends on a manual
+    # pre-command. Runs before rsync; a dirty/non-repo tree aborts via SystemExit.
+    if args.verify_source_commit and not args.attach:
+        # the launcher itself (this file) is part of the producing source — it resolves the commit,
+        # rewrites the command, and launches — so a launcher dirtied after HEAD must also abort (10.1).
+        sha = resolve_clean_commit(args.local_dir, Path(__file__).resolve())
+        args.train = apply_source_commit(args.train, sha)
+        log(f"verified clean source commit {sha} (synced tree + launcher); injected into --train")
+
     detached = not args.foreground
     pid_file, exit_file = marker_paths(args.remote_log)
     local_log = None if args.no_local_log else (args.local_log or default_local_log(args.remote_log))
@@ -993,13 +1073,22 @@ def main() -> int:
         ssh = wait_for_ssh(pod_id, args.ssh_key, args.ready_timeout)
         started_ok = True
 
+        # For the EXP-0039 provenance flow, export the pod image into the run's env so its manifest
+        # records the image the code ran under (Finding-10.2); empty/unresolved -> not exported.
+        run_env: dict[str, str] = {}
+        if args.verify_source_commit and not args.attach:
+            img = resolve_pod_image(pod_id)
+            if img:
+                run_env["EXP0039_POD_IMAGE"] = img
+                log(f"pod image {img}; exported as EXP0039_POD_IMAGE into the run")
+
         if args.foreground:
             # legacy: stream in foreground, blocks until the run finishes.
             if not args.no_sync:
                 rsync_up(ssh, args.local_dir, args.remote_dir)
             if not args.no_install:
                 setup_env(ssh, args.remote_dir, cpu=args.cpu, python_bin=args.python_bin)
-            train(ssh, args.remote_dir, args.train, args.remote_log)
+            train(ssh, args.remote_dir, args.train, args.remote_log, env_exports=run_env)
             pulls_ok = not _do_pulls(ssh, args.pull)
             log("training complete")
             return 0
@@ -1023,7 +1112,7 @@ def main() -> int:
                 setup_env(ssh, args.remote_dir, cpu=args.cpu, python_bin=args.python_bin)
             launch = build_launch_cmd(
                 args.remote_dir, ".venv/bin/python", args.train,
-                args.remote_log, pid_file, exit_file,
+                args.remote_log, pid_file, exit_file, env_exports=run_env,
             )
             log(f"launching detached: {args.train}")
             try:

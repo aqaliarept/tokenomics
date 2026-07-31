@@ -50,7 +50,9 @@ Subquestions:
 - No deployed rollout gate for a GNN policy yet.
 - No teacher-rollout outputs, future outcomes, post-decision auction results, or labels as input
   features.
-- No use of `task_id`, `seed`, or raw producer/order IDs as model features.
+- No use of `task_id`, `seed`, or raw producer/order/product/capacity IDs as model features.
+- No learned identity embeddings for individual producers, products, capacity types, orderers, or
+  orders. Learned embeddings are allowed only for schema roles such as node type and edge type.
 - No actor-score feature in the primary graph. Actor scores remain an evaluation floor. A separate
   `graph_plus_actor_score` ablation is allowed only after the primary probe is read.
 
@@ -86,18 +88,27 @@ Primary schema name:
 graph_primitives_v1
 ```
 
+The normative schema, topology boundary, commitment-visibility decision, serialization contract,
+and primary GNN are specified in [`ARCH.md`](ARCH.md). If this handover and `ARCH.md` differ,
+`ARCH.md` controls graph construction; the gate and experiment scope in this handover still control
+the experimental conclusion.
+
 ### Node Types
 
 - `decision`: one anchor node for the current routing decision.
-- `order`: live order nodes, including the current order. Attributes: unresolved quantity, age,
-  remaining TTL, is_current_order, same-orderer flag if available.
+- `order`: all live order nodes, including the current order. Attributes include quantity and token
+  accounting, age, remaining TTL, funding state, and order kind. Current-order and same-orderer
+  context are represented structurally, not as identity-like scalar flags.
 - `orderer`: ordering agents. Attributes should be minimal; include ownership / current-orderer
   edges rather than IDs.
 - `producer`: all live producers, not only eligible producers. Candidate eligibility is an edge or
   mask.
-- `product`: product nodes. Do not encode product ID as a scalar feature. Use structure and learned
-  type embeddings.
-- `capacity_type`: capacity type nodes. Do not encode capacity ID as a scalar feature.
+- `product`: product nodes. Do not encode product ID as a scalar feature and do not attach a learned
+  per-product embedding. Products must be distinguishable only through graph structure and primitive
+  attributes.
+- `capacity_type`: capacity type nodes. Do not encode capacity ID as a scalar feature and do not
+  attach a learned per-capacity embedding. Capacity types must be distinguishable only through graph
+  structure and primitive attributes.
 
 Optional only if it stays primitive and causal:
 
@@ -109,11 +120,13 @@ Optional only if it stays primitive and causal:
 Use directed edges, and either add reverse edges explicitly or let the GNN implementation mirror them.
 
 - `decision -> order`: current order link.
-- `decision -> producer`: eligible candidate link. Attributes: candidate mask / stream index if
-  needed for reconstruction. Do not include teacher label or actor score.
-- `order -> product`: requested product. Attributes: unresolved quantity, original quantity, age,
-  TTL remaining, is_current.
+- `decision -> orderer`: current ordering-agent link.
+- `decision -> producer`: eligible candidate link. Stream index may be retained as audit metadata
+  but must not be an edge feature. Do not include teacher label or actor score.
+- `order -> product`: requested product.
 - `orderer -> order`: ownership / queue membership.
+- `orderer -> product`: fixed product served by a product-stream orderer.
+- `producer -> orderer`: source relation for producer-funded ordering streams.
 - `producer -> product`: can-make relation.
 - `product -> capacity_type`: recipe capacity requirement. Attribute: units of capacity type required
   per unit of product.
@@ -126,6 +139,17 @@ Use directed edges, and either add reverse edges explicitly or let the GNN imple
   outstanding inbound units, output inventory limit if producer/product-specific.
 - `producer -> product`: telemetry relation. Attributes: folded past-cycle routed/completed/rejected
   EMAs, completion rate, rejection/failure rate, latency if available.
+- `order -> producer`: current-cycle pending-bid relation. Attributes: routed quantity and tokens.
+- `order -> producer`: live-reservation relation. Attributes: quantity, tokens, and cycles waited.
+
+The three `producer -> product` relations and the two `order -> producer` relations are distinct
+typed relations despite sharing endpoint node types. Include explicit reverse relations.
+
+Pending bids and reservation details are causal but require a centralized observation contract.
+Before implementing the dump, confirm they are deployable state and expose them through a
+domain-owned graph view. If they are intentionally private, omit them from `graph_primitives_v1`,
+record that restriction in `graph_schema.json`, and scope a negative result to the reduced
+visibility contract. Do not expose evaluator-only simulator internals and call them deployable.
 
 Allowed normalization:
 
@@ -149,10 +173,14 @@ relations if they are learnable.
 
 Start simple and deterministic:
 
-- Relation-aware message passing, 2 to 4 layers.
-- Hidden size 64 or 128.
-- Type embeddings for node and edge types.
+- Primary model: 4 relation-aware message-passing layers and hidden size 64. This is pre-registered
+  because the tested recipe topology is three layers deep.
+- Type embeddings for schema node types and edge types only. These are role embeddings
+  (`producer`, `product`, `capacity_type`, `producer -> product`, etc.), not identity embeddings for
+  individual products, producers, or capacity types.
 - Edge attributes encoded by small MLPs.
+- Sum aggregation so repeated orders and capacity contributions remain countable.
+- Residual updates and layer normalization.
 - Candidate head scores each eligible `decision -> producer` candidate from:
   - current decision embedding
   - candidate producer embedding
@@ -230,44 +258,166 @@ The key comparison is GNN vs deployed actor floor, not GNN vs random.
 
 ## Implementation Plan
 
-1. Add graph dump code.
-   - Prefer a new module, e.g. `tokenomics.eval.graph_value_router_probe` or
-     `tokenomics.eval.graph_value_router_dump`, rather than growing `value_router_errors.py` too much.
-   - Reuse EXP-0038 label collection path so the teacher, trajectory, and actor floor stay identical.
-   - Write `decisions.csv` and candidate labels in a familiar shape for auditability.
-   - Store graph arrays in chunked JSONL or NPZ with offsets. Do not rely on pickled Python objects
-     as the only durable artifact.
+### Phase 0 - Freeze Visibility And Schema
 
-2. Add graph schema tests before the pod run.
-   - Minimal env produces expected node/edge types.
-   - Candidate producer indexes align with candidate labels.
-   - Graph extraction happens before the current order is routed.
-   - No teacher/actor/result columns appear in graph features.
-   - Producer order permutation does not change predictions except for the same permutation of
-     candidate outputs.
-   - Product/capacity relabeling does not leak through scalar IDs.
+1. Review `ARCH.md` against the deployed observation boundary.
+   - Decide whether other orderers' current-cycle pending bids are centrally observable.
+   - Decide whether live reservation product, producer, quantity, and age are centrally observable.
+   - Record both decisions in `graph_schema.json`; do not silently read evaluator-only state.
+2. Freeze the ordered node-feature and edge-feature registries.
+   - Assign every semantic relation a distinct relation name.
+   - Declare `log1p`, binary, defined-mask, and standardization treatment per feature.
+   - Compute a schema hash and store it in every dump/probe `spec.json`.
+3. Add a domain-owned graph economy view.
+   - Follow the existing `OrdererEconomyView` ownership pattern.
+   - Keep domain object assembly free of numpy, torch, serialization, and labels.
+   - Keep topology compilation independent of task generator, task ID, and fixed entity counts.
 
-3. Add the supervised GNN probe.
-   - Deterministic train seeds.
-   - Train-fold-only normalization.
-   - Leave-one-seed-out splits.
-   - Writes per-fold metrics and pooled per-task metrics.
+Exit condition: a reviewed schema fixture can be constructed from a minimal `Configuration`, and
+every field has a documented causal source and visibility decision.
 
-4. Run a local smoke.
-   - Small generated archive, horizon 10 to 20.
-   - Verify files are written and metrics can be computed.
-   - Do not interpret smoke metrics.
+### Phase 1 - Implement Static Topology Compilation
 
-5. Run the real s29/s77/s45 graph dump and probe on a pod.
-   - CPU is acceptable for dump generation.
-   - Use GPU only for GNN training if local/pod CPU is too slow.
-   - Pull all artifacts into this EXP folder.
+1. Add a focused module such as `tokenomics.eval.graph_value_router_dump`; do not grow
+   `value_router_errors.py` into a graph/model module.
+2. Compile all configured producers, products, capacity types, and product-stream orderers into
+   per-type local indexes.
+3. Compile static recipe, eligibility, capacity ownership, stream-product, and producer-source
+   relations plus explicit reverses.
+4. Keep raw domain IDs in a separate audit mapping only. Model-facing arrays contain local indexes,
+   relation types, and numeric primitive attributes.
+5. Validate the known task sizes:
+   - s29: 12 products, 6 producers, 3 capacity types, 32 orderers.
+   - s77/s45: 12 products, 9 producers, 3 capacity types, 42 orderers.
 
-6. Write `RESULT.md`.
-   - Keep the conclusion scoped to the tested graph schema and probe model.
-   - If the gate fails, say: graph-structured deployable state did not license this target.
-   - If the gate passes, say: open a follow-up experiment to train/deploy a GNN orderer; do not claim
-     deployment success from the probe alone.
+Exit condition: s29, s77, and s45 topologies compile with one schema and can be batched without
+changing a model parameter shape.
+
+### Phase 2 - Implement Causal Decision Snapshots
+
+1. Extract one graph for each incoming order with at least two eligible producers.
+   - Extract while the environment is at the ordering agent's turn.
+   - Extract before the teacher call and before `env.step(base(...))`.
+   - For several incoming orders, reuse the same pre-action state and change only the current anchors
+     and candidate set.
+2. Add every live `system.orders` order with quantity, tokens, lifecycle accounting, type, funding,
+   age, and TTL.
+3. Overlay producer capacity, inventory, inbound, and folded past-cycle telemetry.
+4. Overlay pending-bid and reservation edges if Phase 0 licenses their visibility.
+5. Add current-order, current-orderer, ownership, requested-product, and candidate edges.
+6. Generate labels only after graph extraction.
+   - Reuse `marginal_value_labels(delta=1.0, lookahead=8)`.
+   - Preserve the exact `blend_0.5` trajectory and actor floor.
+   - Store teacher labels and actor scores only in evaluation tables.
+
+Exit condition: snapshot extraction is side-effect free, precedes labeling/action, and graph tensors
+contain no task, seed, raw ID, actor, teacher, or result values.
+
+### Phase 3 - Build Durable Artifacts
+
+1. Write audit tables:
+   - `decisions.csv`, byte-identical to the EXP-0038 dump.
+   - `candidates.csv`, one row per eligible candidate with label and evaluation-only actor score.
+2. Write `graph_schema.json` with ordered feature registries, transforms, reverse relations,
+   visibility decisions, dtypes, and schema hash.
+3. Write static topology mappings separately from dynamic decision arrays.
+4. Write chunked NPZ graph shards with explicit graph, node, edge, and candidate offsets.
+5. Implement a loader that reconstructs one model graph without Python pickle.
+6. Round-trip every array and verify candidate indexes against `candidates.csv`.
+
+Exit condition:
+
+```text
+13,940 decisions
+37,804 eligible candidates
+byte-identical decisions.csv
+zero graph/candidate alignment errors
+```
+
+### Phase 4 - Add Tests Before Any Real Dump
+
+1. Schema tests:
+   - Minimal environment produces every required node and edge type.
+   - Ordered feature names exactly match array columns.
+   - Structural zero inventory/telemetry/capacity edges are present.
+2. Causality tests:
+   - Extraction occurs before the current order is routed.
+   - Extraction does not mutate the environment.
+   - Current-cycle post-action results and telemetry accumulators are absent.
+   - Teacher, actor, task, seed, and result fields cannot enter model tensors.
+3. Alignment tests:
+   - Candidate producer indexes align one-to-one with candidate labels.
+   - Current order, owner, target product, and eligible producers map to legacy rows.
+4. Equivariance and topology tests:
+   - Permuting any node type only permutes corresponding outputs.
+   - Relabeling all domain IDs preserves predictions.
+   - Adding/removing producers, products, or capacity types changes graph size, not model shape.
+   - Mixed s29/s77 graph batches execute in one model.
+5. Serialization tests:
+   - NPZ round-trip is exact.
+   - Shard boundaries and offsets do not mix graphs.
+   - Shard load order does not change predictions.
+
+Exit condition: focused graph dump/model tests pass locally before label generation is run at scale.
+
+### Phase 5 - Implement The Pre-Registered Probe
+
+1. Implement the primary four-layer, hidden-64 relational GNN from `ARCH.md`.
+   - Type-specific feature encoders and schema-role embeddings.
+   - Relation-specific edge encoders and message transforms.
+   - Sum aggregation, residual updates, and layer normalization.
+   - Shared candidate head using decision, current order, target product, and producer embeddings.
+2. Implement fold-local preprocessing.
+   - Apply only declared `log1p` transforms.
+   - Fit continuous mean/std on training graphs for that fold.
+   - Reuse those statistics unchanged on the held-out seed.
+3. Train decision-centered labels with decision-weighted MSE.
+   - Use the predeclared deterministic optimizer/training schedule.
+   - Run at least three model seeds.
+   - Select checkpoints using training data only or a deterministic validation split inside the two
+     training seeds; never select on the held-out seed.
+4. Emit loss history, normalization statistics, per-fold predictions, and checkpoint provenance.
+
+Exit condition: two identical runs with the same training seed produce identical predictions and
+metrics within the declared deterministic tolerance.
+
+### Phase 6 - Local Smoke
+
+1. Generate a small legal archive and run horizon 10 to 20.
+2. Exercise topology compilation, snapshot dumping, NPZ reload, one training epoch, and metrics.
+3. Verify all expected files are written and contain finite values.
+4. Do not interpret smoke metrics or alter the gate based on them.
+
+Exit condition: a clean checkout can run the documented smoke command end to end.
+
+### Phase 7 - Real Dump And Probe
+
+1. Generate the s29/s77/s45 graph dump on the fixed EXP-0038 trajectory.
+   - CPU is acceptable for graph generation.
+   - Stop immediately if count, CSV identity, alignment, causality, or schema checks fail.
+2. Run leave-one-seed-out training separately per task.
+   - Train on two anchored seeds and hold out the third.
+   - Repeat for all folds and at least three training seeds.
+3. Score only corrected real-choice decisions with decision weighting and tie-aware top1.
+4. Report random, deployed actor, cheap current-row probe, copied EXP-0038B full-tabular numbers,
+   and the primary graph probe in the same table.
+5. Read the primary result before optionally running `graph_plus_actor_score`.
+6. Pull the dump, metrics, predictions, logs, schema, normalization state, and checkpoint provenance
+   into this experiment folder.
+
+Exit condition: every gate clause can be recomputed from saved candidate predictions without loading
+a checkpoint or rerunning the simulator.
+
+### Phase 8 - Result And Decision
+
+1. Write `RESULT.md` with exact commands, commit, environment, schema hash, counts, and artifacts.
+2. Report per-fold, pooled per-task, and training-seed dispersion.
+3. State the topology limitation: the gate holds out trajectories, not unseen topology.
+4. Apply the predeclared gate without reinterpretation.
+   - Fail: graph-structured deployable state under `graph_primitives_v1` did not license this target.
+   - Pass: open a follow-up experiment to train and deploy a GNN orderer.
+   - Mixed or unstable: no pass unless a concrete implementation defect invalidates the run.
+5. Do not claim deployed improvement from a supervised probe.
 
 ## Expected Artifacts
 

@@ -319,3 +319,74 @@ def test_monitor_loop_reconnects_on_drop_and_returns_exit_code() -> None:
     assert "".join(captured) == "line A\nline B\nline C\n"  # no content lost across the drop
     # offset advances with the log size and does NOT regress after a reconnect
     assert offsets_seen == [0, 7, 7, 14]
+
+
+def test_resolve_clean_commit_covers_synced_tree_and_launcher(tmp_path) -> None:
+    """Finding-9.1/10.1: the launcher (the only place with .git — the pod excludes it) resolves a full
+    40-char HEAD only when EVERY producing path is clean: the synced subtree AND the launcher file
+    itself (outside that subtree — it resolves the commit, rewrites the command, and launches). A dirty
+    subtree, a dirty launcher, a missing HEAD, or a non-repo aborts (SystemExit)."""
+    import subprocess
+
+    import pytest
+
+    def git(*a: str) -> None:
+        subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True, text=True)
+
+    pkg = tmp_path / "tokenomics"
+    pkg.mkdir()
+    launcher = tmp_path / "run_pod_training.py"
+
+    with pytest.raises(SystemExit):  # not a git repo
+        rpt.resolve_clean_commit(pkg, launcher)
+
+    git("init", "-q")
+    git("config", "user.email", "t@t"); git("config", "user.name", "t")
+    (pkg / "a.py").write_text("x = 1\n")
+    launcher.write_text("# launcher v1\n")
+    git("add", "-A"); git("commit", "-qm", "init")
+    sha = rpt.resolve_clean_commit(pkg, launcher)  # both clean -> full sha
+    assert len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)
+
+    # Finding-10.1: the SUBTREE is clean but the LAUNCHER was modified after HEAD -> must still abort
+    launcher.write_text("# launcher v2 (tampered post-commit)\n")
+    with pytest.raises(SystemExit):
+        rpt.resolve_clean_commit(pkg, launcher)
+
+    git("checkout", "--", "run_pod_training.py")  # restore launcher; now dirty the subtree instead
+    (pkg / "dirty.py").write_text("y = 2\n")
+    with pytest.raises(SystemExit):
+        rpt.resolve_clean_commit(pkg, launcher)
+
+
+def test_apply_source_commit_requires_and_fills_the_placeholder() -> None:
+    """Finding-10.1: the verified commit is injected ONLY via an explicit {SOURCE_COMMIT} placeholder;
+    a --verify-source-commit launch whose --train lacks it is a mistake and aborts."""
+    import pytest
+
+    out = rpt.apply_source_commit("-m m --source-commit {SOURCE_COMMIT} --x 1", "a" * 40)
+    assert "--source-commit " + "a" * 40 in out and "{SOURCE_COMMIT}" not in out
+    with pytest.raises(SystemExit):
+        rpt.apply_source_commit("-m m --no-placeholder", "a" * 40)
+
+
+def test_launch_cmd_exports_pod_image_into_the_run() -> None:
+    """Finding-10.2: the resolved pod image is exported into the remote command as EXP0039_POD_IMAGE
+    (a `VAR=val ` prefix on the python run) so the run's env manifest records the image it ran under;
+    no exports -> unchanged command."""
+    cmd = rpt.build_launch_cmd(
+        remote_dir="/workspace/tokenomics", python_bin_path=".venv/bin/python",
+        train_args="-m tokenomics.train.graph_router_probe --x 1",
+        log_file="/workspace/train.log", pid_file="/workspace/train.pid",
+        exit_file="/workspace/train.exit",
+        env_exports={"EXP0039_POD_IMAGE": "runpod/base:0.6.2"})
+    # the prefix sets env for the immediately-following python run (unescaped form)
+    assert rpt._env_prefix({"EXP0039_POD_IMAGE": "runpod/base:0.6.2"}) == \
+        "EXP0039_POD_IMAGE='runpod/base:0.6.2' "
+    assert rpt._env_prefix({}) == "" and rpt._env_prefix({"K": ""}) == ""  # empty -> not exported
+    # and it rides in the launch command ahead of python (single quotes are shell-escaped by _shquote)
+    assert "EXP0039_POD_IMAGE=" in cmd and "runpod/base:0.6.2" in cmd
+    bare = rpt.build_launch_cmd(
+        remote_dir="/workspace/tokenomics", python_bin_path=".venv/bin/python",
+        train_args="-m x", log_file="/l", pid_file="/p", exit_file="/e")
+    assert "EXP0039_POD_IMAGE" not in bare

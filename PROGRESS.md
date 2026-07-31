@@ -2022,3 +2022,411 @@ Next: marginal-value-target arc is closed. If the orderer lever is revisited, ei
 rollout-emulation / compute lever (short-horizon planner, EXP-0009 family) rather than obs
 enrichment, or (b) define a different, obs-measurable orderer objective. Do NOT train an actor on the
 marginal-value target.
+
+---
+
+## 2026-07-29 — EXP-0039 GNN observation probe: local build + TDD complete (graph_primitives_v1)
+
+Status: Built the full EXP-0039 supervised representability probe scaffolding, TDD, all green
+locally. This is the narrower follow-up to EXP-0038B: the hand-metric ladder failed, but that
+only proved the *compressed* metrics were not learnable — EXP-0039 asks whether a GNN over
+*primitive relational* deployable state recovers the marginal-value teacher's within-decision
+producer preference. Probe only; no orderer trained, no deployed gate.
+
+Design decisions (accepted before coding, ARCH.md Phase 0): (1) commitment visibility = VISIBLE —
+other orderers' current-cycle pending bids + live reservations are part of the deployable contract,
+exposed through a domain-owned graph view (causal pre-action state, not future leakage), recorded
+in graph_schema.json; (2) model = minimal pure-Torch relational message passing (no PyG dep).
+
+Artifacts (new, all with tests):
+- `tokenomics/domain/graph_view.py` — pure EconomyGraphView (mirrors OrdererEconomyView): all
+  node types + recipe/eligibility/capacity/inventory/telemetry/commitment relations, structural
+  zeros, no numpy/torch/IO/labels. `tests/test_graph_view.py` (7). Caught + fixed a real bug:
+  UNDEFINED_PRICE is NaN, so the cutoff mask must use isnan, not `!= UNDEFINED_PRICE`.
+- `tokenomics/eval/graph_value_router_dump.py` — frozen graph_primitives_v1 schema (ordered
+  feature names + log1p/binary transforms + reverse relations + schema hash), view→id-free numeric
+  arrays (local indices; raw ids only in a separate audit map), blend_0.5 trajectory dump (one
+  graph per contested decision, extracted BEFORE teacher/step), pickle-free NPZ shards + loader,
+  decisions.csv (byte-identical target) / candidates.csv / topologies.jsonl. `tests/test_graph_dump.py` (7).
+- `tokenomics/train/graph_router_probe.py` — pre-registered 4-layer hidden-64 relational GNN
+  (schema-role embeddings only, sum agg, residual+LN, shared candidate head), decision-weighted
+  MSE on decision-centered labels, leave-one-seed-out gate reusing observation_ladder metrics +
+  floors. `tests/test_graph_probe.py` (5) + end-to-end smoke `tests/test_graph_probe_smoke.py` (1).
+- `experiments/EXP-0039-gnn-observation-probe/` — spec.json + RESULT.md skeleton with the exact
+  staged pod commands + predeclared gate + baselines-to-report.
+
+Decisions: predeclared gate is fixed (beat deployed actor floor on >=2/3 tasks, centered r²>0 on
+>=2/3, >=10% avg relative regret reduction, no task worse than actor by >5%, stable across >=3
+training seeds). Beating only random = fail. Report the EXP-0038B tabular numbers copied, not
+recomputed; do NOT copy EXP-0038B's stale `source_dump` provenance bug.
+
+Blockers: none. Local build follows the HARD RULE — real s29/s77/s45 dump + probe run on a Runpod
+CPU pod (Phases 7-8, commands in RESULT.md). Worktree UNCOMMITTED (commit only on request).
+
+Next: launch the pod dump; verify n_decisions=13940 / n_candidates=37804 / decisions.csv
+byte-identical; run the probe across 3 training seeds; apply the predeclared gate without
+reinterpretation and fill RESULT.md. Pass → license a deployed-GNN orderer experiment; fail →
+strengthens exp0038-marginal-value-target-unlearnable (target produced by the rollout, not
+decision-time state even represented relationally).
+
+### 2026-07-29 — EXP-0039 pre-run review corrections (before any pod spend)
+
+Status: DONE (local, TDD). A pre-run review of the EXP-0039 build found three input defects that
+each bias a supervised probe toward a FALSE FAIL. Verified every claim against the normative docs
+(ARCH.md steps 4–6/290–296, HANDOVER.md 204–207) — all real — and fixed test-first. A negative
+result from the pre-fix build would have been invalid, so this gates the pod run.
+
+Artifacts (edits, all with new tests):
+- `eval/graph_value_router_dump.py` — added `signed_log1p` transform; `free`+`headroom` now
+  `signed_log1p` (were `log1p` → `NaN/−inf` when reserved>current). `_assert_finite(graph)` in the
+  dump loop rejects any non-finite tensor before serialization. Schema hash changed
+  76bf1d42a75cd622 → 9918b12f69760bcd. Tests: `test_free_capacity_uses_signed_transform_and_stays_finite`,
+  `test_dump_tensors_are_all_finite`.
+- `train/graph_router_probe.py`:
+  - `_flat_decisions` + gate now trains PRIMARILY on non-flat decisions (flats dropped per fold,
+    `n_train_flat_excluded`/`n_train_decisions` reported). EXP-0038 dump is ~69% flat (9,675/13,940).
+    Test: `test_flat_decisions_are_excluded_from_training_and_counted`.
+  - `FoldNormalizer` (fit train-fold continuous cols, apply to train+held-out; binary untouched;
+    `.groups()` audit) wired into `heldout_gate`; stats persisted to probe `spec.json`. ARCH.md 290–291.
+    Test: `test_fold_normalizer_standardizes_continuous_only_and_is_train_fitted`.
+  - `_verdict` computes the five pre-registered pass conditions mechanically (no reinterpretation);
+    `run_probe` emits it + `schema_hash`. `_load_dump` validates schema hash + finiteness + candidate
+    alignment. Device-aware (`cuda` if available else `cpu`). Tests:
+    `test_gate_verdict_applies_preregistered_pass_conditions`; smoke asserts verdict+schema_hash+normalization.
+
+Decisions: right-sized finding #4 (scale) — kept full-batch fit (it is the pre-registered fold fit)
+but made it device-aware so a GPU pod accelerates the 27 fits; did NOT rewrite to mini-batching
+(would change the pre-registered fit). Flats excluded (not downweighted) and the count reported, per
+HANDOVER's "report whether they were included".
+
+DIAGNOSTICS: added #13 "A supervised probe FAILS — is the input even valid, or is the fit real?"
+(finite inputs + non-flat training composition + fold standardization must all hold before trusting
+a FAIL).
+
+Blockers: none. 25 graph tests + end-to-end smoke green. Full suite re-run in progress.
+Worktree UNCOMMITTED (commit only on request).
+
+Next (unchanged): launch the s29/s77/s45 dump on a Runpod pod; verify n_decisions=13940 /
+n_candidates=37804 / decisions.csv byte-identical to the EXP-0038 dump; run the probe across 3
+training seeds; the probe now emits the verdict automatically — record it in RESULT.md. Pass →
+license a deployed-GNN orderer experiment; fail → strengthens exp0038-marginal-value-target-unlearnable.
+
+### 2026-07-29 — EXP-0039 second review round (5 more corrections, still pre-pod)
+
+Status: DONE (local, TDD). A second review of the corrected build found five issues, two of which
+(1,2) could invalidate the "mechanical" read. Verified each against HANDOVER/ARCH — all real — fixed
+test-first.
+
+1. Verdict false-PASS on instability. `_verdict` averaged r2 across seeds while stability only
+   checked regret-vs-floor → r2 −100/−100/201 passed. Now the four numeric conditions must hold for
+   the seed-mean AND independently for each of ≥3 seeds (any seed fails ⇒ no-pass); dispersion
+   (regret/r2 std, r2 min/max) reported. Test: `test_gate_verdict_no_pass_when_a_seed_is_unstable`.
+   HANDOVER 241.
+2. Shallow dump validation. `_load_dump` now REQUIRES graph_schema.json and validates one graph per
+   decision: exact decision coverage, `candidate_index` 0..k-1, count vs graph and `n_eligible`,
+   producer-id alignment via topologies.jsonl, task/seed consistency, optional expected counts. Test:
+   `test_load_dump_requires_schema_and_validates_per_decision_alignment` (missing schema + collapsed
+   candidates both raise). ARCH 343.
+3. Persisted normalization ≠ trained normalization. Dropped the all-graph refit (leaked held-out +
+   flats); `spec.json` `folds[]` now stores the ACTUAL per-fold train stats.
+4. Missing audit artifacts. `run_probe` writes `predictions.csv` (gate recomputable without a
+   checkpoint or the sim — smoke asserts a per-task regret recomputed from it matches the reported
+   metric to 1e-6) + per-fold `checkpoints/*.pt` + loss histories. HANDOVER 379/405/408.
+5. Device correction bypassed. Probe step re-staged on a GPU pod (dump stays CPU) in RESULT.md.
+
+Artifacts: `train/graph_router_probe.py` (`_verdict` rewrite, `_load_dump` full validation,
+`heldout_gate` per-fold capture, `run_probe` predictions/checkpoints/folds). Tests: +3 in
+test_graph_probe.py, smoke extended. 27 graph tests + smoke green; full suite re-run in progress.
+Worktree UNCOMMITTED.
+
+Next (unchanged): launch s29/s77/s45 dump (CPU pod) → verify counts + decisions.csv byte-identical →
+probe (GPU pod, 3 seeds) → the verdict is emitted + recomputable from predictions.csv; record in
+RESULT.md.
+
+### 2026-07-29 — EXP-0039 third review round (4 more corrections, still pre-pod)
+
+Status: DONE (local, TDD). Third review found 4 issues (2 blocking); verified vs HANDOVER/ARCH — all
+real — fixed test-first.
+
+1. Metadata alignment. `_load_dump` compared candidate seed only within a group, not against
+   decisions.csv → a candidate seed flipped to 999999 was accepted. Now each candidate's
+   task/seed/cycle/order_id must equal the decisions.csv row. Test: `_load_dump` case (c) raises on a
+   mismatched seed.
+2. Pre-registered shape not enforced. `_verdict` passed with 2 tasks (≥2 thresholds) and heldout_gate
+   accepted <3 seeds; run_probe never passed expected_counts; spec key alias mismatch. Now
+   `run_probe(require_shape=True)` requires 3 tasks × ≥3 traj seeds × ≥3 model seeds; `_verdict` has a
+   `three_tasks` condition; `_load_dump` accepts expected counts (both key spellings) and CLI has
+   `--expect-decisions/--expect-candidates`. Tests: `test_gate_verdict_requires_the_three_task_shape`,
+   smoke asserts a partial dump raises.
+3. GPU determinism. `train_gnn` now pins `torch.set_num_threads(1)` → CPU bitwise-exact (was ~5e-4
+   multithread jitter); `_determinism_preflight` trains a subset twice and aborts if max abs pred diff
+   > tol (0 CPU / 1e-4 CUDA); device/torch/tol recorded in spec.json. Deterministic gate read staged on
+   a CPU pod (reverses round-2 #8 GPU default — determinism > speed for a licensing gate). HANDOVER 381.
+4. Actor-floor fallback. `--actor-floor-json {task: mean_regret}` now REPLACES the derived floor in the
+   computed verdict (both recorded); smoke asserts `verdict_floor=="override"`. RESULT.md 109.
+
+Artifacts: `train/graph_router_probe.py` (`_load_dump` metadata+counts, `run_probe` shape guard +
+device/determinism preflight + override + spec fields, `_verdict` three_tasks, `train_gnn` 1-thread,
+`heldout_gate` device param, CLI flags). Tests: +1 in test_graph_probe.py, `_load_dump` test extended,
+smoke extended. 28 graph tests + smoke green; full suite re-run in progress. Worktree UNCOMMITTED.
+
+Next (unchanged): launch s29/s77/s45 dump (CPU) with count stop-checks → deterministic CPU probe
+(3 seeds, `--expect-decisions 13940 --expect-candidates 37804`) → verdict emitted + recomputable from
+predictions.csv; record in RESULT.md.
+
+### 2026-07-30 — EXP-0039 fourth review round (4 more corrections, still pre-pod)
+
+Status: DONE (local, TDD). Fourth review found 4 issues (2 blocking) + 1 budget note; verified vs
+ARCH/HANDOVER — all real — fixed test-first. Schema hash UNCHANGED (audit-binding/validation, not
+observation changes).
+
+1. Graph↔decision binding (blocker). Nothing bound `graphs[di]` to `decisions.csv` row di — swapping
+   two structurally-identical graph payloads (same candidate set, different live features) passed every
+   count/producer-alignment check. Now the dump stamps each graph with a `decision_digest(task_id,seed,
+   cycle,order_id)` as a SEPARATE shard array (never a model tensor); `_load_dump` recomputes it from
+   decisions.csv and rejects a mismatch. Tests: `test_shard_binds_each_graph_to_its_decision_row`
+   (dump), `test_load_dump_rejects_a_swapped_graph_payload` (probe).
+2. Pre-registered dump config not enforced (blocker). `_load_dump` never read the dump's own spec.json;
+   changed task-ids/delta/lookahead/horizon/has_actor were accepted (same decision count, different
+   labels). Now `_validate_dump_config` rejects any deviation from `GATE_CONFIG`/`GATE_TASK_IDS`
+   (task-ids set, delta, lookahead, horizon, eval_seeds, floor, has_actor); `require_shape` requires
+   EXACTLY 3 anchored trajectory seeds (not ≥3) and the exact s29/s77/s45 ids. Test:
+   `test_load_dump_validates_preregistered_dump_config`.
+3. Effective-floor consistency. metrics_by_task.csv reported the derived actor floor while the verdict
+   used the override → contradiction. Now the table carries `verdict_floor_regret`+`floor_source`, and a
+   new `floor_by_task.csv` records derived+override+source (verdict reproducible from artifacts). Smoke
+   extended to assert both under a 999.0 override.
+4. Determinism cert too weak. Preflight was 40 decisions × 10 epochs. Now `_determinism_preflight`
+   trains ONE real leave-one-seed-out fold at the run's FULL epochs twice and compares held-out preds
+   (the literal HANDOVER 381 identical-full-run condition); epochs/n_train_decisions/fold recorded.
+   Smoke asserts `determinism["epochs"]==2` and a real `fold`.
+5. Compute budget (not an invalidation). Single-thread-BLAS fits are single-core → 27 fits × 200 epochs
+   ≈ ~4 core-hours on the CPU pod; documented in RESULT.md + spec.json, launch detached.
+
+Artifacts: `eval/graph_value_router_dump.py` (`decision_digest`, GraphArrays.decision_digest, shard
+write/load, run_graph_dump stamps it); `train/graph_router_probe.py` (`GATE_CONFIG`/`GATE_TASK_IDS`,
+`_validate_dump_config`, `_load_dump` digest+config checks, `run_probe` exact-seed+task-id guard +
+floor_by_task.csv + verdict-floor columns, `_determinism_preflight` full-epoch real fold). Tests: +1
+dump, +2 probe, smoke extended → 31 graph tests green. DIAGNOSTICS #13 extended (f)+(g). RESULT.md/
+spec.json updated; probe read confirmed CPU-only (fixed a stale "Step 2 → GPU pod" line). Worktree
+UNCOMMITTED.
+
+Next (unchanged): launch s29/s77/s45 dump (CPU) with count stop-checks + byte-identical decisions.csv →
+deterministic CPU probe (3 model seeds, `--expect-decisions 13940 --expect-candidates 37804`) → verdict
+emitted + recomputable from predictions.csv; fill RESULT.md Results table.
+
+### 2026-07-30 — EXP-0039 fifth review round (4 more corrections: input provenance, still pre-pod)
+
+Status: DONE (local, TDD). Fifth review found 4 issues (2 blocking, both input-provenance); verified vs
+spec.json/HANDOVER — all real — fixed test-first. Schema hash STILL unchanged.
+
+1. Input files fingerprinted + validated (blocker). Dump recorded only `has_actor: true` → a wrong
+   producer (changes labels) or wrong actor (weakens floor), same shape, passed. Now `sha256_file`
+   fingerprints archive+producer+actor ckpt into the dump `inputs` manifest; probe validates against
+   pinned `GATE_INPUT_SHA256` (frozen pre-registered hashes: archive bc6ca4eb…, producer 8b51b77c…,
+   actor 666533e4…) and rejects a wrong/unfingerprinted input. Tests:
+   `test_dump_records_task_seed_sets_and_input_manifest` (dump),
+   `test_load_dump_validates_task_seed_sets_and_input_fingerprints` (probe).
+2. Exact task→seed sets enforced (blocker). "Exactly 3 seeds" checked only count. Dump records anchored
+   `task_seeds`; probe enforces exact s29={29,30,31}/s77={77,78,79}/s45={45,46,47} (`GATE_TASK_SEEDS`)
+   against BOTH the dump manifest and the scored candidates.csv seeds.
+3. floor_by_task.csv reproduces the verdict independently. Was 4-dp rounded (1.000049→1.0 could flip
+   PASS↔FAIL). Now derived+verdict floors at FULL precision (`repr(float)`) + the override JSON's
+   source path+sha256 (`override_source` column, `actor_floor_override_source` in spec.json). Display
+   metrics_by_task.csv stays rounded. Smoke exercises a 1.000049 override.
+4. Determinism claim scoped. The preflight is a REPRESENTATIVE full-epoch fold (CPU bitwise by
+   construction), not a whole-27-fit re-run; RESULT/spec/DIAGNOSTICS wording corrected (no code change).
+
+Artifacts: `eval/graph_value_router_dump.py` (`sha256_file`, `run_graph_dump(input_manifest=)` records
+`inputs`+`task_seeds`, `main()` fingerprints the 3 inputs); `train/graph_router_probe.py`
+(`GATE_TASK_SEEDS`, `GATE_INPUT_SHA256`, `_validate_dump_provenance`, `_load_dump` seed+input checks,
+`run_probe` default provenance enforcement + scored-seed check + full-precision `floor_by_task.csv` +
+`override_source`, CLI records override source). Tests: +1 dump, +1 probe, smoke extended → 33 graph
+tests green. DIAGNOSTICS #13 extended (h)–(k). RESULT.md/spec.json updated (pinned hashes + task_seeds in
+params). Worktree UNCOMMITTED. Full suite re-run pending.
+
+Next (unchanged): launch s29/s77/s45 dump (CPU, real archive+ckpts so recorded SHA-256 match the pins) →
+deterministic CPU probe (3 model seeds, `--expect-decisions 13940 --expect-candidates 37804`, default
+input/seed provenance validation) → verdict emitted + recomputable from predictions.csv + floor_by_task;
+fill RESULT.md Results table.
+
+---
+
+## 2026-07-30 — EXP-0039 GNN probe: sixth review round (source revision + authoritative floor + pre-spend input check)
+
+Status: DONE (code + TDD). Sixth review found three provenance/licensing gaps beyond input fingerprints,
+all verified against ARCH.md/HANDOVER.md and fixed test-first. Schema hash UNCHANGED (audit/validation,
+not observation).
+
+1. Immutable source revision. The observation-schema hash is blind to training/metric/verdict code
+   changes, and the pod rsync excludes `.git/` — nothing bound artifacts to the code that produced them
+   (HANDOVER.md:413 requires the commit in RESULT.md). Added `source_fingerprint(commit)` = SHA-256 over
+   the bytes of the 4 producing modules (git-independent, reproducible on the pod) + optional git commit.
+   Stamped into dump spec (`run_graph_dump(source_commit=)`) and probe result (`run_probe(source_commit=)`);
+   CLIs take `--source-commit`. COMMIT the source + pass its commit before launch.
+2. Authoritative fallback floor. `--actor-floor-json` accepted any `{task: regret}` — an inflated floor
+   silently weakens the licensing bar (verdict wants GNN regret < floor). Pinned `GATE_ACTOR_FLOOR_0038B`
+   (EXP-0038B audit_sys deployed-actor mean_regret) + `GATE_FLOOR_SHA256`; `canonical_actor_floor()`
+   derives it mechanically from the SHA-gated artifact; `assert_override_is_canonical` rejects any other
+   value on a `require_shape` run; new `--actor-floor-exp0038b` produces a correct override by derivation.
+3. Input check before spend. The dump recorded input SHA-256 but only the probe (after the finished dump)
+   compared them — a wrong staged ckpt burned the ~4-core-hour dump first. Dump CLI `--require-gate-inputs`
+   calls `assert_inputs_match` against the pins BEFORE `run_graph_dump`, failing at launch.
+
+Artifacts: `eval/graph_value_router_dump.py` (`source_fingerprint`, `assert_inputs_match`,
+`run_graph_dump(source_commit=)` stamps `source`, `main()` `--source-commit`/`--require-gate-inputs`);
+`train/graph_router_probe.py` (`GATE_FLOOR_ARTIFACT`/`GATE_FLOOR_SHA256`/`GATE_ACTOR_FLOOR_0038B`,
+`canonical_actor_floor`, `assert_override_is_canonical`, `run_probe` override-validation + `source` stamp,
+CLI `--actor-floor-exp0038b`/`--source-commit`). Tests: +2 dump, +2 probe, smoke extended (source stamp) →
+37 graph tests green (was 33); full repo suite green. DIAGNOSTICS #13 extended (l)–(n). RESULT.md
+corrections 21–23 + updated pod commands (`--require-gate-inputs`, `--source-commit`, `--actor-floor-exp0038b`)
++ test-count table (dump 14 / probe 17). spec.json corrections + status. Worktree UNCOMMITTED.
+
+Next (unchanged): commit the EXP-0039 source, then launch s29/s77/s45 dump (CPU, `--require-gate-inputs
+--source-commit <c>`, real archive+ckpts so recorded SHA-256 match the pins) → deterministic CPU probe
+(3 model seeds, `--expect-decisions 13940 --expect-candidates 37804 --source-commit <c>`) → verdict
+emitted + recomputable from predictions.csv + floor_by_task; fill RESULT.md Results table. Cloud spend
+awaits user go-ahead.
+
+---
+
+## 2026-07-31 — EXP-0039 GNN probe: seventh review round (source identity ENFORCED + exact floor + pod-safe fallback)
+
+Status: DONE (code + TDD). Seventh review found round 6's provenance was audit-only (recorded, not
+enforced) plus two fallback defects; all verified against the code + HANDOVER.md and fixed test-first.
+Schema hash UNCHANGED.
+
+1. Source identity is now a REQUIRED cross-stage invariant (was audit-only). `_load_dump` never validated
+   the dump's `source` — a zeroed hash + bogus commit was accepted (dump from source A → verdict under
+   source B). Added `_validate_commit` (rejects None/`not-a-git-object` by git-hex shape) + `assert_source_matches`
+   (dump `tree_sha256` must equal the LIVE probe fingerprint; commit must be valid AND equal the probe's
+   `--source-commit`), called by `_load_dump(require_source=)` BEFORE any training; `run_probe(require_shape)`
+   requires a non-null commit. Also WIDENED `source_fingerprint` from 4 hand-picked modules to the whole
+   synced package tree (every `.py`), covering transitive producers (teacher/env/curriculum/actor/domain).
+2. Override validation is EXACT + verdict uses pinned values. `assert_override_is_canonical` used `tol=1e-6`
+   — a `+5e-7` inflation passed and would become the verdict floor (strict `<` can flip inside the
+   interval). Now exact equality; `run_probe` additionally SUBSTITUTES `GATE_ACTOR_FLOOR_0038B` into the
+   verdict so no drift survives.
+3. Pod-safe canonical fallback. `--actor-floor-exp0038b`'s default artifact is under `experiments/…`,
+   outside the synced pod tree (`/workspace/tokenomics`) — the documented fallback would fail on a clean
+   pod. New `--actor-floor-canonical` uses the in-code pinned floor (identical values, no file).
+
+Artifacts: `eval/graph_value_router_dump.py` (`source_fingerprint` now whole-tree `tree_sha256`+`n_files`);
+`train/graph_router_probe.py` (`_validate_commit`, `assert_source_matches`, `_load_dump(expected_source_commit=,
+require_source=)` cross-checks source before training, `run_probe` requires+passes commit and substitutes
+pinned floor, `assert_override_is_canonical` exact, CLI `--actor-floor-canonical`). Tests: +1 probe
+(`test_source_identity_is_a_required_cross_stage_invariant`), override test extended with the 5e-7 case,
+dump/smoke source-key updated → 38 graph tests green (dump+probe 30, smoke+view 8); full repo suite pending.
+DIAGNOSTICS #13 extended (o)–(q). RESULT.md corrections 24–26 + pod commands (`--source-commit` both stages,
+`--actor-floor-canonical`) + test-count (probe 18). spec.json corrections + status. Worktree UNCOMMITTED.
+
+Next: COMMIT the EXP-0039 source, then launch s29/s77/s45 dump (CPU, `--require-gate-inputs --source-commit
+<c>`) → deterministic CPU probe (3 model seeds, `--expect-decisions 13940 --expect-candidates 37804
+--source-commit <c>`, same commit both stages) → verdict recomputable from predictions.csv + floor_by_task;
+fill RESULT.md Results table. Cloud spend awaits user go-ahead.
+
+---
+
+## 2026-07-31 — EXP-0039 GNN probe: eighth review round (commit bound to a real clean tree + runtime env manifest)
+
+Status: DONE (code + TDD). Eighth review found the recorded commit was still forgeable (shape-only) and
+the runtime env was uncaptured; both verified against the code + HANDOVER.md:413 and fixed test-first.
+Schema hash UNCHANGED.
+
+1. Commit bound to a real, clean revision (launcher-side). `_validate_commit` accepted any 7-40 hex
+   (`a1b2c3d`/`deadbee`/40 zeros passed) — a dirty tree could be stamped with a bogus id whose tree hash
+   still matched. Now `_validate_commit` requires a FULL 40-char sha; new `resolve_verified_commit`
+   (needs git, launcher-side) resolves HEAD, verifies the object EXISTS (`git cat-file -e`) and the
+   producing tree is CLEAN (`git status --porcelain` — so the live fingerprint corresponds to that
+   commit), wired as `--verify-source-commit` on both CLIs. Dump CLI validates the commit shape BEFORE
+   `run_graph_dump` (under `--require-gate-inputs`), so a missing/malformed commit fails at launch not
+   after the dump budget. The pod has no `.git`, so existence/clean-tree is verified LOCALLY and the
+   resolved sha passed via `--source-commit`.
+2. Runtime environment captured + compared. Deps are open lower bounds (`torch>=2.2`) installed fresh on
+   the pod; the probe recorded only `torch_version`. New `environment_manifest` (python/platform/
+   implementation + numpy/torch/pettingzoo/gymnasium) is stamped into both specs; `_load_dump` compares
+   the gated version keys exactly under `require_shape` — a probe cannot score a dump built under a
+   different runtime.
+
+Artifacts: `eval/graph_value_router_dump.py` (`resolve_verified_commit`, `environment_manifest`, dump
+spec stamps `env`, dump CLI `--verify-source-commit` + pre-spend `_validate_commit`); `train/graph_router_probe.py`
+(`_validate_commit` full-40, `assert_env_matches` + `_ENV_GATED_KEYS`, `_load_dump` compares env under
+require_source, `run_probe` result stamps `env`, probe CLI `--verify-source-commit`). Tests: +2 probe
+(`test_resolve_verified_commit_binds_a_clean_tree_to_a_real_commit`, `test_dump_and_probe_environment_manifest_is_captured_and_compared`),
+Round-7 source test updated to full-40 shas + rejects abbreviations → 42 graph tests green (dump+probe 32,
+smoke+view 8, +2 net). DIAGNOSTICS #13 extended (r)-(s). RESULT.md corrections 27-28 + pod guidance
+(resolve_verified_commit one-liner, same-image env) + test-count (probe 20). spec.json corrections +
+status. Worktree UNCOMMITTED. Full repo suite pending.
+
+Next: resolve the clean-tree commit LOCALLY (`resolve_verified_commit` after committing the EXP-0039
+source), then launch s29/s77/s45 dump (CPU, `--require-gate-inputs --source-commit <sha40>`) →
+deterministic CPU probe on the SAME image (3 model seeds, `--expect-decisions 13940 --expect-candidates
+37804 --source-commit <sha40>`) → verdict recomputable from predictions.csv + floor_by_task; fill
+RESULT.md Results table. Cloud spend awaits user go-ahead.
+
+---
+
+## 2026-07-31 — EXP-0039 GNN probe: ninth review round (launcher-enforced commit binding + arch/BLAS env gate + count fix)
+
+Status: DONE (code + TDD). Ninth review found the clean-commit binding was still manual (helper never
+called by the launcher), the env gate ignored arch/backend, and recorded test counts were wrong. All
+verified against the code and fixed test-first. Schema hash UNCHANGED.
+
+1. Launcher-enforced clean-commit binding (was manual). `resolve_verified_commit` existed but
+   `run_pod_training.py` never called it; the pod (no `.git`) only checks the 40-char shape, so forty
+   zeros passed end-to-end. Added `--verify-source-commit` to the launcher: BEFORE rsync (the only place
+   with `.git`) it resolves+verifies the clean 40-char HEAD via inline `resolve_clean_commit` (no
+   numpy/torch import) and SUBSTITUTES it for a `{SOURCE_COMMIT}` placeholder in `--train`; dirty/non-repo
+   aborts the launch. Binding no longer depends on prose.
+2. Env gate covers arch + numeric backend. `_ENV_GATED_KEYS` compared only versions — a
+   `machine="other-arch"`/`blas="different"` manifest was accepted. `environment_manifest` now records
+   `machine`, `numpy_blas`, `torch_build` (hash of `torch.__config__`), and `image` (EXP0039_POD_IMAGE,
+   audit); the first three are gated exactly.
+3. Test counts corrected. Recorded 14/20/42 were wrong; actual collection is dump 13 + probe 19 + view 7
+   + smoke 1 = 40 graph tests, plus 1 launcher binding test. Repo suite is the source of truth.
+
+Artifacts: `run_pod_training.py` (`resolve_clean_commit` + `--verify-source-commit` injecting
+`{SOURCE_COMMIT}` before rsync); `eval/graph_value_router_dump.py` (`environment_manifest` adds
+machine/numpy_blas/torch_build/image via `_blas_identity`); `train/graph_router_probe.py`
+(`_ENV_GATED_KEYS` += machine/numpy_blas/torch_build). Tests: +1 launcher
+(`test_resolve_clean_commit_binds_a_clean_tree_and_injects_into_train` in test_run_pod_detached.py), env
+test extended (arch/blas/build adversaries); dump+probe+launcher 57 passed. DIAGNOSTICS #13 extended
+(t)-(u). RESULT.md corrections 29-31 + pod commands now `--verify-source-commit`/`{SOURCE_COMMIT}` + test
+table fixed (13/19, total 40). spec.json corrections + status. Worktree UNCOMMITTED. Full suite pending.
+
+Next: commit the EXP-0039 source, then launch both stages with `run_pod_training.py --verify-source-commit`
+(injects the clean commit) — dump (CPU, `--require-gate-inputs`) → deterministic CPU probe on the SAME
+image (3 model seeds, `--expect-decisions 13940 --expect-candidates 37804`) → verdict recomputable from
+predictions.csv + floor_by_task; fill RESULT.md Results table. Cloud spend awaits user go-ahead.
+
+---
+
+## 2026-07-31 — EXP-0039 GNN probe: tenth review round (launcher itself in the verified set + pod image actually recorded)
+
+Status: DONE (code + TDD). Tenth review closed two launcher-integration gaps; both verified against the
+code and fixed test-first. Schema hash UNCHANGED.
+
+1. Cleanliness now covers the launcher itself. `resolve_clean_commit` checked only the synced
+   `tokenomics/` subtree — but `run_pod_training.py` lives outside it and IS producing code (resolves the
+   commit, rewrites the command, launches). A launcher modified after HEAD (subtree clean) still returned
+   the "clean" commit. Now checks the synced tree AND the launcher file (`Path(__file__)`) against HEAD,
+   aborting if either is dirty — NOT the whole repo (Phase-7 pulls intentionally dirty experiments/).
+   Placeholder injection extracted to tested helper `apply_source_commit`.
+2. Pod image actually recorded. `environment_manifest` read `EXP0039_POD_IMAGE` but nothing set it →
+   artifact recorded image: null. Launcher now `resolve_pod_image` (REST GET /v1/pods/<id> imageName) and
+   exports `EXP0039_POD_IMAGE=<img>` into the remote run (detached + foreground, via `_env_prefix` on the
+   python invocation), so env.image is populated. Best-effort (unresolved -> null, never fatal).
+
+Artifacts: `run_pod_training.py` (`resolve_clean_commit(*also_paths)` incl. launcher, `apply_source_commit`,
+`resolve_pod_image`, `_env_prefix`, `build_launch_cmd`/`train` take `env_exports`, main resolves+exports
+the image). Tests: replaced the round-9 launcher test with `test_resolve_clean_commit_covers_synced_tree_and_launcher`
+(dirty launcher outside subtree aborts) + `test_apply_source_commit_requires_and_fills_the_placeholder` +
+`test_launch_cmd_exports_pod_image_into_the_run`; launcher suite 27 passed, probe 19 passed. DIAGNOSTICS
+#13 extended (v)-(w). RESULT.md corrections 32-33 + pod-run notes. spec.json corrections + status.
+Worktree UNCOMMITTED. Full repo suite pending.
+
+Next: commit the EXP-0039 source (incl. run_pod_training.py so the launcher is clean), then launch both
+stages with `run_pod_training.py --verify-source-commit` (verifies clean tree+launcher, injects the
+commit, exports the pod image) — dump (CPU, `--require-gate-inputs`) → deterministic CPU probe on the SAME
+image (3 model seeds, `--expect-decisions 13940 --expect-candidates 37804`) → verdict recomputable from
+predictions.csv + floor_by_task; fill RESULT.md Results table. Cloud spend awaits user go-ahead.
