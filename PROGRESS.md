@@ -2465,3 +2465,43 @@ Next: commit the fix; re-run dump (new commit, `--no-stop` to keep the pod up) �
 parity → run the probe against the on-pod dump (same running pod) → pull `probe/`, read the verdict vs the
 canonical floor, fill RESULT.md Results table; then terminate `6eb2gyf3vjo4cs` and delete
 `tokenomics/_pod_ckpts/`.
+
+---
+
+### EXP-0039 CLOSED — probe FAILS; GNN does not recover the marginal-value target (2026-07-31)
+
+Status: **DONE — negative result.** Committed the `load_shard` fix (`7c80a88`), re-ran both stages under
+it on pod `6eb2gyf3vjo4cs` (same image, image-matched), then terminated the pod and removed
+`tokenomics/_pod_ckpts/`. Dump re-run verified: 13940/37804, stamped `7c80a88` + new `tree_sha256`,
+**0 teacher/context diffs** vs EXP-0038, decisions.csv byte-identical to the prior dump (determinism).
+Probe determinism preflight **bitwise-exact** (`max_abs_diff 0.0 ≤ tol 0.0`).
+
+**Verdict: FAIL (0/6 gate conditions, only `three_tasks`).** Held-out (leave-one-seed-out, mean of 3
+model seeds): GNN mean regret **5.29 / 6.23 / 5.25** (s29/s77/s45) — sits **at the random floor**
+(5.38/6.24/5.24); centered r² **−0.76 / −0.81 / −0.72** (negative → worse than predicting the mean);
+never beats the pinned EXP-0038B actor floor (4.12/4.75/3.93); avg rel-reduction **−31%**. Train loss fell
+≈49→1.5 per fold → the GNN **fits the training seeds but does not generalize** to a held-out seed of the
+same topology (within-topology generalization gap, not optimization). Floor = `--actor-floor-canonical`
+(the checked-in `residual_scorer.pt` is pre-P2, so its recomputed actor picks drift on 6715/13940 rows
+while the teacher target is unchanged; pinned floor bypasses the drift).
+
+Interpretation (plain English): a graph neural net given the full relational graph of deployable
+decision-time state cannot predict which producer the 8-cycle marginal-value teacher prefers, on unseen
+trajectory seeds — it does no better than routing at random. Richer relational observation did **not**
+beat the EXP-0038B hand-metric wall. The teacher preference is not a stable function of
+`graph_primitives_v1` decision-time state (consistent with DIAGNOSTICS #12 / EXP-0038). **Licenses no
+deployed-GNN orderer experiment.** Scoped claim only (held-out trajectory, fixed topology).
+
+Artifacts: `experiments/EXP-0039-gnn-observation-probe/{dump_graph,probe}/` (probe: metrics_by_task.csv,
+floor_by_task.csv, predictions.csv, checkpoints/, spec.json), RESULT.md Results filled, spec.json `result`
+block, README index row, DIAGNOSTICS #14.
+
+Decisions: STOP the "richer orderer observation" line for the marginal-value target. Next lever =
+rollout/search as a compute lever, or a directly-observable held-out-learnable objective — not a bigger
+observation.
+
+Blockers: none. Pod terminated (`runpodctl pod delete 6eb2gyf3vjo4cs`), `pod list` empty, `_pod_ckpts`
+removed.
+
+Next: (housekeeping) decide whether to commit the large `dump_graph/`+`probe/` artifacts via git-lfs per
+experiments/README convention, or keep them local — awaiting user preference on LFS.

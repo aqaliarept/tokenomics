@@ -363,13 +363,42 @@ under `graph_primitives_v1` and this probe gate".
 
 ## Results
 
+Run: dump + probe on RunPod CPU pod (`runpod/base:0.7.0-ubuntu2004`, 16 vCPU / 32 GB), commit
+`7c80a88`, image-matched across both stages. Dump = 13940 decisions / 37804 candidates; decisions.csv
+teacher/context columns **byte-identical to the EXP-0038 dump across all 13940 rows** (0 diffs). Floor =
+`--actor-floor-canonical` (pinned EXP-0038B `GATE_ACTOR_FLOOR_0038B`, sha `44d6d28f…`) — the checked-in
+EXP-0037 `residual_scorer.pt` is pre-P2, so its recomputed actor picks drift from the EXP-0038 dump
+(6715/13940 actor-column rows) while the teacher target is unchanged; the pinned floor bypasses the drift.
+Determinism preflight: **bitwise-exact** (`max_abs_diff 0.0 ≤ tol 0.0`, CPU, 200 epochs). Metrics are the
+held-out (leave-one-seed-out) mean over 3 model seeds.
+
 | metric | s29 | s77 | s45 |
 |---|---|---|---|
-| random floor mean regret | | | |
-| actor floor mean regret | | | |
-| EXP-0038B tabular mean regret | | | |
-| **GNN mean regret (mean ± std over seeds)** | | | |
-| GNN centered r² | | | |
-| relative regret reduction vs actor | | | |
+| random floor mean regret | 5.380 | 6.241 | 5.239 |
+| actor floor mean regret (pinned EXP-0038B; derived-this-run) | 4.120 (4.005) | 4.754 (4.833) | 3.935 (4.374) |
+| EXP-0038B tabular ladder (ridge, pooled) | \*best ≈ **5.30**, r²≈0, beats actor **0/3** — never cleared the floor | | |
+| **GNN mean regret (mean ± std over seeds)** | **5.290 ± 0.084** | **6.231 ± 0.124** | **5.250 ± 0.026** |
+| GNN centered r² (held-out) | **−0.759** | **−0.811** | **−0.720** |
+| relative regret reduction vs actor | **−28.4 %** | **−31.1 %** | **−33.4 %** |
 
-_Verdict:_ _(pass / fail / mixed)_ — _fill after pod run._
+\* EXP-0038B `audit_sys/block_summary.csv` reports pooled (not per-task) ridge regret 5.30–5.68 across the
+feature ladder, `ridge_beats_actor_ntasks = 0` at every block — the hand-metric wall this probe re-tests.
+
+Gate conditions (all must hold): `three_tasks ✓` · `beats_actor_2of3 ✗ (0/3)` · `r2_pos_2of3 ✗ (0/3)` ·
+`rel_reduction_10pct ✗ (avg −31 %)` · `no_task_worse_5pct ✗` · `stable_ge3_seeds ✗ (per-seed 0/3)`.
+
+_Verdict:_ **FAIL.** A relational GNN over raw deployable state (`graph_primitives_v1`) does **not** recover
+the EXP-0037 marginal-value teacher's within-decision producer preference on held-out trajectory seeds.
+On every task the GNN's held-out regret sits **at the random-routing level** (5.29 vs 5.38; 6.23 vs 6.24;
+5.25 vs 5.24) and its centered r² is **negative** — its predicted teacher-values transfer worse than
+predicting the mean. Training loss fell steeply (≈49→1.5 per fold), so the model **fits the training
+seeds but does not generalize**: a within-topology generalization gap, not an optimization failure. This
+is the same wall the EXP-0038B tabular ladder hit; richer relational observation did not license the
+target either.
+
+**What it licenses:** nothing new — do **not** open a deployed-GNN orderer experiment on this target. The
+defensible claim is scoped: the marginal-value teacher preference is not learnable under
+`graph_primitives_v1` and this gate (held-out **trajectory**, fixed topology). Consistent with
+DIAGNOSTICS #12 / EXP-0038 (target not a stable function of decision-time observable state). Next lever is
+**not** a richer orderer observation — it is rollout/search as a compute lever, or a directly-observable,
+held-out-learnable objective. See DIAGNOSTICS #14 for the `load_shard` OOM found + fixed mid-run.

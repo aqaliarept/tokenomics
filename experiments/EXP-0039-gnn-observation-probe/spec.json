@@ -4,6 +4,22 @@
   "schema": "graph_primitives_v1",
   "driver": "tokenomics.eval.graph_value_router_dump",
   "probe": "tokenomics.train.graph_router_probe",
+  "result": {
+    "status": "COMPLETE — FAIL (negative result)",
+    "run_commit": "7c80a8826507c840da06046eaf5af32557d7dff0",
+    "pod_image": "runpod/base:0.7.0-ubuntu2004",
+    "verdict_pass": false,
+    "conditions": {"three_tasks": true, "beats_actor_2of3": false, "r2_pos_2of3": false, "rel_reduction_10pct": false, "no_task_worse_5pct": false, "stable_ge3_seeds": false},
+    "gnn_mean_regret": {"s29": 5.290, "s77": 6.231, "s45": 5.250},
+    "gnn_r2_heldout": {"s29": -0.759, "s77": -0.811, "s45": -0.720},
+    "random_floor": {"s29": 5.380, "s77": 6.241, "s45": 5.239},
+    "actor_floor_pinned": {"s29": 4.120, "s77": 4.754, "s45": 3.935},
+    "avg_rel_reduction_vs_actor": -0.31,
+    "determinism": {"device": "cpu", "max_abs_diff": 0.0, "tol": 0.0, "exact": true},
+    "floor_source": "override = pinned GATE_ACTOR_FLOOR_0038B (residual_scorer.pt is pre-P2)",
+    "conclusion": "GNN over graph_primitives_v1 does NOT recover the marginal-value teacher's within-decision preference on held-out trajectory seeds: held-out regret == random, negative r², never beats the actor floor, across 3 tasks x 3 model seeds. Fits train seeds (loss 49->1.5) but does not generalize -> within-topology generalization gap, same wall as EXP-0038B tabular. Licenses NO deployed-GNN orderer experiment; scoped to graph_primitives_v1 + this gate. See DIAGNOSTICS #12/#14.",
+    "load_shard_fix": "mid-run: load_shard re-decompressed each NpzFile member per graph (O(n_graphs x shard)); OOM'd the 32 GB pod on a 124 MB dump. Fixed (cache members once) -> 0.45 s / 246 MB; both stages re-run under 7c80a88. DIAGNOSTICS #14."
+  },
   "question": "Can a graph model over raw deployable economy state (graph_primitives_v1) recover the EXP-0037 marginal-value teacher's within-decision producer preference that the EXP-0038B hand-metric ladder missed? Supervised representability probe only — not an orderer, not a deployed gate.",
   "params": {
     "source_experiment": "EXP-0038B-producer-product-observation-ladder",
