@@ -498,26 +498,31 @@ def load_shard(path: str) -> list[GraphArrays]:
     """Reconstruct every graph in a shard from numeric arrays + offsets (allow_pickle
     False). Inverse of `write_shard`; graphs come back byte-for-byte identical."""
     z = np.load(path, allow_pickle=False)
-    n = int(z["n_graphs"][0])
+    # Materialize every member ONCE. NpzFile.__getitem__ re-reads and re-decompresses the whole
+    # array from the zip on every access, so indexing it inside the per-graph loop is
+    # O(n_graphs x shard_bytes) in time and peak memory (OOMs a real 2000-graph shard). The
+    # per-graph node/edge tensors below are then just VIEWS (slices) into these base arrays.
+    arr = {k: z[k] for k in z.files}
+    n = int(arr["n_graphs"][0])
     graphs: list[GraphArrays] = []
     for i in range(n):
         node_features = {}
         for t in NODE_TYPES:
-            p = z[f"nodeptr__{t}"]
-            node_features[t] = z[f"nodefeat__{t}"][p[i]:p[i + 1]]
+            p = arr[f"nodeptr__{t}"]
+            node_features[t] = arr[f"nodefeat__{t}"][p[i]:p[i + 1]]
         edge_index, edge_attr = {}, {}
         for r in RELATION_TYPES:
-            p = z[f"edgeptr__{r}"]
-            edge_index[r] = z[f"edgeidx__{r}"][:, p[i]:p[i + 1]]
-            edge_attr[r] = z[f"edgeattr__{r}"][p[i]:p[i + 1]]
-        cp = z["candidate_ptr"]
-        digest = int(z["decision_digest"][i]) if "decision_digest" in z.files else 0
+            p = arr[f"edgeptr__{r}"]
+            edge_index[r] = arr[f"edgeidx__{r}"][:, p[i]:p[i + 1]]
+            edge_attr[r] = arr[f"edgeattr__{r}"][p[i]:p[i + 1]]
+        cp = arr["candidate_ptr"]
+        digest = int(arr["decision_digest"][i]) if "decision_digest" in arr else 0
         graphs.append(GraphArrays(
             node_features=node_features, edge_index=edge_index, edge_attr=edge_attr,
-            current_order=int(z["current_order"][i]),
-            current_orderer=int(z["current_orderer"][i]),
-            target_product=int(z["target_product"][i]),
-            candidate_producers=z["candidate"][cp[i]:cp[i + 1]],
+            current_order=int(arr["current_order"][i]),
+            current_orderer=int(arr["current_orderer"][i]),
+            target_product=int(arr["target_product"][i]),
+            candidate_producers=arr["candidate"][cp[i]:cp[i + 1]],
             decision_digest=digest,
         ))
     return graphs

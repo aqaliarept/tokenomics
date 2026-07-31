@@ -657,6 +657,36 @@ field. (Seen: EXP-0039 tenth review — `resolve_clean_commit` excluded `run_pod
 
 ---
 
+## 14. A load/decode step OOMs a big-RAM host on a SMALL dataset
+
+**Problem (plain English):** a run dies with `Killed` / exit 137 (SIGKILL = the kernel OOM killer)
+while *loading* data — before any training/epoch output — even though the dataset on disk is tiny
+relative to the host RAM (e.g. a 124 MB dump killing a 32 GB pod). The "just use a bigger pod" reflex is
+wrong here: a ~250× blowup means the loader's memory is not O(dataset) but O(dataset × items), so a bigger
+host only delays the same death. Root-cause the blowup first (CLAUDE.md: cause before next strategy).
+
+**Discriminating check:** load ONE unit (one shard/file) locally under a peak-RSS meter
+(`resource.getrusage(...).ru_maxrss`), timing it, in two ways: (a) as written; (b) with every
+container member read **once** into a dict up front, then sliced. If (b) collapses both peak RSS and
+wall-time by orders of magnitude (seen: OOM/hang → 66 MB / 0.09 s for one 2000-graph shard), the loader
+is **re-reading a lazy container per item**. The classic culprit is NumPy's `np.load(...)` `NpzFile`:
+`__getitem__` re-reads and **re-decompresses the whole member array from the zip on every access**, so
+indexing it inside a per-item loop is O(n_items × member_bytes).
+
+**Outcome branches:**
+- **(a) Per-item re-read of a lazy container (NpzFile, h5py, memmap-per-access):** materialize each
+  member once (`arr = {k: z[k] for k in z.files}`), then slice views out of the in-memory arrays. Peak
+  memory drops to ~O(dataset); the per-item tensors become cheap views. Guard it with a test that counts
+  member reads (`test_load_shard_reads_each_npz_member_at_most_once`). (Seen: EXP-0039 probe — the 32 GB
+  OOM was entirely `load_shard`, not training; fixed, 13940 graphs load in 0.45 s / 246 MB.)
+- **(b) Loader is O(dataset) but the COMPUTE is quadratic** (a dense N×N built from a sparse graph, an
+  accidental cartesian product): the check shows load is cheap and the kill lands *after* the first
+  forward/batch — fix the algorithm (sparse `index_add_`/scatter, minibatch), don't resize.
+- **(c) Genuinely O(dataset) and the host is just too small:** only *then* is a bigger/memory-optimized
+  host the answer — and record the measured peak so the shape is sized from evidence, not guessed.
+
+---
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

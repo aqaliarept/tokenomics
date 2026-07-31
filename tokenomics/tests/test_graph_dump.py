@@ -105,6 +105,44 @@ def test_shard_round_trip_is_exact_and_offsets_isolate_graphs(tmp_path):
     assert back[0].candidate_producers.shape[0] != back[1].candidate_producers.shape[0]
 
 
+def test_load_shard_reads_each_npz_member_at_most_once(tmp_path, monkeypatch):
+    """load_shard must materialize each npz member ONCE, not re-index the lazy NpzFile per
+    graph. `NpzFile.__getitem__` re-reads and re-decompresses the whole concatenated member
+    from the zip on every access, so slicing it inside the per-graph loop is
+    O(n_graphs x shard_bytes) in time AND peak memory — a real shard (2000 graphs) OOMs a
+    32 GB pod. Regression guard: no shard member may be read more than once regardless of how
+    many graphs the shard holds."""
+    env, aid, oid, elig = first_contested_decision()
+    graphs = [gd.encode_graph(build_economy_graph_view(env.system, aid, oid, elig[:k]))
+              for k in (len(elig), len(elig) - 1, len(elig))]  # 3 graphs in one shard
+    path = str(tmp_path / "graph_shard_000.npz")
+    gd.write_shard(path, graphs)
+
+    from collections import Counter
+    counts: Counter = Counter()
+    real_load = np.load
+
+    class _CountingNpz:
+        def __init__(self, z):
+            self._z = z
+
+        @property
+        def files(self):
+            return self._z.files
+
+        def __contains__(self, k):
+            return k in self._z
+
+        def __getitem__(self, k):
+            counts[k] += 1
+            return self._z[k]
+
+    monkeypatch.setattr(gd.np, "load", lambda *a, **k: _CountingNpz(real_load(*a, **k)))
+    back = gd.load_shard(path)
+    assert len(back) == 3  # correctness preserved
+    assert counts and max(counts.values()) == 1, dict(counts)  # each member read exactly once
+
+
 def test_graph_dump_smoke_writes_aligned_dump(tmp_path):
     """End-to-end (no actor, seconds): the dump emits one graph per contested decision in
     decisions.csv order, candidates.csv rows equal the total eligible candidates, and every

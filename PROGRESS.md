@@ -2430,3 +2430,38 @@ stages with `run_pod_training.py --verify-source-commit` (verifies clean tree+la
 commit, exports the pod image) — dump (CPU, `--require-gate-inputs`) → deterministic CPU probe on the SAME
 image (3 model seeds, `--expect-decisions 13940 --expect-candidates 37804`) → verdict recomputable from
 predictions.csv + floor_by_task; fill RESULT.md Results table. Cloud spend awaits user go-ahead.
+
+---
+
+### EXP-0039 pod run started; `load_shard` OOM found + fixed (2026-07-31)
+
+Status: committed EXP-0039 source (`d6ad733`), launched the staged CPU pod run. **Stage 1 (dump)** on a
+fresh kept pod (`6eb2gyf3vjo4cs`, `runpod/base:0.7.0-ubuntu2004`, 16 vCPU/cpu5c/32 GB): clean-commit
+verified+injected, all three input SHA-256 matched the pins, produced **13940 decisions / 37804
+candidates**. Stop-checks: decisions.csv **teacher/context columns byte-identical to the EXP-0038 dump
+across all 13940 rows** (0 diffs); the only divergence is the deployed-actor floor (6715 rows, actor-
+derived cols) = the anticipated pre-P2 actor-scoring drift → handled with the pre-registered
+`--actor-floor-canonical` (pin the bar to the audited EXP-0038B floor).
+
+**Stage 2 (probe) hit `Killed`/exit 137 (OOM) during dump LOAD** — a 32 GB pod died on a 124 MB dump.
+Root-caused (not a pod-size workaround, DIAGNOSTICS #14): `load_shard` indexed the lazy `NpzFile` inside
+the per-graph loop, and `NpzFile.__getitem__` re-decompresses the whole member every access →
+O(n_graphs × shard_bytes). Fix (TDD): read each member once into a dict, slice views. Guard:
+`test_load_shard_reads_each_npz_member_at_most_once` (RED before, GREEN after). Payoff: all 13940 graphs
+load in **0.45 s / 246 MB** (was OOM). `write_shard` untouched → dump bytes identical; training is per-fold
+(~1k graphs) so the 32 GB pod is sufficient. Also diagnosed the container-disk gotcha: a created pod's
+`/workspace` resets on stop/start, so a kept-pod dump does not persist for a later probe stage.
+
+Artifacts: `tokenomics/tokenomics/eval/graph_value_router_dump.py` (`load_shard` cache-once),
+`tokenomics/tests/test_graph_dump.py` (+1 guard, 14 passed), DIAGNOSTICS #14, dump pulled to
+`experiments/EXP-0039-gnn-observation-probe/dump_graph/`. Full repo suite **752 passed**.
+
+Decisions: the load fix touches a hashed source file → both stages must **re-run under the new commit**
+(dump bytes identical, only the provenance stamp changes; teacher parity preserved).
+
+Blockers: none — root cause fixed and green.
+
+Next: commit the fix; re-run dump (new commit, `--no-stop` to keep the pod up) → verify counts + teacher
+parity → run the probe against the on-pod dump (same running pod) → pull `probe/`, read the verdict vs the
+canonical floor, fill RESULT.md Results table; then terminate `6eb2gyf3vjo4cs` and delete
+`tokenomics/_pod_ckpts/`.
