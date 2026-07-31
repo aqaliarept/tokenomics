@@ -270,7 +270,7 @@ python run_pod_training.py --pod-id <id> --cpu --python python3.12 --verify-sour
     --delta 1.0 --lookahead 8 --eval-seeds 3 --horizon 100 --require-gate-inputs \
     --source-commit {SOURCE_COMMIT} \
     --out-dir /workspace/tokenomics/graph_runs/dump_graph" \
-  --pull "/workspace/tokenomics/graph_runs/dump_graph:./experiments/EXP-0039-gnn-observation-probe/dump_graph"
+  --pull "/workspace/tokenomics/graph_runs/dump_graph:./experiments/EXP-0039-gnn-observation-probe/artifacts/dump_graph"
 ```
 
 `--verify-source-commit` resolves + verifies the clean 40-char HEAD **on the launcher before rsync**
@@ -310,7 +310,7 @@ python run_pod_training.py --pod-id <id> --cpu --python python3.12 --verify-sour
     --out-dir  /workspace/tokenomics/graph_runs/probe \
     --epochs 200 --model-seeds 0,1,2 --source-commit {SOURCE_COMMIT} \
     --expect-decisions 13940 --expect-candidates 37804" \
-  --pull "/workspace/tokenomics/graph_runs/probe:./experiments/EXP-0039-gnn-observation-probe/probe"
+  --pull "/workspace/tokenomics/graph_runs/probe:./experiments/EXP-0039-gnn-observation-probe/artifacts/probe"
 ```
 
 **Input provenance (validated by default).** On a `require_shape` run the probe rejects the dump unless

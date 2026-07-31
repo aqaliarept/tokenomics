@@ -2492,7 +2492,7 @@ beat the EXP-0038B hand-metric wall. The teacher preference is not a stable func
 `graph_primitives_v1` decision-time state (consistent with DIAGNOSTICS #12 / EXP-0038). **Licenses no
 deployed-GNN orderer experiment.** Scoped claim only (held-out trajectory, fixed topology).
 
-Artifacts: `experiments/EXP-0039-gnn-observation-probe/{dump_graph,probe}/` (probe: metrics_by_task.csv,
+Artifacts (git-lfs): `experiments/EXP-0039-gnn-observation-probe/artifacts/{dump_graph,probe}/` (probe: metrics_by_task.csv,
 floor_by_task.csv, predictions.csv, checkpoints/, spec.json), RESULT.md Results filled, spec.json `result`
 block, README index row, DIAGNOSTICS #14.
 
