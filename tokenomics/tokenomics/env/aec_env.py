@@ -44,6 +44,18 @@ Action = np.ndarray | None
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "phase1.json"
 
+
+def draw_schedule_entry(
+    rng: np.random.Generator, pool: tuple[int, ...], quantity_min: int, quantity_max: int
+) -> ScheduleEntry:
+    """Draw one legal (product, quantity) schedule entry for a randomized consumer:
+    a uniform product from `pool`, a uniform quantity in `[quantity_min, quantity_max]`.
+    The single authority for randomized-demand legality — shared by episode-schedule
+    generation (`_build_consumers`) and EXP-0040's future-demand fork so a forked
+    suffix is drawn from exactly the same legal pool. Draw order (product then quantity)
+    is fixed: it defines the RNG stream, so schedules stay byte-identical."""
+    return (pool[int(rng.integers(len(pool)))], int(rng.integers(quantity_min, quantity_max + 1)))
+
 # Shared reward weights (ADR-0002, recalibrated in ADR-0042).
 # Consumer fulfilment is the terminal objective. Instrumental producer-order terms
 # and direct rejection penalties are intentionally excluded at scale: rejection is
@@ -171,8 +183,7 @@ class TokenomicsAECEnv(AECEnv):
             pool = c.product_pool
             if c.is_randomized:
                 schedule: list[ScheduleEntry] = [
-                    (pool[int(rng.integers(len(pool)))],
-                     int(rng.integers(c.quantity_min, c.quantity_max + 1)))
+                    draw_schedule_entry(rng, pool, c.quantity_min, c.quantity_max)
                     for _ in range(self.horizon)
                 ]
             else:

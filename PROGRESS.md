@@ -2505,3 +2505,43 @@ removed.
 
 Next: (housekeeping) decide whether to commit the large `dump_graph/`+`probe/` artifacts via git-lfs per
 experiments/README convention, or keep them local — awaiting user preference on LFS.
+
+---
+
+### EXP-0040 step 1 — future-demand fork API + invariants (2026-08-01)
+
+Status: **DONE (local, TDD).** First implementation step of the EXP-0040 rollout-target-stability
+audit (plan in `experiments/EXP-0040-rollout-target-stability/HANDOVER.md`). Built the counterfactual
+continuation primitive that holds the exact pre-action state fixed while replacing only the *unconsumed
+future demand suffix*, so a later collector can measure whether the single-continuation marginal-value
+label is stable once future exogenous demand is marginalized out.
+
+Artifacts:
+- `tokenomics/tokenomics/env/future_fork.py` — `fork_future_demand(env, *, task_id, decision_digest,
+  continuation_id)` deep-clones the env and, for each randomized `ScheduledConsumer`, preserves every
+  consumed entry (`_schedule[:_cycle]`, which includes the current cycle's already-placed demand) and
+  redraws only `_schedule[_cycle:]` from the same legal pool. `continuation_seed` = SHA-256 of
+  `(EXP-0040, task_id, decision_digest, continuation_id)` (never Python `hash()`). Evaluator-only; the
+  forked future is never a deployable observation feature.
+- `tokenomics/tokenomics/env/aec_env.py` — extracted `draw_schedule_entry(rng, pool, qmin, qmax)` as the
+  single randomized-demand legality authority, shared by `_build_consumers` and the fork. Same draw order
+  (product then quantity) → episode schedules stay byte-identical (guarded by the existing
+  `test_seeded_demand_replays_and_varies_by_seed`).
+- `tokenomics/tests/test_future_fork.py` — 8 invariant tests: seed determinism + id-sensitivity;
+  encoded pre-action graph byte-identical under fork; open orders + current demand preserved; consumed
+  prefix preserved & only legal tail replaced; source env not mutated; bitwise determinism per
+  continuation; different continuations → different suffixes; fixed `ScriptedConsumer`s untouched.
+
+Tests: `test_future_fork.py` 8 passed; `test_env_api.py`+`test_train_smoke.py` 90 passed (refactor
+byte-identity + smoke intact).
+
+Decisions: fork lives in the **env** layer, not domain — it needs RNG + config legality, and domain stays
+RNG-free (CLAUDE.md). HANDOVER's "domain-owned helper" wording yields to the purity rule; the legality
+contract is instead shared with `_build_consumers` via `draw_schedule_entry` so a forked suffix cannot
+drift from episode-schedule legality.
+
+Blockers: none.
+
+Next: step 2 — deterministic stratified sample selection over the existing EXP-0039 decision population
+(lowest SHA-256 rank per `(task, seed, cycle_quartile, original_label_class)` stratum) + authority-
+alignment tests (exact join against EXP-0039 decisions/candidates and canonical EXP-0038B actor rows).

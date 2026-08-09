@@ -1,0 +1,99 @@
+{
+  "version": "gnn-generalization-residual-router-v1",
+  "date": "2026-08-09",
+  "status": "PLANNED - blocked on EXP-0040 classification; no pod run authorized",
+  "driver": "to implement",
+  "source_experiments": [
+    "EXP-0039-gnn-observation-probe",
+    "EXP-0040-rollout-target-stability"
+  ],
+  "question": "Can a pooled regularized relational MPNN learn producer preferences that transfer to independent trajectory seeds within the same three topologies, then improve closed-loop delivery as a bounded confidence-gated residual over blend_0.5?",
+  "scope": "Within-topology trajectory generalization only; no unseen-topology claim.",
+  "dependency": {
+    "mean_target_licensed": "continuation_mean with smallest K in {4,8,16} licensed by EXP-0040",
+    "coverage_path_licensed": "single_suffix",
+    "ambiguous": "blocked",
+    "search_only": "cancelled"
+  },
+  "params": {
+    "task_ids": [
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29",
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77",
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45"
+    ],
+    "splits": {
+      "s29": {"train": [32, 33, 34, 35, 36, 37, 38, 39], "validation": [129, 130, 131], "test": [229, 230, 231]},
+      "s77": {"train": [80, 81, 82, 83, 84, 85, 86, 87], "validation": [177, 178, 179], "test": [277, 278, 279]},
+      "s45": {"train": [48, 49, 50, 51, 52, 53, 54, 55], "validation": [145, 146, 147], "test": [245, 246, 247]}
+    },
+    "nested_train_sizes": [2, 4, 8],
+    "horizon": 100,
+    "delta": 1.0,
+    "lookahead": 8,
+    "behavior_policy": "blend_0.5",
+    "continuation_policy": "blend_0.5",
+    "schema": "graph_primitives_v1",
+    "schema_hash": "9918b12f69760bcd",
+    "model_seeds": [0, 1, 2]
+  },
+  "inputs": {
+    "archive_sha256": "bc6ca4ebacff6835571453cf7c0bf10de5c366cc208674f44cf3a5860b778ceb",
+    "producer_ckpt_sha256": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+  },
+  "model_arms": {
+    "row_mlp_h32": {"kind": "fair held-out residual baseline", "hidden": 32},
+    "graph_0hop_h32": {"layers": 0, "hidden": 32},
+    "mpnn_2x32": {"layers": 2, "hidden": 32},
+    "mpnn_4x64": {"layers": 4, "hidden": 64},
+    "mpnn_4x64_per_task": {"layers": 4, "hidden": 64, "pooled": false, "diagnostic_only": true}
+  },
+  "training": {
+    "pooled_tasks": true,
+    "loss": "task-balanced decision-weighted MSE on decision-centered primary labels",
+    "batch_decisions_per_task": 32,
+    "max_epochs": 300,
+    "min_epochs": 50,
+    "validation_every": 5,
+    "early_stop_patience_checks": 25,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "dropout": 0.1,
+    "gradient_clip_norm": 1.0,
+    "canonical_device": "cpu-single-thread"
+  },
+  "adapter": {
+    "formula": "blend_0.5_logits + alpha * clip(center(ensemble_scores), -1, 1) when unanimous and margin-qualified; otherwise blend_0.5",
+    "alpha_grid": [0.1, 0.25, 0.5],
+    "margin_grid": [0.0, 0.5, 1.0],
+    "clip": 1.0,
+    "selection_split": "validation only"
+  },
+  "offline_gate_a": [
+    "centered r2 > 0 on >=2/3 test tasks",
+    "regret >=10% below random on >=2/3 test tasks",
+    "regret beats fair held-out row MLP on >=2/3 test tasks",
+    "no task >5% worse than row MLP",
+    "r2/random conditions hold for ensemble mean and each model seed",
+    "exact finite shape/alignment/provenance"
+  ],
+  "closed_loop_gate_b": [
+    "consumer units beat blend_0.5 on >=2/3 test tasks",
+    "average relative improvement vs blend >=5%",
+    "no task >5% worse than blend",
+    "no individual episode >10% worse than paired blend",
+    "no task increases system deaths",
+    "eligibility, conservation, finiteness, and soft multi-producer routing hold"
+  ],
+  "verdicts": [
+    "PASS_RESIDUAL_WITHIN_TOPOLOGY",
+    "OFFLINE_ONLY",
+    "NO_GENERALIZATION",
+    "CANCELLED_BY_EXP0040"
+  ],
+  "compute": {
+    "where": "RunPod CPU after EXP-0040 result, implementation review, clean commit, and explicit spend approval",
+    "budget": "TBD from required two-decision timing smoke",
+    "pod_spend_authorized": false
+  },
+  "reproduce": "TBD after implementation; exact commands and logs are required artifacts"
+}

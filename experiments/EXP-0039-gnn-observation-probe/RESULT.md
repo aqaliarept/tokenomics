@@ -402,3 +402,4 @@ defensible claim is scoped: the marginal-value teacher preference is not learnab
 DIAGNOSTICS #12 / EXP-0038 (target not a stable function of decision-time observable state). Next lever is
 **not** a richer orderer observation — it is rollout/search as a compute lever, or a directly-observable,
 held-out-learnable objective. See DIAGNOSTICS #14 for the `load_shard` OOM found + fixed mid-run.
+The pre-registered target-stability audit is [EXP-0040](../EXP-0040-rollout-target-stability/HANDOVER.md).

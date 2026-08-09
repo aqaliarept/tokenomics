@@ -1,0 +1,85 @@
+{
+  "version": "rollout-target-stability-v1",
+  "date": "2026-08-01",
+  "status": "PLANNED - no implementation or pod run",
+  "driver": "tokenomics.eval.rollout_target_stability (to implement)",
+  "source_experiment": "EXP-0039-gnn-observation-probe",
+  "question": "Is the single-continuation marginal-value label a stable and useful function of deployable pre-action state after future exogenous demand is marginalized out?",
+  "scope": "Target stability audit only; no GNN training, actor deployment, or topology-transfer claim.",
+  "params": {
+    "task_ids": [
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-producers_per_layer2-quantity_max14-s29",
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s77",
+      "mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-producers_per_layer3-quantity_max14-s45"
+    ],
+    "task_seeds": {
+      "s29": [29, 30, 31],
+      "s77": [77, 78, 79],
+      "s45": [45, 46, 47]
+    },
+    "horizon": 100,
+    "delta": 1.0,
+    "lookahead": 8,
+    "trajectory_orderer": "blend_0.5",
+    "continuation_orderer": "blend_0.5",
+    "schema": "graph_primitives_v1",
+    "schema_hash": "9918b12f69760bcd",
+    "continuation_ids_primary": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "continuation_ids_escalation": [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
+    "continuation_seed": "sha256('EXP-0040', task_id, decision_digest, continuation_id)",
+    "sample": {
+      "cycle_quartiles": [[0, 24], [25, 49], [50, 74], [75, 99]],
+      "signal_per_task_seed_quartile": 10,
+      "flat_control_per_task_seed_quartile": 3,
+      "max_signal_decisions": 360,
+      "max_flat_control_decisions": 108,
+      "selection": "lowest SHA-256 rank of decision_digest within each stratum; no backfill"
+    }
+  },
+  "inputs": {
+    "archive_sha256": "bc6ca4ebacff6835571453cf7c0bf10de5c366cc208674f44cf3a5860b778ceb",
+    "producer_ckpt_sha256": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea",
+    "exp0039_decisions_sha256": "09771dca6d6ee014374b196bf6ae08074ebf21e3d2bbac76d87affd4f9262bc1",
+    "exp0039_candidates_sha256": "d2a82c7471bf983e5b9d20b844a73f73de1c265ee6d969f61af54b644886dfd2",
+    "exp0039_graph_schema_sha256": "bc3adfaf36fae9e3251ed993061f1400cbf12182feaf0038d6b92e3e3fcdf6a5",
+    "canonical_actor_decisions_sha256": "b66374b04ff24c5dbe5c6b9640c21b185cec03104ee0c6ecc90663c3b2776af4",
+    "canonical_actor_producers_sha256": "b917fa5ff781e534fa1411fd68b0d8ff3df4bafc8d1838a312b4305370d85590"
+  },
+  "gates": {
+    "monte_carlo_convergence": {
+      "scope": "signal sample; every task aggregate and each trajectory seed",
+      "median_split_half_centered_spearman_min": 0.70,
+      "mean_split_half_winner_set_overlap_min": 0.80,
+      "primary_continuations": 16,
+      "single_allowed_escalation": 32
+    },
+    "expected_action_usefulness": {
+      "oracle_mean_selector_regret_reduction_vs_canonical_actor_min": 0.10,
+      "tasks_required": 2,
+      "max_regression_on_remaining_task": 0.05,
+      "must_hold_per_trajectory_seed_for_passing_task": true
+    },
+    "classification": {
+      "mean_target_licensed": "both gates pass and original-to-mean winner overlap < 0.70 on >=2 tasks",
+      "coverage_path_licensed": "both gates pass and original-to-mean winner overlap >= 0.80 plus centered rank correlation >= 0.70 on >=2 tasks",
+      "ambiguous": "both gates pass but neither diagnostic pattern holds",
+      "search_only": "either gate fails after the registered continuation budget"
+    }
+  },
+  "artifacts": [
+    "sample.csv",
+    "artifacts/continuation_labels.csv",
+    "artifacts/decision_stability.csv",
+    "artifacts/metrics_by_task.csv",
+    "artifacts/metrics_by_seed.csv",
+    "artifacts/selection_manifest.json",
+    "artifacts/run.log",
+    "artifacts/spec.json"
+  ],
+  "compute": {
+    "where": "RunPod CPU, only after implementation review and explicit spend approval",
+    "budget": "16 continuations primary; extend the same sample to 32 only if convergence fails",
+    "wall_time": "TBD from a two-decision smoke and timed 16-continuation pilot"
+  },
+  "reproduce": "TBD after the driver and provenance-bound launch command are implemented"
+}
