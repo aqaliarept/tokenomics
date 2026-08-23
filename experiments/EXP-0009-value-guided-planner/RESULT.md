@@ -97,10 +97,8 @@ generalization wall elsewhere in the arc.)
 ## Artifacts
 - `summary.csv` — the held-out table above (per-seed units, cycles, agreement).
 - Producer held fixed: `m2_inputs/d3_rung_dagger_v4.pt` (EXP-0004 v4 champion clone).
-- Machinery (TDD): `tokenomics/train/value_model.py`, planner-side in
-  `tokenomics/eval/orderer_oracle.py` (`_rollout_window`, `_score_candidates_valued`,
-  `planner_orderer_episode`, `ranking_agreement_episode`), tests in
-  `tests/test_value_planner.py`.
+- The experiment-specific value model, planner branch, and tests were removed after this
+  branch closed. They remain recoverable from git history.
 
 ## Reproduce
 ```bash

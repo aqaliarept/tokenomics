@@ -1537,7 +1537,7 @@ def topology_dr(
     *, depth: int = 3, dwell: int = 20, seed_lo: int = 1, seed_hi: int = TRAINING_SEED_HI,
 ) -> Callable[[Configuration, np.random.Generator], Configuration]:
     """Topology domain-randomization provider for `train(topology_random=...)` —
-    the supported trainer path for plan item 2 (was scratch in `_scale_lab`).
+    the supported trainer path for plan item 2.
 
     Returns a fresh scale topology (the held-out family, `build_scale_config`) and
     holds it for `dwell` iters before rotating the seed. Two subtleties this fixes:
@@ -2042,7 +2042,7 @@ def main() -> None:
     ap.add_argument("--dr-cap-min", type=float, default=0.75, help="domain-randomization capacity factor lower bound (drawn from [this, 1.0])")
     ap.add_argument("--dr-cost-max", type=float, default=1.4, help="domain-randomization cost factor upper bound (drawn from [1.0, this])")
     ap.add_argument("--dr-qty-max", type=int, default=3, help="domain-randomization max consumer quantity (drawn from 1..this)")
-    ap.add_argument("--topology-random", action="store_true", help="topology domain-randomization (plan item 2): train on fresh dims-preserving scale topologies, staged by the curriculum (supersedes the _scale_lab scratch path)")
+    ap.add_argument("--topology-random", action="store_true", help="topology domain-randomization (plan item 2): train on fresh dims-preserving scale topologies, staged by the curriculum")
     ap.add_argument("--topology-depth", type=int, default=3, help="supply-chain depth of the randomized scale topologies (build_scale_config depth)")
     ap.add_argument("--topology-dwell", type=int, default=20, help="iters to hold each random topology before rotating the seed (keeps envs stable so the gate gets episode evidence)")
     ap.add_argument("--validation-seeds", type=int, default=0, help="checkpoint selection on a validation topology suite of this many seeds (plan item 3; 0=select on base_cfg only). Band disjoint from training + held-out.")
@@ -2050,7 +2050,7 @@ def main() -> None:
     args = ap.parse_args()
     # Pin BLAS threads before any tensor work. See --threads help: batch-1 rollout
     # dominates wall-clock, and the throughput win on 8 cores is N parallel runs
-    # (tokenomics.train.parallel), each single-threaded, not one multithreaded run.
+    # fanned out one process per run, each single-threaded, not one multithreaded run.
     if args.threads > 0:
         torch.set_num_threads(args.threads)
     curriculum = None if args.no_curriculum else Curriculum(

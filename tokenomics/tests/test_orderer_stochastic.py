@@ -169,13 +169,13 @@ def test_obs_price_reads_cutoff_prices_under_enriched_v2_and_matches_v1():
 
 def _synth_producer_ckpt(cfg, path: str) -> None:
     """A valid `save_policies` checkpoint with the right dims (quality irrelevant — this
-    test exercises the stochastic *wiring*, with the enriched v2 orderer obs)."""
-    probe = TokenomicsAECEnv(config=cfg, horizon=1, enriched_orderer_obs=True)
+    test exercises the stochastic wiring with the current product-stream orderer obs."""
+    probe = TokenomicsAECEnv(config=cfg, horizon=1, product_stream_ordering=True)
     prod = GaussianActor(probe.observation_space(probe._prod_agents[0]).shape[0],
                          probe.spec_.producing_action_dim)
     order = GaussianActor(probe.observation_space(probe._order_agents[0]).shape[0],
                           probe.spec_.ordering_action_dim)
-    save_policies(prod, order, 1.0, path, config=cfg, orderer_obs_version=2)
+    save_policies(prod, order, 1.0, path, config=cfg, orderer_obs_version=3)
 
 
 def test_stochastic_run_deploys_unclamped_learned_std(tmp_path):
@@ -193,7 +193,7 @@ def test_stochastic_run_deploys_unclamped_learned_std(tmp_path):
         candidates=["proportional"], n_samples=1, sample_scale=1.0, lookahead=1,
         dagger_iters=1, label_seeds=1, horizon=6, epochs=80, lr=3e-2, seed=0,
         log_std_save=-2.5, eval_seeds=1, save=out,
-        enriched_orderer_obs=True, stochastic=True, log=lambda *a, **k: None,
+        product_stream=True, stochastic=True, log=lambda *a, **k: None,
     )
 
     log_std = load_order_actor(out)[0].log_std.detach().numpy()

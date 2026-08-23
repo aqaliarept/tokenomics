@@ -1,5 +1,0 @@
-.dockerignore
-Dockerfile
-generate-server.sh
-swagger.yaml
-emulation

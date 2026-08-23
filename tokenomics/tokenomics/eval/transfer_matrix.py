@@ -98,14 +98,13 @@ def _row_tie_rel_tol(kind: str, tie_rel_tol: float) -> float:
 
 
 def _producer_arch(kind: str, model: object | None) -> str:
-    """Architecture id of the loaded portable producer checkpoint, so an ablation run's rows
-    are self-describing (e.g. row+edge champion vs the step-14 no-edge variant). Empty for
+    """Architecture id of the loaded portable producer checkpoint. Empty for
     deterministic-baseline producer kinds and when no checkpoint is loaded."""
     if kind not in ("portable_scorer", "portable_scorer_planner_gates") or model is None:
         return ""
     from ..train.producer_scorer import producer_portable_schema
 
-    return producer_portable_schema(use_edges=getattr(model, "use_edges", True)).architecture_version
+    return producer_portable_schema().architecture_version
 
 
 def _resolve_orderer(kind: str, model: object | None) -> tuple[Policy | None, bool]:

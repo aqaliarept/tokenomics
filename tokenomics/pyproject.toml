@@ -1,7 +1,7 @@
 [project]
 name = "tokenomics"
 version = "0.1.0"
-description = "Tokenomics cooperative multi-agent RL environment (Python port of the Go emulator)"
+description = "Tokenomics cooperative multi-agent RL environment"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26",

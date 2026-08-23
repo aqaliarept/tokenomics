@@ -14,13 +14,13 @@ tokenomics/tokenomics/
   domain/   pure sim logic (no RL, no IO, no logging)
   env/      PettingZoo AEC adapter: spaces, encode, decode, aec_env
   eval/     heuristic baselines + metrics harness (signal check)
-  train/    legacy PPO trainer + parallel fan-out + boundary_grid driver (optional: needs torch)
+  train/    scorer distillation, DAgger, champion iteration, graph probes (optional: needs torch)
   config/   phase1.json
 docs/        ADRs (adr/), deep-research-report (6-phase curriculum), requirements
 experiments/ empirical runs + results, one dir per experiment — see experiments/README.md
-PROGRESS.md  active work-in-progress status, handoff notes, blockers, next actions
-CONTEXT.md   domain glossary — READ FIRST, use these exact terms
-phase1-implementation-plan.md   roadmap + status + RL target numbers
+experiments/HISTORY.md  compacted record of all 49 experiments, grouped by arc
+ARCHITECTURE.md  how training/eval/improvement fit together
+Domain glossary  the "Domain Language" section at the bottom of THIS file — use these exact terms
 ```
 
 ## Commands (run from `tokenomics/`, venv at repo `.venv`)
@@ -35,15 +35,15 @@ deterministic reference bars. Do **not** run `tokenomics.train.smoke_ppo` as a
 curriculum-stage smoke check; PPO training was rejected for this stage.
 
 ## Root cause before next strategy (HARD RULE)
-An experiment failed or underperformed → do **NOT** propose or start the next strategy/axis/arc until the failure cause is **diagnosed with evidence** (trace, closure-by-split, ablation — not a hypothesis) and written down (EXP `RESULT.md` or `PROGRESS.md`). When competing explanations demand different responses (e.g. distill-fidelity wall → fix training vs generalization gap → mine denser), run the **discriminating diagnostic first**; it decides the move. Every new-strategy proposal must name the diagnosed cause it addresses. **Check `docs/DIAGNOSTICS.md` first** — the registry of known problems → verification checks (plain-English problem statements, discriminating check, outcome branches); if the symptom matches an entry, run that check before inventing a new diagnostic. New cause diagnosed → add a registry entry. (Failure seen: EXP-0034 candidate captured ~15% of mined headroom; jumping to "mine more cells" without knowing WHY the harvest is low would have spent pods on the wrong fix.)
+An experiment failed or underperformed → do **NOT** propose or start the next strategy/axis/arc until the failure cause is **diagnosed with evidence** (trace, closure-by-split, ablation — not a hypothesis) and written down (the EXP `RESULT.md`, and an arc paragraph in `experiments/HISTORY.md` if it closes or opens a branch). When competing explanations demand different responses (e.g. distill-fidelity wall → fix training vs generalization gap → mine denser), run the **discriminating diagnostic first**; it decides the move. Every new-strategy proposal must name the diagnosed cause it addresses. **Check `docs/DIAGNOSTICS.md` first** — the registry of known problems → verification checks (plain-English problem statements, discriminating check, outcome branches); if the symptom matches an entry, run that check before inventing a new diagnostic. New cause diagnosed → add a registry entry. (Failure seen: EXP-0034 candidate captured ~15% of mined headroom; jumping to "mine more cells" without knowing WHY the harvest is low would have spent pods on the wrong fix.)
 
 ## Explain experiments simply (RULE)
-When reporting an experiment/diagnostic result to the user, explain it in **plain English first**: what question was asked, what was measured, what the numbers mean, and what changes because of them. Full sentences; define any invented term (e.g. "harvest rate", "closure") the first time it is used; assume the reader did not watch the pipeline run. Compressed jargon summaries and metric tables belong in `RESULT.md`/`PROGRESS.md` — the chat explanation must stand alone without them.
+When reporting an experiment/diagnostic result to the user, explain it in **plain English first**: what question was asked, what was measured, what the numbers mean, and what changes because of them. Full sentences; define any invented term (e.g. "harvest rate", "closure") the first time it is used; assume the reader did not watch the pipeline run. Compressed jargon summaries and metric tables belong in `RESULT.md`/`HISTORY.md` — the chat explanation must stand alone without them.
 
 ## Where training + experiments run (HARD RULE)
-**All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `boundary_grid`, `warm_start`/`clone_fidelity` DAgger, `producer_improve`, full `smoke_ppo`/`parallel` sweeps, any multi-topology or multi-iter run.
+**All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `clone_fidelity` DAgger, scorer distillation, curriculum mining/replay, the graph dump + probe, any multi-topology or multi-iter run.
 
-**Experiments go to the cloud.** Any run that materializes an `EXP-NNNN` result — the full multi-seed / multi-task / multi-topology run that produces `summary.csv` + `artifacts/` (training, boundary/transfer/curriculum matrices, replay suites, acceptance sweeps) — runs on Runpod, wrapped with `run_pod_training.py --pull` to bring the EXP dir back. The **only** things that stay local: stage-appropriate smoke checks (a curriculum replay on 1-2 archived tasks, a single-cell sanity check, a fast `--dry-run`) and **quick one-shot diagnostics/evals** (`signal_check`, `producer_rungs`, `swap_eval`, a single-seed trace). Build/TDD the experiment driver locally against a tiny subset (`--dry-run`, 1–2 cells, ≤1 seed) to prove it runs, then launch the **full** run on the cloud. If unsure, it goes to the cloud.
+**Experiments go to the cloud.** Any run that materializes an `EXP-NNNN` result — the full multi-seed / multi-task / multi-topology run that produces `summary.csv` + `artifacts/` (training, transfer/curriculum matrices, replay suites, acceptance sweeps) — runs on Runpod, wrapped with `run_pod_training.py --pull` to bring the EXP dir back. The **only** things that stay local: stage-appropriate smoke checks (a curriculum replay on 1-2 archived tasks, a single-cell sanity check, a fast `--dry-run`) and **quick one-shot diagnostics/evals** (`signal_check`, `producer_trace`, a single-seed trace). Build/TDD the experiment driver locally against a tiny subset (`--dry-run`, 1–2 cells, ≤1 seed) to prove it runs, then launch the **full** run on the cloud. If unsure, it goes to the cloud.
 
 **Classify by COMPUTE PROFILE + PURPOSE, not task count** (this is where the rule gets broken). "1-2 archived tasks" is necessary but NOT sufficient for local — a run stays local only if it is *also* fast AND throwaway. It goes to the **cloud** if ANY of these is true:
 - it materializes a result you will base a **go/no-go decision** on (representability check, gate, acceptance read) — that's a verification run, not a diagnostic;
@@ -55,38 +55,31 @@ A genuine local smoke has ALL knobs pinned tiny: `horizon ≤ ~12`, `iters ≤ ~
 
 **Naming trap:** calling something a "smoke" — in your plan, a function name, a CLI flag — does NOT make it one. Check the profile against the list above, never the label you gave it. (Failure seen: a `run_representability_smoke` at `--iters 300 --eval-seeds 3 --horizon 100` over 2 tasks with per-cycle search — ~14 heavy search episodes, 18+ min — was run locally because it was *called* a smoke and touched only 2 tasks. Both wrong: it was a decision-gating verification run and belonged on the pod.)
 
-## Parallel training (use the cores)
-One PPO run is single-threaded: rollout `collect` is a sequential Python round-robin over `num_envs`, and inference is batch-1 — extra cores do nothing for one run. Pin BLAS to 1 thread (`--threads 1`, the default) and get throughput by fanning out **independent** runs, one process per core, via `tokenomics.train.parallel`:
-```
-# grid (fixed depth, climbing demand rung)
-../.venv/bin/python -m tokenomics.train.parallel --workers 8 \
-  --common "--iters 400 --steps 1024 --topology-depth 3" \
-  --job d3_p00 "--max-diff 0.00" --job d3_p25 "--max-diff 0.25"
-# seed sweep: one process per seed
-../.venv/bin/python -m tokenomics.train.parallel --workers 8 --seeds 0-7 --common "..."
-```
-Each child auto-gets `--threads 1`; logs stream to `<log-dir>/<name>.log`; `--dry-run` prints commands first. Prefer this over `--num-seeds` (in-process, sequential) for multi-run work.
+## Parallel work (use the cores)
+Inference here is batch-1 and rollouts are sequential Python, so extra cores do nothing for a
+single run. Pin BLAS to 1 thread per worker and get throughput by fanning out **independent**
+runs, one process per core. `eval.curriculum_mining` does this internally (`_mine_parallel`,
+sharded evaluate + merged global rank). Watch the load average against `nproc`: a worker pool
+whose children each spawn threads oversubscribes the box and can stall it outright
+(DIAGNOSTICS 9).
 
-## Experiments (boundary grid)
-A full experiment = a question + materialized configs + many runs + a result, kept as **one dir** under `experiments/`. **Read `experiments/README.md` first** — it owns the layout/convention (`spec.json`, `RESULT.md`, `summary.csv`, `configs/` tracked; `artifacts/` = checkpoints/logs via **git-lfs**). ADRs = design decisions; experiments = empirical results; `VERIFICATION.md` = open questions linking out.
+## Experiments
+A full experiment = a question + materialized configs + many runs + a result, kept as **one dir** under `experiments/`. **Read `experiments/README.md` first** — it owns the layout/convention (`spec.json`, `RESULT.md`, `summary.csv`, `configs/` tracked; `artifacts/` = checkpoints/logs via **git-lfs**), including which pinned artifacts must never be deleted. **Read `experiments/HISTORY.md`** for what has already been tried and why each closed branch closed — check it before proposing an arc that was already run. ADRs = design decisions; experiments = empirical results.
 
-`tokenomics.train.boundary_grid` is the driver (don't hand-roll raw `parallel`/`smoke_ppo` for this). It materializes the fixed depth-1/2/3 scale topologies, fans out from-scratch PPO across the depth × quantity grid (via `tokenomics.train.parallel`), runs the policy-swap probe per checkpoint, and **emits the whole experiments-dir layout directly** — point `--out-dir` at a fresh `EXP-NNNN` dir:
-```
-# local
-../.venv/bin/python -m tokenomics.train.boundary_grid --iters 400 --steps 1024 \
-  --workers 6 --held-out-seeds 5 --swap-seeds 5 --out-dir ../experiments/EXP-0002-<title>
-# subset / fast check: --cells d3_p00,d3_p25 --dry-run
-```
-Then fill in `RESULT.md`'s Conclusions and add an index row to `experiments/README.md`. Worked example: `experiments/EXP-0001-boundary-grid/` (depth is the wall, producer is the blocker).
+Point the driver's `--out-dir` at a fresh `EXP-NNNN-<title>/` so it emits the whole
+experiments-dir layout directly (`configs/`, `artifacts/`, `spec.json`, `summary.csv`,
+a `RESULT.md` skeleton). Then fill in `RESULT.md`'s Conclusions, add an index row to
+`experiments/README.md`, and — if the result closes or opens an arc — a paragraph in
+`experiments/HISTORY.md`.
 
-**Off-box**: wrap the same command with the Runpod driver below — `--train` runs boundary_grid on the pod, `--pull` brings the EXP dir back:
+**Off-box**: wrap the same command with the Runpod driver below — `--train` runs it on the
+pod, `--pull` brings the EXP dir back:
 ```
-python run_pod_training.py --pod-id <id> \
-  --train "-u -m tokenomics.train.boundary_grid --iters 400 --steps 1024 --workers 6 \
-           --held-out-seeds 5 --swap-seeds 5 --out-dir /workspace/tokenomics/boundary_runs/grid" \
-  --pull "/workspace/tokenomics/boundary_runs/grid:./experiments/EXP-NNNN-<title>"
+python run_pod_training.py --pod-id <id> --cpu --python python3.12 \
+  --train "-u -m <driver module> ... --out-dir /workspace/tokenomics/runs/exp" \
+  --pull "/workspace/tokenomics/runs/exp:./experiments/EXP-NNNN-<title>"
 ```
-`-u` keeps the driver's stdout unbuffered (per-cell iter logs already flush live to their files). Pod (25 vCPU) runs all 6 cells concurrently; full grid ≈ 15 min.
+`-u` keeps the driver's stdout unbuffered (per-cell logs already flush live to their files).
 
 ## Remote GPU training (Runpod)
 `run_pod_training.py` (repo root) drives a full off-box run: **start pod → rsync code → venv+install → train (detached) → pull results → stop pod**. Pod stop runs in a `finally`, so the pod is stopped even on error / Ctrl-C (the whole point: don't pay for an idle pod). Needs `runpodctl` authed (`runpodctl doctor`), plus `ssh`+`rsync` locally.
@@ -94,7 +87,7 @@ python run_pod_training.py --pod-id <id> \
 ### Concrete steps (do these in order)
 1. **Get pod id**: `runpodctl pod list`. Note the id; a stopped pod restarts automatically (its `/workspace` volume persists across stop/start).
 2. **Stage input checkpoints INTO the synced tree** (the gotcha). The driver rsyncs the **inner package dir** `tokenomics/` (the `pyproject.toml` root, so `pip install -e .` works) — **NOT** the repo root. So repo-root `experiments/EXP-*/artifacts/*.pt` do **not** reach the pod. Any ckpt a run READS must be copied under `tokenomics/` first, e.g. `mkdir -p tokenomics/_pod_ckpts && cp experiments/.../foo.pt tokenomics/_pod_ckpts/`, then reference it on the pod as `/workspace/tokenomics/_pod_ckpts/foo.pt`. Delete `_pod_ckpts/` after. (Runs that only WRITE a ckpt on the pod — smoke/train — don't need this.)
-3. **Pick the profile**: GPU (default, `runpod/pytorch:*` image, reuses system CUDA torch) or **CPU** (`--cpu`, `runpod/base:*` image, installs the `[train]` CPU-torch extra). CPU-bound work (search bars, boundary_grid, batch-1 rollout) → `--cpu`; GPU buys nothing there. **On a CPU/base pod add `--python python3.12`** — the base image's python3.8 has no `ensurepip` and venv creation fails.
+3. **Pick the profile**: GPU (default, `runpod/pytorch:*` image, reuses system CUDA torch) or **CPU** (`--cpu`, `runpod/base:*` image, installs the `[train]` CPU-torch extra). CPU-bound work (search bars, distillation, batch-1 rollout) → `--cpu`; GPU buys nothing there. **On a CPU/base pod add `--python python3.12`** — the base image's python3.8 has no `ensurepip` and venv creation fails.
 4. **Choose pod paths**: write outputs under `/workspace/...` (e.g. `--out-dir /workspace/tokenomics/curriculum_runs/exp0024`) and `--pull REMOTE:LOCAL` them back into a fresh `experiments/EXP-NNNN-*` dir.
 5. **Launch** (detached by default — survives SSH drop / laptop sleep; the client auto-reconnects and finishes when the remote exit marker appears; Ctrl-C just detaches):
 ```
@@ -154,12 +147,15 @@ python run_pod_training.py --create-pod --image <img-with-py3.11+torch+ssh> \
 ## Conventions
 - New design decision → write an ADR in `docs/adr/`.
 - New baseline → add to the dicts in `eval/baselines.py` so `signal_check` picks it up.
-- New domain term → add to `CONTEXT.md`.
+- New domain term → add to the *Domain Language* section at the bottom of this file.
 - New diagnosed failure cause / diagnostic tool → add an entry to `docs/DIAGNOSTICS.md` (problem in plain English + check + outcome branches).
-- Ongoing progress / handoff / blockers / next actions → update `PROGRESS.md`.
 - Empirical findings → write/update the relevant `experiments/EXP-NNNN-*` record and index.
 - Roadmap or target changes → update the relevant design/plan document.
-- **After every task done → append a `PROGRESS.md` entry** (the suggested `Status/Artifacts/Decisions/Blockers/Next` format). Non-negotiable: a completed task isn't done until `PROGRESS.md` reflects it. Newest entry at the bottom.
+- **After every task done → update the record it belongs to.** An empirical finding updates
+  the `experiments/EXP-NNNN-*/RESULT.md` and the `experiments/README.md` index row; a result
+  that closes or opens an arc also gets a paragraph in `experiments/HISTORY.md`; a design
+  decision gets an ADR. Non-negotiable: a completed task isn't done until the durable record
+  reflects it. There is no running progress log — the experiment records are the log.
 
 ## Code style
 - `from __future__ import annotations` top of every module.

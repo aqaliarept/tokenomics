@@ -1,5 +1,5 @@
 """Curriculum game-master scaffold: TaskRecord serialize/replay, stress suite,
-failure classification (CURRICULUM_GAME_MASTER_APPROACH.md Stage 0 + Stage 1).
+failure classification (the curriculum arc (experiments/HISTORY.md §7) Stage 0 + Stage 1).
 
 Tests exercise the public curriculum surface: a task serializes to a jsonl line and
 back, replays to the exact economy via its generator-ref (no hidden process state),

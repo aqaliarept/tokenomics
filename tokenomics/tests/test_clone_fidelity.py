@@ -274,22 +274,3 @@ def test_dagger_producer_first_multi_topology_fits_every_config(tmp_path):
         )
         pred = predict_actions(prod, samples, bound)
         assert decoded_command_match(spec, samples, pred) >= 0.7
-
-
-def test_held_out_report_scores_unseen_topologies():
-    # Phase 2 step 6: a held-out topology suite normalizes each unseen topology by its
-    # OWN base+base, so the ratio (not absolute units) is the fair judgment. Scoring the
-    # base producer AS the clone must give ratio ≈ 1.0 (the scripted domain is
-    # deterministic; clone == base here).
-    from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
-    from tokenomics.train.warm_start import held_out_report
-
-    base_prod = PRODUCING_BASELINES["stock_aware"]
-    rows = held_out_report(
-        base_prod, base_prod, ORDERING_BASELINES["proportional"],
-        depth=2, seeds=[5, 6], eval_seeds=2, horizon=40, log=lambda *a, **k: None,
-    )
-    assert [r.seed for r in rows] == [5, 6]
-    assert all(r.units > 0 and r.base_units > 0 for r in rows)
-    assert all(r.ratio == pytest.approx(1.0) for r in rows)  # clone == base
-    assert all(0.0 <= r.dead <= 1.0 for r in rows)

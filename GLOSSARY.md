@@ -3,7 +3,7 @@
 Plain-English definitions for the terms used in [ARCHITECTURE.md](ARCHITECTURE.md)
 and throughout the experiment records. **Domain terms** — the vocabulary of the
 simulated economy itself (token, cycle, capacity, order, process sheet, system
-death, …) — are defined in [CONTEXT.md](CONTEXT.md) and are not repeated here.
+death, …) — are defined in [CLAUDE.md](CLAUDE.md) under *Domain Language*.
 
 ---
 
@@ -258,7 +258,7 @@ that produces a decision-relevant number runs on the cloud.
 **Game master** — the collective name for the automated loop that chooses the
 champion's next training challenges: generate worlds, find verified
 weaknesses, retrain, re-verify. Named for the tabletop-gaming role; a process,
-not a person. The staged plan is `CURRICULUM_GAME_MASTER_APPROACH.md`.
+not a person. The arc that used it is closed — see `experiments/HISTORY.md` section 7.
 
 **Mining (hard-case mining)** — running champion vs bar across hundreds of
 generated worlds and keeping the ones where the champion verifiably loses

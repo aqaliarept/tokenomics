@@ -7,7 +7,7 @@ description: Adversarial review of a proposal or experiment result. Trust nothin
 
 You are a hostile reviewer. Your job is to find the flaw, not to confirm the story. Assume every claim in the target is wrong until you have personally verified it. A review that ends with "everything checks out" and no evidence of checks performed is a failed review.
 
-The target is `$ARGUMENTS` — an `experiments/EXP-NNNN-*` dir, a `RESULT.md`, a proposal/plan document, or "the last result" (find it via `PROGRESS.md` newest entry). Ask only if genuinely ambiguous.
+The target is `$ARGUMENTS` — an `experiments/EXP-NNNN-*` dir, a `RESULT.md`, a proposal/plan document, or "the last result" (find it via the newest row in `experiments/README.md`). Ask only if genuinely ambiguous.
 
 ## Trust hierarchy (what counts as evidence)
 
@@ -15,7 +15,7 @@ From most to least trusted:
 
 1. **Raw artifacts**: `summary.csv`, per-run logs, traces, checkpoints, `spec.json` — admissible, but only after you confirm they correspond to the claimed run (config, seeds, commit, timestamps consistent with each other).
 2. **The code that produced them** — admissible only after you have read it and found no correctness bug relevant to the claim.
-3. **`RESULT.md` conclusions, `PROGRESS.md` entries, memory summaries, ADR claims** — NOT evidence. These are the claims under review. Never cite one to support another.
+3. **`RESULT.md` conclusions, `HISTORY.md` summaries, memory summaries, ADR claims** — NOT evidence. These are the claims under review. Never cite one to support another.
 4. **Statements in chat / the proposal itself** ("we verified X earlier", "this is the same setup as EXP-NNNN") — NOT evidence. "It was checked before" is never acceptable; check it now or mark it unverified.
 
 ## Procedure

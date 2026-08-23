@@ -1,210 +1,74 @@
-# Запуск приложения
-
-## 🐳 Запуск через Docker
-
-Для запуска приложения через Docker выполните следующие шаги:
-
-1. Убедитесь, что у вас установлен Docker
-
-2. Запустите приложение с помощью скрипта:
-
-   ```bash
-   ./start.sh
-   ```
-
-3. После запуска приложения, документация API доступна по адресу:
-   ```
-   http://localhost:8080/docs/
-   ```
-   Swagger UI предоставляет интерактивный интерфейс для:
-   - Просмотра всех доступных эндпоинтов
-   - Тестирования API запросов
-   - Изучения форматов запросов и ответов
-
-### Дополнительные опции запуска:
-
-- Запуск в фоновом режиме:
-
-  ```bash
-  ./start.sh --detach
-  ```
-
-- Запуск на другом порту:
-
-  ```bash
-  ./start.sh --port 3000
-  ```
-
-- Запуск определенной версии:
-
-  ```bash
-  ./start.sh --tag latest
-  ```
-
-- Просмотр всех опций:
-  ```bash
-  ./start.sh --help
-  ```
-
-### Управление контейнером:
-
-- Просмотр логов:
-
-  ```bash
-  docker logs tokenomics
-  ```
-
-- Остановка приложения:
-  ```bash
-  docker stop tokenomics && docker rm tokenomics
-  ```
-
----
-
-# Документы
-
-[Записи дизайн-решений](/docs/desicion-records.md#dr002-размещение-заказа)
-[Правила (DRAFT)](/docs/game-rules.md)
-[Machine learning and reinforcement learning architecture guide](/docs/rl-training-architecture.md)
-
-# Глоссарий
-
-## Продукт
-
-Является результатом производства
-
-По назначению делится на два типа:
-
-- Потребительский - предназначен для удовлетворения потребностей потребителей
-- Инвестиционный - предназначен для расширения/восстановления произодственных мощностей
-
-## Заказ
-
-Заявка на производство продукта
-
-- Имеет стоимость с токенах
-
-- Заказ может выполняться на протяжении нескольких тактов, у него есть внутренне состояние необходимиое для хранения готовой продукции.
-- Так же состояние хранит необходимые данные для повторных ставок в случае начала частичного производства заказа
-
-## Мощность
-
-Абстрактые единицы **заданного типа**, необходимые для производства продукта.
-
-- Измеряется единицами в такт.
-
-- _Мощности разных типов разнокачественные и не могут арифметически суммироваться, так как по сути производят разные продукты_
-
-## Технологическая карта (ТК)
-
-Определяет сколько единиц мощности и какого типа необходимо для производства продукта.
-
-- ТК не изменяются системой в процессе моделироания, а задаются **ИЗВНЕ**.
-
-## Токен
-
-Средство обмена и сбережения (для потребителей), преследущее две цели:
-
-1. Оповещение системы о предпочтениях потребителей через распределение токенов между потребительскими заказами
-2. Регулирование распределения доступных мощностей между заказами (защита от greedy агентов-заказчиков)
-
-## Эмиссия
-
-Токены эмитируются каждый такт
-
-- Пока количество статично и задается **ИЗВНЕ**
-- Часть токенов равномерно распределяется между всеми потребителями
-- Оставшиеся токены поступают в **инвестиционный пул** токенов, из которых агенты-производители могут получить токены для приобритения инвестиционных продуктов.
-- Пропорция распределения между пользователями и инвестиционным пулом **пока** определяется константно как 1:1. В последующем позможна динамическая корректировка пропорции распределения токенов.
-- Токены в инвестиционном пуле неизрасходованные на конец такта в следуюищий такт **НЕ ПРЕНОСЯТСЯ**
-
-## Потребитель
-
-Обменивает личные токены на продукты производимые системой.
-
-- **ЯВЛЯЕТСЯ ВНЕШНИМ К СИСТЕМЕ**
-- Формирует заказы в соответвии с ценами созданными в системе, но не сводит все свое поведение к реакции на цены, а вносит еще элемент личных предпочтений
-- Может сберегать и переносить полученные токены из такта в такт
-- Каждый такт структура заказов конкретного потребителя меняется случайным образом, но объем изменений не должен превышать заданный процент
-- На первом этапе его поведение можно эмулировать вероятностно, на основе карты предпочтений (продукты имеют веса и заказы генерируются с вероятностью пропорциональной с весу продукта)
-- В дальнейшем возможно необходимо моделировать их поведений через агентов-ассистентов, для более качественного обучения агентов внутри системы, но пока считаем что потребитель знает что он хочет и мы даем ему это максимально быстро.
-
-## Агент-заказчик (АЗ)
-
-Получает заказы и **предлагает** токены, выделенные на заказ, в виде ставок различным агентам-производителям, мощности которых необходимы для производства заказанного продукта.
-
-- Добавлен с систему в соответствии с [DR001](/docs/desicion-records.md#dr001-агентов-заказичики-vs-централизация)
-- **ЯВЛЯЕТСЯ ВНУТРЕННИМ К СИСТЕМЕ** и целью для обучений эффективному распределению токенов между агентами-производителями
-- Если ни одна из ставок по заказу не была принята, то токены возвращаются потребителю.
-- Размещение заказа осуществляеется с соответвстии с [DR002](/docs/desicion-records.md#dr002-размещение-заказа)
-
-## Агент-производитель (АП)
-
-Производит продукты на мощностях заданного типа
-
-- **ЯВЛЯЕТСЯ ВНУТРЕННИМ К СИСТЕМЕ** и целью для обучения соблюдения баланса между расширением, восстановлением и производстом продуктов
-- **ИЗВНЕ ЗАДАЕТСЯ:**
-
-  - количество производителей в системе
-  - тип мощности
-  - начальное значение мощности
-  - процент деградации мощности
-  - процент восстановления мощности в результате инвестиции
-  - прирост мощности в результате инвестиции
-
-- Выбирает и берет в работу наиболее приоритетные ставки от АЗ (пока можно задать приоритет по количеству токенов на запрашиваемую единицу мощности)
-- Может работать над заказом несколько тактов подряд, в этом случае мощности доступные для новых заказов ограничены остатком мощности от уже выполняемого заказа
-- В случае принятия решения о необходимости инвестирования берет токены из инвестиционного пула токенов и формирует заказ
-
-## Цена отсечения (ЦО)
-
-Минимальная цена единицы мощности взятая АП в работу в заданный такт
-
-Пример: Агент-производитель с мощность 12 единиц
-На этот продукт он в этом такте получил 10 нарядов на 20 единиц (каждый наряд на 2 единицы мощности), с токенами 5, 5, 4, 4, 3, 2, 1, 1, 1, 1
-Он взял самые приоритетные. Наряд с минимальной ценой взятый в работу стоит 2 токена, в результате цена отсечения составила `2 (стоимость наряда) / 2 (мощность по наряду) = 1` токен.
-
-# Эмулятор
-
-Эмулятор запускается в docker контейнере и предоставляет HTTP API для взаимодействия.
-
-[Контракт API в формате OpenAPI](/emulation/swagger.yaml)
-
-В диаграмме последовательности ниже имена операций соответвуют `operationId` в OpenAPI контракте
-
-```mermaid
----
-title: Взаимодействие с эмулятором
----
-sequenceDiagram
-  autonumber
-  participant env as Python Environment
-  participant e as Emulator
-
-  Note over env, e: Do configuration
-  env ->> e: resetSystem
-  env ->> e: listProducingAgents
-  e ->> env: ProducerAgentInfo[]
-  env ->> e: listOrderingAgents
-  e ->> env: OrderingAgentInfo[]
-
-  Note over env, e: Start emulation. Producing agents investement phase
-  loop Until emulation ends
-    loop For every producing agent
-      env ->> e: getProducingAgentView
-      e ->> env: {ProducerAgentView}
-      env ->> e: sendProducingAgentCommand
-    end
-    Note over env, e: When done for all producing agents
-    env ->> e: completeInvestment
-    Note over env, e: Ordering agents phase
-    loop For every ordering agent
-      env ->> e: getAgentsAgentView
-      e ->> env: {OrderingAgentView}
-      env ->> e: sendProducingAgentCommand
-    end
-    Note over env, e: When done for all ordering agents
-    env ->> e: completeCycle
-  end
+# Tokenomics
+
+A cooperative multi-agent **reinforcement-learning environment** for a tokenomics economy
+game, plus the policies trained on it. Consumers demand products; producing agents own
+manufacturing capacity and assemble products (possibly from other products, forming supply
+chains); ordering agents split each order across eligible producers. Agents learn to fulfil
+consumer demand by routing tokens and managing production capacity.
+
+Python only. All code lives in [`tokenomics/`](tokenomics/).
+
+## Start here
+
+| Document | What it is |
+|---|---|
+| [CLAUDE.md](CLAUDE.md) | Working rules, project map, and the authoritative **domain vocabulary** (token, cycle, capacity, process sheet, system death, …) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | How the project trains, measures, and improves its policies — written for readers new to ML |
+| [GLOSSARY.md](GLOSSARY.md) | Training/evaluation terms used across the experiment records |
+| [experiments/HISTORY.md](experiments/HISTORY.md) | The compacted empirical record: 49 experiments in nine arcs, and why each closed branch closed |
+| [docs/adr/](docs/adr/) | 54 numbered design decisions |
+| [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) | Symptom → discriminating check registry |
+
+Founding requirements and design rationale (in Russian):
+[docs/requirements.md](docs/requirements.md),
+[docs/desicion-records.md](docs/desicion-records.md),
+[docs/deep-research-report.md](docs/deep-research-report.md).
+
+## Layout
 
 ```
+tokenomics/tokenomics/
+  domain/   pure simulation logic — no RL, no numpy, no IO, no logging
+  env/      PettingZoo AEC adapter: spaces, encode, decode, aec_env
+  eval/     baselines, metrics harness, transfer matrix, curriculum/mining tooling
+  train/    scorer distillation, DAgger, champion iteration, graph probes
+  config/   phase1.json
+tokenomics/tests/   one file per layer
+experiments/        one directory per experiment — see experiments/README.md
+docs/               ADRs, diagnostics, requirements
+run_pod_training.py Runpod driver: start pod → sync → install → train → pull → stop
+```
+
+## Setup
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -e 'tokenomics[dev,train]'  # tests + training/scorer dependencies
+```
+
+## Common commands
+
+Run from `tokenomics/`:
+
+```bash
+../.venv/bin/python -m pytest -q                        # test suite
+../.venv/bin/python -m tokenomics.eval.signal_check     # baseline comparison table
+```
+
+`signal_check` is the guardrail: it prints a matrix of producing × ordering policies and
+proves the environment poses a real learning problem — a sensible policy must clearly beat
+do-nothing, and the strongest baseline is the bar a learned policy has to clear.
+
+## The champion stack
+
+`tokenomics/champion.json` pins the current policies. The primary metric is
+`consumer_completed_units` against a strict best-of-baseline envelope on held-out topology
+seeds, with a hard 0% death-rate requirement. See
+[experiments/HISTORY.md](experiments/HISTORY.md) §0 for the checkpoint table.
+
+## Where things run
+
+Real training and every experiment run on Runpod, never locally — wrap the command with
+`run_pod_training.py` (`--cpu` for CPU pods). Only fast throwaway smoke checks and quick
+one-shot diagnostics stay local. The full rule, including the compute-profile test for
+classifying a run, is in [CLAUDE.md](CLAUDE.md).

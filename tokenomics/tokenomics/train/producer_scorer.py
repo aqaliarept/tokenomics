@@ -58,13 +58,10 @@ _PRODUCER_INPUT_FEATURES = (
 )
 
 
-def producer_portable_schema(*, use_edges: bool = True) -> "PortableSchema":
-    """The current portable-load schema for the producer scorer (step 13). Topology-free:
-    named row features + entity/relation types + norm/decoder/architecture versions, no
-    product/capacity ids or counts.
-
-    `use_edges=False` = the step-14 no-edge ablation variant: same features/entities/decoder,
-    but the recipe relations are unused, so the architecture (and hence load gate) differs."""
+def producer_portable_schema() -> "PortableSchema":
+    """The current portable-load schema for the producer scorer. It is topology-free:
+    named row features + entity/relation types + norm/decoder/architecture versions, with
+    no product/capacity ids or counts."""
     from .portable_schema import PortableSchema
 
     return PortableSchema(
@@ -79,9 +76,7 @@ def producer_portable_schema(*, use_edges: bool = True) -> "PortableSchema":
         relation_types=("product_capacity_required", "product_input_required"),
         normalization_version="log1p-nonneg-v1",
         decoder_version="plan_producer_command-v2-gates",
-        architecture_version=(
-            "producer-row-edge-scorer-v2" if use_edges else "producer-row-noedge-scorer-v2"
-        ),
+        architecture_version="producer-row-edge-scorer-v2",
     )
 
 
@@ -151,14 +146,9 @@ class ProducerScoreModel(nn.Module):
     deterministic planner converts into a feasible command.
     """
 
-    def __init__(self, hidden: int = 64, *, use_edges: bool = True) -> None:
+    def __init__(self, hidden: int = 64) -> None:
         super().__init__()
         self.hidden = hidden
-        # Step-14 ablation #2: `use_edges=False` = per-row/no-edge baseline. The recipe
-        # relation contexts are zeroed, so each row is scored from its own features + global
-        # only. Head input dims are unchanged (edge slots become zeros), so the variant still
-        # loads on variable topologies — it isolates whether the sparse edges carry transfer.
-        self.use_edges = use_edges
         # Investment gates (upgrade / inventory expansion) are LEARNED BINARY DECISIONS,
         # not thresholded ROI regressions: the heads emit logits trained with BCE against
         # the planner's actual gate booleans, and deployment fires a gate when its
@@ -187,24 +177,18 @@ class ProducerScoreModel(nn.Module):
         prod_h = self._encode_rows(_product_features, view.product_rows, self.hidden, device, self.product_encoder)
         input_h = self._encode_rows(_input_features, view.input_rows, self.hidden, device, self.input_encoder)
 
-        if self.use_edges:
-            prod_cap_ctx = _forward_relation_context(
-                view.relations.product_capacity_required, len(view.product_rows), cap_h, self.hidden
-            )
-            prod_input_ctx = _forward_relation_context(
-                view.relations.product_input_required, len(view.product_rows), input_h, self.hidden
-            )
-            input_prod_ctx = _reverse_relation_context(
-                view.relations.product_input_required, len(view.input_rows), prod_h, self.hidden
-            )
-            cap_prod_ctx = _reverse_relation_context(
-                view.relations.product_capacity_required, len(view.capacity_rows), prod_h, self.hidden
-            )
-        else:
-            prod_cap_ctx = torch.zeros((len(view.product_rows), self.hidden), device=device)
-            prod_input_ctx = torch.zeros((len(view.product_rows), self.hidden), device=device)
-            input_prod_ctx = torch.zeros((len(view.input_rows), self.hidden), device=device)
-            cap_prod_ctx = torch.zeros((len(view.capacity_rows), self.hidden), device=device)
+        prod_cap_ctx = _forward_relation_context(
+            view.relations.product_capacity_required, len(view.product_rows), cap_h, self.hidden
+        )
+        prod_input_ctx = _forward_relation_context(
+            view.relations.product_input_required, len(view.product_rows), input_h, self.hidden
+        )
+        input_prod_ctx = _reverse_relation_context(
+            view.relations.product_input_required, len(view.input_rows), prod_h, self.hidden
+        )
+        cap_prod_ctx = _reverse_relation_context(
+            view.relations.product_capacity_required, len(view.capacity_rows), prod_h, self.hidden
+        )
 
         if len(view.product_rows):
             product_scores = self.product_head(torch.cat([
@@ -260,77 +244,6 @@ class ProducerScoreModel(nn.Module):
         if not rows:
             return torch.empty((0, hidden), device=device)
         return encoder(_tensor([feature_fn(r) for r in rows], device))
-
-
-def flat_model_pads_for(view: ProducerEntityView) -> dict[str, int]:
-    """Pad caps sized to one view's entity counts — the fixed input dims a `ProducerFlatModel`
-    is locked to at construction."""
-    return {
-        "cap_max": len(view.capacity_rows),
-        "prod_max": len(view.product_rows),
-        "input_max": len(view.input_rows),
-    }
-
-
-def _flatten_padded(rows: list[list[float]], n_max: int, dim: int) -> list[float]:
-    flat: list[float] = []
-    for r in rows:
-        flat += r
-    flat += [0.0] * (dim * (n_max - len(rows)))
-    return flat
-
-
-class ProducerFlatModel(nn.Module):
-    """Step-14 ablation #2 baseline: a flat MLP over one fixed-size padded feature vector.
-
-    NON-PORTABLE BY CONSTRUCTION. The whole view (global + every capacity/product/input row)
-    is concatenated into one fixed-length vector padded to `(cap_max, prod_max, input_max)`,
-    fed through a single MLP, and read out as a fixed-size score vector sliced back to the
-    actual row counts. A topology WIDER than the pad it was built for cannot be ingested
-    (`forward_view` raises) — the exact transfer the row/edge scorer handles by just adding
-    rows. Same `forward_view` -> `ProducerScoreTensors` interface as `ProducerScoreModel`, so
-    it deploys through `score_with_model` + the deterministic planner unchanged."""
-
-    def __init__(self, *, cap_max: int, prod_max: int, input_max: int, hidden: int = 64) -> None:
-        super().__init__()
-        self.hidden = hidden
-        self.cap_max = cap_max
-        self.prod_max = prod_max
-        self.input_max = input_max
-        self.upgrade_threshold = 0.5
-        self.inventory_expansion_threshold = 0.5
-        in_dim = _GLOBAL_DIM + cap_max * _CAPACITY_DIM + prod_max * _PRODUCT_DIM + input_max * _INPUT_DIM
-        self.trunk = _mlp(in_dim, hidden)
-        # prod_max + input_max + cap_max row scores, then restoration / upgrade / inventory
-        self.head = nn.Linear(hidden, prod_max + input_max + cap_max + 3)
-
-    def forward_view(self, view: ProducerEntityView) -> ProducerScoreTensors:
-        device = next(self.parameters()).device
-        n_cap, n_prod, n_input = len(view.capacity_rows), len(view.product_rows), len(view.input_rows)
-        if n_cap > self.cap_max or n_prod > self.prod_max or n_input > self.input_max:
-            raise ValueError(
-                f"flat model pad ({self.cap_max},{self.prod_max},{self.input_max}) cannot ingest "
-                f"topology ({n_cap},{n_prod},{n_input}) — non-portable by construction"
-            )
-        flat = (
-            _global_features(view)
-            + _flatten_padded([_capacity_features(r) for r in view.capacity_rows], self.cap_max, _CAPACITY_DIM)
-            + _flatten_padded([_product_features(r) for r in view.product_rows], self.prod_max, _PRODUCT_DIM)
-            + _flatten_padded([_input_features(r) for r in view.input_rows], self.input_max, _INPUT_DIM)
-        )
-        out = self.head(self.trunk(_tensor([flat], device)))[0]
-        i = 0
-        product_scores = out[i:i + self.prod_max][:n_prod]; i += self.prod_max
-        input_scores = out[i:i + self.input_max][:n_input]; i += self.input_max
-        cap_scores = out[i:i + self.cap_max][:n_cap]; i += self.cap_max
-        return ProducerScoreTensors(
-            product_urgency=product_scores,
-            input_value=input_scores,
-            capacity_bottleneck_value=cap_scores,
-            restoration_roi=out[i],
-            upgrade_roi=out[i + 1],
-            inventory_expansion_value=out[i + 2],
-        )
 
 
 def collect_producer_score_samples(
@@ -659,7 +572,6 @@ def distill_producer_scorer(
     eval_depths=None,
     gate_thresholds: dict[str, float] | None = None,
     train_configs: list[Configuration] | None = None,
-    use_edges: bool = True,
     log=print,
 ) -> tuple[ProducerScoreModel, list[dict]]:
     """One wrapped distill: collect planner-labeled samples over the training topologies,
@@ -691,9 +603,7 @@ def distill_producer_scorer(
             cfg, teacher, order_pol, seeds=[0], horizon=horizon
         )
     log(f"collected {len(samples)} producer score samples over {len(train_cfgs)} topologies")
-    model = ProducerScoreModel(hidden=hidden, use_edges=use_edges)
-    if not use_edges:
-        log("ablation #2: no-edge variant (recipe relations unused)")
+    model = ProducerScoreModel(hidden=hidden)
     fit_producer_score_model(model, samples, epochs=epochs, lr=lr, log=log, log_every=max(1, epochs // 10))
     thresholds = calibrate_gate_thresholds(model, samples) if gate_thresholds is None else gate_thresholds
     model.upgrade_threshold = float(thresholds["upgrade"])
@@ -787,11 +697,10 @@ def save_producer_score_model(model: ProducerScoreModel, path, *,
     ckpt = {
         "version": PRODUCER_SCORER_CHECKPOINT_VERSION,
         "hidden": model.hidden,
-        "use_edges": bool(model.use_edges),
         "upgrade_threshold": float(model.upgrade_threshold),
         "inventory_expansion_threshold": float(model.inventory_expansion_threshold),
         "state_dict": model.state_dict(),
-        "schema": producer_portable_schema(use_edges=model.use_edges).to_dict(),
+        "schema": producer_portable_schema().to_dict(),
     }
     if config_fingerprint is not None:
         ckpt["config_fingerprint"] = config_fingerprint
@@ -813,12 +722,13 @@ def load_producer_score_model(path) -> ProducerScoreModel:
             f"producer scorer checkpoint version {ckpt.get('version')!r} "
             f"!= {PRODUCER_SCORER_CHECKPOINT_VERSION}"
         )
-    use_edges = bool(ckpt.get("use_edges", True))
+    if ckpt.get("use_edges", True) is not True:
+        raise ValueError("no-edge ablation checkpoints are no longer supported")
     if "schema" in ckpt:
         assert_compatible(
-            PortableSchema.from_dict(ckpt["schema"]), producer_portable_schema(use_edges=use_edges)
+            PortableSchema.from_dict(ckpt["schema"]), producer_portable_schema()
         )
-    model = ProducerScoreModel(hidden=int(ckpt["hidden"]), use_edges=use_edges)
+    model = ProducerScoreModel(hidden=int(ckpt["hidden"]))
     model.load_state_dict(ckpt["state_dict"])
     model.upgrade_threshold = float(ckpt.get("upgrade_threshold", 0.5))
     model.inventory_expansion_threshold = float(ckpt.get("inventory_expansion_threshold", 0.5))
@@ -964,16 +874,18 @@ def _forward_batch(model: ProducerScoreModel, batch: _ProducerScoreBatch) -> Pro
     n_product = prod_h.shape[1]
     n_input = input_h.shape[1]
     n_capacity = cap_h.shape[1]
-    if model.use_edges:
-        prod_cap_ctx = _forward_batch_relation_context(batch.product_capacity_weight, cap_h, n, hidden, device)
-        prod_input_ctx = _forward_batch_relation_context(batch.product_input_weight, input_h, n, hidden, device)
-        input_prod_ctx = _reverse_batch_relation_context(batch.product_input_weight, prod_h, n, hidden, device)
-        cap_prod_ctx = _reverse_batch_relation_context(batch.product_capacity_weight, prod_h, n, hidden, device)
-    else:
-        prod_cap_ctx = torch.zeros((n, n_product, hidden), device=device)
-        prod_input_ctx = torch.zeros((n, n_product, hidden), device=device)
-        input_prod_ctx = torch.zeros((n, n_input, hidden), device=device)
-        cap_prod_ctx = torch.zeros((n, n_capacity, hidden), device=device)
+    prod_cap_ctx = _forward_batch_relation_context(
+        batch.product_capacity_weight, cap_h, n, hidden, device
+    )
+    prod_input_ctx = _forward_batch_relation_context(
+        batch.product_input_weight, input_h, n, hidden, device
+    )
+    input_prod_ctx = _reverse_batch_relation_context(
+        batch.product_input_weight, prod_h, n, hidden, device
+    )
+    cap_prod_ctx = _reverse_batch_relation_context(
+        batch.product_capacity_weight, prod_h, n, hidden, device
+    )
 
     if n_product:
         product_scores = model.product_head(torch.cat([
@@ -1250,9 +1162,6 @@ def main() -> None:
     ap.add_argument("--inventory-threshold", type=float, default=None,
                     help="fix the inventory-expansion gate threshold (EXP-0013).")
     ap.add_argument("--save", type=str, default=None)
-    ap.add_argument("--no-edges", action="store_true",
-                    help="step-14 ablation #2: distill the no-edge variant (recipe relations "
-                         "unused) to measure the edge contribution to portable transfer.")
     args = ap.parse_args()
     if args.torch_threads > 0:
         torch.set_num_threads(args.torch_threads)
@@ -1282,7 +1191,6 @@ def main() -> None:
         eval_seeds_list=_range(args.eval_seeds_list), epochs=args.epochs, lr=args.lr,
         eval_seeds=args.eval_seeds, horizon=args.horizon, save=args.save, hidden=args.hidden,
         eval_depths=eval_depths, gate_thresholds=gate_thresholds, train_configs=train_configs,
-        use_edges=not args.no_edges,
     )
     cols = ("depth,seed,producers,scorer_units,planner_units,ratio,dead,planner_dead,"
             "upgrade_fp_rate,inventory_fp_rate,replen_mismatch_rate")

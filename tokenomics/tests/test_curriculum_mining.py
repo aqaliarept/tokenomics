@@ -1,4 +1,4 @@
-"""Stage 3 random hard-case mining (CURRICULUM_GAME_MASTER_APPROACH.md Stage 3).
+"""Stage 3 random hard-case mining (the curriculum arc (experiments/HISTORY.md §7) Stage 3).
 
 Mining samples a large legal pool, runs the learner vs the strongest affordable
 reference, gates by failure class + gap, then ranks surviving policy-weakness tasks by

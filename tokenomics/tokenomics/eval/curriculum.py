@@ -1,4 +1,4 @@
-"""Curriculum game-master scaffold (CURRICULUM_GAME_MASTER_APPROACH.md Stage 0 + 1).
+"""Curriculum game-master scaffold (the curriculum arc (experiments/HISTORY.md §7) Stage 0 + 1).
 
 This is the *curriculum and evaluation* tool, NOT part of the promoted system stack.
 It gives the portable producer/orderer stack a replayable task archive and an

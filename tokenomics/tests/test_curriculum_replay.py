@@ -1,4 +1,4 @@
-"""Stage 4 prioritized-replay pure half (CURRICULUM_GAME_MASTER_APPROACH.md Stage 4).
+"""Stage 4 prioritized-replay pure half (the curriculum arc (experiments/HISTORY.md §7) Stage 4).
 
 Tests the torch-free curriculum-replay primitives — the archive split, priority weights,
 and priority sampling — so the replay/relabel/train driver's curation logic is verified

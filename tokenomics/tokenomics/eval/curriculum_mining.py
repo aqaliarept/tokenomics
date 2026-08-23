@@ -1,4 +1,4 @@
-"""Stage 3 random hard-case mining (CURRICULUM_GAME_MASTER_APPROACH.md Stage 3).
+"""Stage 3 random hard-case mining (the curriculum arc (experiments/HISTORY.md §7) Stage 3).
 
 Find useful *policy weaknesses* without a learned generator: sample a large legal pool,
 run the portable stack (learner) and the strongest affordable reference on each replayed
@@ -412,7 +412,7 @@ def _joint_stack_learner(producer_model: object, orderer_model: object) -> Learn
 
 def _mine_parallel(args: "argparse.Namespace", lo: int, hi: int, cells: list[dict]) -> list[dict]:
     """Fan the (cell × seed-range) grid out across `args.workers` child processes, one per
-    shard, then merge their evaluated rows. Mirrors `tokenomics.train.parallel`: mining per
+    shard, then merge their evaluated rows. Fans out one process per shard: mining per
     task is single-threaded, so throughput comes from independent processes, one per core, each
     with BLAS pinned to 1 thread (no oversubscription). The parent ranks the merged rows.
 

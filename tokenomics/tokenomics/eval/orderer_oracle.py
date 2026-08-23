@@ -38,14 +38,6 @@ from .scale import build_scale_config
 from ..env import TokenomicsAECEnv
 from ..train.smoke_ppo import staged_config
 
-# EXP-0009: a value fn maps a system state (`env.global_state()`) to estimated consumer units
-# over a future window — the learned terminal value the value-guided planner adds to a short
-# rollout. Kept torch-free here (the planner only calls it); the model lives in train.value_model.
-from typing import Callable, Sequence
-
-ValueFn = Callable[[np.ndarray], float]
-
-
 # Best-of-baseline envelope (EXP-0005 Stage 0): the strict M0 bar per topology. The
 # named baseline is stock_aware+proportional, but random beats it on some seeds, so a
 # credible "learning is superior" claim must clear the *upper envelope* of the simple
@@ -112,39 +104,11 @@ def _const_policy(vec: np.ndarray) -> Policy:
     return pol
 
 
-def blend_vocabulary(alphas: "Sequence[float]" = ()) -> dict[str, Policy]:
-    """The named+blend candidate vocabulary (Stage A1b / A0b diagnostic): even_split, the
-    `ordering_blend` interpolations at the given alphas (highest alpha = closest to even_split
-    first), then proportional. Insertion order is the categorical label order — `_score_candidates`
-    preserves it, so a choice index is stable across the collector and the search."""
-    from .baselines import ORDERING_BASELINES, ordering_blend
-
-    vocab: dict[str, Policy] = {"even_split": ORDERING_BASELINES["even_split"]}
-    for a in sorted(alphas, reverse=True):
-        vocab[f"blend_{a:g}"] = ordering_blend(a)
-    vocab["proportional"] = ORDERING_BASELINES["proportional"]
-    return vocab
-
-
 def _rollout_units(
     env: TokenomicsAECEnv, prod: Policy, order: Policy, lookahead: int
 ) -> int:
-    """Play a (cloned) env forward up to `lookahead` more cycles under fixed policies
-    and return consumer units delivered over that window. Used to score candidates."""
-    units, _ = _rollout_window(env, prod, order, lookahead)
-    return units
-
-
-def _rollout_window(
-    env: TokenomicsAECEnv, prod: Policy, order: Policy, window: int,
-    value_fn: "ValueFn | None" = None,
-) -> tuple[float, int]:
-    """Roll a (cloned) env up to `window` cycles under fixed `(prod, order)` and return
-    `(score, cycles_stepped)`. `score` is the consumer units delivered over the window, plus
-    `value_fn(env.global_state())` as a learned estimate of the remaining-window units when a
-    value fn is given (EXP-0009 value-guided planning) — `value_fn=None` is the plain
-    full-rollout score. `cycles_stepped` (≤ `window`, fewer if the episode ended) is the
-    compute the candidate cost, so the planner can show the value-guided path simulates less."""
+    """Play a cloned environment forward for at most `lookahead` cycles and return
+    the consumer units delivered over that window."""
     start_cycle = env.current_cycle
     start_units = env.episode_stats["consumer_completed_units"]
     max_iter = env.horizon * len(env.possible_agents) * 3 + 100
@@ -152,18 +116,11 @@ def _rollout_window(
         if _agent_done(env, agent):
             env.step(None)
             continue
-        if env.current_cycle - start_cycle >= window:
+        if env.current_cycle - start_cycle >= lookahead:
             break
         role = env._role[agent][0]
         env.step(prod(env, agent) if role == "prod" else order(env, agent))
-    units = float(env.episode_stats["consumer_completed_units"] - start_units)
-    cycles = env.current_cycle - start_cycle
-    # V predicts units-to-go from a cycle start; a terminal state (system death or horizon)
-    # has no future cycle, so its true tail is 0 — adding V there would give terminal
-    # candidates phantom score and corrupt the ranking vs the full rollout (EXP-0009).
-    terminal = env.system.is_dead() or env.current_cycle >= env.horizon
-    tail = float(value_fn(env.global_state())) if value_fn is not None and not terminal else 0.0
-    return units + tail, cycles
+    return int(env.episode_stats["consumer_completed_units"] - start_units)
 
 
 def mpc_orderer_episode(
@@ -202,23 +159,6 @@ def mpc_orderer_episode(
     return env.episode_stats, choice_counts
 
 
-def _select_elite(
-    scored: list[tuple[str, Policy, float]], *, eps: float, k: int
-) -> list[tuple[str, Policy, float]]:
-    """Elite-set selection (EXP-0008): from per-cycle scored routings `(name, pol, units)`,
-    keep every routing within `eps` of the best (`units >= (1-eps)*best`), sorted best-first
-    and capped at the top `k`. Always returns >= 1 entry (the argmax) for non-empty input —
-    a decisive cell yields ~1 elite, a tie-heavy random-dominated cell yields many. Pure
-    over the scores so the selection is unit-testable without rollouts."""
-    if not scored:
-        return []
-    ranked = sorted(scored, key=lambda c: c[2], reverse=True)
-    best = ranked[0][2]
-    cutoff = (1.0 - eps) * best
-    elite = [c for c in ranked if c[2] >= cutoff]
-    return elite[:k]
-
-
 def _search_best_pol(
     env: TokenomicsAECEnv,
     prod: Policy,
@@ -251,8 +191,7 @@ def _candidate_list(
 ) -> list[tuple[str, Policy]]:
     """The per-cycle candidate set: the named baselines + `n_samples` freshly-sampled fixed
     routing vectors (named `s{j}`). Sample RNG seeded by (seed, cycle) so the same set is
-    reproduced by the full-rollout (`_score_candidates`) and value-guided
-    (`_score_candidates_valued`) scorers — a fair comparison scores identical candidates."""
+    reproduced by `_score_candidates`."""
     rng = np.random.default_rng((seed + 1) * 100003 + cur)
     cands: list[tuple[str, Policy]] = list(base_candidates.items())
     for j in range(n_samples):
@@ -274,62 +213,11 @@ def _score_candidates(
 ) -> list[tuple[str, Policy, float]]:
     """Score the named baselines + `n_samples` freshly-sampled fixed routings by a
     `lookahead`-cycle rollout from `env` (EXP-0005 Stage 1d). Returns `(name, pol, units)`
-    per candidate. Sample RNG seeded by (seed, cycle) for reproducibility — shared by the
-    argmax (`_search_best_pol`) and the EXP-0008 elite (`_search_elite_pols`) searches."""
+    per candidate. Sample RNG is seeded by (seed, cycle) for reproducibility."""
     return [
         (name, pol, float(_rollout_units(copy.deepcopy(env), prod, pol, lookahead)))
         for name, pol in _candidate_list(base_candidates, n_samples, sample_scale, seed, cur, adim)
     ]
-
-
-def _score_candidates_valued(
-    env: TokenomicsAECEnv,
-    prod: Policy,
-    base_candidates: dict[str, Policy],
-    n_samples: int,
-    sample_scale: float,
-    window: int,
-    seed: int,
-    cur: int,
-    adim: int,
-    value_fn: "ValueFn | None" = None,
-) -> tuple[list[tuple[str, Policy, float]], int]:
-    """Value-guided variant of `_score_candidates` (EXP-0009): score each candidate by a
-    `window`-cycle rollout plus `value_fn(terminal state)` for the remaining-window tail.
-    Returns `(scored, total_cycles_stepped)` — `scored` is the same `(name, pol, score)`
-    shape, `total_cycles_stepped` is the simulated compute (the lever: `window` < `lookahead`
-    plus a learned tail costs fewer cycles than the full rollout). `value_fn=None` with
-    `window == lookahead` reproduces `_score_candidates` exactly."""
-    scored: list[tuple[str, Policy, float]] = []
-    total = 0
-    for name, pol in _candidate_list(base_candidates, n_samples, sample_scale, seed, cur, adim):
-        score, cycles = _rollout_window(copy.deepcopy(env), prod, pol, window, value_fn)
-        scored.append((name, pol, score))
-        total += cycles
-    return scored, total
-
-
-def _search_elite_pols(
-    env: TokenomicsAECEnv,
-    prod: Policy,
-    base_candidates: dict[str, Policy],
-    n_samples: int,
-    sample_scale: float,
-    lookahead: int,
-    seed: int,
-    cur: int,
-    adim: int,
-    *,
-    eps: float,
-    k: int,
-) -> list[tuple[Policy, float]]:
-    """Elite-set teacher (EXP-0008): like `_search_best_pol` but return the whole within-eps
-    elite (best-first, capped at K) as `(pol, units)` instead of one winner — the multiple
-    near-optimal routings EXP-0008 distills over. Top entry is the argmax winner, so this
-    only *adds* labels, never changes the chosen best."""
-    scored = _score_candidates(
-        env, prod, base_candidates, n_samples, sample_scale, lookahead, seed, cur, adim)
-    return [(pol, units) for _, pol, units in _select_elite(scored, eps=eps, k=k)]
 
 
 def search_orderer_episode(
@@ -369,97 +257,6 @@ def search_orderer_episode(
         role = env._role[agent][0]
         env.step(prod(env, agent) if role == "prod" else order_pol(env, agent))
     return env.episode_stats, sample_wins
-
-
-def planner_orderer_episode(
-    env: TokenomicsAECEnv,
-    prod: Policy,
-    base_candidates: dict[str, Policy],
-    n_samples: int,
-    sample_scale: float,
-    window: int,
-    seed: int,
-    value_fn: "ValueFn | None" = None,
-) -> tuple[dict, int]:
-    """Drive one episode where each cycle's orderer routing is chosen by the value-guided
-    search (`_score_candidates_valued`): score the named baselines + `n_samples` sampled
-    routings by a `window`-cycle rollout plus `value_fn(terminal state)`, commit the argmax.
-    Producer fixed (isolates the orderer). Returns `(episode_stats, sim_cycles)` where
-    `sim_cycles` is the total rollout cycles simulated — the compute the EXP-0009 accept gate
-    compares. `value_fn=None` with `window == lookahead` is the rollout-only teacher
-    (generalizing `search_orderer_episode`); a learned `value_fn` with a short `window` is the
-    value-guided planner that should match it at fewer `sim_cycles`."""
-    env.reset(seed=seed)
-    for a in env.possible_agents:
-        env.action_space(a).seed(seed)
-    max_iter = env.horizon * len(env.possible_agents) * 3 + 100
-    adim = env.spec_.ordering_action_dim
-
-    cur = -1
-    order_pol: Policy = next(iter(base_candidates.values()))
-    sim_cycles = 0
-    for agent in env.agent_iter(max_iter=max_iter):
-        if _agent_done(env, agent):
-            env.step(None)
-            continue
-        if env.current_cycle != cur:
-            cur = env.current_cycle
-            scored, cycles = _score_candidates_valued(
-                env, prod, base_candidates, n_samples, sample_scale, window,
-                seed, cur, adim, value_fn)
-            sim_cycles += cycles
-            order_pol = max(scored, key=lambda c: c[2])[1]  # first max wins ties
-        role = env._role[agent][0]
-        env.step(prod(env, agent) if role == "prod" else order_pol(env, agent))
-    return env.episode_stats, sim_cycles
-
-
-def ranking_agreement_episode(
-    env: TokenomicsAECEnv,
-    prod: Policy,
-    base_candidates: dict[str, Policy],
-    n_samples: int,
-    sample_scale: float,
-    lookahead: int,
-    short: int,
-    value_fn: "ValueFn | None",
-    seed: int,
-) -> float:
-    """Offline ranking-quality diagnostic (EXP-0009): the fraction of visited cycles where the
-    value-guided argmax candidate (window=`short` + `value_fn`) matches the full-rollout argmax
-    (window=`lookahead`). The episode is driven by the full-rollout teacher (its trajectory),
-    and at each cycle both scorings rank the *same* candidate set, so a name match means the
-    value-guided planner would have committed the teacher's choice. 1.0 ⇒ the value tail never
-    changed a decision; lower ⇒ the cheaper search diverges. A diagnostic for why episode
-    units do or don't hold up (the accept gate)."""
-    env.reset(seed=seed)
-    for a in env.possible_agents:
-        env.action_space(a).seed(seed)
-    max_iter = env.horizon * len(env.possible_agents) * 3 + 100
-    adim = env.spec_.ordering_action_dim
-
-    cur = -1
-    order_pol: Policy = next(iter(base_candidates.values()))
-    agree = 0
-    total = 0
-    for agent in env.agent_iter(max_iter=max_iter):
-        if _agent_done(env, agent):
-            env.step(None)
-            continue
-        if env.current_cycle != cur:
-            cur = env.current_cycle
-            full = _score_candidates(
-                env, prod, base_candidates, n_samples, sample_scale, lookahead, seed, cur, adim)
-            valued, _ = _score_candidates_valued(
-                env, prod, base_candidates, n_samples, sample_scale, short, seed, cur, adim, value_fn)
-            full_best = max(full, key=lambda c: c[2])
-            val_best_name = max(valued, key=lambda c: c[2])[0]
-            agree += int(full_best[0] == val_best_name)
-            total += 1
-            order_pol = full_best[1]  # drive under the full-rollout teacher's trajectory
-        role = env._role[agent][0]
-        env.step(prod(env, agent) if role == "prod" else order_pol(env, agent))
-    return agree / total if total else 0.0
 
 
 def _baseline_units(env: TokenomicsAECEnv, prod: Policy, order: Policy, seed: int) -> dict:

@@ -1,4 +1,4 @@
-"""Stage 4 prioritized replay + relabeling (CURRICULUM_GAME_MASTER_APPROACH.md Stage 4).
+"""Stage 4 prioritized replay + relabeling (the curriculum arc (experiments/HISTORY.md §7) Stage 4).
 
 Turn the Stage-3 mined weakness archive into a curriculum: split it into train / validation
 / blind-holdout replay, priority-sample the train tasks by their archived gap, replay each
@@ -552,7 +552,7 @@ def _emit_stage4(out: Path, gate, val_rows, blind_rows, tm_rows, joint_rows, reg
     lines = [
         f"# Stage 4 {stage_label}: "
         "Prioritized Replay & Relabeling", "",
-        "Stage 4 of CURRICULUM_GAME_MASTER_APPROACH.md: replay the Stage-3 mined archive,",
+        "Stage 4 of the curriculum arc (experiments/HISTORY.md §7): replay the Stage-3 mined archive,",
         "relabel + train candidate portable score models, evaluate vs champion. No promotion.", "",
         "## Gate (advisory — promotion is human-approved)", "",
         "```json", json.dumps(gate, indent=2), "```", "",

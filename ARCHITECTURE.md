@@ -7,7 +7,7 @@ written for readers who understand ordinary software systems but may be new
 to machine learning; every specialised term is defined the first time it is
 used and again in [GLOSSARY.md](GLOSSARY.md). Terms about the simulated
 economy itself (token, cycle, capacity, order, process sheet, system death)
-are defined in [CONTEXT.md](CONTEXT.md).
+are defined in [CLAUDE.md](CLAUDE.md) under *Domain Language*.
 
 The narrative follows the pipeline in execution order:
 
@@ -23,14 +23,11 @@ The narrative follows the pipeline in execution order:
 
 Deeper references:
 
-- [docs/rl-training-architecture.md](docs/rl-training-architecture.md) — the
-  legacy reinforcement-learning layer in full detail (observation encoding,
-  actor/critic networks, PPO). Still accurate for the components marked
-  *legacy* below.
-- [CURRICULUM_GAME_MASTER_APPROACH.md](CURRICULUM_GAME_MASTER_APPROACH.md) —
-  the staged plan the current pipeline follows.
-- [experiments/README.md](experiments/README.md) — the indexed record of
-  every experiment.
+- [experiments/HISTORY.md](experiments/HISTORY.md) — the compacted narrative
+  of the whole empirical record, grouped by arc, with the diagnosed cause
+  behind every closed branch.
+- [experiments/README.md](experiments/README.md) — the lookup index into the
+  per-experiment directories, plus the layout convention.
 - [docs/adr/](docs/adr/) — design decision records.
 
 ## 1. The Short Version
@@ -394,23 +391,12 @@ is **masked mean-squared error** — only eligible producers' scores
 participate in the loss, so the model is never punished on rows the allocator
 will mask anyway.
 
-### 6.3 Orderer distillation, oracle-relabel form
+### 6.3 Historical oracle-relabel form
 
-Used when the headroom being chased is the *search's* advantage (Section 5),
-which the proportional teacher by definition cannot demonstrate. Collection
-(`collect_oracle_orderer_samples`) replays a specific archived world with the
-champion producer while the **search chooses the routing each cycle**, and
-records the search's committed routing as the target. Two normalisations make
-a committed routing usable as a training target:
-
-- routings that differ across an agent's backlog slots are averaged over the
-  occupied slots (the deployed model emits one routing per stream);
-- the eligible scores are shifted to zero mean and clipped — softmax only
-  reads differences, so centring removes meaningless scale without changing
-  the induced routing.
-
-The same masked-MSE fitting then applies unchanged. This is the machinery the
-EXP-0036 representability probe runs per-task (Section 8.8).
+EXP-0032/0036 also tried training the scorer from search-committed routings.
+That experiment-specific collector and its analysis models were removed after
+the branch closed; the evidence remains in the experiment records and the
+implementation is recoverable from git history.
 
 ### 6.4 DAgger
 
@@ -419,7 +405,8 @@ only on states the *teacher* visits, drifts slightly at deployment, and finds
 itself in states it was never taught. **DAgger** fixes this by letting the
 student drive the episodes and asking the teacher to label the states the
 student actually reaches. The early producer-clone work (arcs 1–2) depended
-on it; the current replay pipeline composes the same relabel/train machinery.
+on it. The retained producer-clone and product-stream orderer trainers still
+provide DAgger helpers; the current scorer replay pipeline does not call them.
 
 ### 6.5 Two training rules written in scar tissue
 
@@ -508,10 +495,20 @@ which is exactly what Track A did.
 
 ## 8. The Game-Master Pipeline, End to End
 
+> **Status: this arc is closed.** The pipeline described here worked, and it
+> proved the task family it mined had no headroom left to give (EXP-0033: the
+> champion was already at 98.3% of exact demand). See
+> [experiments/HISTORY.md](experiments/HISTORY.md) §7. The section is kept
+> because the *method* — mine, gate against a noise floor, attribute to a role,
+> replay, measure closure — is the reusable part, and any future mining round
+> should follow it. Some of the modules named below (`eval/gap_attribution.py`,
+> `eval/orderer_representability.py`, `eval/train_closure.py`,
+> `eval/ceiling_bound.py`, `eval/curriculum_capacity.py`) have since been removed
+> from the tree and are recoverable from git history; `eval/curriculum.py`,
+> `eval/curriculum_mining.py` and `eval/curriculum_replay.py` remain.
+
 This section walks one real round — EXP-0036, "Track A round 2" — through
-every stage, with the actual numbers. The pipeline lives in
-`eval/curriculum*.py`, `eval/gap_attribution.py`,
-`eval/orderer_representability.py`, and `eval/train_closure.py`.
+every stage, with the actual numbers.
 
 ### 8.1 The task record: a world in one line
 
@@ -760,8 +757,7 @@ The project treats its own history as part of the architecture:
 | `experiments/EXP-NNNN-*/` | One directory per experiment: question, exact config (`spec.json`), results (`summary.csv`), conclusion (`RESULT.md`), artifacts via git-lfs. The index in `experiments/README.md` is the timeline. |
 | `docs/adr/` | 54 numbered design decisions with reasoning |
 | `docs/DIAGNOSTICS.md` | Symptom → discriminating check registry; recurring problems get recognised, not re-debugged |
-| `PROGRESS.md` | Running work log; every completed task appends an entry |
-| `VERIFICATION.md` | Open questions, linked to the experiment that answers each |
+| `experiments/HISTORY.md` | The compacted narrative: what each arc asked, what came back, and which branches are closed |
 
 One standing rule binds them: **root cause before next strategy** — a failed
 or underperforming run must have its cause diagnosed with evidence (a trace,
@@ -772,96 +768,35 @@ under-training; the one-knob fix recovered ~everything.
 
 ## 10. Legacy Components
 
-Kept in the tree, not on the active skill-training path. The legacy guide
-([docs/rl-training-architecture.md](docs/rl-training-architecture.md))
-documents the first three in full depth.
+Kept in the tree, not on the active skill-training path.
 
 | Component | What it was | Status |
 |---|---|---|
-| `train/smoke_ppo.py`, `train/parallel.py` | The original trial-and-error PPO trainer: shared producer/orderer actor networks, centralised critic, GAE, reward shaping | Environment smoke checks only |
-| `train/boundary_grid.py` | The capability-mapping driver (which depths × demand levels PPO could learn) | Historical; produced EXP-0001 |
-| `train/warm_start.py`, `train/clone_fidelity.py` | The original behaviour-cloning + DAgger tooling for the flat (non-portable) producer | Superseded by scorer distillation; DAgger machinery still composed by replay |
-| `train/value_model.py` | Learned units-to-go estimator meant to shorten the search rollout | Rejected (no cross-world generalisation, EXP-0009) |
-| `train/producer_improve.py`, `train/orderer_improve.py`, `train/champion_iterate.py` | Improvement and automation drivers for the pre-portable champions | Superseded by the Section 8 pipeline |
+| `train/smoke_ppo.py` | The original PPO trainer. Now retained for the shared pieces the live stack imports: actor networks, action masks, checkpoint load/save, `behavior_clone`, `staged_config` | Backbone; PPO training itself rejected for this stage |
+| `train/clone_fidelity.py` | Behaviour-cloning + DAgger tooling for the flat (non-portable) producer | Superseded by scorer distillation; retained for checkpoint loading and focused clone diagnostics |
+| `train/orderer_improve.py` | Search-labelled orderer fitting and stochastic checkpoint evaluation | Retained for the product-stream champion path; rejected enriched/elite variants removed |
+
+Removed in the cleanup (recoverable from git history): the PPO fan-out driver and
+boundary-grid mapper (`train/parallel.py`, `train/boundary_grid.py`), the rejected value
+estimator (`train/value_model.py`, EXP-0009), the producer-RL driver
+(`train/producer_improve.py`, EXP-0003), the superseded warm-start/champion drivers
+(`train/warm_start.py`, `train/champion_iterate.py`), producer audit scripts, the rejected
+elite/value relabel branches, flat/no-edge producer ablations, and the curriculum-arc probes
+(`eval/orderer_representability.py`, `eval/ceiling_bound.py`, `eval/gap_attribution.py`,
+`eval/train_closure.py`, and siblings). See [experiments/HISTORY.md](experiments/HISTORY.md)
+sections 4, 7 and 8 for why each branch closed.
 
 ## 11. How We Got Here — the Experiment History
 
-Fifty-plus experiments, readable as six arcs; per-experiment detail is in
-[experiments/README.md](experiments/README.md).
+Forty-nine experiments, readable as nine arcs. The full compacted narrative is
+[experiments/HISTORY.md](experiments/HISTORY.md); per-experiment detail is in each
+`experiments/EXP-NNNN-*/RESULT.md`.
 
-### Arc 1 — Finding the wall (EXP-0001 … 0004)
+## 12. Current State
 
-Classic PPO was mapped across economy sizes. Supply-chain **depth**, not
-order quantity, is where it failed — depth-2 trains, depth-3 collapses — and
-the failing role was the **producer** (restoration misallocation starves the
-middle of the chain). Cloning a decent hand-written producer into a network
-worked only after discovering the naive loss was wrong for gated actions;
-staged DAgger produced a faithful clone. Producer-only PPO on top of the
-clone went nowhere — the critic's predictions explained ~none of the outcome
-variance, i.e. the learning signal was empty — and the project pivoted to
-imitation of strong teachers.
+The champion stack, the settled results, the three closed levers and the one open
+branch are all recorded in [experiments/HISTORY.md](experiments/HISTORY.md) §0
+and §10 — that file is the single source of truth for project status, and is
+updated when an experiment closes or opens an arc.
 
-### Arc 2 — Beating the baseline via the orderer (EXP-0005 … 0009)
-
-A headroom audit showed the weakness was orderer-side: even random routing
-sometimes beat the standard heuristic. The per-cycle search (Section 5)
-turned that into teacher labels; distilled students beat the named baseline
-by double digits. Making the distilled orderer **stochastic** (sampling its
-routing) cleared the strict envelope on every held-out world — the first
-model in the project to do so. The learned value shortcut for the search was
-rejected (memorised its training economies); the surviving byproduct was that
-short rollouts suffice.
-
-### Arc 3 — The portable rebuild (EXP-0010 … 0014)
-
-Early models were welded to one economy's exact size. This arc rebuilt both
-roles entity-factored behind deterministic safety layers: the transparent
-planner (`entity_planner`), then learned score models distilled from strong
-teachers. Portable orderer ≈1.28× the routing heuristic on held-out worlds;
-portable producer ties the planner; the joint stack ≈1.11× the reference
-stack, zero deaths. The EXP-0012 orderer checkpoint from this arc is still
-the active champion orderer.
-
-### Arc 4 — Proving portability (EXP-0015 … 0022)
-
-A ladder of evaluation-only experiments: the transfer matrix (contract vs
-policy separated per cell); size transfer (24-product / 24-producer worlds,
-zero failures, value kept); out-of-family recipe shapes (fork/join — the
-contract held, one producer policy gap found); audits against every
-deterministic strategy; a training-coverage broadening that closed the found
-gap; and ablations that quantified which architectural pieces earn their keep
-(the recipe edges buy value only under scarcity; a flat fixed-size network is
-not portable at all, by construction). Remaining weaknesses were named, not
-hidden.
-
-### Arc 5 — The game master, and a real ceiling (EXP-0023 … 0033)
-
-The Section 8 pipeline was built stage by stage: replayable task records and
-failure classification first; then the discovery that the existing reference
-was too weak to expose any weakness — fixed by adopting the search bar.
-Mining at scale worked (the noise floors proved load-bearing); the replay
-experiments produced the augment-don't-replace and archive-diversity lessons.
-The arc ended with a high-quality null: after absorbing everything mineable,
-the ceiling bound showed the champion at ~98% of what is mathematically
-achievable on that world family. The family was saturated; the mining
-distribution itself had to change.
-
-### Arc 6 — Capacity-binding regimes, the current front (EXP-0034 … 0036)
-
-Mining moved to worlds where capacity, not demand, binds — verified by
-preflight. Round 1: large producer headroom found; first retrain captured
-only ~16% of it; root-caused to under-training; 5× more epochs captured
-~100% (EXP-0035, promoted 2026-07-04 — the current champion producer).
-Round 2 (EXP-0036): worlds bottlenecked at the raw-material layer; headroom
-is large and 89% orderer-owned, including six worlds where the champion's
-routing collapses the economy and search routing alone prevents it. The
-representability probe (Section 8.8) is in flight; its verdict decides
-between a full orderer oracle-relabel round and an architecture discussion.
-
-## 12. Current State (2026-07-04)
-
-- **Champion stack**: EXP-0035 producer score model + EXP-0012 orderer score
-  model (human-approved promotion, 2026-07-04).
-- **Active work**: EXP-0036 probe verdict pending; next decision gated on it.
-- **Test suite**: ~608 tests, kept green; environment and pipeline changes
-  land with tests first.
+The test suite is kept green; environment and pipeline changes land with tests first.
