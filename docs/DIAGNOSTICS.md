@@ -687,6 +687,88 @@ indexing it inside a per-item loop is O(n_items × member_bytes).
 
 ---
 
+## 15. Pooled multi-task training silently favours the largest task
+
+**Problem (plain English):** a pooled fit is *supposed* to weight every task (topology, economy,
+domain) equally, and the code looks like it does — each minibatch draws the same number of items
+from each task, and the loss averages over the tasks present. But an epoch ends with the biggest
+task alone: once the smaller tasks run out of items, the tail batches contain only the largest one,
+and an "equal weight among the tasks present" loss hands it the *entire* weight of every one of
+those batches. The result is a pooled model quietly defined by the largest task — the exact failure
+pooling was meant to prevent — and it is invisible in the training curve, because the loss is
+genuinely balanced in every batch it reports.
+
+**Discriminating check (local, no training needed):** count, per task, the total loss weight it
+receives across one whole epoch — do NOT inspect a single batch, which is balanced by construction.
+Replay the batch schedule (chunk each task's items, zip the chunks) and accumulate
+`1 / (tasks present in this batch)` per task per batch. Compare that epoch total to the task's share
+of the data:
+
+```python
+weight[t] += 1.0 / len(tasks_present_in_batch)   # over every batch of one epoch
+skew = max(weight.values()) / min(weight.values())
+data_ratio = max(counts.values()) / min(counts.values())
+```
+
+**Outcome branches:**
+- **(a) `skew` materially exceeds `data_ratio`** → the tail-batch effect is real; the fit is
+  over-weighting the largest task. Fix by *weighting*, not truncating or resampling: weight each
+  task `1 / (its batch count)` so its epoch total is invariant to how many batches it appears in
+  (`train.graph_generalization_probe.epoch_task_weights`). Keep sampling without replacement — no
+  item seen twice, no task truncated — and rescale so a full batch keeps its old magnitude, or the
+  frozen learning rate and clip norm silently change meaning. (Seen: EXP-0041 pre-run review — the
+  registered topologies differ by **1.43×** in decisions but the largest, s77, drew **2.16×** the
+  epoch gradient weight of s29.)
+- **(b) `skew` ≈ `data_ratio`** → the loss is decision-weighted, not task-balanced at all. That may
+  be intended; if the experiment claims task balance, it is a different bug in the loss reduction.
+- **(c) `skew` ≈ 1** → balancing holds; look elsewhere (target quality, features, capacity).
+
+**Record the choice.** Put the weighting mode in the training recipe that gets persisted
+(`TRAINING["task_weighting"]`), so a result says which semantics produced it rather than leaving it
+to be re-derived from the code at the commit.
+
+---
+
+## 16. A timing measurement drives a feasibility verdict, and the box was busy
+
+**Problem (plain English):** a cost or throughput number is measured locally, projected out to a full
+run, and the projection says the plan is too expensive — so the plan gets cut, re-scoped, or
+declared NO-GO. But the measurement was taken while something else (very often *your own* test suite,
+build, or a parallel background job) was competing for the same cores. Contention does not announce
+itself: the numbers look self-consistent, repeat across runs, and even preserve the correct *ratios*
+between the things being compared, so nothing about them looks wrong. The verdict is then wrong by
+whatever factor the box was oversubscribed by.
+
+**Discriminating check (local, seconds):** do not re-run the timing and average — contention repeats.
+Arbitrate it against an independent estimate of the WORK, then against an idle box:
+
+1. Count the actual work in one unit (nodes/edges/parameters → FLOPs; bytes → bandwidth). For an
+   MPNN layer: `2 * edges * 2 * H * H` per layer for the messages plus `nodes * 2 * H * H` for the
+   update, and roughly `3x` the forward total once backward is included.
+2. Divide by the measured seconds and ask whether the implied rate is *physically sane* for the
+   hardware: a single modern core does order 1–10 GFLOP/s on small, memory-bound matmuls, and tens
+   of GFLOP/s only on large dense ones.
+3. Check `uptime` load average against `nproc`, then re-measure on an idle box.
+
+**Outcome branches:**
+- **(a) Implied rate is far BELOW hardware capability (and load >> cores):** the measurement is
+  contention-inflated. Discard the projection entirely — do not scale it by a guessed factor — and
+  re-measure on an idle box or, better, on the target shape. (Seen: EXP-0041 pre-run budget — a
+  4.17 s/batch reading implied 1.3 GFLOP/s, ~19x slower than the same box idle at 0.217 s. It had
+  produced an 88–778 core-h fit budget, a 7–41 h critical path, and a NO-GO feasibility verdict; the
+  real figures are 1.6–9.6 core-h and ~1 h, with labels dominating the fit 2–100x.)
+- **(b) Implied rate is ABOVE what one core can do:** the thread pin is not in effect (`set_num_threads`
+  called too late, an env var overriding it, or a library with its own pool). Fix the pin before
+  believing the number, or you will budget a parallel run as if it were serial.
+- **(c) Implied rate is sane and the box was idle:** the timing stands — proceed, and record the
+  load average alongside it so the next reader can tell.
+
+**Cheap general guard:** a timing that gates a decision belongs on the target shape, not the dev
+box (CLAUDE.md's "where training + experiments run" rule exists for exactly this), and any timing
+worth acting on should be recorded together with the load average it was taken under.
+
+---
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

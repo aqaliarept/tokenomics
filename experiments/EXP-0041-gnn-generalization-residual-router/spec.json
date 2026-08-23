@@ -1,12 +1,14 @@
 {
   "version": "gnn-generalization-residual-router-v1",
   "date": "2026-08-09",
-  "status": "PLANNED - blocked on EXP-0040 classification; no pod run authorized",
-  "driver": "to implement",
-  "source_experiments": [
-    "EXP-0039-gnn-observation-probe",
-    "EXP-0040-rollout-target-stability"
+  "status": "IMPLEMENTED (code + local tests), NOT RUN - blocked on EXP-0040 classification; no target mode selected; no pod run authorized",
+  "driver": [
+    "tokenomics.eval.graph_generalization_dump (splits + conditional target + dump artifacts)",
+    "tokenomics.train.graph_generalization_probe (--stage fit | gate-a)",
+    "tokenomics.eval.graph_residual_router (--stage select | test)",
+    "tokenomics.eval.graph_generalization_budget (required pre-spend timing smoke + projection)"
   ],
+  "source_experiments": ["EXP-0039-gnn-observation-probe", "EXP-0040-rollout-target-stability"],
   "question": "Can a pooled regularized relational MPNN learn producer preferences that transfer to independent trajectory seeds within the same three topologies, then improve closed-loop delivery as a bounded confidence-gated residual over blend_0.5?",
   "scope": "Within-topology trajectory generalization only; no unseen-topology claim.",
   "dependency": {
@@ -51,6 +53,8 @@
     "pooled_tasks": true,
     "loss": "task-balanced decision-weighted MSE on decision-centered primary labels",
     "batch_decisions_per_task": 32,
+    "task_weighting": "epoch_balanced",
+    "task_weighting_note": "each task's TOTAL gradient weight per epoch is equalized (weight 1/(its batch count)), not just its share of each batch: the tail batches of an epoch belong to the largest task alone. Registered topologies differ 1.43x in decisions, which under per-batch-only balance was a 2.16x epoch gradient-weight skew.",
     "max_epochs": 300,
     "min_epochs": 50,
     "validation_every": 5,
@@ -84,16 +88,136 @@
     "no task increases system deaths",
     "eligibility, conservation, finiteness, and soft multi-producer routing hold"
   ],
-  "verdicts": [
-    "PASS_RESIDUAL_WITHIN_TOPOLOGY",
-    "OFFLINE_ONLY",
-    "NO_GENERALIZATION",
-    "CANCELLED_BY_EXP0040"
+  "verdicts": ["PASS_RESIDUAL_WITHIN_TOPOLOGY", "OFFLINE_ONLY", "NO_GENERALIZATION", "CANCELLED_BY_EXP0040"],
+  "implementation": {
+    "split_registry": "graph_generalization_dump.SPLIT_REGISTRY + validate_split_registry (disjoint, whole-episode, nested 2/4/8 prefixes, rejects reuse of the EXP-0037..0040 anchor seeds {29,30,31}/{77,78,79}/{45,46,47})",
+    "target_modes": "target_mode is a REQUIRED argument with no default; single_suffix is byte-identical to the EXP-0039 label (parity-tested); continuation_mean averages K EXP-0040 forks and persists every raw continuation label plus the original-suffix control",
+    "exp0040_license": "TargetLicense + read_exp0040_license(<EXP-0040 result>): the classification picks the (mode, K) pair, AMBIGUOUS raises Exp0040Blocked, SEARCH_ONLY raises Exp0040Cancelled, and continuation_mean must take the SMALLEST converged K in {4,8,16}. The artifact must stamp experiment=EXP-0040 and carry its own convergence_by_k evidence: K is DERIVED from that map, there is deliberately no --continuations flag to override it, and a converged_continuations field contradicting the map raises. run_generalization_dump refuses to spend label compute without a license (require_license, smoke-only escape); the dump CLI requires --exp0040-result and verifies pinned inputs + a 40-char source commit by default",
+    "dump_certification": "certify_dump_contract(): experiment id, frozen delta/lookahead/horizon/floor/schema hash, exactly the three registered tasks, the exact split registry AND collected seed set per (task, split), pinned archive/producer SHA-256, whole-tree source fingerprint + commit, and the declared row counts. The license must name a real EXP-0040 file with a 64-char SHA-256 (an inline classification is a claim, not a license) and its K is RE-DERIVED from the recorded convergence evidence rather than read from the recorded number. Every real stage runs it (require_shape=True by default)",
+    "fit_certification": "certify_fit_contract() / certify_fit_spec(): require_shape certifies the dataset, this certifies the RUN \u2014 exactly the registered arms (plus the auto-added mean-mode control), model seeds (0,1,2), train-8, the 2/4/8 curve, an unmodified training recipe (no shortened --max-epochs), and a 40-char commit. Checked BEFORE training compute is spent and re-checked from the written spec by both rollout stages, so a one-seed one-epoch fit cannot be stamped certified and license a rollout",
+    "cross_stage_source": "fit, gate-a and both rollout stages call EXP-0039's assert_source_matches/assert_env_matches against the dump's recorded source + env, so a dump built by one tree/runtime cannot be fitted, scored, or deployed under another",
+    "rollout_certification": "assert_rollout_shape(): the validation/test rollouts must use exactly the registered tasks, that split's registered episode seeds, the dump's horizon, the REGISTERED model seeds (0,1,2), a fit that itself satisfies the fit contract, the same code and runtime, and the same archive + producer checkpoint by SHA-256",
+    "fair_row_baseline": "candidates.csv carries the 7 deployable actor row features so row_mlp_h32 retrains on the identical splits/target (EXP-0039's actor floor was fitted on the trajectories it was scored on)",
+    "architecture": "graph_router_probe.RelationalGNN parameterized (layers/hidden/dropout, layers=0 legal); dropout defaults to 0.0 so the EXP-0039 gate path is numerically unchanged",
+    "leakage_control": "the fit stage loads splits=('train','validation') only, and an excluded decision is reduced to its identity columns BEFORE any number is parsed \u2014 a final-test label/feature/continuation row is never read at all, not merely never returned (proved by a poisoned-label test that loads fine at fit and raises on a full load)",
+    "run_order": "fit -> validation adapter grid -> content-hash manifest lock (checkpoints + normalization + architecture_selection + the fit spec.json + adapter.json, keyed by root, every entry verified) -> gate-a (first test-label read; refuses without a verifying manifest; takes the arm from the LOCKED architecture_selection.json) -> gate-b (recomputes Gate A from the prediction CSV whose SHA-256 gate_a.json recorded, and binds manifest hash + arm + dump source). gate_b.json is bound to test_rows.csv the same way, and the standalone --stage verdict RECOMPUTES both gates rather than reading their pass fields",
+    "artifact_only_gates": "gate_a() consumes prediction rows and gate_b() consumes rollout rows; both are recomputable from CSV with no checkpoint and no simulator. Their expected scope DEFAULTS to the registry (require_registered=True) and is never inferred from the rows on hand: exactly the registered tasks, their registered final-test episodes, and model seeds (0,1,2), with identical decision/candidate coverage per arm and model seed for Gate A, one-for-one blend pairing for Gate B, and no duplicated rows. A caller-supplied narrower scope is refused as registered_scope=False",
+    "required_controls": "in continuation_mean mode run_fit automatically fits the pooled mpnn_4x64 single-suffix control on the same train-8 rows; gate-a retains final-test predictions for EVERY fitted arm; train rows are reported over the FULL train split so flat counts and flat-candidate predictions are present; train->test gaps are written by gate-a; the rollout stages emit spec.json and verdict.json",
+    "route_integrity": "RouteAudit compares the decoded final routing against the base routing at the SAME state (conservation, eligibility masking, preserved multi-producer split) and is a Gate B condition",
+    "verdict": "verdict_from_gates() emits exactly one of the four pre-registered result strings",
+    "tests": [
+      "tokenomics/tests/test_graph_generalization_dump.py",
+      "tokenomics/tests/test_graph_generalization_probe.py",
+      "tokenomics/tests/test_graph_residual_router.py",
+      "tokenomics/tests/test_future_fork.py (EXP-0040 precondition: recursive graph-identity check)"
+    ]
+  },
+  "layout_deviations": [
+    "gate-a writes test_predictions.csv / test_metrics_by_split_task_seed.csv / gate_a.json into its OWN stage dir instead of appending to probe/predictions.csv, so the locked fit dir is never mutated by the test read",
+    "manifest.json (content-hash lock over checkpoints + normalization.json + architecture_selection.json + adapter.json) lives in the rollout/adapter dir",
+    "the future-demand fork lives in env/ (needs RNG + config legality) rather than domain/, which stays RNG-free per CLAUDE.md"
   ],
   "compute": {
     "where": "RunPod CPU after EXP-0040 result, implementation review, clean commit, and explicit spend approval",
-    "budget": "TBD from required two-decision timing smoke",
-    "pod_spend_authorized": false
+    "budget": "measure with `python -m tokenomics.eval.graph_generalization_budget --archive ... --task-ids <s29> --prod-ckpt <EXP-0035> --decisions 2 --continuations 2 --out-dir <dir>`; it times both target modes on the real topology/horizon and projects core-hours + artifact MB for the 42-episode run using the EXP-0039 measured population (1548.9 decisions/episode, 2.71 candidates/decision)",
+    "measured_2026_08_09_baseline_producer": {
+      "caveat": "RUN WITH `--prod stock_aware`, NOT the pinned EXP-0035 producer (not present locally) \u2014 a LOWER BOUND. EXP-0039's real dump cost ~4 core-hours for 13940 decisions (~1.03 s/decision) against ~0.06 s/decision here, i.e. the scorer producer dominates by ~17x. Re-measure with the pinned checkpoint staged before committing to a K.",
+      "projected_decisions": 65053,
+      "projected_candidates": 176419,
+      "core_hours_lower_bound": {"single_suffix": 1.1, "k4": 3.37, "k8": 5.64, "k16": 10.19},
+      "core_hours_scaled_by_exp0039_producer_ratio": {"single_suffix": 18.6, "k4": 57, "k8": 96, "k16": 173},
+      "artifacts_mb": {"graph_shards": 579, "candidates_csv": 27, "continuation_csv_per_k": 15},
+      "rollout_episodes": {"validation_grid": 171, "final_test": 27}
+    },
+    "scale_note": "EXP-0041 collects 42 episodes vs EXP-0039's 9 (4.67x the labels) at single_suffix; continuation_mean multiplies the label cost by roughly (1 + K) on top of that. Measured multiples: K=4 3.07x, K=8 5.14x, K=16 9.29x the single-suffix per-decision cost.",
+    "pod_spend_authorized": false,
+    "fit_stage_core_hours": {
+      "measured": "2026-08-16 on RunPod CPU pod xtyr889fxi7pml (16 vCPU cpu5c, idle, torch 2.13.0+cpu), single-thread, fwd+bwd on 96 real EXP-0039 graphs incl. Batch build: `graph_generalization_budget --fit-only --fit-dump-dir <dump>`",
+      "train8_nonflat_decisions": 11373,
+      "nonflat_fraction": 0.31,
+      "batches_per_epoch": 118,
+      "n_optimizer_runs": 27,
+      "s_per_batch": {"mpnn_4x64": 0.106, "mpnn_2x32": 0.029, "graph_0hop_h32": 0.004, "row_mlp_h32": 0.0004},
+      "core_hours_per_epoch": 0.032,
+      "core_hours": {"epochs_50": 1.6, "epochs_150": 4.8, "epochs_300": 9.6},
+      "critical_path_hours": {
+        "note": "one mpnn_4x64 train-8 fit = the wall-clock floor however the 27 runs are scheduled",
+        "epochs_50": 0.17,
+        "epochs_300": 1.0
+      },
+      "verdict": "labels (19-173 core-h) dominate the fit by 2-100x; the fit is NOT the largest line item",
+      "threading": "NOT a latency lever: same batch, idle box, 1 thread 0.217 s vs 8 threads 0.401 s (many small per-relation matmuls). The cpu-single-thread pin buys exact reproducibility at no cost.",
+      "RETRACTED": "an earlier revision recorded 88-778 core-h and a 7-41 h critical path. Those timings were taken in the dev container while the pytest suite saturated all 8 cores (~19x inflation: 4.17 s/batch measured vs 0.217 idle). A FLOP check would have caught it: 96 graphs = 8414 nodes / 23158 edges ~ 5.4 GFLOP with backward, so 4.17 s implied 1.3 GFLOP/s. See docs/DIAGNOSTICS.md entry 16."
+    }
   },
-  "reproduce": "TBD after implementation; exact commands and logs are required artifacts"
+  "reproduce": {
+    "1_dump": "python -m tokenomics.eval.graph_generalization_dump --archive <gate_archive.jsonl> --prod-ckpt <producer_candidate.pt> --exp0040-result <EXP-0040 result json> --out-dir <exp>/data --verify-source-commit",
+    "2_fit": "python -m tokenomics.train.graph_generalization_probe --stage fit --dump-dir <exp>/data --out-dir <exp>/probe --target-mode <the licensed mode>",
+    "3_select": "python -m tokenomics.eval.graph_residual_router --stage select --archive <archive> --task-ids <3 tasks> --fit-dir <exp>/probe --out-dir <exp>/rollout --prod-ckpt <producer_candidate.pt>",
+    "4_gate_a": "python -m tokenomics.train.graph_generalization_probe --stage gate-a --dump-dir <exp>/data --fit-dir <exp>/probe --manifest <exp>/rollout/manifest.json --adapter-dir <exp>/rollout --out-dir <exp>/gate",
+    "5_gate_b": "python -m tokenomics.eval.graph_residual_router --stage test --archive <archive> --task-ids <3 tasks> --fit-dir <exp>/probe --adapter-dir <exp>/rollout --gate-a <exp>/gate/gate_a.json --out-dir <exp>/rollout",
+    "note": "every stage certifies the pre-registered shape by default; the --allow-* / require_shape=False escapes exist for smokes only and a fit produced with one cannot license a rollout"
+  },
+  "protocol_v2": {
+    "status": "DECIDED 2026-08-16, NOT YET IMPLEMENTED. Owner ruled the v1 protocol NO-GO on feasibility: the fit may cost more than label generation, and run_fit executes its runs sequentially in one process, so the previously quoted 'perfect packing on 16 vCPU' wall-clock describes an execution model that does not exist. Implementation waits on the epoch probe.",
+    "staged_label_collection": {
+      "decision": "ACCEPT",
+      "rule": "collect train + validation labels only; fit; select arm and adapter; freeze the manifest; ONLY THEN collect final-test labels",
+      "why_unbiased": "test seeds, target mode, commit and the stop rule are all fixed in advance; staging changes WHEN the labels are paid for, not WHICH episodes are read or by what criterion",
+      "saving": "9 of 42 expensive episodes (21%) when validation fails",
+      "code_impact": "certify_dump_contract currently requires spec['splits'] == all three splits and the exact collected seed set for every split; it must accept a train+validation tranche and a later test tranche, both certified against the same pre-registered registry",
+      "saving_correction": "the curve does NOT avoid the label spend: train-2 and train-4 are nested PREFIXES of train-8, so the mandatory run still needs all 24 train + 9 validation episodes = ~79% of the label budget. Staged collection saves only the remaining 9 test episodes (~21%), and only when validation is not passed.",
+      "status": "IMPLEMENTED",
+      "mechanism": "run_generalization_dump already took `splits`; certification is what changed. certify_dump_contract(expected_splits=FIT_TRANCHE|TEST_TRANCHE) certifies a TRANCHE: it still demands the FULL pre-registered registry (test seeds included) from every tranche, so staging cannot let a later tranche choose its test seeds with the fit in hand, and it refuses a fit tranche that collected labels outside its own splits. assert_tranches_agree(fit_spec, test_spec) then proves the two directories are one experiment (frozen contract, pinned inputs, licence, target/K, registry) before Gate A scores across them; the source COMMIT is deliberately allowed to differ, since the fit happens in between and the tree may move.",
+      "stage_wiring": "run_fit(dump_tranche=FIT_TRANCHE) certifies the fit tranche and records it in fit/spec.json; run_gate_a(test_dump_dir=...) reads final-test labels from the test tranche and cross-certifies. Under staging the fit CANNOT read a final-test label because it does not yet exist on disk \u2014 a stronger guarantee than the previous read-time exclusion."
+    },
+    "rollout_only_seeds": {
+      "decision": "ACCEPT",
+      "labeled_seeds_per_task": 3,
+      "validation_rollout_seeds_per_task": 10,
+      "test_rollout_seeds_per_task": 20,
+      "rule": "expensive LABELED seeds stay 3/task for Gate A; adapter selection and Gate B use separate, cheap, pre-registered rollout-only seed sets that need no teacher labels",
+      "why": "nine (alpha, margin) configurations were being selected on nine validation episodes and Gate B read nine test episodes; a favourable seed could dominate. Rollout episodes cost a policy rollout, not a teacher search.",
+      "constraint": "pre-registered, disjoint from the labeled splits AND from SPENT_SEEDS (the EXP-0037..0040 anchor set)",
+      "status": "IMPLEMENTED",
+      "registry": {
+        "s29": {"validation": "1300-1309", "test": "2300-2319"},
+        "s77": {"validation": "1400-1409", "test": "2400-2419"},
+        "s45": {"validation": "1500-1509", "test": "2500-2519"}
+      },
+      "validator": "validate_rollout_registry(): pre-registered, unique int seeds, correct block sizes (10/20), disjoint from EVERY labeled split of the same task \u2014 not merely the same-named one, since a Gate B rollout played on a TRAIN episode is contaminated however it is filed \u2014 disjoint between rollout validation and test, and never a seed EXP-0037..0040 spent."
+    },
+    "arm_ladder": {
+      "decision": "MANDATORY = 4 arms x 3 seeds + the 2/4/8 curve; per-task arm optional",
+      "mandatory": ["row_mlp_h32", "graph_0hop_h32", "mpnn_2x32", "mpnn_4x64"],
+      "mandatory_model_seeds": [0, 1, 2],
+      "mandatory_conditional": "mpnn_4x64_single_suffix_control, in continuation_mean mode only",
+      "moved_to_optional_diagnostics": ["mpnn_4x64_per_task (opt-in post-mortem, not part of the mandatory result)"],
+      "rationale": "neither affects the verdict; both may be run later on the train/validation artifacts if the primary result needs diagnosis",
+      "measured_saving": "58.8% of fit cost (1820 s/epoch mandatory vs 4413 full); owner estimate was 40-60%",
+      "trimmed_stage_core_hours": {"epochs_50": 25, "epochs_150": 76, "epochs_300": 152},
+      "curve": {
+        "status": "MANDATORY (reinstated 2026-08-16 after the pilot showed pooling alone does not close the gap)",
+        "arm": "pooled mpnn_4x64 only",
+        "model_seeds": [0, 1, 2],
+        "fits": "train-2 and train-4 are additional fits; train-8 is REUSED from the primary fit",
+        "validation_split": "identical across sizes",
+        "normalization": "separate train-fold normalizer per size (fitted inside train_arm on that size's training graphs)",
+        "report_per_task_and_model_seed": ["mean_regret", "regret_over_random", "r2", "dispersion"],
+        "separates": {
+          "rising": "additional independent trajectories help, though train-8 may still be insufficient",
+          "flat": "increasing trajectory coverage over the tested range does not solve the problem"
+        },
+        "NOT_A_GATE": "diagnostic only. It does not select the architecture and does not touch the adapter, Gate A or Gate B. If train-8 fails the pre-registered validation arm-selection, stop before test labels; if train-8 passes, a flat curve may NOT cancel the test; a rising curve may NOT rescue a train-8 that failed selection."
+      },
+      "mandatory_optimizer_runs": {"single_suffix": 18, "continuation_mean": 21, "with_optional_per_task": 27},
+      "measured_cost_core_hours": "~3.4 at the pilot's 180 epochs"
+    },
+    "execution_prerequisites": {
+      "epoch_probe": "one pooled mpnn_4x64 fit on the EXISTING EXP-0039 dump, no new labels, to measure epochs-to-early-stop. LAUNCHED on RunPod CPU pod xtyr889fxi7pml 2026-08-16. Caveat: EXP-0039 holds 3 episodes/task, so one held out for validation leaves a train-2-scale fit (2576 non-flat decisions, 27 batches/epoch) rather than train-8 (11373, 118) - fewer batches per epoch means more epochs to the same number of updates, so its epoch count is an indicative upper bound, not the train-8 number.",
+      "sharded_fit_runner": "one process per (arm, model seed), single-thread math, deterministic aggregation. Changes execution, not the scientific protocol. NOTE: it cuts core OCCUPANCY, not LATENCY - the runs are independent, so wall-clock floors at the longest single run (mpnn_4x64 at train-8 = 6.9 h at min_epochs=50, 41 h at max_epochs=300, single-thread; 13.6/81.5 h pessimistic). No core count reduces that.",
+      "latency_lever": "OPEN. Options: keep single-thread determinism and accept the 7-41 h critical path; allow multi-threading for the mandatory arms (trades bitwise fit reproducibility, needs the determinism guarantee restated in FIT_CONTRACT); or lower max_epochs. Owner: decide after the epoch probe."
+    },
+    "early_stop_patience": "UNCHANGED. The pilot used the old single-suffix dataset and one model seed; tuning patience from it before the target mode is licensed would be premature. The 38 min critical path is acceptable as-is."
+  }
 }

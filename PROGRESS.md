@@ -2545,3 +2545,628 @@ Blockers: none.
 Next: step 2 — deterministic stratified sample selection over the existing EXP-0039 decision population
 (lowest SHA-256 rank per `(task, seed, cycle_quartile, original_label_class)` stratum) + authority-
 alignment tests (exact join against EXP-0039 decisions/candidates and canonical EXP-0038B actor rows).
+
+---
+
+### EXP-0041 built (code + local tests) — pooled GNN generalization + residual router; NOT run (2026-08-09)
+
+Status: **DONE (implementation, TDD, local only).** Built the whole EXP-0041 pipeline from its
+pre-registered handover. **No target mode chosen, no dataset generated, no pod spend** — the handover
+allows building the target-mode plumbing before EXP-0040's read but forbids choosing a mode or spending
+compute, and the user asked to review before anything runs on a pod.
+
+What it is, plainly: EXP-0039 showed a relational GNN can fit its training trajectories but scores at the
+random floor on a held-out trajectory of the SAME topology. EXP-0041 asks whether that is repairable with
+the smallest defensible set of changes — many more independent episodes, one pooled identity-free fit
+across the three topologies, honest untouched validation/test splits, a FAIR retrained row-actor baseline,
+and (only if the offline read passes) a bounded confidence-gated residual over `blend_0.5` rather than
+hard routing.
+
+Artifacts (code):
+- `tokenomics/tokenomics/eval/graph_generalization_dump.py` — `SPLIT_REGISTRY` (8 train / 3 validation /
+  3 test per task, nested 2->4->8 train prefixes) + `validate_split_registry` (disjoint, whole-episode,
+  nested, and REJECTS any seed already spent by EXP-0037..0040); explicit seed-set collection with a
+  `split` on every row; `target_mode` is a REQUIRED arg with no default (`single_suffix` |
+  `continuation_mean`), K validated against the mode; `continuation_label_matrix` forks futures via
+  EXP-0040's `fork_future_demand` under common random numbers within a continuation; the original-suffix
+  label is ALWAYS persisted as the control; `candidates.csv` carries the 7 deployable actor row features
+  so the fair row baseline retrains on the identical splits/target; `split_manifest.json`, shards,
+  topologies, schema, provenance (source tree + env + input SHA-256), `max_decisions` timing hook.
+- `tokenomics/tokenomics/train/graph_generalization_probe.py` — dump loader with full alignment/leakage
+  validation (incl. re-deriving the continuation mean and rejecting a dump whose primary label is not it);
+  pooled task-balanced decision minibatches (`(model_seed, epoch)`-deterministic, decisions never split);
+  task-balanced decision-centered MSE; the five pre-registered arms over ONE parameterized
+  `RelationalGNN` (layers/hidden/dropout, `layers=0` legal) plus the unchanged `ResidualScoreModel` row
+  arm; validation-only early stopping + checkpoint + arm selection; predictions/metrics/learning-curve/
+  loss-history/normalization artifacts; artifact-only `gate_a`; `lock_manifest`/`verify_manifest`.
+- `tokenomics/tokenomics/eval/graph_residual_router.py` — `ensemble_residual` (per-seed centering,
+  unanimity of tie-inclusive winner sets, top-two margin, `alpha * clip(mean, -1, 1)`, exact-zero
+  fallback), `EnsembleRouter` deploy scorer (ineligible/uncontested columns structurally zero),
+  `RouteAudit` (conservation, eligibility, preserved multi-producer split, finiteness — compared against
+  the BASE routing at the same state), validation-only `(alpha, margin)` grid + selection rule, artifact-
+  only `gate_b`, and `verdict_from_gates` emitting exactly one of the four pre-registered results.
+- `tokenomics/tokenomics/eval/graph_generalization_budget.py` — the handover's required pre-spend step:
+  times a two-decision label smoke in BOTH modes on the real topology/horizon and projects core-hours +
+  artifact MB for the 42-episode run from the EXP-0039 measured population (1548.9 decisions/episode).
+- `tokenomics/tokenomics/train/graph_router_probe.py` — `RelationalGNN` gained `layers`/`dropout`
+  parameters; `dropout=0.0` is a literal no-op branch so the EXP-0039 gate path is numerically unchanged.
+
+Tests: `test_graph_generalization_dump.py` (11), `test_graph_generalization_probe.py`,
+`test_graph_residual_router.py`, and the EXP-0040 precondition fix in `test_future_fork.py`. Key ones:
+`single_suffix` labels + graphs are **byte-identical to the EXP-0039 dump** on the same episode (parity);
+continuation-mean primary labels recompute exactly from the persisted rows; every split-leakage mutation
+raises; the fit stage physically cannot load test rows; Gate A and Gate B each fail on every individual
+shortfall (adversarial); the route audit demonstrably catches a collapse to one producer; the test rollout
+refuses to run without a passing Gate A and a verifying manifest. The end-to-end pipeline smoke is behind
+a new opt-in marker (`pytest -m exp0041`, mirroring the existing `champion` convention) because it has to
+materialize a real label dump; the always-on tests keep the label/gate contracts.
+
+Decisions:
+- The fork stays in `env/` (needs RNG + config legality; `domain/` stays RNG-free) — EXP-0040's step-1
+  decision, unchanged.
+- Gate A writes its test predictions into its OWN stage dir instead of appending to `probe/predictions.csv`
+  so the locked fit dir is never mutated by the test read (documented deviation in spec.json).
+- `split_manifest.json` records the FULL three-split table even when a dump materializes a subset, plus
+  `collected_splits` — a partial table would otherwise read as a malformed registry downstream.
+
+Blockers: **EXP-0040 has not run.** Its classification decides the target mode (`MEAN_TARGET_LICENSED` ->
+continuation mean with the smallest converged K; `COVERAGE_PATH_LICENSED` -> single suffix; `AMBIGUOUS` ->
+blocked; `SEARCH_ONLY` -> EXP-0041 cancelled). Also: the pinned EXP-0035 producer checkpoint
+(`8b51b77c...`) is not present locally, so the budget timing smoke must be run with it staged.
+
+Three real bugs were found and fixed by the test runs themselves, all worth recording:
+1. `split_manifest` recorded only the splits a dump actually collected, so the probe's loader saw a table
+   missing `validation`/`test` and rejected an honest dump. It now records the FULL table plus
+   `collected_splits`.
+2. A test compared a verdict dict across a JSON round-trip; integer model-seed keys come back as strings.
+   The comparison is now on `(pass, conditions)`.
+3. The continuation-mean fixture ran at `lookahead=1`, where the counterfactual fork provably cannot move a
+   label (an order placed by resampled future demand cannot complete inside a one-cycle window) — the test
+   was vacuous and said so via a `spread > 0` assertion. Fixed to `lookahead=2` with the reason written
+   into the fixture. **Implication for the real run: a continuation-mean target only measures anything at a
+   lookahead long enough for the resampled demand to land — the registered `lookahead=8` is fine, but a
+   shortened-lookahead variant would silently degenerate to the single-suffix label.**
+
+Also worth recording so nobody re-derives it: a mid-session measurement of 790 s for the smoke fit was pure
+machine contention, not a design problem. On an idle box the same fit is ~2 s and the whole end-to-end
+pipeline smoke is 34 s; the dev box had ~1.6 GB free of 8 GB with no swap and load ~9 from other tooling
+(`numpy` alone took 35 s to import), which OOM-killed several pytest runs. Real fit-stage cost still needs a
+measurement at real scale (300 epochs, 5 arms, 3 model seeds, 8x the data) before the pod budget is trusted.
+
+Tests: 45/45 across the three EXP-0041 files + `test_future_fork.py`; EXP-0039's `test_graph_dump.py` 14/14
+(the `RelationalGNN` parameterization is backward-compatible).
+
+Next: (1) user review of the implementation; (2) run the budget timing smoke with the pinned producer and
+write the projected core-hours/artifact size into spec.json; (3) EXP-0040 must produce its classification
+before any EXP-0041 label spend; (4) only then, with explicit approval, commit a clean source and run
+dump -> fit -> select -> gate-a -> gate-b on a CPU pod.
+
+Budget (measured, lower bound): a two-decision timing smoke on the real s29 topology at horizon 100 /
+lookahead 8 projects the 42-episode run at **65,053 decisions / 176,419 candidates**; label cost
+0.061 s/decision single-suffix (1.1 core-hours), x3.07 at K=4, x5.14 at K=8, x9.29 at K=16. **Caveat that
+dominates the number:** the smoke used the `stock_aware` baseline producer because the pinned EXP-0035
+checkpoint is not present locally, and EXP-0039's real dump implies the scorer producer is ~17x slower per
+decision — so realistically ~19 core-hours single-suffix, ~96 at K=8, ~173 at K=16. Re-measure with the
+pinned checkpoint staged before committing to a K. Artifacts ~579 MB shards + 27 MB candidates.csv + ~15 MB
+per K; rollouts add 171 validation-grid + 27 final-test episodes.
+
+Full repo suite: **797 passed, 1 deselected** (the opt-in `champion` gate), 7m18s.
+
+---
+
+## 2026-08-09 — EXP-0041 implementation review: six findings fixed
+
+**Status:** DONE (code + tests + docs). Still NOT RUN — no target mode chosen, no pod spend.
+
+An independent review of the EXP-0041 build reported six defects (four blockers). All were
+reproduced by reading the code, all are fixed, and each now has a test that fails without the fix.
+
+**1 — The run-order lock was forgeable (blocker).** `lock_manifest` recorded `adapter.json`'s hash
+in a free-form `extra` field that `verify_manifest` never looked at, so the selected
+`(alpha, margin)` stayed editable after the freeze. Gate A also took the scored arm from the
+*unlocked* fit `spec.json`, and Gate B accepted any JSON containing `pass: true`. Now: the manifest
+is keyed by root (`fit`, `adapter`) and **every** recorded hash is recomputed — a locked root the
+verifier has no directory for raises rather than being skipped; Gate A reads the arm from the
+locked `architecture_selection.json` and refuses an `--arm` that disagrees; Gate B **recomputes**
+the offline verdict from the prediction CSV whose SHA-256 `gate_a.json` recorded, and cross-checks
+the manifest hash, the arm (gate == manifest == adapter), and the dump's source fingerprint.
+
+**2 — Both gates could pass on a partial test set (blocker).** Gate A's coverage check asked only
+for ">= 1 trajectory seed per task" and never compared what different arms/model seeds were scored
+on; Gate B compared task *names* and counted three. Both now demand exact coverage: the registered
+tasks and the registered episode seeds, every (arm, model seed) group present over an identical
+decision/candidate key set, one-for-one blend pairing, no duplicated rows. A duplicated row returns
+a fail verdict instead of raising, so an artifact-only recomputation still produces a verdict.
+
+**3 — No mechanically licensed real-run configuration (blocker).** The dump accepted either target
+immediately, `continuation_mean` accepted any K >= 1, provenance checks were opt-in flags, the
+loader validated only the schema hash and target name, and the rollout stages accepted an arbitrary
+archive/producer/records/seeds/horizon. Added: `TargetLicense` + `read_exp0040_license()` (the
+EXP-0040 classification picks the mode; `AMBIGUOUS` raises `Exp0040Blocked`, `SEARCH_ONLY` raises
+`Exp0040Cancelled`; a mean target must use the smallest **converged** K in {4,8,16});
+`certify_dump_contract()` (experiment id, frozen delta/lookahead/horizon/floor/schema, exactly the
+three registered tasks, the exact registry AND collected seed set, pinned archive/producer SHA-256,
+tree fingerprint + 40-char commit, license agreeing with the dump's target, declared row counts);
+`assert_rollout_shape()` (registered tasks, that split's registered seeds, the dump's horizon, the
+fit's model seeds, a certified fit, same archive+producer by SHA-256). All default ON
+(`require_shape=True`); the `--allow-*` escapes are smoke-only and a fit built with one cannot
+license a rollout.
+
+**4 — The fit read final-test labels (blocker).** `load_generalization_dump` parsed and validated
+every label, feature, and continuation row and only applied the split filter at the end. Now an
+out-of-split decision is reduced to its identity columns before any number is parsed. Proof test:
+poison every test-split `primary_label`/`original_suffix_label`/`feat_3` with the string `LEAK` —
+the fit load (`train`+`validation`) succeeds, a full load raises.
+
+**5 — Missing required controls/artifacts.** Added the mean-mode pooled `mpnn_4x64` single-suffix
+control (fitted automatically when the licensed target is the mean, via `control_view()`, which
+swaps both the label and the flatness flag); Gate A now retains final-test predictions for **every**
+fitted arm and writes train→test generalization gaps; train metrics/predictions cover the FULL train
+split so flat counts and flat-candidate predictions exist; both rollout stages emit `spec.json`; and
+the single mechanical result is emitted as `verdict.json` (plus a standalone `--stage verdict`).
+
+**6 — The documented smoke ran nothing.** `RESULT.md` pointed at `pytest -m exp0041`, a marker
+removed earlier and never registered in `pyproject.toml` (exit 5, 798 deselected). Replaced with the
+real command; the whole pipeline is in the default suite (~60 s for the four files).
+
+**Artifacts:** `tokenomics/eval/graph_generalization_dump.py`,
+`tokenomics/train/graph_generalization_probe.py`, `tokenomics/eval/graph_residual_router.py`,
+`tokenomics/eval/graph_generalization_budget.py`, the three EXP-0041 test files,
+`experiments/EXP-0041-*/RESULT.md` + `spec.json`.
+
+**Tests:** 72 passed across the EXP-0041/0039-graph files (dump 15, probe 18, router 16, fork 9,
+EXP-0039 `test_graph_dump.py` 14). Full repo suite: **810 passed, 1 deselected** (the opt-in `champion`
+gate), 8m38s.
+
+**Blockers / next:** unchanged and in this order — (1) re-measure the budget with the pinned EXP-0035
+producer staged (it dominates label cost ~17x); (2) EXP-0040 must run and classify the target, which
+is now the only thing that can license a mode and a K; (3) only then, with explicit approval and a
+clean commit, run dump -> fit -> select -> gate-a -> gate-b on a CPU pod.
+
+---
+
+## 2026-08-09 — EXP-0041 second review: four residual findings fixed
+
+**Status:** DONE (code + tests + docs). Still NOT RUN; still blocked on EXP-0040; still no pod spend.
+
+A re-review of yesterday's review fixes found four ways the guarantees were still bypassable. Each
+is fixed with a test that fails without the fix.
+
+**1 — The gates still inferred their own scope (blocker).** `gate_a()`/`gate_b()` filled an omitted
+`tasks`/`seeds_by_task`/`model_seeds` in FROM THE ROWS, so the original "one arbitrary episode per
+task" reproductions still returned PASS, and `_verified_gate_a()` fell back to the same leniency
+when the gate document recorded no `test_seeds_by_task`. Both gates now take `require_registered`
+(default True): the expected scope IS `SPLIT_REGISTRY`/`TASK_IDS`/`MODEL_SEEDS`, and a
+caller-supplied scope that differs returns `pass: False` with `registered_scope: False` rather than
+being believed. A `gate_a.json` that does not record the scope it certified, or that admits
+`require_shape: false`, cannot authorize a rollout. Smoke escape: `require_registered=False`.
+
+**2 — A certified fit was not the pre-registered RUN (blocker).** `require_shape` certified only the
+dataset; arms, model seeds, train size, curve sizes and `--max-epochs` were free, and no stage
+compared its live tree/runtime to the dump's. Added `FIT_CONTRACT` + `certify_fit_contract()`
+(registered arms, seeds (0,1,2), train-8, the 2/4/8 curve, an unmodified training recipe, a 40-char
+commit) checked BEFORE compute is spent, and `certify_fit_spec()` re-checking it from the written
+spec inside `assert_rollout_shape()`. Fit, gate-a and both rollout stages now call EXP-0039's
+`assert_source_matches()` / `assert_env_matches()` against the dump; the rollout model seeds must be
+the REGISTERED ones, not merely whatever the fit recorded.
+
+**3 — Authoritative state was still mutable (blocker).** `fit/spec.json` — the file Gate B reads the
+registry seeds, input hashes, model seeds, source and `require_shape` out of — sat outside the
+content-hash lock. It is now a locked manifest entry. `gate_b.json` is bound to `test_rows.csv` by
+SHA-256 exactly as `gate_a.json` is bound to its predictions, and the standalone `--stage verdict`
+RECOMPUTES both gates (`_verified_gate_a` / `_verified_gate_b` + `_read_rollout_rows`) instead of
+reading stored booleans.
+
+**4 — EXP-0040 was not yet an authoritative licence (blocker).** `read_exp0040_license()` did not
+check that the document identifies EXP-0040, and `--continuations` could override the artifact's
+converged K (an artifact stating 8 could be read as 16). The artifact must now stamp
+`experiment: EXP-0040`; the CLI flag is GONE — K is derived from the artifact's own
+`convergence_by_k` (smallest converged in {4,8,16}) and a contradicting `converged_continuations`
+raises; `TargetLicense` carries the evidence, and `certify_dump_contract()` requires a real source
+file plus a 64-char SHA-256 (an inline classification is a claim, not a licence) and RE-DERIVES K
+from the recorded evidence instead of trusting the recorded number.
+
+**Artifacts:** same four modules + three test files, `experiments/EXP-0041-*/RESULT.md`
+("Second review — four residual findings") + `spec.json` (`fit_certification`,
+`cross_stage_source`, rewritten `exp0040_license` / `dump_certification` /
+`rollout_certification` / `run_order` / `artifact_only_gates`).
+
+**Tests:** 77 passed across the EXP-0041/0039-graph files (dump 16, probe 20, router 18, fork 9,
+EXP-0039 `test_graph_dump.py` 14), 2m45s. Full repo suite: **815 passed, 1 deselected** (the opt-in
+`champion` gate), 11m41s (a contended box; the same suite was 8m38s yesterday).
+
+**Blockers / next:** unchanged and in this order — (1) re-measure the budget with the pinned EXP-0035
+producer staged (it dominates label cost ~17x); (2) EXP-0040 must run and classify the target;
+(3) only then, with explicit approval and a clean commit, run dump -> fit -> select -> gate-a ->
+gate-b on a CPU pod.
+
+---
+
+## 2026-08-16 — EXP-0041 feasibility review: pooled task balance fixed, fit budget measured
+
+**Status:** Two of five review findings CLOSED with code + evidence; three are protocol decisions
+that need the user's call before any spend. EXP-0041 remains NOT RUN and unauthorized.
+
+An independent feasibility review raised five blockers against the built-but-unrun EXP-0041
+pipeline. All five were verified against the code before acting; four were factually correct, one
+was a scope caveat rather than a defect.
+
+**1 — Pooled fit was task-balanced per BATCH, not per EPOCH (real, fixed).** `task_balanced_batches`
+balances every batch only while each task still has decisions; the larger tasks own the tail batches
+alone, and `task_balanced_loss` weighted the tasks *present* equally, handing those batches entirely
+to the biggest topology. Quantified on the registered topologies: s77 holds **1.43x** the decisions
+of s29 but drew **2.16x** the epoch gradient weight. Fixed by weighting rather than truncating or
+resampling — `epoch_task_weights()` weights each task `1/(its batch count)` so its epoch total is
+invariant to how many batches it appears in; sampling stays without replacement; the rescale keeps a
+full batch at its old magnitude so the frozen LR/clip norm still mean the same thing; equal-sized
+tasks reduce exactly to the old `1/n_tasks`. Recorded in the persisted recipe as
+`TRAINING["task_weighting"]="epoch_balanced"`. Pre-run correction — no dataset, fit, or gate read
+exists under the old weighting.
+
+**2 — The FIT stage was never budgeted (real, now measured + tooled).** `graph_generalization_budget`
+projected LABEL cost only; it now has a `--fit-only --fit-dump-dir <dump>` mode
+(`nonflat_fraction()`, `measure_fit_cost()`, `project_fit()`) that measures the fit on the real
+graphs of any existing dump — EXP-0039's included, no labels, license or teacher needed. Measured
+single-threaded fwd+bwd on 96 real graphs (`Batch` build included, the exact `train_arm` step),
+projected over the train-8 population of **11,373 non-flat** decisions = 118 batches/epoch (31% of
+decisions survive the flat filter — measured, not assumed; budgeting on the collected count
+overstates it 3x): `mpnn_4x64` 5.8 s/batch, `mpnn_2x32` 1.7, `graph_0hop_h32` 0.11, `row_mlp_h32`
+0.02. Across the 27 optimizer runs that is **1.75 core-h per epoch** = **88 core-h** at the
+`min_epochs=50` floor, **263** at 150, **526** at the `max_epochs=300` cap — versus **19-173
+core-h** for labels. **The fit is plausibly the largest line item in the experiment and it was
+invisible in the budget.** `mpnn_4x64`-shaped runs (pooled + per-task diagnostic + the 2/4/8 curve)
+are **89%** of it.
+
+**Precision caveat:** taken on a shared dev box at load average ~10. An earlier same-day run under
+heavier contention gave 8.3/3.3/0.24 s per batch = 778 core-h at the cap. Treat the absolutes as
+order-of-magnitude (**fit ~90-780 core-h**) and the arm RATIOS as the reliable part; re-measure on
+the pod shape with the new flag before planning against a number.
+
+**Re-prioritization this forces:** the review's proposed staged train/validation-then-test label
+collection saves 21% of labels = 4-36 core-h, which is small next to a ~90-780 core-h fit. The
+highest-value budget lever is the arm ladder and the realized epoch count (a 6x swing between the
+early-stop floor and the cap), not the label staging.
+
+**3, 4 — Confirmed, not acted on (protocol decisions, user's call).** (a) Certification requires all
+three splits in one dump (`certify_dump_contract`, splits + collected-seed checks), so test labels
+are paid for before validation is read; staged collection is feasible but changes the
+pre-registration contract. (b) Adapter selection picks 9 `(alpha, margin)` settings on 9 validation
+episodes and Gate B reads 9 test episodes — thin for a deployment claim. Rollout-only seeds need no
+teacher labels and are therefore cheap, but the cost is unmeasured locally (the pinned EXP-0035
+producer is not staged) and new seeds must extend `SPLIT_REGISTRY` without colliding with
+`SPENT_SEEDS`.
+
+**5 — Scope caveat, not a defect.** EXP-0041 tests new trajectories within three KNOWN topologies;
+it does not establish unknown-topology generalization. `RESULT.md`'s question already says so — the
+finding is about how conclusions may be phrased, not a code change. The `RelationalGNN` sum
+aggregation (`index_add_`, unnormalized, degree-sensitive) is confirmed and is fine here, but a
+later topology-transfer experiment should compare mean/degree-normalized aggregation.
+
+**Artifacts:** `train/graph_generalization_probe.py` (`epoch_task_weights`, `task_balanced_loss`
+`task_weight` param, `train_arm` wiring, `TRAINING["task_weighting"]`);
+`eval/graph_generalization_budget.py` (`nonflat_fraction`, `measure_fit_cost`, `project_fit`,
+`FIT_RUNS`, `--fit-dump-dir` / `--fit-only` / `--cores`);
+`tests/test_graph_generalization_probe.py` (+2 tests: epoch-total equality, which uniform weights
+fail, and weights reaching the loss); `docs/DIAGNOSTICS.md` entry 15 ("Pooled multi-task training
+silently favours the largest task"); `experiments/EXP-0041-*/RESULT.md` ("Third review" + the fit
+budget table).
+
+**Decisions:** balance by weighting, not truncation/resampling (keeps every decision, once per
+epoch); record the weighting mode in the recipe so a result states its own semantics.
+
+**Blockers / next**, in order: (1) decide the three protocol questions — staged label collection,
+rollout-only validation/test seeds, and whether the arm ladder is trimmed to fit the measured fit
+budget; (2) the no-new-label pilot on the existing EXP-0039 dump — its most valuable output is the
+**realized epoch count** under early stopping plus batches/s at the pod shape, which is the dominant
+budget uncertainty (pod, not local: it trains to convergence); (3) re-measure label cost with the
+pinned EXP-0035 producer staged; (4) EXP-0040 must run and classify the target; (5) only then, with
+explicit approval and a clean commit, dump -> fit -> select -> gate-a -> gate-b on a CPU pod.
+
+**Caveat on the fit number:** it is a `single_suffix` population and therefore a LOWER bound.
+Flatness is an exact tie between candidate labels; a mean over K continuations breaks ties a single
+suffix left flat, so `continuation_mean` plausibly trains on more than 11,376 decisions and costs
+proportionally more. The projection also excludes the every-5-epoch validation pass and the 30th
+(mean-mode control) run. Count the non-flat population in mean mode before trusting it.
+
+---
+
+## 2026-08-16 (2) — EXP-0041 protocol v2 decided; loss-scale claim corrected; epoch probe built
+
+**Status:** Full current protocol is **NO-GO on feasibility** (owner's call): the fit may cost more
+than label generation, and `run_fit` executes its runs sequentially in one process, so the
+"5–33 h at perfect packing on 16 vCPU" line in the previous entry describes an execution model that
+does not exist yet. Three protocol changes accepted, two execution prerequisites named. Still no
+dataset, no fit, no pod spend.
+
+**Owner decisions (protocol v2):**
+
+1. **Staged label collection — ACCEPT.** Generate train + validation labels only; select arm and
+   adapter; freeze the manifest; generate final-test labels only then. No bias, provided test
+   seeds, target, commit and stop rule are fixed in advance. Saves 9 of 42 expensive episodes when
+   validation fails.
+2. **Rollout-only seeds — ACCEPT.** Keep 3 expensive *labeled* seeds per task for Gate A, and add
+   separate cheap rollout-only sets: **10 validation** rollout seeds/task for adapter selection and
+   **20 test** rollout seeds/task for Gate B. Pre-registered, disjoint from the labeled splits (and
+   from `SPENT_SEEDS`). Cuts selection noise across the nine adapter configurations.
+3. **Arm ladder — cut diagnostics only.** Mandatory run keeps `row_mlp_h32`, `graph_0hop_h32`,
+   `mpnn_2x32`, `mpnn_4x64`, three model seeds, and the conditional single-suffix control in mean
+   mode. `mpnn_4x64_per_task` and the train-2/train-4 curve leave the mandatory run — they do not
+   affect the verdict — and may be run later on the train/validation artifacts if the primary
+   result needs diagnosis.
+
+**Measured: the cut removes 58.8%** of fit cost (owner estimate was 40–60%) — mandatory ladder
+1820 s/epoch vs 4413 full. Trimmed stage: **25 core-h at 50 epochs, 76 at 150, 152 at 300.**
+
+**Critical-path finding (changes what the parallel runner buys).** Sharding one process per
+(arm, model seed) cuts *occupancy*, not *latency*: the runs are independent, so wall-clock floors at
+the longest single run — one `mpnn_4x64` fit at train-8 = **6.9 h at the `min_epochs=50` floor,
+41 h at the `max_epochs=300` cap** (13.6 h / 81.5 h on the pessimistic timing). No number of cores
+reduces that. The levers on latency are intra-run threads (which the recipe pins at 1 for
+reproducibility), a lower epoch cap, or less data per epoch — all protocol questions, not runner
+questions. Worth settling before building the runner.
+
+**Loss-scale caveat (owner-flagged) — checked, and the earlier claim was too strong.** "Keeps a
+full batch at its previous magnitude" is exact only for equal-sized tasks. Measured: equal tasks →
+weights are exactly the old uniform `1/T`; registered profile (102/110/145 batches per task) → a
+batch holding all three tasks carries **1.023x** the old loss (weights sum to >= 1 by AM-HM, excess
+set by the SPREAD of batch counts; full batches are 70% of the epoch); tail batches, where s77 used
+to sit alone at weight 1.0, now carry **0.274 — 3.66x less**, which is the correction itself. A
+uniform inflation of the loss is indistinguishable from a raised learning rate, so this is now
+pinned by `test_epoch_weights_preserve_loss_scale_on_full_batches_and_only_shrink_the_tail` rather
+than asserted in prose. Docstring and RESULT.md corrected.
+
+**Epoch probe built (the owner's cheap pre-change measurement).**
+`graph_generalization_budget --measure-epochs` runs ONE real fit and reports epochs-to-early-stop,
+the validation curve, and wall-clock. `load_foreign_dump_for_timing()` re-reads the EXP-0039 dump as
+a `LoadedDump` (reconstructs split/seed/flatness, zero-fills the absent row features) — no new
+labels. It is deliberately outside the probe module and not certifiable: nothing loaded this way may
+produce a fitted arm, a gate read, or an adapter. Cross-check: it independently reproduces the
+4265 non-flat / 31% population measured from the CSVs.
+
+**Caveat that changes what the probe measures.** EXP-0039 holds only 3 episodes per task, so
+holding one out for validation leaves 2 train episodes — a **train-2-scale** fit (2576 non-flat
+decisions, 27 batches/epoch), not train-8 (11373, 118). Fewer batches per epoch means more epochs to
+the same number of updates, so its epoch count is an indicative UPPER-ish bound for train-8, not the
+same number. A train-8-scale epoch count cannot be had without new labels. Cost of the probe itself:
+**1.6–3.1 h** single-thread at the `min_epochs` floor, 9.3–18.5 h at the cap; roughly 20–40 min at
+8 threads (`--epochs-threads`, legitimate here because the epoch COUNT does not need the pinned
+single-thread reduction order — only the real run's reproducibility does).
+
+**Artifacts:** `eval/graph_generalization_budget.py` (`load_foreign_dump_for_timing`,
+`measure_fit_epochs`, `--measure-epochs` / `--epochs-arm` / `--epochs-max` / `--epochs-threads`);
+`train/graph_generalization_probe.py` (corrected `epoch_task_weights` docstring);
+`tests/test_graph_generalization_probe.py` (+1 loss-scale test, 82 total in the EXP-0041 files).
+
+**Blockers / next:** (1) owner green-light to launch the epoch probe on a CPU pod, given the
+train-2-scale caveat; (2) settle the single-thread-determinism vs latency question — it sets the
+real run's wall-clock floor; (3) implement protocol v2 (staged collection, rollout-only seed
+registry, trimmed mandatory ladder + optional diagnostics stage) with certification updated to
+match; (4) build the sharded fit runner (one process per arm/model seed, single-thread math,
+deterministic aggregation); (5) re-measure label cost with the pinned EXP-0035 producer staged;
+(6) EXP-0040 classifies the target; (7) only then the full run.
+
+---
+
+## 2026-08-16 (3) — CORRECTION: the fit is cheap; the feasibility alarm was a contended-box artifact
+
+**Status:** The two previous entries' fit-cost numbers are **WRONG and retracted**. Measured on an
+idle RunPod CPU pod (`xtyr889fxi7pml`, 16 vCPU cpu5c, torch 2.13.0+cpu — the EXP-0039 runtime), the
+fit stage costs **1.6 core-h at 50 epochs, 4.8 at 150, 9.6 at the 300 cap** across all 27 runs — not
+88–778. Labels (19–173 core-h) dominate the fit by **2–100x**, which is what the original handover
+assumed.
+
+**What went wrong.** Every local timing was taken while my own pytest suite saturated all 8 cores of
+the dev container — the same contention that stretched a ~3 min suite to 33 min. Uncontended, local
+single-thread `mpnn_4x64` is **0.217 s/batch**; under load it measured 4.17–8.26. The pod is 0.106.
+Inflation ~19x, and it propagated into every derived figure and into a feasibility verdict.
+
+**The check that would have caught it instantly.** 96 real graphs are 8414 nodes / 23158 edges; at
+hidden=64 over 4 layers that is ~1.8 GFLOP forward, ~5.4 with backward. So 4.17 s/batch implies
+**1.3 GFLOP/s** — an order of magnitude below a single modern core. Arbitrate a suspicious timing
+against a work estimate BEFORE drawing a conclusion from it. Added as `docs/DIAGNOSTICS.md` entry 16.
+
+**Corrected figures:**
+
+| | retracted | measured (idle pod) |
+|---|---:|---:|
+| `mpnn_4x64` s/batch, 1 thread | 5.8 | **0.106** |
+| fit stage, 27 runs, 300 epochs | 526 core-h | **9.6 core-h** |
+| critical path (one train-8 `mpnn_4x64` fit) | 41 h | **1.0 h** (10 min at the 50-epoch floor) |
+
+**Threading is not a latency lever, and the single-thread pin is free.** Same batch, idle box:
+1 thread **0.217 s**, 8 threads **0.401 s**. The ops are many small per-relation matmuls, so
+threading overhead exceeds the gain. The `cpu-single-thread` pin buys exact reproducibility at no
+cost — the Q2 "allow multithreading" lever would make things *worse*, and the question it was
+raised to answer no longer exists.
+
+**What this changes in the three accepted decisions:**
+1. **Staged label collection — MORE valuable.** Labels are now confirmed as the dominant cost, so
+   saving 21% of them is the single biggest lever in the protocol. Unchanged: ACCEPT.
+2. **Rollout-only seeds — unchanged.** Its justification was always statistical power (9 episodes
+   selecting among 9 adapter configurations), never cost. ACCEPT stands on its own merits.
+3. **Arm ladder cut — now a scientific question, not a cost one.** The cut saves 58.8% of 9.6 core-h
+   = **5.6 core-h**. `mpnn_4x64_per_task` and the 2/4/8 curve are diagnostics the handover asked
+   for, and they are affordable to keep. Recommend revisiting on merit rather than on budget.
+4. **Sharded fit runner — no longer a prerequisite.** Sequential execution of all 27 runs is ~9.6 h
+   wall-clock; sharding to 16 cores brings it to the ~1 h critical path. Useful, not blocking.
+
+**Unaffected:** the task-balance bug and its fix (a correctness defect, not a cost one), the
+loss-scale verification, `nonflat_fraction` (31%, cross-checked on the pod: identical 11,373 /
+2,576 / 1,689 populations), and the staged/rollout-seed protocol design.
+
+**Artifacts:** pod run `xtyr889fxi7pml` → `experiments/EXP-0041-*/artifacts/fit_budget/`
+(`budget.json`, `fit_epochs.json`); `RESULT.md` fit-budget section rewritten with an explicit
+Correction block; `spec.json` `compute.fit_stage_core_hours` replaced.
+
+**Next:** epoch probe still running on the pod (one pooled `mpnn_4x64`, train-2 scale, frozen
+300-epoch recipe) — it now costs minutes rather than hours, and its only remaining purpose is
+setting `max_epochs` sensibly, not gating feasibility.
+
+---
+
+## 2026-08-16 (4) — Epoch probe DONE: budget settled, but the probe reproduced EXP-0039's failure
+
+**Status:** Pod run complete (exit 0), artifacts pulled to
+`experiments/EXP-0041-*/artifacts/fit_budget/`, pod stopped and terminated, staged `_pod_ckpts/`
+removed. Total spend ~$0.20.
+
+**Budget answer (what the probe was for).** One pooled `mpnn_4x64`, model seed 0, frozen recipe,
+train-2 scale: **early stop fires at epoch 179/180, best epoch 54.** So `max_epochs=300` does NOT
+bind — the cap is adequate and needs no change. Note the shape of the stopping rule: the best
+checkpoint arrives at 54 and the run then spends 125 epochs (patience 25 x `validation_every` 5)
+proving it will not improve — 70% of the run is plateau confirmation. At 180 epochs the full 27-run
+ladder is **5.8 core-h**, the trimmed ladder ~2.4, and the critical path (one `mpnn_4x64` train-8
+fit) ~**38 min**. Budget question closed.
+
+**The finding that matters more.** The probe's validation curve reproduces EXP-0039's negative
+result, under pooling:
+
+| epoch | val_regret | train_loss |
+|---:|---:|---:|
+| 4 | 6.176 | 29.71 |
+| 54 (best) | **5.993** | 18.34 |
+| 99 | 6.241 | 10.14 |
+| 179 | 6.456 | 4.71 |
+
+**Train loss falls 84%; validation regret improves 3.0% at best, then degrades past its starting
+point.** That is memorization without transfer — the same signature EXP-0039 closed on — and the
+absolute level (~6.0) sits around EXP-0039's per-task random floors (5.24 / 5.29 / 6.23, mean 5.59),
+i.e. no clear margin over random on held-out trajectories.
+
+**What this does and does not license.** EXP-0041 makes two interventions on EXP-0039: (a) pool the
+tasks, (b) train on 8 independent trajectories instead of 2. **This probe has (a) but not (b)** —
+it is a train-2 fit, because the EXP-0039 dump holds only 3 episodes per task. So it is evidence
+that *pooling alone does not fix the generalization gap*, and it is silent on whether more
+trajectories do. It is also one seed, `single_suffix` target, validation = 1 episode/task. It is
+NOT a verdict on EXP-0041's hypothesis and must not be recorded as one.
+
+**Recommendation — reinstate the 2/4/8 learning curve.** It was cut from the mandatory ladder on
+cost grounds that no longer hold (the whole diagnostic set is ~3.4 core-h now), and it is precisely
+the instrument that answers the question this probe raised: does held-out regret improve as
+independent trajectories go 2 -> 4 -> 8? If the curve is flat, more trajectories are not the
+missing ingredient and the residual-router arc should stop before Gate B rather than after it. That
+makes the curve the highest-value diagnostic in the experiment, not the most expendable one.
+`mpnn_4x64_per_task` (the pooling-attribution arm) stays optional.
+
+**Next:** (1) owner: reinstate the 2/4/8 curve in the mandatory ladder? (2) implement protocol v2
+(staged collection, rollout-only seed registry, ladder as decided); (3) re-measure label cost with
+the pinned EXP-0035 producer staged; (4) EXP-0040 classifies the target; (5) full run.
+
+---
+
+## 2026-08-16 (5) — Protocol v2: curve reinstated as mandatory diagnostic, ladder implemented
+
+**Status:** Owner decided the 2/4/8 curve returns to the mandatory protocol. Implemented in the
+probe with tests. Staged collection and the rollout-only seed registry remain to be built.
+
+**Correction to my own argument (owner-flagged, and right).** I claimed the curve could save the
+19–173 core-h label spend. It cannot: train-2 and train-4 are nested PREFIXES of train-8, so the
+mandatory run needs all 24 train + 9 validation episodes = **~79% of the label budget** regardless.
+Only the 9 final-test episodes (**~21%**) are contingent, and staged collection is what defers them.
+The curve's value is that it *interprets* a train-8 failure, not that it avoids paying for one.
+
+**Curve specification, as implemented:** pooled `mpnn_4x64` only; model seeds {0,1,2}; train-2 and
+train-4 as additional fits; train-8 **reused** from the primary fit (no refit); identical validation
+split across sizes; **separate train-fold normalizer per size** (already correct — `train_arm` fits
+`FoldNormalizer` per call on that size's training graphs); per (task, model seed) reporting of
+`mean_regret`, `regret_over_random`, `r2`, `dispersion`.
+
+`regret_over_random` is now an explicit column rather than left to the reader: the tasks have
+different random floors (EXP-0039: 5.24 / 5.29 / 6.23), so a curve read on raw regret can invert.
+`dispersion` is new per-task-per-size (mean per-candidate std across model seeds, on
+decision-CENTERED predictions) so an improvement produced by seeds converging is distinguishable
+from one where every seed genuinely improves.
+
+**It reads as a diagnostic and cannot act as a gate.** Curve rows go to their own CSV, are never
+passed to `select_graph_arm`, and are structurally distinct records (no `split`, no
+`trajectory_seed`, `model_seed` never `"ensemble"`) so they cannot pass the selection filter even if
+the two row streams were concatenated by mistake. `FIT_CONTRACT["curve_is_gate"] = False`. Decision
+rules pinned in the spec: train-8 failing validation arm-selection stops the run before test labels;
+a flat curve may not cancel a test train-8 earned; a rising curve may not rescue a failed train-8.
+
+**Ladder membership:** `MANDATORY_ARMS = (row_mlp_h32, graph_0hop_h32, mpnn_2x32, mpnn_4x64)`,
+`OPTIONAL_DIAGNOSTIC_ARMS = (mpnn_4x64_per_task,)`. Mandatory optimizer runs: **18** single-suffix,
+**21** in mean mode, 27 with the opt-in per-task arm. `project_fit` gained `include_optional`
+(default False) so the budget bills the mandatory ladder. ~3.4 core-h at the pilot's 180 epochs.
+
+**`early_stop_patience` unchanged**, per owner: the pilot ran on the old single-suffix dataset with
+one model seed, so tuning patience from it before the target mode is licensed would be premature.
+The 38 min critical path is acceptable.
+
+**Artifacts:** `train/graph_generalization_probe.py` (`MANDATORY_ARMS`,
+`OPTIONAL_DIAGNOSTIC_ARMS`, `FIT_CONTRACT` curve fields, curve loop restructured for per-size
+model collection + per-task dispersion, `_per_task_dispersion`, `_curve_rows` extended,
+`learning_curve.csv` schema); `eval/graph_generalization_budget.py` (`project_fit(include_optional)`);
+`tests/test_graph_generalization_probe.py` (+3 tests, +`curve_fit_dir` fixture);
+`experiments/EXP-0041-*/RESULT.md` + `spec.json` (`protocol_v2.arm_ladder.curve`).
+
+**Next:** (1) staged label collection — `certify_dump_contract` must accept a train+validation
+tranche and a later test tranche against the same pre-registered registry; (2) rollout-only seed
+registry (10 validation / 20 test per task, disjoint from labeled splits and `SPENT_SEEDS`);
+(3) re-measure label cost with the pinned EXP-0035 producer staged; (4) EXP-0040 classifies the
+target; (5) full run.
+
+---
+
+## 2026-08-16 (6) — Protocol v2 complete: staged collection + rollout-only seeds implemented
+
+**Status:** All three accepted protocol changes are now in code with tests. Remaining before a run:
+label re-measure with the pinned producer, EXP-0040's target classification, and the sharded
+runner (a convenience, not a blocker).
+
+**Staged label collection — IMPLEMENTED.** `run_generalization_dump` already accepted `splits`, so
+the driver could always collect a tranche; certification was the gap. `certify_dump_contract` now
+takes `expected_splits` and certifies a TRANCHE (`FIT_TRANCHE` = train+validation, `TEST_TRANCHE` =
+test). Two properties make staging safe rather than a loosening:
+
+- **Every tranche must still record the FULL pre-registered registry**, final-test seeds included.
+  A later tranche therefore cannot pick its test episodes with the fit already in hand — the thing
+  that would actually bias a staged read.
+- **A fit tranche that collected labels outside its own splits is refused**, so "train+validation"
+  cannot quietly ship test labels.
+
+`assert_tranches_agree(fit_spec, test_spec)` then proves two directories collected weeks apart are
+one experiment before Gate A scores across them: frozen contract, pinned inputs, EXP-0040 licence,
+target mode + K, task set, and registry must match. The source **commit** deliberately may differ —
+the fit happens between the two collections and the tree may legitimately move; the frozen contract
+and pinned inputs are what hold the science.
+
+Wiring: `run_fit(dump_tranche=...)` certifies the tranche and records it in `fit/spec.json`;
+`run_gate_a(test_dump_dir=...)` reads final-test labels from the test tranche and cross-certifies.
+Under staging the fit **cannot** read a final-test label because it does not exist on disk yet —
+strictly stronger than the previous read-time exclusion.
+
+**Rollout-only seeds — IMPLEMENTED.** `ROLLOUT_REGISTRY`: 10 validation + 20 test seeds per task
+(s29 1300-1309 / 2300-2319, s77 1400-1409 / 2400-2419, s45 1500-1509 / 2500-2519), so the nine
+(alpha, margin) configurations are selected on 30 episodes instead of 9 and Gate B reads 60 instead
+of 9. `validate_rollout_registry()` enforces pre-registration, unique int seeds, the 10/20 block
+sizes, disjointness from **every** labeled split of the same task, disjointness between rollout
+validation and test, and no reuse of an EXP-0037..0040 spent seed.
+
+The non-obvious check is the cross-split one: a Gate B rollout played on a **train** episode is
+contaminated no matter which block it was filed under, and a naive validator comparing
+validation-to-validation would wave it through. That case is the one the test pins explicitly.
+
+**Artifacts:** `eval/graph_generalization_dump.py` (`FIT_TRANCHE`, `TEST_TRANCHE`,
+`certify_dump_contract(expected_splits=)`, `assert_tranches_agree`, `ROLLOUT_REGISTRY`,
+`ROLLOUT_VALIDATION_SEEDS_PER_TASK`, `ROLLOUT_TEST_SEEDS_PER_TASK`, `validate_rollout_registry`);
+`train/graph_generalization_probe.py` (`load_generalization_dump(expected_splits=)`,
+`run_fit(dump_tranche=)` + recorded in the fit spec, `run_gate_a(test_dump_dir=)` + tranche
+cross-certification); `tests/test_graph_generalization_dump.py` (+3 tests);
+`experiments/EXP-0041-*/spec.json` (`protocol_v2` marked IMPLEMENTED).
+
+**Next:** (1) re-measure label cost with the pinned EXP-0035 producer staged — the last unmeasured
+budget line and the dominant one; (2) EXP-0040 classifies the target; (3) optional sharded fit
+runner; (4) full run: dump(fit tranche) -> fit -> select -> lock -> [stop if validation fails] ->
+dump(test tranche) -> gate-a -> gate-b.
+
+**Tests (final, this session):** **826 passed, 1 deselected** repo-wide (the opt-in `champion`
+gate), 7m09s on an idle box — up from the 815 passed at session start, i.e. **11 new tests**:
+3 for epoch-balanced task weighting and its loss-scale property, 2 for the fit budget
+(`nonflat_fraction` cross-checked against the probe's own loader, `project_fit` run counts and
+data fractions), 3 for the protocol-v2 ladder and the curve's diagnostic-only status, 2 for staged
+tranche certification and cross-tranche agreement, 1 for the rollout-only seed registry.
+
+Timing note, since it misled this session's own analysis: the same EXP-0041 file set ran 33m50s
+under self-inflicted load and 1m44s idle. Record the load average next to any timing that gates a
+decision (DIAGNOSTICS 16).

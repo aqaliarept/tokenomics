@@ -244,10 +244,23 @@ class Batch:
 
 # --- model ----------------------------------------------------------------------------
 class RelationalGNN(nn.Module):
-    def __init__(self, hidden: int = HIDDEN, layers: int = LAYERS) -> None:
+    """Relational message-passing scorer over graph_primitives_v1.
+
+    `layers`/`hidden`/`dropout` are parameters so EXP-0041 can fit the pre-registered arm ladder
+    (0-hop, 2x32, 4x64) from ONE architecture. `layers=0` is a legal forward pass: no message
+    passing runs, so the head scores the type-encoded node states alone — the control that asks
+    whether graph propagation adds any held-out value. `dropout=0.0` (the default) is a literal
+    no-op branch, so the EXP-0039 gate path is numerically unchanged."""
+
+    def __init__(self, hidden: int = HIDDEN, layers: int = LAYERS, dropout: float = 0.0) -> None:
         super().__init__()
+        if layers < 0:
+            raise ValueError(f"layers must be >= 0, got {layers}")
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError(f"dropout must be in [0, 1), got {dropout}")
         self.hidden = hidden
         self.layers = layers
+        self.dropout = dropout
         # schema-role embeddings: one per node type (initial state) and per relation
         # (forward + reverse). NOT per-identity — no producer/product/capacity embedding.
         self.node_role = nn.ParameterDict(
@@ -300,6 +313,8 @@ class RelationalGNN(nn.Module):
                 agg[src_t].index_add_(0, src, rev)
             for t in NODE_TYPES:
                 h[t] = self.norm[li][t](h[t] + torch.relu(self.update[li][t](agg[t])))
+                if self.dropout:  # exact no-op (not even an RNG draw) at the EXP-0039 default 0.0
+                    h[t] = nn.functional.dropout(h[t], self.dropout, self.training)
         feat = torch.cat([
             h["decision"][b.cand_decision], h["order"][b.cand_order],
             h["product"][b.cand_product], h["producer"][b.cand_producer],
