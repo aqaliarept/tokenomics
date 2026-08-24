@@ -17,7 +17,7 @@ are left untouched.
 
 This is an evaluator-only diagnostic. The forked future is NEVER a deployable observation
 feature (HANDOVER "Frozen Scope"): it exists solely to measure the target. The RNG seed is
-derived from SHA-256 of `(EXP-0040, task_id, decision_digest, continuation_id)` — never
+derived from SHA-256 of `(experiment, task_id, decision_digest, continuation_id)` — never
 Python's process-randomized `hash()` — so a fixed `(decision_digest, continuation_id)` is
 bitwise deterministic and different continuation IDs give different legal suffixes.
 """
@@ -35,18 +35,32 @@ from .aec_env import TokenomicsAECEnv, draw_schedule_entry
 _TAG = "EXP-0040"
 
 
-def continuation_seed(task_id: str, decision_digest: int, continuation_id: int) -> int:
+def continuation_seed(
+    task_id: str,
+    decision_digest: int,
+    continuation_id: int,
+    *,
+    experiment: str = _TAG,
+) -> int:
     """Deterministic RNG seed for one continuation = SHA-256 of the stringified identity
-    tuple `(EXP-0040, task_id, decision_digest, continuation_id)`. Stringified so the
+    tuple `(experiment, task_id, decision_digest, continuation_id)`. The default remains
+    `EXP-0040`, preserving that experiment's byte-for-byte seed contract. Stringified so the
     write/read sides agree regardless of int width; the full 256-bit digest is fed to
     `np.random.default_rng` (which accepts arbitrary-width ints) so distinct continuation
     IDs land on independent streams."""
-    blob = f"{_TAG}|{task_id}|{decision_digest}|{continuation_id}".encode()
+    if not experiment:
+        raise ValueError("experiment tag must be non-empty")
+    blob = f"{experiment}|{task_id}|{decision_digest}|{continuation_id}".encode()
     return int.from_bytes(hashlib.sha256(blob).digest(), "big")
 
 
 def fork_future_demand(
-    env: TokenomicsAECEnv, *, task_id: str, decision_digest: int, continuation_id: int
+    env: TokenomicsAECEnv,
+    *,
+    task_id: str,
+    decision_digest: int,
+    continuation_id: int,
+    experiment: str = _TAG,
 ) -> TokenomicsAECEnv:
     """Return an independent deep clone of `env` whose randomized consumers have only their
     *unconsumed* future-demand suffix resampled under the continuation-derived RNG.
@@ -61,7 +75,8 @@ def fork_future_demand(
     Because only the future suffix moves, the encoded pre-action graph, current open orders,
     and current demand are byte-identical to the source (validated in tests)."""
     clone = copy.deepcopy(env)
-    rng = np.random.default_rng(continuation_seed(task_id, decision_digest, continuation_id))
+    rng = np.random.default_rng(continuation_seed(
+        task_id, decision_digest, continuation_id, experiment=experiment))
     cfg_by_id = {c.id: c for c in clone.config.consumers}
     for cid in sorted(clone.system.consumers):
         consumer = clone.system.consumers[cid]

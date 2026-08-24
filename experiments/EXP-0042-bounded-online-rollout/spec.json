@@ -1,0 +1,42 @@
+{
+  "version": "bounded-online-rollout-v1",
+  "date": "2026-08-24",
+  "status": "IMPLEMENTING - pre-registered before compute",
+  "driver": "tokenomics.eval.bounded_rollout_orderer",
+  "source_experiment": "EXP-0040-rollout-target-stability",
+  "question": "Can confidence-bounded online scenario search improve closed-loop delivery over blend_0.5, and what is the shallowest sufficient rollout depth in {1,2,3}?",
+  "scope": "Model-based online orderer on the three fixed EXP-0039/0040 topologies; no GNN training and no unseen-topology claim.",
+  "arms": ["blend_0.5", "search_d1", "search_d2", "search_d3"],
+  "params": {
+    "depths": [1, 2, 3],
+    "horizon": 100,
+    "producer": "EXP-0035 producer_candidate.pt",
+    "base_and_fallback": "blend_0.5",
+    "candidate_action": "+1.0 logit to one eligible producer for one contested stream",
+    "ambiguity_gate": "search only when the top-two blend_0.5 eligible-producer probabilities differ by <=0.25",
+    "scenario_checkpoints": [4, 8, 16],
+    "scenario_seed": "sha256('EXP-0042', task_id, action_digest, continuation_id)",
+    "confidence": "unique top action; paired normal lower bound with z=1.645 beats every alternative; producer override mean gain >=0.25 consumer units",
+    "fallback": "blend_0.5 for dominant, exact-zero, confidently-base, or unresolved-at-K16 streams",
+    "episode_seeds": {
+      "s29": [3301, 3302, 3303, 3304, 3305, 3306, 3307, 3308, 3309, 3310],
+      "s77": [3400, 3401, 3402, 3403, 3404, 3405, 3406, 3407, 3408, 3409],
+      "s45": [3500, 3501, 3502, 3503, 3504, 3505, 3506, 3507, 3508, 3509]
+    }
+  },
+  "inputs": {
+    "archive_sha256": "bc6ca4ebacff6835571453cf7c0bf10de5c366cc208674f44cf3a5860b778ceb",
+    "producer_ckpt_sha256": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+  },
+  "gate": {
+    "tasks_beating_blend_min": 2,
+    "mean_relative_improvement_min": 0.05,
+    "max_task_regression": 0.05,
+    "max_paired_episode_regression": 0.10,
+    "death_rate": "must not exceed paired blend_0.5 on any task",
+    "promotion": "the smallest depth satisfying every gate"
+  },
+  "verdicts": ["PASS_BOUNDED_SEARCH", "NO_BOUNDED_SEARCH_GAIN"],
+  "artifacts": ["episodes.csv", "metrics_by_task.csv", "metrics_by_arm.csv", "spec.json", "result.json"],
+  "compute": "RunPod CPU; one baseline plus three search arms over 30 paired episodes, parallelized by episode. Seed s29/3300 was used for a local engineering benchmark and excluded from the registered gate before pod launch; smoke uses non-gating seed 3299."
+}
