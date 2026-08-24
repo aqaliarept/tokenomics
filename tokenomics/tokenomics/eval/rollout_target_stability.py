@@ -556,6 +556,14 @@ def _convergence_metrics(decisions: Sequence[dict], ids: Sequence[int], *, size:
     ensemble_regret_changes: list[float] = []
     for d in decisions:
         producers = sorted(d["original"])
+        full_values = {
+            p: statistics.mean(d["continuations"][cid][p] for cid in ids)
+            for p in producers}
+        # The ensemble selector is fixed from the full available ensemble. Evaluating each
+        # split against its own winner makes both regrets identically zero and cannot measure
+        # stability; the pre-registered diagnostic asks how the same expected-action selector's
+        # estimated regret moves between continuation halves.
+        full_selector = _winner_set(full_values)
         for a_ids, b_ids in _balanced_splits(
                 ids, repeats=repeats,
                 seed_blob=f"{EXPERIMENT}|split|{d['task_id']}|{d['seed']}|{d['cycle']}|"
@@ -572,7 +580,8 @@ def _convergence_metrics(decisions: Sequence[dict], ids: Sequence[int], *, size:
             actor_regret_changes.append(abs((max(av.values()) - av[actor]) -
                                              (max(bv.values()) - bv[actor])))
             ensemble_regret_changes.append(abs(
-                _selector_regret(av, aw) - _selector_regret(bv, bw)))
+                _selector_regret(av, full_selector) -
+                _selector_regret(bv, full_selector)))
     return {
         "estimator_k": size,
         "median_split_half_spearman": float(statistics.median(spearman)),

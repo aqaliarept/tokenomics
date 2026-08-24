@@ -148,6 +148,19 @@ def test_bootstrap_accepts_signed_decision_digest_seed() -> None:
     assert 1.0 <= lo <= hi <= 3.0
 
 
+def test_convergence_reports_fixed_ensemble_selector_regret_change() -> None:
+    continuations = {}
+    for cid in range(8):
+        continuations[cid] = {"p0": 1.0, "p1": 10.0 if cid < 4 else -20.0}
+    d = {
+        "task_id": "t", "seed": 1, "cycle": 0, "order_id": "o",
+        "sample_class": "signal", "actor_best_producer": "p0",
+        "original": {"p0": 1.0, "p1": 0.0}, "continuations": continuations,
+    }
+    metrics = rs._convergence_metrics([d], list(range(8)), size=4, repeats=20)
+    assert metrics["mean_abs_ensemble_regret_change"] > 0.0
+
+
 def test_tiny_collector_replays_authority_and_persists_raw_continuations(tmp_path: Path) -> None:
     """Real simulator path, pinned smoke-size: one topology/seed/decision, K=2, lookahead=1."""
     from tokenomics.eval.baselines import PRODUCING_BASELINES
