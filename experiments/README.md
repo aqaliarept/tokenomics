@@ -11,6 +11,7 @@ only a lookup index into the per-experiment directories.
 
 | ID | Date | Result |
 |---|---|---|
+| [EXP-0042](EXP-0042-bounded-online-rollout/RESULT.md) | 2026-08-24 | Confidence-bounded online rollout — **PASS**, depth 2 promoted (+15.3%, death-safe) |
 | [EXP-0041](EXP-0041-gnn-generalization-residual-router/RESULT.md) | 2026-08-09 | Pooled MPNN residual router — **CANCELLED BY EXP-0040**, not run |
 | [EXP-0040](EXP-0040-rollout-target-stability/RESULT.md) | 2026-08-01 | Marginal-value label stability audit — **SEARCH_ONLY** (stability failed, usefulness passed) |
 | [EXP-0039](EXP-0039-gnn-observation-probe/RESULT.md) | 2026-07-31 | Relational GNN observation probe — **FAIL**, target not recoverable |

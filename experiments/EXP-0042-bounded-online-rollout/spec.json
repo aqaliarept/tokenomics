@@ -1,7 +1,7 @@
 {
   "version": "bounded-online-rollout-v1",
   "date": "2026-08-24",
-  "status": "IMPLEMENTING - pre-registered before compute",
+  "status": "COMPLETE - PASS_BOUNDED_SEARCH; depth 2 promoted as shallowest passing arm",
   "driver": "tokenomics.eval.bounded_rollout_orderer",
   "source_experiment": "EXP-0040-rollout-target-stability",
   "question": "Can confidence-bounded online scenario search improve closed-loop delivery over blend_0.5, and what is the shallowest sufficient rollout depth in {1,2,3}?",
@@ -37,6 +37,21 @@
     "promotion": "the smallest depth satisfying every gate"
   },
   "verdicts": ["PASS_BOUNDED_SEARCH", "NO_BOUNDED_SEARCH_GAIN"],
-  "artifacts": ["episodes.csv", "metrics_by_task.csv", "metrics_by_arm.csv", "spec.json", "result.json"],
-  "compute": "RunPod CPU; one baseline plus three search arms over 30 paired episodes, parallelized by episode. Seed s29/3300 was used for a local engineering benchmark and excluded from the registered gate before pod launch; smoke uses non-gating seed 3299."
+  "artifacts": ["artifacts/episodes.csv", "artifacts/metrics_by_task.csv", "artifacts/metrics_by_arm.csv", "artifacts/spec.json", "artifacts/result.json", "artifacts/run.log"],
+  "compute": "Authoritative run: 16 workers on a 16-vCPU RTX 4000 Ada host (GPU unused; selected for CPU availability), about 65 minutes. A partial 2-vCPU run was retired only after overlapping deterministic rows matched. All three created pods were deleted after artifact retrieval and validation; approximate total spend $0.42. Seed s29/3300 was used for a local engineering benchmark and excluded from the registered gate before pod launch; smoke uses non-gating seed 3299.",
+  "implementation": {
+    "source_commit": "ed3ae95d5fe69547a8811adc3821e48eb3e17331",
+    "source_tree_sha256": "6e27dd193aa7817b5089168dc7e74420fc31d94de7e722c12735eadae006045c",
+    "tests": "28 focused bounded-search/future-fork/EXP-0040 tests plus 51 graph/fork regression tests passed",
+    "validation": "120/120 exact paired rows; exact registered task/seed/depth coverage; local analyze_episode_rows recomputation equals result.json"
+  },
+  "result": {
+    "verdict": "PASS_BOUNDED_SEARCH",
+    "promoted_depth": 2,
+    "depth_1": {"gate_pass": false, "mean_relative_improvement": 0.06480139067125529, "worst_episode_relative": -0.1436950146627566},
+    "depth_2": {"gate_pass": true, "mean_relative_improvement": 0.15312593868475588, "worst_episode_relative": -0.07308377896613191},
+    "depth_3": {"gate_pass": true, "mean_relative_improvement": 0.27198752296883416, "worst_episode_relative": 0.0},
+    "depth_2_relative_by_task": {"s45": 0.18764845605700706, "s77": 0.13611615245009076, "s29": 0.13561320754716982},
+    "raw_episodes_sha256": "7c847148e3771cdce42056783e831edf29d18d00787e3f45e01f215d9584a883"
+  }
 }

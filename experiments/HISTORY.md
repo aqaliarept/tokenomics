@@ -341,9 +341,37 @@ not for another direct-imitation GNN.
 
 ---
 
-## 10. What the record says, in one page
+## 10. The online-search branch works (EXP-0042)
 
-**Three levers were tried for extra headroom, and all three closed negative:**
+EXP-0040's `SEARCH_ONLY` classification did not mean the signal was useless. It meant
+the future-sensitive target belonged inside a planner, where uncertainty can be sampled
+at decision time, rather than inside a standalone actor.
+
+- **EXP-0042 — confidence-bounded online rollout. PASS; depth 2 promoted.** Starting
+  from fixed `blend_0.5`, search was limited to ambiguous routes, sampled common future
+  scenarios at K=4/8/16, accepted only confidence-qualified +1-logit producer bumps, and
+  fell back on every unresolved stream. Over 30 fresh paired episodes, depth 2 beat the
+  floor on all three tasks: s45 +18.8%, s77 +13.6%, s29 +13.6%; task-average relative
+  gain **+15.3%**. Worst paired episode was -7.3%, inside the registered -10% bound,
+  and deaths did not increase. Depth 1 improved all three task means (+6.5% average) but
+  one s77 episode fell -14.4%, so it failed safety. Depth 3 passed more strongly (+27.2%,
+  no paired regression) but was not selected because the protocol promotes the shallowest
+  passing depth.
+
+**What changed.** This is the first successful use of the marginal-value routing signal
+after EXP-0037–0041: online scenario sampling handles the hidden future that made direct
+GNN imitation fail. It is not yet a production-latency policy. Depth 2 spent roughly
+16k–33k simulator rollout calls per episode and changed only 22–45 streams; most searched
+states were exact-zero at the first checkpoint. The next model opportunity is therefore
+to reduce planning cost—candidate pruning or a scenario-conditioned rollout surrogate—
+while depth 2 supplies the value target and `blend_0.5` remains the fallback.
+
+---
+
+## 11. What the record says, in one page
+
+**Three standalone learning/mining levers were tried for extra headroom, and all three
+closed negative:**
 
 | Lever | Arc | Cause of death |
 |---|---|---|
@@ -351,8 +379,10 @@ not for another direct-imitation GNN.
 | Curriculum mining | EXP-0023–0036 | Distribution was already at 98.3% of its ceiling |
 | Marginal-value routing teacher | EXP-0037–0038B | Target is not a function of the observation |
 
-**One lever worked and is in the stack:** stochastic ordering (EXP-0006B) — the winning
-insight being that the missing ingredient was routing *diversity*, not more state.
+**Two routing levers worked:** stochastic ordering (EXP-0006B) is in the stack, and
+confidence-bounded online search (EXP-0042) clears the fixed-topology value/safety gate.
+The first adds routing *diversity*; the second handles hidden future sensitivity by
+sampling it at decision time rather than pretending it is observable to an actor.
 
 **The contract work is solid and independent of the value work** (EXP-0015): policies are
 product-agnostic and transfer across size and recipe shape with zero contract failures.
@@ -362,6 +392,7 @@ product-agnostic and transfer across size and recipe shape with zero contract fa
 - A flat fixed-pad model cannot be portable by construction (EXP-0022).
 - Over-capacitated topology families have no headroom to mine (EXP-0033).
 
-**If this signal is picked up again**, EXP-0040 fixes the boundary: do not train EXP-0041
-or another direct imitator on it. Test it as bounded online rollout/search, where future-demand
-uncertainty is sampled at decision time; the registered follow-up is a depth {1, 2, 3} comparison.
+**Current routing direction:** keep EXP-0041 and direct imitation cancelled. EXP-0042
+validated confidence-bounded online rollout and promotes depth 2 on the three fixed gate
+topologies. The next experiment should reduce its simulator cost without weakening the
+paired value/death gates or removing the `blend_0.5` fallback.
