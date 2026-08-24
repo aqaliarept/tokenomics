@@ -1,8 +1,8 @@
 {
   "version": "rollout-target-stability-v1",
   "date": "2026-08-01",
-  "status": "PLANNED - no implementation or pod run",
-  "driver": "tokenomics.eval.rollout_target_stability (to implement)",
+  "status": "IMPLEMENTED - local smoke passed; pod run pending",
+  "driver": "tokenomics.eval.rollout_target_stability",
   "source_experiment": "EXP-0039-gnn-observation-probe",
   "question": "Is the single-continuation marginal-value label a stable and useful function of deployable pre-action state after future exogenous demand is marginalized out?",
   "scope": "Target stability audit only; no GNN training, actor deployment, or topology-transfer claim.",
@@ -42,8 +42,8 @@
     "exp0039_decisions_sha256": "09771dca6d6ee014374b196bf6ae08074ebf21e3d2bbac76d87affd4f9262bc1",
     "exp0039_candidates_sha256": "d2a82c7471bf983e5b9d20b844a73f73de1c265ee6d969f61af54b644886dfd2",
     "exp0039_graph_schema_sha256": "bc3adfaf36fae9e3251ed993061f1400cbf12182feaf0038d6b92e3e3fcdf6a5",
-    "canonical_actor_decisions_sha256": "b66374b04ff24c5dbe5c6b9640c21b185cec03104ee0c6ecc90663c3b2776af4",
-    "canonical_actor_producers_sha256": "b917fa5ff781e534fa1411fd68b0d8ff3df4bafc8d1838a312b4305370d85590"
+    "canonical_actor_decisions_sha256": "b22af97ed201c316144f6ed4305841e760858284412faa7f810b2f81adb9bd02",
+    "canonical_actor_producers_sha256": "06c5cd55a6a70abef25288248a42657ee8eef14a266acd64c32427bb6d17daf2"
   },
   "gates": {
     "monte_carlo_convergence": {
@@ -77,9 +77,16 @@
     "artifacts/spec.json"
   ],
   "compute": {
-    "where": "RunPod CPU, only after implementation review and explicit spend approval",
+    "where": "RunPod CPU; user authorized collection on 2026-08-24",
     "budget": "16 continuations primary; extend the same sample to 32 only if convergence fails",
-    "wall_time": "TBD from a two-decision smoke and timed 16-continuation pilot"
+    "local_smoke": "2 decisions (1 signal + 1 flat), K=16, champion producer, lookahead=8, horizon=100: 68 raw rows in 9.7 s including load + artifact-only analysis",
+    "selected_population": "424 decisions: 325 signal + 99 flat controls; registered stratum shortfalls are not backfilled",
+    "wall_time": "pod wall time pending"
   },
-  "reproduce": "TBD after the driver and provenance-bound launch command are implemented"
+  "implementation": {
+    "tests": "tokenomics/tests/test_rollout_target_stability.py plus future-fork/GNN regressions",
+    "local_verification": "96 focused continuation/GNN tests passed; full suite 699 passed, 1 deselected on 2026-08-24",
+    "actor_hash_correction": "The initially drafted b663.../b917... values did not identify any committed artifact. Recomputed SHA-256 of the canonical EXP-0038B dump_sys files from commit 8cba827 gives b22a.../06c5...; they join exactly to all 13,940 EXP-0039 decisions and every eligible candidate. Pins corrected before rollout spend."
+  },
+  "reproduce": "python run_pod_training.py --pod-id <cpu-pod> --cpu --python python3.12 --verify-source-commit --train \"-u -m tokenomics.eval.rollout_target_stability --archive /workspace/tokenomics/_pod_ckpts/gate_archive.jsonl --prod-ckpt /workspace/tokenomics/_pod_ckpts/producer_candidate.pt --exp0039-decisions /workspace/tokenomics/_pod_ckpts/exp0039_decisions.csv --exp0039-candidates /workspace/tokenomics/_pod_ckpts/exp0039_candidates.csv --actor-decisions /workspace/tokenomics/_pod_ckpts/actor_decisions.csv --actor-producers /workspace/tokenomics/_pod_ckpts/actor_producers.csv --source-commit {SOURCE_COMMIT} --out-dir /workspace/tokenomics/exp0040\""
 }
