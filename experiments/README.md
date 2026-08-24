@@ -11,8 +11,8 @@ only a lookup index into the per-experiment directories.
 
 | ID | Date | Result |
 |---|---|---|
-| [EXP-0041](EXP-0041-gnn-generalization-residual-router/RESULT.md) | 2026-08-09 | Pooled MPNN residual router — **IMPLEMENTED, NOT RUN** (blocked on 0040) |
-| [EXP-0040](EXP-0040-rollout-target-stability/RESULT.md) | 2026-08-01 | Marginal-value label stability audit — **IMPLEMENTED, POD RUN PENDING** |
+| [EXP-0041](EXP-0041-gnn-generalization-residual-router/RESULT.md) | 2026-08-09 | Pooled MPNN residual router — **CANCELLED BY EXP-0040**, not run |
+| [EXP-0040](EXP-0040-rollout-target-stability/RESULT.md) | 2026-08-01 | Marginal-value label stability audit — **SEARCH_ONLY** (stability failed, usefulness passed) |
 | [EXP-0039](EXP-0039-gnn-observation-probe/RESULT.md) | 2026-07-31 | Relational GNN observation probe — **FAIL**, target not recoverable |
 | [EXP-0038B](EXP-0038B-producer-product-observation-ladder/RESULT.md) | 2026-07-28 | Per-producer + system observation ladder — **GATE FAILED**, target retired |
 | [EXP-0038A](EXP-0038A-missing-observation-audit/RESULT.md) | 2026-07-27 | Missing-observation audit — enrichment **NOT LICENSED** |

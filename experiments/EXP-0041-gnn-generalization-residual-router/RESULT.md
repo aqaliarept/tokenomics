@@ -1,6 +1,6 @@
 # EXP-0041 - GNN Generalization And Residual Routing
 
-**Date:** 2026-08-09 | **Status:** IMPLEMENTED (code + local tests), NOT RUN — blocked on EXP-0040
+**Date:** 2026-08-09 | **Status:** CANCELLED BY EXP-0040 (`SEARCH_ONLY`), NOT RUN
 | **Plan:** [HANDOVER.md](HANDOVER.md) | **Spec:** [spec.json](spec.json)
 
 ## Question
@@ -12,9 +12,9 @@ as a bounded confidence-gated residual over `blend_0.5`?
 ## Method
 
 The full pipeline is implemented and unit/integration-tested locally at smoke scale. **No target
-mode has been selected, no dataset has been generated, and no pod spend is authorized** — the
-handover permits building the target-mode plumbing before EXP-0040's read, but not choosing a
-mode or spending compute.
+mode was selected, no dataset was generated, and no pod spend was made.** EXP-0040 completed on
+2026-08-24 with classification `SEARCH_ONLY`; this pipeline's prerequisite contract therefore
+cancels the run before label collection.
 
 | Stage | Module | What it owns |
 |---|---|---|
@@ -296,12 +296,15 @@ and 27 final-test episodes.
 
 ## Result
 
-No result. No target mode has been selected (EXP-0040 has not run), no dataset has been generated,
-and no pod spend is authorized. The mechanical verdict field stays empty until Gate A and Gate B
-are computed from real artifacts.
+**Cancelled before data collection.** EXP-0040 failed its target-stability gate after the full
+K=32 continuation budget, even though its expected selector passed the usefulness gate on all
+three tasks. Its mechanical classification is `SEARCH_ONLY`. `read_exp0040_license()` maps that
+classification to `Exp0040Cancelled`, so EXP-0041 has no legal target mode and cannot start its
+dump, fit, Gate A, or Gate B stages.
 
 ## Conclusions
 
-None. Train fit, validation fit, or offline ranking alone cannot license deployment: the
-experiment requires both Offline Gate A and Closed-Loop Gate B, and a Gate A pass with a failed
-adapter selection or Gate B is `OFFLINE_ONLY`, not a partial success.
+The cancellation is the intended operation of the precondition, not a missing experiment result.
+Spending the EXP-0041 label and fit budget would repeat direct imitation on a target that did not
+stabilize. The implementation remains as a tested reference, but this protocol must not be run
+unless a new experiment establishes a different licensed target.

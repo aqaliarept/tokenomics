@@ -1,6 +1,6 @@
 # EXP-0040 - Rollout Target Stability
 
-**Date:** 2026-08-01 | **Implementation:** 2026-08-24 | **Status:** IMPLEMENTED, POD RUN PENDING | **Plan:** [HANDOVER.md](HANDOVER.md)
+**Date:** 2026-08-01 | **Run:** 2026-08-24 | **Status:** COMPLETE — **SEARCH_ONLY** | **Plan:** [HANDOVER.md](HANDOVER.md)
 
 ## Question
 
@@ -40,10 +40,45 @@ The frozen authority contains 13,940 decisions. Deterministic stratum selection 
 
 ## Result
 
-No empirical result yet. Pod collection was authorized by the user on 2026-08-24 and is pending
-the provenance-clean commit and launch.
+The registered RunPod collection completed over all **424 decisions** and both continuation
+tranches. Gate 1 failed at K=16, so the collector appended continuation IDs 16..31 exactly once.
+It persisted **36,828 raw label rows**: 1,116 eligible candidates times the original-suffix
+control plus 32 resampled continuations. The artifact-only analyzer then returned the mechanical
+classification **`SEARCH_ONLY`**.
+
+| Task | Split-half Spearman | Winner overlap | Expected selector regret | Actor regret | Reduction vs actor | Stable? |
+|---|---:|---:|---:|---:|---:|---|
+| s45 | 0.500 | 0.599 | 2.310 | 3.782 | 38.9% | no |
+| s77 | 0.500 | 0.602 | 2.920 | 5.272 | 44.6% | no |
+| s29 | 1.000 | 0.743 | 2.093 | 3.452 | 39.4% | no |
+
+- **Gate 1 — convergence: FAIL.** The registered thresholds are Spearman >= 0.70 and winner
+  overlap >= 0.80 for every task aggregate and trajectory seed. No task converged, and all nine
+  task/seed cells failed. The K-prefix diagnostic was also false at K=4, K=8, and K=16.
+- **Gate 2 — usefulness: PASS.** An oracle choosing from the K=16 continuation means reduced
+  regret versus the canonical actor by 38.9–44.6% on all three tasks, with the required >=10%
+  reduction holding for every trajectory seed.
+- **Diagnostic only:** original-single-suffix to continuation-mean winner overlap was
+  0.510 / 0.436 / 0.600 (s45 / s77 / s29), with centered rank correlations
+  0.298 / 0.197 / 0.200. The useful action ranking materially changes as future demand changes.
+
+Collection ran from commit `817464d9a08393f6677bce0843a75a21de2fc798` on a 2-vCPU RunPod
+CPU instance in about 25 minutes. A post-run artifact-only analyzer correction at commit
+`afe6a66644a339b86612a9d17142ac75b36295c1` fixed a non-gating diagnostic that had compared
+each split against its own winner; the corrected fixed-selector changes are nonzero, while every
+gate value and the classification are unchanged. The raw-label SHA-256 is
+`20aa37136dd8933cac96228540dfa60bafc13dcdc8a30847060231c956c30c9e`; the sample SHA-256 is
+`3be41019247d037f3f6b30c16633c62013169215d6f05c888fb44997e1c44c06`.
+
+Authoritative artifacts: [selection manifest](artifacts/selection_manifest.json),
+[raw continuation labels](artifacts/continuation_labels.csv),
+[task metrics](artifacts/metrics_by_task.csv), [seed metrics](artifacts/metrics_by_seed.csv),
+and [run specification](run_spec.json).
 
 ## Conclusions
 
-None. This experiment cannot license a GNN actor; it can only license a subsequent
-averaged-label or coverage experiment, or close direct imitation in favor of search.
+The label contains real decision value, but it is not stable enough to be a supervised target
+after the full registered continuation budget. Direct GNN imitation is therefore **not licensed**,
+and EXP-0041 is cancelled by its own prerequisite contract. The surviving use of this signal is
+online rollout/search, where future-demand uncertainty can be sampled at decision time; the next
+bounded experiment is a search-depth comparison over {1, 2, 3}.

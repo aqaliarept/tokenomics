@@ -1,7 +1,7 @@
 {
   "version": "gnn-generalization-residual-router-v1",
   "date": "2026-08-09",
-  "status": "IMPLEMENTED (code + local tests), NOT RUN - blocked on EXP-0040 classification; no target mode selected; no pod run authorized",
+  "status": "CANCELLED BY EXP-0040 SEARCH_ONLY; implementation retained, no dataset or fit run",
   "driver": [
     "tokenomics.eval.graph_generalization_dump (splits + conditional target + dump artifacts)",
     "tokenomics.train.graph_generalization_probe (--stage fit | gate-a)",
@@ -15,7 +15,9 @@
     "mean_target_licensed": "continuation_mean with smallest K in {4,8,16} licensed by EXP-0040",
     "coverage_path_licensed": "single_suffix",
     "ambiguous": "blocked",
-    "search_only": "cancelled"
+    "search_only": "cancelled",
+    "observed_exp0040_classification": "SEARCH_ONLY",
+    "observed_exp0040_date": "2026-08-24"
   },
   "params": {
     "task_ids": [
@@ -118,7 +120,7 @@
     "the future-demand fork lives in env/ (needs RNG + config legality) rather than domain/, which stays RNG-free per CLAUDE.md"
   ],
   "compute": {
-    "where": "RunPod CPU after EXP-0040 result, implementation review, clean commit, and explicit spend approval",
+    "where": "CANCELLED before RunPod spend because EXP-0040 returned SEARCH_ONLY",
     "budget": "measure with `python -m tokenomics.eval.graph_generalization_budget --archive ... --task-ids <s29> --prod-ckpt <EXP-0035> --decisions 2 --continuations 2 --out-dir <dir>`; it times both target modes on the real topology/horizon and projects core-hours + artifact MB for the 42-episode run using the EXP-0039 measured population (1548.9 decisions/episode, 2.71 candidates/decision)",
     "measured_2026_08_09_baseline_producer": {
       "caveat": "RUN WITH `--prod stock_aware`, NOT the pinned EXP-0035 producer (not present locally) \u2014 a LOWER BOUND. EXP-0039's real dump cost ~4 core-hours for 13940 decisions (~1.03 s/decision) against ~0.06 s/decision here, i.e. the scorer producer dominates by ~17x. Re-measure with the pinned checkpoint staged before committing to a K.",

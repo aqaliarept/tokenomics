@@ -306,7 +306,7 @@ approximately a function of the observation. Recorded as DIAGNOSTICS #12.*
 
 ---
 
-## 9. The graph branch — the only open thread (EXP-0039 → 0041)
+## 9. The graph branch — closed by target instability (EXP-0039 → 0041)
 
 - **EXP-0039 — can a relational GNN over raw economy state recover the target?
   FAIL (negative result).** Same 13,940 decisions, leave-one-seed-out, 3 model seeds,
@@ -315,13 +315,17 @@ approximately a function of the observation. Recorded as DIAGNOSTICS #12.*
   never beat the actor floor. Training loss fell 49 → 1.5 — it fits the training seeds and
   does not generalize. Same wall as EXP-0038B. Scoped claim: not learnable under
   `graph_primitives_v1` with this gate. No follow-up licensed.
-- **EXP-0040 — is the label even stable? PLANNED, NEVER RUN.** Would replay the exact
-  EXP-0039 states, hold current state and demand fixed, resample only future demand
-  suffixes under common random numbers, and measure whether expected preference converges.
-  Can license averaged-label training, a coverage-only control, or search-only — and can
-  never license an actor directly.
-- **EXP-0041 — pooled MPNN as a bounded confidence-gated residual. IMPLEMENTED, NOT RUN.**
-  Fully built and locally tested, blocked on EXP-0040. Carries a heavily hardened protocol:
+- **EXP-0040 — is the label even stable? SEARCH_ONLY.** Replayed 424 exact EXP-0039
+  states (325 signal + 99 flat controls) and collected 36,828 raw label rows: 1,116 candidates
+  times an original-suffix control plus K=32 continuations. The expected selector was genuinely useful: oracle regret
+  fell 38.9–44.6% versus the canonical actor on all three tasks, passing every trajectory-seed
+  usefulness check. But its action ranking did not converge. At the final estimator K=16,
+  task winner overlap was only 0.599 / 0.602 / 0.743 against the registered 0.80 minimum;
+  all three task aggregates and all nine task/seed cells failed stability. K-prefix convergence
+  was false at 4, 8, and 16. Mechanical classification: **SEARCH_ONLY**.
+- **EXP-0041 — pooled MPNN as a bounded confidence-gated residual. CANCELLED, NOT RUN.**
+  Fully built and locally tested, but its own prerequisite contract maps EXP-0040
+  `SEARCH_ONLY` to cancellation. It carries a heavily hardened protocol:
   whole-episode train/validation/test splits rejecting every prior anchor seed; a fair
   held-out baseline retrained on identical splits; 0-hop and 2-layer controls; a nested
   2/4/8-episode learning curve as a *diagnostic that cannot act as a gate*; validation-only
@@ -330,9 +334,10 @@ approximately a function of the observation. Recorded as DIAGNOSTICS #12.*
   rollout-only seed registry disjoint from every labelled split. Hard argmax deployment is
   prohibited. Gate pins four artifacts by SHA-256 (all still present in-tree).
 
-**Status.** No target mode chosen, no pod spend. The honest read is that two independent
-probes (hand-metric ladder, relational GNN) both hit the same generalization wall, and
-EXP-0040 exists precisely to decide whether the target is worth another attempt.
+**Status.** The graph-training branch is closed without EXP-0041 label or fit spend. The
+continuation-averaged target has oracle value but remains too sensitive to future demand to
+serve as a stable supervised label. That is a positive case for bounded online rollout/search,
+not for another direct-imitation GNN.
 
 ---
 
@@ -357,6 +362,6 @@ product-agnostic and transfer across size and recipe shape with zero contract fa
 - A flat fixed-pad model cannot be portable by construction (EXP-0022).
 - Over-capacitated topology families have no headroom to mine (EXP-0033).
 
-**If the graph branch is picked up again**, EXP-0040 is the gate: it decides whether the
-target is stable enough to be worth EXP-0041's label budget. Running EXP-0041 without it
-would repeat EXP-0039.
+**If this signal is picked up again**, EXP-0040 fixes the boundary: do not train EXP-0041
+or another direct imitator on it. Test it as bounded online rollout/search, where future-demand
+uncertainty is sampled at decision time; the registered follow-up is a depth {1, 2, 3} comparison.
