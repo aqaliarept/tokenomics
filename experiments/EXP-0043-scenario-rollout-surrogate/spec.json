@@ -1,0 +1,75 @@
+{
+  "version": "scenario-rollout-surrogate-v1",
+  "date": "2026-08-27",
+  "status": "REGISTERED - no EXP-0043 labels or gate seeds inspected",
+  "source_experiment": "EXP-0042-bounded-online-rollout",
+  "question": "Can a scenario-conditioned relational GNN certify zero-gain depth-2 bump evaluations and remove at least 70% of real rollout calls without losing depth-2 decisions or closed-loop value?",
+  "scope": "Planner-internal cost reduction on the three fixed EXP-0042 topologies. Sampled future demand is explicit evaluator input to the surrogate and is not a deployable environment observation. blend_0.5 and real depth-2 rollout remain fallbacks.",
+  "target": "For one current-state graph, candidate producer bump, and explicitly sampled future-demand suffix: consumer units from the depth-2 bumped rollout minus the paired blend_0.5 rollout.",
+  "data": {
+    "trajectory": "depth-2 EXP-0042 planner",
+    "future_features": "per product: log1p(total scheduled quantity) and consumer count at each of the next two schedule positions",
+    "scenario_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "train": {
+      "s29": [4300, 4301, 4302, 4303],
+      "s77": [4400, 4401, 4402, 4403],
+      "s45": [4500, 4501, 4502, 4503]
+    },
+    "validation": {
+      "s29": [5300, 5301],
+      "s77": [5400, 5401],
+      "s45": [5500, 5501]
+    },
+    "test": {
+      "s29": [6300, 6301],
+      "s77": [6400, 6401],
+      "s45": [6500, 6501]
+    },
+    "closed_loop_test": {
+      "s29": [7300, 7301, 7302, 7303, 7304, 7305, 7306, 7307, 7308, 7309],
+      "s77": [7400, 7401, 7402, 7403, 7404, 7405, 7406, 7407, 7408, 7409],
+      "s45": [7500, 7501, 7502, 7503, 7504, 7505, 7506, 7507, 7508, 7509]
+    },
+    "split_unit": "whole episode; all four blocks are disjoint and disjoint from EXP-0037 through EXP-0042 gate seeds",
+    "label_budget": "training records the adaptive planner scenarios; validation and test record all K=16 scenarios so hybrid stopping can be replayed exactly",
+    "balance": "retain every non-deterministic-zero training stream; retain a deterministic SHA-256 10% sample of exact-zero training streams; validation and test are never sampled"
+  },
+  "models": {
+    "arms": ["row_mlp_h64", "graph_0hop_h64", "mpnn_2x64", "mpnn_4x64"],
+    "selectable": ["mpnn_2x64", "mpnn_4x64"],
+    "model_seeds": [0, 1, 2],
+    "loss": "scenario-weighted smooth-L1 candidate-gain regression",
+    "optimizer": "AdamW(lr=0.001, weight_decay=0.0001)",
+    "training": {"max_epochs": 60, "min_epochs": 12, "early_stop_patience": 8, "batch_scenarios": 64, "early_stop_validation_scenarios": 4096},
+    "normalization": "graph and scenario normalizers fit on retained training rows only; early stopping uses a deterministic balanced 4096-scenario validation view, while adapter selection and every gate use every validation row"
+  },
+  "adapter": {
+    "rule": "if ensemble max absolute mean gain <= zero_abs and max ensemble standard deviation <= spread, emit exact zero gains for that stream/scenario; otherwise run the real paired depth-2 rollouts",
+    "zero_abs_grid": [0.02, 0.05, 0.1, 0.2, 0.35, 0.5],
+    "spread_quantiles": [0.25, 0.5, 0.75, 0.9, 0.95, 1.0],
+    "selection": "validation only; among passing configurations choose maximum rollout reduction, then maximum value-weighted recall, then smaller zero_abs and spread"
+  },
+  "offline_gate": {
+    "value_weighted_override_recall_min": 0.99,
+    "exact_override_recall_min": 0.95,
+    "recall_scope": "both recall minima must hold globally and independently on every task",
+    "real_rollout_reduction_min": 0.70,
+    "finite_and_aligned": true,
+    "procedure": "select arm and adapter on validation, lock them, then read the test labels once and apply the same gate"
+  },
+  "closed_loop_gate": {
+    "arms": ["blend_0.5", "search_d2", "hybrid_gnn_d2"],
+    "mean_depth2_gain_retention_min": 0.95,
+    "per_task_depth2_gain_retention_min": 0.90,
+    "real_rollout_reduction_min": 0.70,
+    "max_paired_episode_regression_vs_floor": 0.10,
+    "death_rate": "hybrid must not exceed paired depth-2 on any task",
+    "route_integrity": "finite actions and unchanged EXP-0042 allocator/fallback"
+  },
+  "inputs": {
+    "archive_sha256": "bc6ca4ebacff6835571453cf7c0bf10de5c366cc208674f44cf3a5860b778ceb",
+    "producer_ckpt_sha256": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+  },
+  "verdicts": ["PASS_SURROGATE", "OFFLINE_ONLY", "NO_SAFE_ACCELERATION"],
+  "run_order": "collect train+validation -> fit/select on validation -> collect/read test -> offline test -> closed-loop test only after both offline gates pass"
+}
