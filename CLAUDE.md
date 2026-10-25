@@ -40,6 +40,9 @@ An experiment failed or underperformed → do **NOT** propose or start the next 
 ## Explain experiments simply (RULE)
 When reporting an experiment/diagnostic result to the user, explain it in **plain English first**: what question was asked, what was measured, what the numbers mean, and what changes because of them. Full sentences; define any invented term (e.g. "harvest rate", "closure") the first time it is used; assume the reader did not watch the pipeline run. Compressed jargon summaries and metric tables belong in `RESULT.md`/`HISTORY.md` — the chat explanation must stand alone without them.
 
+## File links in chat (RULE)
+When referencing a file to the user, always give the **absolute path** (e.g. `/srv/research/tokenomics/openspec/changes/<name>/specs/<cap>/spec.md`, optionally `:line`). Never a path relative to the repo root, the package dir, or a change dir — the working directory shifts between `tokenomics/`, `tokenomics/tokenomics/` and the repo root, so relative links resolve wrong. Applies to tables and lists too. (Failure seen: spec files listed as `specs/project-mission/spec.md` — unclickable.)
+
 ## Where training + experiments run (HARD RULE)
 **All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `clone_fidelity` DAgger, scorer distillation, curriculum mining/replay, the graph dump + probe, any multi-topology or multi-iter run.
 

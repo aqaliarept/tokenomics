@@ -48,6 +48,14 @@ python -m venv .venv
 
 ## Common commands
 
+OpenSpec 1.15.0 is initialized at the repository root for Codex and Claude Code.
+Specs and changes live in `openspec/`; workflow configuration is in
+[`openspec/config.yaml`](openspec/config.yaml). Install the CLI using the
+[OpenSpec installation guide](https://openspec.dev/docs/installation), then run
+`openspec list` from the root to check the setup. Start a change with
+`$openspec-propose "your idea"` in Codex or `/opsx:propose "your idea"` in Claude Code.
+Restart your coding agent to load the generated skills and commands.
+
 Run from `tokenomics/`:
 
 ```bash
