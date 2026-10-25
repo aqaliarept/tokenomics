@@ -33,14 +33,20 @@ envelope on held-out topology seeds 6–9, with a hard 0% death-rate requirement
 strong heuristic works; a learned orderer beats the best hand-written baseline; the
 policy contract is product-agnostic and transfers across topology size and recipe shape.
 
-**What is dead.** Three separate attempts to find more headroom — a learned value
-function, a curriculum game-master, and a marginal-value routing teacher — all closed
-negative. Their causes are diagnosed and recorded below; do not restart any of them
-without addressing the named cause.
+**What is dead.** Four separate attempts to find more headroom — a learned value
+function, a curriculum game-master, a marginal-value routing teacher, and a graph neural
+network imitating that teacher (EXP-0039 → 0041, §9: the label's action ranking is not
+stable under future demand, so no model can imitate it) — all closed negative. Their
+causes are diagnosed and recorded below; do not restart any of them without addressing
+the named cause.
 
-**What is open.** One branch: a graph neural network over raw economy state
-(EXP-0039 → 0041). Its first probe failed; the follow-up is implemented but has never
-been run, and is blocked on a target-stability audit that was planned and never executed.
+**What is open.** Online search works but is not deployable: EXP-0042 confidence-bounded
+rollout passes its fixed-topology gate (§10) at ~16k–33k rollouts per episode. EXP-0043
+(scenario rollout surrogate, teacher-cost reduction) is implemented and registered, not
+yet run. The forward plan — measurement gate, shocks, development audit, bounded
+evolution-strategies training on whole-episode outcomes instead of per-decision imitation —
+is the OpenSpec change `openspec/changes/establish-project-baseline/` (`design.md`,
+milestones M1–M7), against the acceptance specs in `openspec/specs/`.
 
 ---
 
