@@ -36,6 +36,7 @@ from .encode import (
     encode_producing,
     encode_producing_entity,
 )
+from .side_effects import SideEffectTracker, capacity_ratio
 from .spaces import build_spec
 
 # Action handed to step(): both roles emit a raw float vector (Box); None = a
@@ -235,6 +236,13 @@ class TokenomicsAECEnv(AECEnv):
             "consumer_ordered_units": {cid: 0 for cid in self.system.consumers},
             "consumer_fulfilled_units": {cid: 0 for cid in self.system.consumers},
         }
+        # Side-effect metrics (design D3): raw quantities only, no X/Y verdict. The key
+        # list and every edge case (None on a zero denominator) are documented in
+        # env/side_effects.py; written now so they exist before the first cycle.
+        self._side_effects = SideEffectTracker(
+            r_start=capacity_ratio(self.system.producing_agents.values())
+        )
+        self._side_effects.write(self.episode_stats)
         # capacity trajectory: mean current capacity per producer at each cycle end
         self.capacity_trace: list[float] = []
 
@@ -361,6 +369,12 @@ class TokenomicsAECEnv(AECEnv):
             if truncate:
                 self.truncations = {a: True for a in self.agents}
             self.episode_stats["cycles"] = self.current_cycle
+            # Post-cycle capacity (after degradation and investment completions), so the
+            # death cycle's collapse lands in r_end.
+            self._side_effects.observe_cycle(
+                result, capacity_ratio(self.system.producing_agents.values())
+            )
+            self._side_effects.write(self.episode_stats)
             self.infos = {a: {"cycle": self.current_cycle} for a in self.agents}
         else:
             self._clear_rewards()

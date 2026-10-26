@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .common import (
+    Capacity,
     ConsumerId,
     OrderId,
     OrderingAgentId,
@@ -92,6 +93,20 @@ class ConsumerOrderOutcome:
     completed: bool  # False = rejected (failed or TTL expired)
 
 
+@dataclass(frozen=True)
+class ProducerAuctionRecord:
+    """One producer's auction this cycle (design D3, add-measurement-gate-harness): the
+    raw inputs of the env's spare-fraction metric, pure data. `capacity` is the total
+    current capacity over owned types when `produce()` runs, before this cycle's
+    degradation; `accepted_units` is the summed capacity bundle of the bids accepted
+    THIS cycle. Capacity still held by reservations carried from earlier cycles is not
+    counted as accepted, so a spare fraction built from this can be overstated."""
+
+    producer_id: ProducerId
+    capacity: Capacity
+    accepted_units: Capacity
+
+
 @dataclass
 class CycleResult:
     score: Score  # Go penalty score (parity only)
@@ -110,6 +125,8 @@ class CycleResult:
     # Per-order record of every consumer order completed or rejected this cycle
     # (design D2); additive — the counters above are unchanged.
     consumer_outcomes: tuple[ConsumerOrderOutcome, ...] = ()
+    # One auction record per producer, in producer order (design D3); additive.
+    producer_auctions: tuple[ProducerAuctionRecord, ...] = ()
 
     @property
     def completed(self) -> int:
@@ -412,8 +429,13 @@ class System:
         for oa in self.ordering_agents.values():
             oa.complete_cycle()
 
+        producer_auctions: list[ProducerAuctionRecord] = []
         for pid, p in self.producing_agents.items():
+            capacity_at_auction = sum(p.capacities.values())  # produce() degrades after
             result = p.produce()
+            producer_auctions.append(ProducerAuctionRecord(
+                pid, capacity_at_auction, sum(bid.total_capacity() for bid in result.accepted),
+            ))
             # attribute each production event to the cycle the bundle was routed, so
             # the orderer telemetry can age completion/failure latency (EXP-0006A).
             for bid in result.accepted:
@@ -501,6 +523,7 @@ class System:
             consumer_completed_units=units_cons_done,
             consumer_rejected_units=units_cons_rej,
             consumer_outcomes=tuple(consumer_outcomes),
+            producer_auctions=tuple(producer_auctions),
         )
 
     def is_dead(self) -> bool:

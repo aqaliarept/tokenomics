@@ -13,6 +13,7 @@ from .producing_agent import ProducingAgentCommand
 from .system import (
     ConsumerOrderOutcome,
     CycleResult,
+    ProducerAuctionRecord,
     SequentialOrderIdGenerator,
     System,
     SystemState,
@@ -55,6 +56,7 @@ __all__ = [
     "SystemState",
     "CycleResult",
     "ConsumerOrderOutcome",
+    "ProducerAuctionRecord",
     "SequentialOrderIdGenerator",
     "load_config",
     "build_system",
