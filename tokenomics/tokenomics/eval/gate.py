@@ -34,10 +34,11 @@ import io
 import json
 import math
 from dataclasses import dataclass, field, fields
+from pathlib import Path
 from statistics import fmean
 from typing import Collection, Iterable, Mapping, Sequence
 
-from .roster import GATE_SIZES, Roster
+from .roster import GATE_SIZES, Roster, content_hash
 from .seeding import replicate_mean
 
 CALM = "calm"
@@ -111,6 +112,43 @@ class SideEffectParams:
             object.__setattr__(self, name, float(v))
         if not self.version:
             raise ValueError("side-effect parameters need a version")
+
+
+# Side-effect parameter file (design D4; frozen by 8.2/10.1 as side_effect_params_v1.json). Same
+# versioning as roster/registry: the version is a sha256 content hash over every field but the
+# hash, re-checked on load, so a report naming the version names exactly its X and Y.
+DEFAULT_PARAMS = Path(__file__).parent / "registry" / "side_effect_params_v1.json"
+
+
+def side_effect_params_payload(
+    x: float, y: float, q: float, *, name: str = "side-effect-params", rule: str = "",
+) -> dict:
+    """The file payload (no hash). `q` and `rule` record how X and Y were calibrated (D4)."""
+    return {"name": name, "x": float(x), "y": float(y), "q": float(q), "rule": rule}
+
+
+def side_effect_params_json(x: float, y: float, q: float, **kw: str) -> str:
+    d = side_effect_params_payload(x, y, q, **kw)
+    d["content_hash"] = content_hash(d)
+    return json.dumps(d, indent=2, sort_keys=True) + "\n"
+
+
+def params_from_dict(d: Mapping[str, object]) -> SideEffectParams:
+    """Parse a parameter file, refusing a recorded hash that does not match its contents."""
+    d = dict(d)
+    recorded = d.pop("content_hash", None)
+    if recorded is None:
+        raise ValueError("side-effect parameter file records no content_hash; it has no version")
+    if set(d) != {"name", "x", "y", "q", "rule"}:
+        raise ValueError(f"side-effect parameter file fields {sorted(d)} != name, x, y, q, rule")
+    if content_hash(d) != recorded:
+        raise ValueError(f"side-effect parameter hash {content_hash(d)} != recorded {recorded}: "
+                         "edited without a new version")
+    return SideEffectParams(x=d["x"], y=d["y"], version=str(recorded))  # type: ignore[arg-type]
+
+
+def load_side_effect_params(path: str | Path = DEFAULT_PARAMS) -> SideEffectParams:
+    return params_from_dict(json.loads(Path(path).read_text()))
 
 
 # --- rows ---
@@ -594,3 +632,12 @@ def recompute_from_csv(
 ) -> GateReport:
     """`--mode recompute` core (D6): the report rebuilt from `episodes.csv` text alone."""
     return compute_report(rows_from_csv(text), roster, params, registry_version, gate_sizes)
+
+
+if __name__ == "__main__":
+    # `python -m tokenomics.eval.gate`: the driver lives in gate_cli so this module stays pure.
+    import sys
+
+    from .gate_cli import main
+
+    sys.exit(main())

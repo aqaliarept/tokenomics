@@ -145,6 +145,15 @@ python run_pod_training.py --create-pod --image <img-with-py3.11+torch+ssh> \
 - `signal_check` → runs a matrix of (producing × ordering) combos → prints comparison table.
 - **Metrics**: `cycles` (survival len), `dead%`, `cons✓` (consumer orders fulfilled = the goal), `return`, `capmin` (lowest capacity = collapse warning).
 - **Why it exists**: prove env poses a learning problem — a sensible policy must clearly beat do-nothing. Strongest baseline = the bar RL must clear (see plan for target numbers).
+- **Gate harness** (`eval/gate.py` pure arithmetic + verdict, `eval/gate_cli.py` driver; ARCHITECTURE.md §7.2). Inputs: world registry `eval/registry/worlds_v1.json` (`eval/registry.py`), roster `eval/registry/roster_v1.json` (`eval/roster.py`), side-effect params file (X, Y, q; content-hash version). Report (cloud for real runs; `--split sealed` needs `--preregistration`):
+  ```
+  python -m tokenomics.eval.gate --mode report --subject portable --prod-ckpt P.pt --orderer-ckpt O.pt \
+    --params side_effect_params_v1.json --split development --workers 16 \
+    --source-commit {SOURCE_COMMIT} --out-dir EXP-NNNN-title          # on the pod; locally: --verify-source-commit
+  python -m tokenomics.eval.gate --mode recompute --out-dir EXP-NNNN-title   # rebuild verdict from episodes.csv, MATCH/MISMATCH vs verdict.json
+  ```
+  A real report needs a frozen roster, a screened registry, a 40-hex source commit and no filters. Anything else needs `--dry-run` (smoke; marked "not an acceptance read" in `spec.json`/`RESULT.md`): filters `--sizes --families --max-worlds --max-members --episodes-per-world --replicates`; `--subject baseline:<producing>/<ordering>` runs without checkpoints. Rerun on the same `--out-dir` resumes only if every pin (inputs, source tree+commit, job grid) matches. Writes `spec.json` (pins, provenance), `episodes.csv`, `worlds.csv`, `regimes.csv`, `verdict.json`, `RESULT.md`.
+- **Gate stats** (`episode_stats` keys): `consumer_ordered_units` / `consumer_fulfilled_units` (per consumer, orders placed in played cycles); `consumer_fill_rate` (fulfilled/ordered, None if ordered 0); `r_start` / `r_end` (mean current/max capacity ratio after reset / last played cycle; run-down check `r_end ≥ X·r_start`); `inversion_inverted_pairs` / `inversion_differing_pairs` / `inversion_rate` (completed order cheaper per unit than a rejected one, same cycle+product); `min_capacity_ratio` (min r over played cycles); `min_spare_fraction` (min 1 − accepted/capacity over producer-cycles); `investment_rejection_rate` / `consumer_rejection_rate`; `holding_units_per_cycle`; `demand_digest` (hash of the episode's demand schedule; must match across subjects).
 
 ## Conventions
 - New design decision → write an ADR in `docs/adr/`.
