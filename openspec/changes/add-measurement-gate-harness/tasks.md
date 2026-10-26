@@ -15,7 +15,7 @@ Paths are under /srv/research/tokenomics/tokenomics/ unless absolute. "Full suit
 
 ## 3. Env: accounting and side-effect metrics
 
-- [ ] 3.1 [code][local-exclusive] Add per-consumer `ordered_units` / `fulfilled_units` with the played-cycle cohort in `/srv/research/tokenomics/tokenomics/tokenomics/env/aec_env.py` (design D2). After 2.1. Verify: fixture tests for every "Per-consumer accounting" scenario (horizon 1, the unplayed next-cycle orders, an order open at the horizon, early death, a zero-order consumer); the full suite is green.
+- [x] 3.1 [code][local-exclusive] Add per-consumer `ordered_units` / `fulfilled_units` with the played-cycle cohort in `/srv/research/tokenomics/tokenomics/tokenomics/env/aec_env.py` (design D2). After 2.1. Verify: fixture tests for every "Per-consumer accounting" scenario (horizon 1, the unplayed next-cycle orders, an order open at the horizon, early death, a zero-order consumer); the full suite is green.
 - [ ] 3.2 [code][local-exclusive] Add the side-effect metrics (design D3). The hard ones are run-down (`r_start`, `r_end`) and per-consumer fill rate. The monitored ones are token-priority inversion rate, minimum capacity ratio, minimum spare fraction, investment and consumer rejection rates, and held units. Verify: hand-built fixtures with a falling run-down ratio, a starved consumer, a known inversion pair and a known spare fraction; the full suite is green.
 - [ ] 3.3 [code][local-exclusive] Add a per-episode demand-schedule digest to episode stats (spec "Identical demand across observation contracts"). After 2.2. Verify: same config and seed give the same digest under the legacy and joint contracts, and a different digest under another seed; the full suite is green.
 

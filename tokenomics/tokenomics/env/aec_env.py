@@ -22,7 +22,7 @@ from ..domain import (
     load_config,
     product_stream_agents,
 )
-from ..domain.common import stream_id
+from ..domain.common import ConsumerId, stream_id
 from ..domain.config import Configuration
 from ..domain.consumer import Consumer, ScheduleEntry
 from ..domain.producing_agent import ProducerInfo
@@ -229,9 +229,40 @@ class TokenomicsAECEnv(AECEnv):
             "in_progress": 0,
             "holding_units": 0,
             "return": 0.0,
+            # Per-consumer accounting (design D2, add-measurement-gate-harness): consumer id
+            # -> units over the played-cycle cohort. Every consumer is listed from the start,
+            # so one that never orders reports 0 ordered units.
+            "consumer_ordered_units": {cid: 0 for cid in self.system.consumers},
+            "consumer_fulfilled_units": {cid: 0 for cid in self.system.consumers},
         }
         # capacity trajectory: mean current capacity per producer at each cycle end
         self.capacity_trace: list[float] = []
+
+    def _units_placed_for(self, cycle: int) -> dict[ConsumerId, int]:
+        """Consumer units per consumer of the orders first played in `cycle` (design D2).
+        Read just before that cycle's `complete_cycle`: every such order is still open
+        then (orders only resolve inside `complete_cycle`), and the next cycle's orders do
+        not exist yet. Counting at play time, not at placement, is what keeps the final
+        `start_cycle`'s never-played orders (truncation or death) out of the cohort."""
+        units: dict[ConsumerId, int] = {}
+        for o in self.system.orders.values():
+            req = o.consumer_request
+            if req is not None and o.placement_cycle == cycle:
+                units[req.consumer_id] = units.get(req.consumer_id, 0) + o.quantity
+        return units
+
+    def _accumulate_consumer_units(self, placed: dict[ConsumerId, int], result: CycleResult) -> None:
+        """Ordered = whole quantity of every played order, resolved or still open at the
+        end; fulfilled = quantity of completed orders. Completion is whole-order (ADR-0025:
+        a partly delivered order that expires is rejected for its full quantity), so this
+        matches `consumer_completed_units` summed over consumers."""
+        ordered = self.episode_stats["consumer_ordered_units"]
+        fulfilled = self.episode_stats["consumer_fulfilled_units"]
+        for cid, q in placed.items():
+            ordered[cid] += q
+        for out in result.consumer_outcomes:
+            if out.completed:
+                fulfilled[out.consumer_id] += out.quantity
 
     def _accumulate_episode_stats(self, result: CycleResult, reward: float, held: int) -> None:
         s = self.episode_stats
@@ -311,6 +342,8 @@ class TokenomicsAECEnv(AECEnv):
             self.system.ordering_agent_action(did, cmd)
 
         if self._agent_selector.is_last():
+            # system.cycle_counter = the cycle complete_cycle is about to play.
+            placed = self._units_placed_for(self.system.cycle_counter)
             result = self.system.complete_cycle()
             # inventory held into the next cycle = the holding liability (ADR-0025).
             held = sum(p.inventory_units() for p in self.system.producing_agents.values())
@@ -318,6 +351,7 @@ class TokenomicsAECEnv(AECEnv):
             self.current_cycle += 1
             self.rewards = {a: reward for a in self.agents}
             self._accumulate_episode_stats(result, reward, held)
+            self._accumulate_consumer_units(placed, result)
 
             dead = self.system.is_dead()
             truncate = self.current_cycle >= self.horizon
