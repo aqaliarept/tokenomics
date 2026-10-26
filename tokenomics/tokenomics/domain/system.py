@@ -16,6 +16,7 @@ from .common import (
     OrderId,
     OrderingAgentId,
     ProducerId,
+    Product,
     Tokens,
     WrongStateError,
     f32,
@@ -46,7 +47,7 @@ from .orderer_view import (
 )
 from .producer_view import ProducerEntityView, build_producer_entity_view
 from .ordering_agent import OrderingAgent, OrderingAgentCommand, OrderingAgentView
-from .requests import InvestmentType, ReplenishmentRequest
+from .requests import ConsumerRequest, InvestmentType, ReplenishmentRequest
 from .telemetry import EconomyTelemetry
 from .producing_agent import (
     Bid,
@@ -76,6 +77,21 @@ class SequentialOrderIdGenerator:
         return f"o{self._n}"
 
 
+@dataclass(frozen=True)
+class ConsumerOrderOutcome:
+    """One consumer order resolved this cycle (design D2, add-measurement-gate-harness).
+    Pure data so the env can attribute ordered/fulfilled units per consumer and audit
+    token priority without re-deriving them from the aggregate counters.
+    `placement_cycle` is the cycle the order was first played in (`Order.placement_cycle`)."""
+
+    consumer_id: ConsumerId
+    product: Product
+    quantity: int
+    tokens: Tokens  # backing tokens at placement (ConsumerRequest.tokens)
+    placement_cycle: int
+    completed: bool  # False = rejected (failed or TTL expired)
+
+
 @dataclass
 class CycleResult:
     score: Score  # Go penalty score (parity only)
@@ -91,6 +107,9 @@ class CycleResult:
     # The env weights its training reward + metrics by these, not by order counts.
     consumer_completed_units: int = 0  # consumer units delivered
     consumer_rejected_units: int = 0  # consumer units demanded but not delivered
+    # Per-order record of every consumer order completed or rejected this cycle
+    # (design D2); additive — the counters above are unchanged.
+    consumer_outcomes: tuple[ConsumerOrderOutcome, ...] = ()
 
     @property
     def completed(self) -> int:
@@ -109,6 +128,17 @@ _INVEST_PRIORITY: dict[InvestmentType, int] = {
     InvestmentType.UPGRADE: 2,
     InvestmentType.INVENTORY_EXPANSION: 3,
 }
+
+
+def _consumer_outcome(order: Order, request: ConsumerRequest, completed: bool) -> ConsumerOrderOutcome:
+    # System._place_consumer_orders tags every consumer order; an untagged one would
+    # silently corrupt played-cycle accounting (design D2), so fail loudly.
+    if order.placement_cycle is None:
+        raise RuntimeError(f"consumer order [{order.id}] has no placement cycle")
+    return ConsumerOrderOutcome(
+        request.consumer_id, order.product, order.quantity, request.tokens,
+        order.placement_cycle, completed,
+    )
 
 
 def _order_priority(order: Order) -> int:
@@ -343,11 +373,15 @@ class System:
             c.emit(consumer_tokens)
 
     def _place_consumer_orders(self) -> None:
+        # Placed before start_cycle advances the counter, so these orders are first
+        # played in cycle `cycle_counter + 1` (the first complete_cycle plays cycle 1).
+        placement_cycle = self.cycle_counter + 1
         for c in self.consumers.values():
             for request in c.order():
                 oid = self.id_gen.new()
                 self.orders[oid] = Order.new_consumer_order(
-                    oid, must_get(self.process_sheets, request.product), request
+                    oid, must_get(self.process_sheets, request.product), request,
+                    placement_cycle=placement_cycle,
                 )
                 # product-level demand history (true demand, not routed load).
                 self.telemetry.record_demand(request.product, request.quantity)
@@ -400,6 +434,7 @@ class System:
         n_cons_done = n_inv_done = n_in_progress = n_cons_rej = n_inv_rej = 0
         n_repl_done = n_repl_rej = 0
         units_cons_done = units_cons_rej = 0
+        consumer_outcomes: list[ConsumerOrderOutcome] = []
         for oid, order in self.orders.items():
             # an unfunded producer order expired this cycle (budget exhausted by
             # higher-priority orders) — reject it without an auction (ADR-0025).
@@ -409,6 +444,7 @@ class System:
             if isinstance(event, ConsumerRequestCompleted):
                 n_cons_done += 1
                 units_cons_done += order.quantity  # whole order delivered (ADR-0025)
+                consumer_outcomes.append(_consumer_outcome(order, event.request, completed=True))
             elif isinstance(event, InvestmentRequestCompleted):
                 n_inv_done += 1
                 self.producing_agents[event.request.producer_id].investment_completed(event.request)
@@ -418,6 +454,7 @@ class System:
             elif isinstance(event, ConsumerRequestRejected):
                 n_cons_rej += 1
                 units_cons_rej += order.quantity  # whole order's demand went unmet
+                consumer_outcomes.append(_consumer_outcome(order, event.request, completed=False))
                 self.telemetry.record_consumer_rejected(order.product, order.quantity)
                 self.consumers[event.request.consumer_id].emit(event.remaining)
             elif isinstance(event, InvestmentRequestRejected):
@@ -463,6 +500,7 @@ class System:
             n_repl_done, n_repl_rej,
             consumer_completed_units=units_cons_done,
             consumer_rejected_units=units_cons_rej,
+            consumer_outcomes=tuple(consumer_outcomes),
         )
 
     def is_dead(self) -> bool:

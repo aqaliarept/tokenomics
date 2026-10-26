@@ -105,6 +105,7 @@ def test_orphaned_reservation_recorded_as_failed():
     order = Order.new_consumer_order(
         "ghost", system.process_sheets[CONSUMER_PRODUCT],
         ConsumerRequest("c1", CONSUMER_PRODUCT, tokens=5, quantity=1),
+        placement_cycle=1,
     )
     order.cycle_counter = 2  # == ORDER_TTL
     order.accepted_qty = 1   # fully accepted as the reservation (reserved still pending)

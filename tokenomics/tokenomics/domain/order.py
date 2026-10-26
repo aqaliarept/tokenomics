@@ -101,6 +101,7 @@ class Order:
         investment_request: InvestmentRequest | None,
         funded: bool,
         replenishment_request: ReplenishmentRequest | None = None,
+        placement_cycle: int | None = None,
     ) -> None:
         self.id = id
         self.tokens = tokens
@@ -110,6 +111,10 @@ class Order:
         self.investment_request = investment_request
         self.replenishment_request = replenishment_request
         self.funded = funded
+        # Consumer orders only: the cycle the order is first played in (design D2 of
+        # add-measurement-gate-harness), so the env can count ordered units from
+        # played cycles and skip the final, never-played placement.
+        self.placement_cycle = placement_cycle
         self.cycle_counter = 0
         # Cumulative sub-order accounting (ADR-0025). A sub-order's tokens are
         # burnt the cycle it clears the auction (accepted), never refunded — even
@@ -135,8 +140,13 @@ class Order:
         )
 
     @classmethod
-    def new_consumer_order(cls, id: OrderId, ps: ProcessSheet, request: ConsumerRequest) -> "Order":
-        return cls(id, request.tokens, ps.product, request.quantity, request, None, True)
+    def new_consumer_order(
+        cls, id: OrderId, ps: ProcessSheet, request: ConsumerRequest, placement_cycle: int | None = None
+    ) -> "Order":
+        return cls(
+            id, request.tokens, ps.product, request.quantity, request, None, True,
+            placement_cycle=placement_cycle,
+        )
 
     # --- funding (unchanged contract; used by distribute_investment_fund) ---
     def _must_be_funded(self) -> None:

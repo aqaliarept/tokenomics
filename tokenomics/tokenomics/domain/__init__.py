@@ -11,6 +11,7 @@ from .consumer import Consumer, ScheduledConsumer, ScriptedConsumer
 from .ordering_agent import OrderingAgentCommand
 from .producing_agent import ProducingAgentCommand
 from .system import (
+    ConsumerOrderOutcome,
     CycleResult,
     SequentialOrderIdGenerator,
     System,
@@ -48,6 +49,7 @@ __all__ = [
     "System",
     "SystemState",
     "CycleResult",
+    "ConsumerOrderOutcome",
     "SequentialOrderIdGenerator",
     "load_config",
     "build_system",
