@@ -171,10 +171,17 @@ class TokenomicsAECEnv(AECEnv):
         per-cycle (product, quantity) schedule drawn here in the env layer so the
         domain stays RNG-free (CLAUDE.md); same seed -> identical schedule, so the
         episode demand replays deterministically. Non-randomized consumers keep the
-        canonical fixed-product ScriptedConsumer path untouched."""
+        canonical fixed-product ScriptedConsumer path untouched. An explicit config
+        `schedule` (design D8) is replayed as-is and draws nothing from the RNG, so
+        every episode sees the same demand whatever the seed."""
         rng = np.random.default_rng(seed)
         consumers: dict[str, Consumer] = {}
         for c in self.config.consumers:
+            if c.schedule:
+                # Copy: ScheduledConsumer holds a mutable list (future_fork rewrites
+                # randomized suffixes in place); the frozen config must stay untouched.
+                consumers[c.id] = ScheduledConsumer(c.id, list(c.schedule))
+                continue
             # Exact legacy default (no pool, fixed quantity 1) keeps the canonical
             # ScriptedConsumer path bit-identical.
             if not c.products and c.quantity_min == 1 and c.quantity_max == 1:

@@ -26,10 +26,15 @@ def build_system(
     product_stream_ordering: bool = False,
 ) -> System:
     """Construct a System with a fresh id generator. If `consumers` is None,
-    ScriptedConsumers are built from config.consumers. `product_stream_ordering`
-    keys ordering agents by (source, product) per ADR-0052."""
+    ScriptedConsumers are built from config.consumers, or a ScheduledConsumer where
+    the config carries an explicit `schedule` (pure data, design D8).
+    `product_stream_ordering` keys ordering agents by (source, product) per ADR-0052."""
     if consumers is None:
-        consumers = {c.id: ScriptedConsumer(c.id, c.product) for c in config.consumers}
+        consumers = {
+            c.id: ScheduledConsumer(c.id, list(c.schedule)) if c.schedule
+            else ScriptedConsumer(c.id, c.product)
+            for c in config.consumers
+        }
     return System(
         SequentialOrderIdGenerator(), config, consumers,
         product_stream_ordering=product_stream_ordering,

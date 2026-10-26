@@ -636,7 +636,8 @@ def scale_demand(cfg: Configuration, qty_d: float, mixture_on: bool | None = Non
     single-scalar coupling (`qty_d >= MIXTURE_AT`); `staged_config` passes it
     explicitly so quantity and mixture ramp in *separate* stages. Dims are unchanged
     — the ordering one-hot spans process-sheet products, not the consumer pool — so
-    actor/critic shapes stay valid (cf. `scale_degradation`)."""
+    actor/critic shapes stay valid (cf. `scale_degradation`). A consumer with an
+    explicit `schedule` (design D8) replays it as-is, so it bypasses this curriculum."""
     consumers = [
         replace(
             c,

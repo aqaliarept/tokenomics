@@ -11,7 +11,7 @@ Paths are under /srv/research/tokenomics/tokenomics/ unless absolute. "Full suit
 ## 2. Domain: outcome records and cyclic demand
 
 - [x] 2.1 [code][local-exclusive] Tag each consumer order with its placement cycle. Add a tuple of per-order consumer outcomes (consumer, product, quantity, tokens at placement, placement cycle, completed/rejected) to `CycleResult` in `/srv/research/tokenomics/tokenomics/tokenomics/domain/system.py` (design D2). After 1.1. Verify: new domain tests on a hand-built economy where one order completes and one is rejected; the full suite, including 1.1, is green.
-- [ ] 2.2 [code][local-exclusive] Add `ConsumerConfig.schedule` in `/srv/research/tokenomics/tokenomics/tokenomics/domain/config.py`, with validation (products exist, quantities ≥ 1), `load_config` JSON support and a `config_to_dict` round-trip. When it is set, the env builds a `ScheduledConsumer` from it (design D8). Verify: tests for the three "Deterministic cyclic demand" scenarios; the full suite, including 1.1, is green.
+- [x] 2.2 [code][local-exclusive] Add `ConsumerConfig.schedule` in `/srv/research/tokenomics/tokenomics/tokenomics/domain/config.py`, with validation (products exist, quantities ≥ 1), `load_config` JSON support and a `config_to_dict` round-trip. When it is set, the env builds a `ScheduledConsumer` from it (design D8). Verify: tests for the three "Deterministic cyclic demand" scenarios; the full suite, including 1.1, is green.
 
 ## 3. Env: accounting and side-effect metrics
 

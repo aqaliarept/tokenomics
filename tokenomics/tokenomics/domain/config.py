@@ -84,6 +84,11 @@ class ConsumerConfig:
     quantity 1. B9 seeded randomization: when `products` lists >1 product or
     `quantity_max > quantity_min`, the env samples a per-episode (product, quantity)
     schedule from its seeded RNG (the domain itself stays RNG-free, CLAUDE.md).
+
+    An explicit `schedule` (design D8, add-measurement-gate-harness) takes precedence
+    over both: the consumer replays it cyclically, one entry per cycle, in every
+    episode regardless of the episode seed, and the env ignores `product` and the B9
+    bounds. A calm world sets it so its demand carries no stochastic machinery.
     """
 
     id: str
@@ -93,18 +98,26 @@ class ConsumerConfig:
     products: tuple[Product, ...] = ()
     quantity_min: int = 1
     quantity_max: int = 1
+    # explicit cyclic (product, quantity) demand (design D8). Empty -> B9/fixed path.
+    schedule: tuple[tuple[Product, int], ...] = ()
 
     @property
     def product_pool(self) -> tuple[Product, ...]:
-        """Products the consumer may demand: the explicit `products` list, else the
-        single fixed `product`."""
+        """Products the consumer may demand: the distinct products of an explicit
+        `schedule` (first-appearance order), else the `products` list, else the single
+        fixed `product`. Product streams (ADR-0052) and validation read this."""
+        if self.schedule:
+            return tuple(dict.fromkeys(product for product, _ in self.schedule))
         return self.products if self.products else (self.product,)
 
     @property
     def is_randomized(self) -> bool:
         """True iff the demand needs the seeded RNG — a multi-product pool or a
         non-degenerate quantity range. A fixed single product at fixed quantity is
-        deterministic and keeps the canonical ScriptedConsumer path."""
+        deterministic and keeps the canonical ScriptedConsumer path. An explicit
+        `schedule` is fixed demand (D8), never seeded, so it is never randomized."""
+        if self.schedule:
+            return False
         return len(self.product_pool) > 1 or self.quantity_max > self.quantity_min
 
 
@@ -215,6 +228,11 @@ class Configuration:
             for prod in c.product_pool:
                 if prod not in process_products:
                     raise ValueError(f"consumer {c.id} demands product {prod} with no process sheet")
+            for prod, qty in c.schedule:
+                if qty < 1:
+                    raise ValueError(
+                        f"consumer {c.id} schedule quantity must be >= 1, got {qty} for product {prod}"
+                    )
             if c.quantity_min < 1:
                 raise ValueError(f"consumer {c.id} quantity_min must be >= 1, got {c.quantity_min}")
             if c.quantity_max < c.quantity_min:
@@ -308,6 +326,8 @@ def load_config(path: str | Path) -> Configuration:
             products=tuple(c.get("products", ())),
             quantity_min=c.get("quantityMin", 1),
             quantity_max=c.get("quantityMax", 1),
+            # JSON `schedule` is an array of [product, quantity] pairs (design D8).
+            schedule=tuple((product, quantity) for product, quantity in c.get("schedule", ())),
         )
         for c in data.get("consumers", [])
     ]

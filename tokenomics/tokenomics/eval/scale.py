@@ -59,12 +59,17 @@ def config_to_dict(cfg: Configuration) -> dict:
             for ps in cfg.process_sheets
         ],
         "producerConfigs": producers,
-        "consumers": [
-            {"id": c.id, "product": c.product, "products": list(c.products),
-             "quantityMin": c.quantity_min, "quantityMax": c.quantity_max}
-            for c in cfg.consumers
-        ],
+        "consumers": [_consumer_to_dict(c) for c in cfg.consumers],
     }
+
+
+def _consumer_to_dict(c: ConsumerConfig) -> dict:
+    d: dict = {"id": c.id, "product": c.product, "products": list(c.products),
+               "quantityMin": c.quantity_min, "quantityMax": c.quantity_max}
+    # Emitted only when set (design D8), so legacy configs serialize unchanged.
+    if c.schedule:
+        d["schedule"] = [[product, quantity] for product, quantity in c.schedule]
+    return d
 
 # product id = level*stride + index; capacity type = "capacity-{level}". Widths <=10
 # keep the historical stride=10 so existing experiment fixtures/results do not drift.
@@ -237,8 +242,11 @@ def permute_scale_config(
         for p in cfg.producer_configs
     ]
     consumers = [
+        # `products or (product,)` is the pre-schedule pool, kept so legacy configs
+        # relabel bit-identically; an explicit schedule (design D8) is relabeled too.
         replace(c, product=map_prod(c.product),
-                products=tuple(map_prod(x) for x in c.product_pool))
+                products=tuple(map_prod(x) for x in (c.products or (c.product,))),
+                schedule=tuple((map_prod(x), q) for x, q in c.schedule))
         for c in cfg.consumers
     ]
     out = Configuration(
