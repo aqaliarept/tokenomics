@@ -1,7 +1,7 @@
 """Controlled-generalization perturbations (NEXT STEPS stage 3).
 
 Single-axis config transforms toward UNSEEN/harder settings — the opposite of the
-curriculum *easers* in `train.smoke_ppo` (which ramp toward p=0). Each changes
+curriculum *easers* in `train.mlp_actor` (which ramp toward p=0). Each changes
 exactly one dimension so a generalization failure is attributable to it ("change one
 dimension at a time to identify failures"). Pure (no torch, no RL): just
 `dataclasses.replace` over the immutable config, so they import cleanly into the

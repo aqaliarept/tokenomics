@@ -10,12 +10,14 @@ Findings from the code and experiment record that shape the approach:
 
 - **No evidence the margin is reachable yet.** EXP-0042's +15.3% is measured against
   `blend_0.5` (absent from `ORDERING_BASELINES`, `eval/baselines.py:346`) on mined,
-  non-held-out worlds s29/s45/s77 (`eval/graph_generalization_dump.py:53-59`); s45 depth-2
-  death rate was 0.2. It is not an envelope/held-out acceptance result.
+  non-held-out worlds s29/s45/s77 (`TASK_S29`/`TASK_S77`/`TASK_S45` in
+  `eval/bounded_rollout_orderer.py`); s45 depth-2 death rate was 0.2. It is not an
+  envelope/held-out acceptance result.
 - **EXP-0033's 0.9902 is search-bar/upper-bound**, not envelope/bound (champion 0.983). It
   does not prove +5% impossible, nor that only capacity-binding worlds have headroom.
 - **EXP-0043 is not deployable**: its surrogate only short-circuits predicted-zero streams;
-  all others still run real depth-2 rollouts (`eval/scenario_rollout_surrogate.py:1-15`).
+  all others still run real depth-2 rollouts (`eval/scenario_rollout_surrogate.py:1-15`, now
+  on branch `archive-1`).
 - **Deployed decision cost is ~O(P^2), not linear**: all-producer rows
   (`domain/orderer_view.py:278-284`), full EMA-key scans per producer aggregate
   (`domain/telemetry.py:36-39`), full-P decode masks (`env/decode.py:49-50`), remainder

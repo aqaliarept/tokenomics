@@ -32,7 +32,7 @@ from tokenomics.train.orderer_improve import (
     _stochastic_closure,
     run_orderer_improve,
 )
-from tokenomics.train.smoke_ppo import GaussianActor, load_order_actor, save_policies
+from tokenomics.train.mlp_actor import GaussianActor, load_order_actor, save_policies
 
 
 class _FakeEnv:

@@ -307,7 +307,7 @@ def test_eval_m2_scores_envelope_in_candidate_layout() -> None:
     from tokenomics.eval.runner import evaluate
     from tokenomics.eval.scale import build_scale_config
     from tokenomics.train.orderer_improve import eval_m2
-    from tokenomics.train.smoke_ppo import GaussianActor, save_policies
+    from tokenomics.train.mlp_actor import GaussianActor, save_policies
 
     import tempfile, os
 

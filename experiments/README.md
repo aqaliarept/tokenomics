@@ -11,6 +11,7 @@ only a lookup index into the per-experiment directories.
 
 | ID | Date | Result |
 |---|---|---|
+| [EXP-0043](EXP-0043-scenario-rollout-surrogate/RESULT.md) | 2026-08-27 | Scenario rollout surrogate — **CANCELLED, NOT RUN** (rejected by the baseline plan; code on `archive-1`) |
 | [EXP-0042](EXP-0042-bounded-online-rollout/RESULT.md) | 2026-08-24 | Confidence-bounded online rollout — **PASS**, depth 2 promoted (+15.3%, death-safe) |
 | [EXP-0041](EXP-0041-gnn-generalization-residual-router/RESULT.md) | 2026-08-09 | Pooled MPNN residual router — **CANCELLED BY EXP-0040**, not run |
 | [EXP-0040](EXP-0040-rollout-target-stability/RESULT.md) | 2026-08-01 | Marginal-value label stability audit — **SEARCH_ONLY** (stability failed, usefulness passed) |
@@ -93,16 +94,23 @@ something live still reads:
 | `EXP-0004/.../d3_rung_dagger_v4.pt` | champion producer (`champion.json`) |
 | `EXP-0007A/.../m2_stream_stochastic.pt` | champion orderer (`champion.json`) |
 | `EXP-0006B/.../m2_v3_obs_stochastic.pt` | `test_champion_regression` provenance guard |
-| `EXP-0012/.../orderer_scorer.pt` | portable orderer; read by curriculum tests |
-| `EXP-0021/.../producer_scorer_broad.pt` | portable producer; read by curriculum tests |
-| `EXP-0035/.../producer_candidate.pt` | promoted producer; SHA-pinned by the graph gate |
-| `EXP-0036/.../task_archive.jsonl` | SHA-pinned task archive for the graph gate |
-| `EXP-0037/gate/residual_scorer.pt` | SHA-pinned actor floor for the graph gate |
-| `EXP-0038B/audit_sys/spec.json` | SHA-pinned actor-floor artifact (`GATE_FLOOR_SHA256`) |
-| `EXP-0038/dump/` | read with real assertions by `test_observation_ladder` |
+| `EXP-0012/.../orderer_scorer.pt` | portable orderer scorer (champion stack, HISTORY §0) |
+| `EXP-0021/.../producer_scorer_broad.pt` | portable producer scorer (champion stack, HISTORY §0) |
+| `EXP-0035/.../producer_candidate.pt` | promoted producer; SHA-pinned by the EXP-0042 teacher (`REGISTERED_INPUT_SHA256`) |
+| `EXP-0036/.../task_archive.jsonl` | task archive; SHA-pinned by the EXP-0042 teacher (staged copy: `tokenomics/_pod_inputs/gate_archive.jsonl`) |
+| `EXP-0037/gate/residual_scorer.pt` | actor floor of the closed graph gate; no live reader, kept to reproduce from `archive-1` |
+| `EXP-0038B/audit_sys/spec.json` | actor-floor artifact of the closed graph gate; no live reader, kept to reproduce from `archive-1` |
+| `EXP-0038/dump/` | EXP-0038 decision dump; no live reader, kept to reproduce from `archive-1` |
 
-Before deleting anything else here, check it is not SHA-pinned: the graph gate verifies its
-inputs by hash and will refuse to run against a substitute.
+Before deleting anything else here, check it is not SHA-pinned: the EXP-0042 teacher
+verifies its inputs by hash and will refuse to run against a substitute.
+
+### Code for closed arcs
+
+Drivers for closed or rejected arcs (PPO trainer, curriculum game-master, marginal-value
+router, graph branch, EXP-0043 surrogate) were removed from `new-model` on 2026-10-25 and
+are preserved on branch `archive-1` (commit `7aeef1f`). A `spec.json` whose `driver` names
+a module missing from the tree reproduces from that branch.
 
 ## Producing a new experiment
 

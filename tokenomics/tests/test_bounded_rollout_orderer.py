@@ -135,3 +135,36 @@ def test_artifact_gate_rejects_one_bad_episode_even_when_means_win():
     result = bro.analyze_episode_rows(rows)
     assert result["verdict"] == "NO_BOUNDED_SEARCH_GAIN"
     assert result["arm_metrics"][0]["worst_episode_relative"] == pytest.approx(-0.2)
+
+
+def test_one_cycle_bump_perturbs_only_the_target_agent():
+    """Many product-stream ordering agents act in the same cycle with the same stream
+    indices / producer columns. A bump built for agent A must leave any other agent B's
+    routing exactly at the base, or the searched gain conflates A's decision with B's."""
+    from tokenomics.eval.baselines import PRODUCING_BASELINES, ordering_blend
+    from tokenomics.eval.joint_stack import joint_stack_env
+    from tokenomics.eval.scale import build_scale_config
+
+    env = joint_stack_env(build_scale_config(0, depth=3), 100)
+    env.reset(seed=0)
+    prod = PRODUCING_BASELINES["stock_aware"]
+    for agent in env.agent_iter(max_iter=10000):
+        if env._role[agent][0] == "order":
+            a = agent
+            break
+        if env.terminations[agent] or env.truncations[agent]:
+            env.step(None)
+            continue
+        env.step(prod(env, agent))
+    else:
+        raise AssertionError("no ordering agent reached")
+    others = [x for x in env.agents if env._role[x][0] == "order" and x != a]
+    assert others, "need a second ordering agent to prove isolation"
+    b = others[0]
+    base = ordering_blend(0.5)
+
+    bump = bro._one_cycle_bump(base, a, k=0, col=0, delta=5.0, at_cycle=env.current_cycle)
+    assert not np.array_equal(bump(env, a), base(env, a))      # A is nudged
+    np.testing.assert_array_equal(bump(env, b), base(env, b))  # B is untouched
+    later = bro._one_cycle_bump(base, a, k=0, col=0, delta=5.0, at_cycle=env.current_cycle + 1)
+    np.testing.assert_array_equal(later(env, a), base(env, a))  # other cycles untouched

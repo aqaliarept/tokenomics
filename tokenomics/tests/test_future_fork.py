@@ -1,7 +1,7 @@
 """EXP-0040 future-demand fork invariants (HANDOVER "Required Validity Tests").
 
-The fork must hold the entire deployable pre-action state fixed (graph, open orders,
-current demand, fixed consumers) and move ONLY the unconsumed randomized future suffix,
+The fork must hold the entire deployable pre-action state fixed (every observation,
+open orders, current demand, fixed consumers) and move ONLY the unconsumed randomized future suffix,
 deterministically from a continuation digest. These tests pin every one of those
 invariants before the collector is built.
 """
@@ -87,11 +87,9 @@ def _noop_prod(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
     return np.zeros(env.action_space(agent).shape, dtype=np.float32)
 
 
-def _encode_at(env: TokenomicsAECEnv, aid: str, oid, elig):
-    from tokenomics.domain.graph_view import build_economy_graph_view
-    from tokenomics.eval.graph_value_router_dump import encode_graph
-
-    return encode_graph(build_economy_graph_view(env.system, aid, oid, list(elig)))
+def _observations(env: TokenomicsAECEnv) -> dict[str, np.ndarray]:
+    """Every agent's deployable observation — exactly what a policy can read."""
+    return {a: np.array(env.observe(a), copy=True) for a in env.possible_agents}
 
 
 def _schedules(env: TokenomicsAECEnv) -> dict:
@@ -99,24 +97,15 @@ def _schedules(env: TokenomicsAECEnv) -> dict:
             if isinstance(c, ScheduledConsumer)}
 
 
-def _assert_graph_equal(before, after) -> None:
-    """Recursive equality over EVERY encoded field (EXP-0041 precondition). A loop over
-    `__dict__` that only compares top-level `np.ndarray` attributes silently skips
-    `node_features`, `edge_index`, and `edge_attr` — the dicts that hold all of the state —
-    so it would pass even if the fork moved a producer capacity or an order feature. Compare
-    each dict's keys and arrays, the scalar anchors, and the candidate array."""
-    for name in ("node_features", "edge_index", "edge_attr"):
-        b, a = getattr(before, name), getattr(after, name)
-        assert set(b) == set(a), f"{name} keys changed under fork"
-        assert b, f"{name} is empty — the comparison would be vacuous"
-        for key in b:
-            assert b[key].shape == a[key].shape, f"{name}[{key}] shape changed under fork"
-            assert b[key].dtype == a[key].dtype, f"{name}[{key}] dtype changed under fork"
-            assert np.array_equal(b[key], a[key]), f"{name}[{key}] changed under fork"
-    for name in ("current_order", "current_orderer", "target_product", "decision_digest"):
-        assert getattr(before, name) == getattr(after, name), f"anchor {name} changed under fork"
-    assert np.array_equal(before.candidate_producers, after.candidate_producers)
-    assert before.id_maps == after.id_maps  # audit ids (node ordering) unchanged too
+def _assert_observations_equal(before: dict, after: dict) -> None:
+    """Bitwise equality of every agent's observation (shape, dtype, values)."""
+    assert before, "no observations — the comparison would be vacuous"
+    assert set(before) == set(after), "agent set changed under fork"
+    for agent, b in before.items():
+        a = after[agent]
+        assert b.shape == a.shape, f"{agent} observation shape changed under fork"
+        assert b.dtype == a.dtype, f"{agent} observation dtype changed under fork"
+        assert np.array_equal(b, a), f"{agent} observation changed under fork"
 
 
 # --- seed determinism (never Python hash()) -----------------------------------------
@@ -127,37 +116,30 @@ def test_continuation_seed_is_deterministic_and_id_sensitive():
     assert continuation_seed(TASK, DIGEST, 0) != continuation_seed(TASK, DIGEST + 1, 0)
 
 
-# --- graph / current-state identity -------------------------------------------------
-def test_fork_leaves_encoded_graph_byte_identical():
-    """Every encoded field — all node feature matrices, all relation edge indices and
-    attributes, the scalar anchors, and the candidate array — is bit-identical after the
-    fork. Only the unconsumed future suffix may move; if any deployable graph field moved,
-    the continuation labels would no longer be comparable at a FIXED pre-action state."""
+# --- deployable-state identity -------------------------------------------------------
+def test_fork_leaves_every_observation_byte_identical():
+    """Every agent's observation is bit-identical after the fork. Only the unconsumed
+    future suffix may move; if any deployable field moved, continuation outcomes would
+    no longer be comparable at a FIXED pre-action state."""
     env = _contested_env()
-    aid, oid, elig, _cols = _drive_to_contested_decision(env)
-    before = _encode_at(env, aid, oid, elig)
+    _drive_to_contested_decision(env)
+    before = _observations(env)
     forked = fork_future_demand(env, task_id=TASK, decision_digest=DIGEST, continuation_id=0)
-    after = _encode_at(forked, aid, oid, elig)
-    _assert_graph_equal(before, after)
+    _assert_observations_equal(before, _observations(forked))
 
 
-def test_graph_equality_check_detects_a_moved_feature():
-    """Guard on the guard (EXP-0041 review finding): `_assert_graph_equal` must FAIL when a
-    single buried array changes. A `__dict__` loop over top-level ndarrays passes here — the
-    reason the original test could not have caught a fork that perturbed current state."""
+def test_observation_check_detects_moved_current_state():
+    """Guard on the guard: the observation comparison must FAIL when current state
+    moves — here one producer's capacity — so the identity test above is not vacuous."""
     import pytest
 
     env = _contested_env()
-    aid, oid, elig, _cols = _drive_to_contested_decision(env)
-    before = _encode_at(env, aid, oid, elig)
-    after = _encode_at(env, aid, oid, elig)
-    after.node_features["producer"][0, 0] += 1.0  # one buried cell in one dict entry
+    _drive_to_contested_decision(env)
+    before = _observations(env)
+    moved = copy.deepcopy(env)
+    moved.system.producing_agents["p1a"].capacities["capacity-1"] //= 2
     with pytest.raises(AssertionError):
-        _assert_graph_equal(before, after)
-    after = _encode_at(env, aid, oid, elig)
-    after.edge_attr["capacity_state"][0, 0] += 1.0
-    with pytest.raises(AssertionError):
-        _assert_graph_equal(before, after)
+        _assert_observations_equal(before, _observations(moved))
 
 
 def test_fork_preserves_open_orders_and_current_demand():

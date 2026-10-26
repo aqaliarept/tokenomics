@@ -112,7 +112,7 @@ def _fit_arrays(
     """Build (obs, clipped-target act, decode mask, per-sample weight) for one config's
     samples. The mask uses THIS config's spec so a permuted/varied topology contributes
     its own active dims; weights upweight the middle layer (L1) + positive examples."""
-    from .smoke_ppo import producing_action_mask
+    from .mlp_actor import producing_action_mask
 
     obs = np.stack([s.obs for s in samples])
     act = np.stack([s.expert_action for s in samples])
@@ -140,9 +140,9 @@ def fit_producer_clone(
 ) -> float:
     """Decode-aware producer clone fit over recorded samples (ADR-0049 Phase 1). Builds
     the per-sample decode mask + the layer/positive upweighting, then delegates the
-    masked-MSE + BCE-toggle loss to `smoke_ppo._fit_producer_clone`. Middle-layer (L1)
+    masked-MSE + BCE-toggle loss to `mlp_actor._fit_producer_clone`. Middle-layer (L1)
     and positive (restore/replenish) examples are upweighted — the depth-3 wall."""
-    from .smoke_ppo import _fit_producer_clone
+    from .mlp_actor import _fit_producer_clone
 
     obs, act, masks, weights = _fit_arrays(spec, samples, l1_weight, pos_weight)
     return _fit_producer_clone(
@@ -157,7 +157,7 @@ def load_producer_actor(path: str):
     closures from `load_policies`; this exposes the raw actor for `predict_actions`)."""
     import torch
 
-    from .smoke_ppo import CHECKPOINT_VERSION, GaussianActor
+    from .mlp_actor import CHECKPOINT_VERSION, GaussianActor
 
     ckpt = torch.load(path, weights_only=True)
     if ckpt.get("version") != CHECKPOINT_VERSION:
@@ -200,7 +200,7 @@ def dagger_producer_first(
     in the gate's `clone+base` column). Saves a PPO-loadable checkpoint."""
     import torch
 
-    from .smoke_ppo import (
+    from .mlp_actor import (
         _build_clone_actors,
         _fit_clone,
         _fit_producer_clone,
@@ -208,7 +208,7 @@ def dagger_producer_first(
         greedy_eval_policies,
         save_policies,
     )
-    from .smoke_ppo import (  # init defaults (kept in sync with behavior_clone)
+    from .mlp_actor import (  # init defaults (kept in sync with behavior_clone)
         DEFAULT_ORDER_LOG_STD,
         DEFAULT_PROD_LOG_STD,
         DEFAULT_PROD_REPLEN_BIAS,
@@ -308,7 +308,7 @@ class FidelityReport:
 def _stats(
     spec: EnvSpec, samples: list[ProducerSample], preds: np.ndarray
 ) -> FidelityStats:
-    from .smoke_ppo import producing_action_mask  # lazy: keep module torch-free
+    from .mlp_actor import producing_action_mask  # lazy: keep module torch-free
 
     g = spec.num_inputs
     n = len(samples)

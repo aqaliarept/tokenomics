@@ -27,9 +27,8 @@ from ..domain.config import (Configuration, ConsumerConfig, InventoryExpansion,
 
 def config_to_dict(cfg: Configuration) -> dict:
     """Inverse of `domain.config.load_config`: serialize a Configuration to the JSON
-    schema so a built scale topology can be pinned to a file and trained via
-    `smoke_ppo --config` (the only clean way to fix a depth-D base; `--topology-depth`
-    alone is inert without `--topology-random`/`--validation-seeds`)."""
+    schema so a built scale topology can be pinned to a file and loaded anywhere a
+    config path is accepted (`load_config`, `signal_check --config`)."""
     producers = []
     for p in cfg.producer_configs:
         d: dict = {

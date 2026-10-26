@@ -26,7 +26,7 @@ def test_build_launch_cmd_detaches_and_records_pid_and_exit() -> None:
     cmd = rpt.build_launch_cmd(
         remote_dir="/workspace/tokenomics",
         python_bin_path=".venv/bin/python",
-        train_args="-m tokenomics.train.smoke_ppo --iters 50",
+        train_args="-m tokenomics.eval.signal_check --horizon 50",
         log_file="/workspace/train.log",
         pid_file="/workspace/train.pid",
         exit_file="/workspace/train.exit",
@@ -35,7 +35,7 @@ def test_build_launch_cmd_detaches_and_records_pid_and_exit() -> None:
     assert "setsid" in cmd
     # runs in the right dir, with the right interpreter + args
     assert "cd /workspace/tokenomics" in cmd
-    assert ".venv/bin/python -m tokenomics.train.smoke_ppo --iters 50" in cmd
+    assert ".venv/bin/python -m tokenomics.eval.signal_check --horizon 50" in cmd
     # a stale exit marker from a previous run must not be mistaken for "done"
     assert "rm -f /workspace/train.exit" in cmd
     # records the wrapper pid (liveness) and the final exit code (completion)
@@ -51,7 +51,7 @@ def test_build_launch_cmd_forces_outer_shell_to_exit() -> None:
     cmd = rpt.build_launch_cmd(
         remote_dir="/workspace/tokenomics",
         python_bin_path=".venv/bin/python",
-        train_args="-m tokenomics.train.smoke_ppo --iters 50",
+        train_args="-m tokenomics.eval.signal_check --horizon 50",
         log_file="/workspace/train.log",
         pid_file="/workspace/train.pid",
         exit_file="/workspace/train.exit",
@@ -376,7 +376,7 @@ def test_launch_cmd_exports_pod_image_into_the_run() -> None:
     no exports -> unchanged command."""
     cmd = rpt.build_launch_cmd(
         remote_dir="/workspace/tokenomics", python_bin_path=".venv/bin/python",
-        train_args="-m tokenomics.train.graph_router_probe --x 1",
+        train_args="-m tokenomics.eval.bounded_rollout_orderer --x 1",
         log_file="/workspace/train.log", pid_file="/workspace/train.pid",
         exit_file="/workspace/train.exit",
         env_exports={"EXP0039_POD_IMAGE": "runpod/base:0.6.2"})

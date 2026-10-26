@@ -14,7 +14,7 @@ tokenomics/tokenomics/
   domain/   pure sim logic (no RL, no IO, no logging)
   env/      PettingZoo AEC adapter: spaces, encode, decode, aec_env
   eval/     heuristic baselines + metrics harness (signal check)
-  train/    scorer distillation, DAgger, champion iteration, graph probes (optional: needs torch)
+  train/    scorer distillation, flat MLP actors + BC/DAgger, champion iteration (optional: needs torch)
   config/   phase1.json
 docs/        ADRs (adr/), deep-research-report (6-phase curriculum), requirements
 experiments/ empirical runs + results, one dir per experiment — see experiments/README.md
@@ -30,9 +30,10 @@ Domain glossary  the "Domain Language" section at the bottom of THIS file — us
 ../.venv/bin/python -m tokenomics.eval.signal_check    # baseline table
 ```
 
-Curriculum/game-master stages use replayable task archives, scorer checkpoints, and
-deterministic reference bars. Do **not** run `tokenomics.train.smoke_ppo` as a
-curriculum-stage smoke check; PPO training was rejected for this stage.
+Code for closed or rejected arcs — the PPO trainer, the curriculum game-master, the
+marginal-value router, the graph (GNN) branch, the EXP-0043 surrogate — is removed from
+this branch and preserved on branch `archive-1` (commit `7aeef1f`). Restore from there only
+with a diagnosed reason to reopen that arc (see "Root cause before next strategy").
 
 ## Root cause before next strategy (HARD RULE)
 An experiment failed or underperformed → do **NOT** propose or start the next strategy/axis/arc until the failure cause is **diagnosed with evidence** (trace, closure-by-split, ablation — not a hypothesis) and written down (the EXP `RESULT.md`, and an arc paragraph in `experiments/HISTORY.md` if it closes or opens a branch). When competing explanations demand different responses (e.g. distill-fidelity wall → fix training vs generalization gap → mine denser), run the **discriminating diagnostic first**; it decides the move. Every new-strategy proposal must name the diagnosed cause it addresses. **Check `docs/DIAGNOSTICS.md` first** — the registry of known problems → verification checks (plain-English problem statements, discriminating check, outcome branches); if the symptom matches an entry, run that check before inventing a new diagnostic. New cause diagnosed → add a registry entry. (Failure seen: EXP-0034 candidate captured ~15% of mined headroom; jumping to "mine more cells" without knowing WHY the harvest is low would have spent pods on the wrong fix.)
@@ -44,9 +45,9 @@ When reporting an experiment/diagnostic result to the user, explain it in **plai
 When referencing a file to the user, always give the **absolute path** (e.g. `/srv/research/tokenomics/openspec/changes/<name>/specs/<cap>/spec.md`, optionally `:line`). Never a path relative to the repo root, the package dir, or a change dir — the working directory shifts between `tokenomics/`, `tokenomics/tokenomics/` and the repo root, so relative links resolve wrong. Applies to tables and lists too. (Failure seen: spec files listed as `specs/project-mission/spec.md` — unclickable.)
 
 ## Where training + experiments run (HARD RULE)
-**All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `clone_fidelity` DAgger, scorer distillation, curriculum mining/replay, the graph dump + probe, any multi-topology or multi-iter run.
+**All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `clone_fidelity` DAgger, scorer distillation, EXP-0042 bounded-rollout search, any multi-topology or multi-iter run.
 
-**Experiments go to the cloud.** Any run that materializes an `EXP-NNNN` result — the full multi-seed / multi-task / multi-topology run that produces `summary.csv` + `artifacts/` (training, transfer/curriculum matrices, replay suites, acceptance sweeps) — runs on Runpod, wrapped with `run_pod_training.py --pull` to bring the EXP dir back. The **only** things that stay local: stage-appropriate smoke checks (a curriculum replay on 1-2 archived tasks, a single-cell sanity check, a fast `--dry-run`) and **quick one-shot diagnostics/evals** (`signal_check`, `producer_trace`, a single-seed trace). Build/TDD the experiment driver locally against a tiny subset (`--dry-run`, 1–2 cells, ≤1 seed) to prove it runs, then launch the **full** run on the cloud. If unsure, it goes to the cloud.
+**Experiments go to the cloud.** Any run that materializes an `EXP-NNNN` result — the full multi-seed / multi-task / multi-topology run that produces `summary.csv` + `artifacts/` (training, transfer matrices, replay suites, acceptance sweeps) — runs on Runpod, wrapped with `run_pod_training.py --pull` to bring the EXP dir back. The **only** things that stay local: stage-appropriate smoke checks (a replay of 1-2 archived tasks, a single-cell sanity check, a fast `--dry-run`) and **quick one-shot diagnostics/evals** (`signal_check`, `producer_trace`, a single-seed trace). Build/TDD the experiment driver locally against a tiny subset (`--dry-run`, 1–2 cells, ≤1 seed) to prove it runs, then launch the **full** run on the cloud. If unsure, it goes to the cloud.
 
 **Classify by COMPUTE PROFILE + PURPOSE, not task count** (this is where the rule gets broken). "1-2 archived tasks" is necessary but NOT sufficient for local — a run stays local only if it is *also* fast AND throwaway. It goes to the **cloud** if ANY of these is true:
 - it materializes a result you will base a **go/no-go decision** on (representability check, gate, acceptance read) — that's a verification run, not a diagnostic;
@@ -61,8 +62,8 @@ A genuine local smoke has ALL knobs pinned tiny: `horizon ≤ ~12`, `iters ≤ ~
 ## Parallel work (use the cores)
 Inference here is batch-1 and rollouts are sequential Python, so extra cores do nothing for a
 single run. Pin BLAS to 1 thread per worker and get throughput by fanning out **independent**
-runs, one process per core. `eval.curriculum_mining` does this internally (`_mine_parallel`,
-sharded evaluate + merged global rank). Watch the load average against `nproc`: a worker pool
+runs, one process per core. `eval.bounded_rollout_orderer --workers N` does this internally
+(one `ProcessPoolExecutor` worker per paired episode, `torch.set_num_threads(1)` per worker). Watch the load average against `nproc`: a worker pool
 whose children each spawn threads oversubscribes the box and can stall it outright
 (DIAGNOSTICS 9).
 
@@ -91,20 +92,18 @@ python run_pod_training.py --pod-id <id> --cpu --python python3.12 \
 1. **Get pod id**: `runpodctl pod list`. Note the id; a stopped pod restarts automatically (its `/workspace` volume persists across stop/start).
 2. **Stage input checkpoints INTO the synced tree** (the gotcha). The driver rsyncs the **inner package dir** `tokenomics/` (the `pyproject.toml` root, so `pip install -e .` works) — **NOT** the repo root. So repo-root `experiments/EXP-*/artifacts/*.pt` do **not** reach the pod. Any ckpt a run READS must be copied under `tokenomics/` first, e.g. `mkdir -p tokenomics/_pod_ckpts && cp experiments/.../foo.pt tokenomics/_pod_ckpts/`, then reference it on the pod as `/workspace/tokenomics/_pod_ckpts/foo.pt`. Delete `_pod_ckpts/` after. (Runs that only WRITE a ckpt on the pod — smoke/train — don't need this.)
 3. **Pick the profile**: GPU (default, `runpod/pytorch:*` image, reuses system CUDA torch) or **CPU** (`--cpu`, `runpod/base:*` image, installs the `[train]` CPU-torch extra). CPU-bound work (search bars, distillation, batch-1 rollout) → `--cpu`; GPU buys nothing there. **On a CPU/base pod add `--python python3.12`** — the base image's python3.8 has no `ensurepip` and venv creation fails.
-4. **Choose pod paths**: write outputs under `/workspace/...` (e.g. `--out-dir /workspace/tokenomics/curriculum_runs/exp0024`) and `--pull REMOTE:LOCAL` them back into a fresh `experiments/EXP-NNNN-*` dir.
+4. **Choose pod paths**: write outputs under `/workspace/...` (e.g. `--out-dir /workspace/tokenomics/runs/exp0042`) and `--pull REMOTE:LOCAL` them back into a fresh `experiments/EXP-NNNN-*` dir.
 5. **Launch** (detached by default — survives SSH drop / laptop sleep; the client auto-reconnects and finishes when the remote exit marker appears; Ctrl-C just detaches):
 ```
-# CPU experiment reading staged ckpts, writing an EXP dir, pulled back
-python run_pod_training.py --pod-id <id> --cpu --python python3.12 \
-  --train "-u -m tokenomics.eval.curriculum \
-    --producer-ckpt /workspace/tokenomics/_pod_ckpts/producer_scorer_broad.pt \
-    --orderer-ckpt  /workspace/tokenomics/_pod_ckpts/orderer_scorer.pt \
-    --out-dir /workspace/tokenomics/curriculum_runs/exp0024 --eval-seeds 3 --horizon 100" \
-  --pull "/workspace/tokenomics/curriculum_runs/exp0024:./experiments/EXP-NNNN-<title>"
-# GPU smoke: default profile, save+pull one ckpt
-python run_pod_training.py --pod-id <id> \
-  --train "-m tokenomics.train.smoke_ppo --iters 400 --steps 1024 --save /workspace/model.pt" \
-  --pull /workspace/model.pt:./model.pt
+# CPU experiment reading staged inputs, writing an EXP dir, pulled back
+python run_pod_training.py --pod-id <id> --cpu --python python3.12 --verify-source-commit \
+  --train "-u -m tokenomics.eval.bounded_rollout_orderer \
+    --archive   /workspace/tokenomics/_pod_inputs/gate_archive.jsonl \
+    --prod-ckpt /workspace/tokenomics/_pod_ckpts/producer_candidate.pt \
+    --workers 16 --source-commit {SOURCE_COMMIT} --out-dir /workspace/tokenomics/runs/exp0042" \
+  --pull "/workspace/tokenomics/runs/exp0042:./experiments/EXP-NNNN-<title>"
+# GPU smoke: default profile, prints the baseline table
+python run_pod_training.py --pod-id <id> --train "-m tokenomics.eval.signal_check"
 ```
 6. **Watch / reattach**: live progress mirrors to `train.live.log` (`tail -f`). If the client detaches, reconnect: `python run_pod_training.py --pod-id <id> --attach --remote-log /workspace/train.log --cpu`.
 7. **After**: pod auto-stops (unless `--no-stop`); delete any staged `tokenomics/_pod_ckpts/`.
@@ -114,8 +113,8 @@ When an existing pod's host keeps failing `pod start`, skip `--pod-id` and enrol
 ```
 python run_pod_training.py --create-pod --image <img-with-py3.11+torch+ssh> \
   --vcpu 16 --mem 32 --disk 30 \
-  --train "-u -m tokenomics.eval.curriculum_mining ..." \
-  --pull /workspace/tokenomics/mine:./experiments/EXP-NNNN-title
+  --train "-u -m tokenomics.eval.bounded_rollout_orderer ..." \
+  --pull /workspace/tokenomics/runs/exp:./experiments/EXP-NNNN-title
 ```
 - Spec flags default to a **16 vCPU / 32 GB / 30 GB CPU pod** (flavor `cpu5c`, the CPU-bound shape). Override `--cpu-flavor`, `--compute-type GPU --gpu-type ... --gpu-count N` for GPU; `--volume-size`/`--data-center`/`--network-volume-id`/`--community` as needed. `--clone-from <pod-id>` seeds the spec from an existing pod instead of the flags.
 - **Create/clone go through the RunPod REST API, not `runpodctl`** — `runpodctl pod create` has no vCPU flag, so a CPU pod would come up at 2 vCPU. `create_pod` POSTs `rest.runpod.io/v1/pods` with `vcpuCount`+`cpuFlavorIds` (verified 16 vCPU/cpu5c); `--clone-from` reads the template via REST `GET /v1/pods/<id>` (only REST returns `cpuFlavorId`). API key from `RUNPOD_API_KEY` or `~/.runpod/config.toml` (never logged).
@@ -123,7 +122,7 @@ python run_pod_training.py --create-pod --image <img-with-py3.11+torch+ssh> \
 - `--keep-pod` = stop but don't terminate (inspect). Ctrl-C on a detached run leaves the created pod up (run continues) and prints the `runpodctl remove pod <id>` to clean up after `--attach`.
 
 ### Reference
-- `--train "<args>"` = args handed to the pod's `.venv/bin/python` (default: smoke PPO). `-u` = unbuffered stdout (live per-iter logs). `--pull REMOTE:LOCAL` (repeatable) rsyncs back before stopping.
+- `--train "<args>"` = args handed to the pod's `.venv/bin/python` (default: `-m tokenomics.eval.signal_check`). `-u` = unbuffered stdout (live per-iter logs). `--pull REMOTE:LOCAL` (repeatable) rsyncs back before stopping.
 - Pod addressed by **id** (existing) or created via `--create-pod`/`--clone-from`; ip/port resolved fresh each run via `runpodctl ssh info` (they change across restarts). Code lands at `/workspace/tokenomics`.
 - Skips: `--no-stop` (leave pod up), `--no-sync` (code already on pod), `--no-install`, `--foreground` (legacy blocking stream). `--ssh-key` / `--ready-timeout` override defaults.
 
@@ -168,7 +167,7 @@ python run_pod_training.py --create-pod --image <img-with-py3.11+torch+ssh> \
 - Docstrings explain **why** + cite the ADR, not what. Keep short.
 
 ## Tests
-- `pytest`, one file per layer (`test_domain_*`, `test_simplex`, `test_env_api`, `test_eval`, `test_train_smoke`).
+- `pytest`, one file per layer (`test_domain_*`, `test_simplex`, `test_env_api`, `test_eval`, `test_mlp_actor`).
 - torch tests guard with `pytest.importorskip("torch")`.
 - `test_eval::test_signal_exists` = guardrail: a good policy must beat do-nothing. Keep it passing.
 - Touch env? `pettingzoo.test.api_test` runs in `test_env_api`.

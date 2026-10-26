@@ -44,7 +44,7 @@ def main() -> None:
         "--policy",
         type=str,
         default=None,
-        help="checkpoint from train.smoke_ppo --save; adds a trained-policy row (needs torch)",
+        help="checkpoint written by train.mlp_actor.save_policies; adds a trained-policy row (needs torch)",
     )
     args = ap.parse_args()
     seeds = range(args.seeds)
@@ -78,7 +78,7 @@ def main() -> None:
     # torch-optional (CLAUDE.md).
     if args.policy:
         from ..env.spaces import build_spec, config_fingerprint
-        from ..train.smoke_ppo import (
+        from ..train.mlp_actor import (
             checkpoint_fingerprint,
             checkpoint_obs_dims,
             load_policies,

@@ -175,7 +175,7 @@ def collect_orderer_samples(
     label (relabel). Reproducible — the search RNG is seeded by (seed, cycle). The search
     is silent and slow, so `log` (if given) streams per-episode progress — the label-gen
     phase otherwise produces no output for ~minutes (search is single-threaded)."""
-    from .smoke_ppo import ordering_action_mask
+    from .mlp_actor import ordering_action_mask
 
     out: list[OrdererSample] = []
     seed_list = list(seeds)
@@ -296,7 +296,7 @@ def dagger_orderer(
     state distribution); only the saved/deployed policy samples."""
     import torch
 
-    from .smoke_ppo import GaussianActor
+    from .mlp_actor import GaussianActor
 
     cfg_list = list(configs) if isinstance(configs, (list, tuple)) else [configs]
     samples_by_cfg = [
@@ -366,7 +366,7 @@ def eval_m2(
     `stochastic=True` (EXP-0006B): deploy the orderer by *sampling* its learned `log_std`
     (`_stochastic_closure`) instead of greedy clip(mean) — the diversity is the lever, so
     it must be scored as deployed. Producer stays greedy."""
-    from .smoke_ppo import load_order_actor, load_policies
+    from .mlp_actor import load_order_actor, load_policies
 
     m2_prod, m2_order = load_policies(save)
     if stochastic:
@@ -476,7 +476,7 @@ def run_orderer_improve(
         epochs=epochs, lr=lr, seed=seed,
         product_stream=product_stream, stochastic=stochastic, log=log)
 
-    from .smoke_ppo import save_policies
+    from .mlp_actor import save_policies
 
     # Producer (v4) deploys greedy → always tighten its log_std. The orderer log_std is
     # the *learned* exploration when stochastic (EXP-0006B) — keep it; only the

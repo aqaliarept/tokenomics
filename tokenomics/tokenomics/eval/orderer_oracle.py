@@ -36,7 +36,7 @@ from .baselines import (
 )
 from .scale import build_scale_config
 from ..env import TokenomicsAECEnv
-from ..train.smoke_ppo import staged_config
+from ..train.mlp_actor import staged_config
 
 # Best-of-baseline envelope (EXP-0005 Stage 0): the strict M0 bar per topology. The
 # named baseline is stock_aware+proportional, but random beats it on some seeds, so a

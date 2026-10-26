@@ -36,8 +36,8 @@ class SeedManifest:
 
     Neutral defaults (factor 1.0, `quantity_max=None`) leave an axis untouched, so a
     manifest names exactly the perturbations it stacks. `seeds` are held-out env seeds
-    (disjoint from training/validation, ADR-0011); convention is the
-    HELD_OUT_SEED_OFFSET range."""
+    (disjoint from training/validation, ADR-0011); convention is seeds from 10_000 up,
+    clear of validation seeds and signal_check's default 0..N."""
 
     version: str
     base: str

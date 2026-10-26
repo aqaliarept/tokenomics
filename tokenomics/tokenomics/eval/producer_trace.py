@@ -36,7 +36,7 @@ from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from .scale import build_scale_config
 from ..domain.config import Configuration
 from ..env import TokenomicsAECEnv
-from ..train.smoke_ppo import load_policies, staged_config
+from ..train.mlp_actor import load_policies, staged_config
 
 
 @dataclass

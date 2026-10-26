@@ -1,7 +1,7 @@
 {
   "version": "scenario-rollout-surrogate-v1",
   "date": "2026-08-27",
-  "status": "REGISTERED - no EXP-0043 labels or gate seeds inspected",
+  "status": "CANCELLED 2026-10-25 by the baseline plan (design.md D5), NOT RUN - no EXP-0043 labels or gate seeds inspected; code on archive-1 (7aeef1f)",
   "source_experiment": "EXP-0042-bounded-online-rollout",
   "question": "Can a scenario-conditioned relational GNN certify zero-gain depth-2 bump evaluations and remove at least 70% of real rollout calls without losing depth-2 decisions or closed-loop value?",
   "scope": "Planner-internal cost reduction on the three fixed EXP-0042 topologies. Sampled future demand is explicit evaluator input to the surrogate and is not a deployable environment observation. blend_0.5 and real depth-2 rollout remain fallbacks.",

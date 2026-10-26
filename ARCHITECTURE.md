@@ -450,7 +450,7 @@ the champion orderer line had to meet (EXP-0006B was the first to do it).
 ### 7.3 Failure classification
 
 Every below-bar result in the curriculum is assigned exactly one class, by
-precedence (`classify_failure` in `eval/curriculum.py`):
+precedence (`classify_failure` in `eval/curriculum.py`, now on the `archive-1` branch):
 
 | Precedence | Class | Meaning | Consequence |
 |---|---|---|---|
@@ -504,8 +504,11 @@ which is exactly what Track A did.
 > should follow it. Some of the modules named below (`eval/gap_attribution.py`,
 > `eval/orderer_representability.py`, `eval/train_closure.py`,
 > `eval/ceiling_bound.py`, `eval/curriculum_capacity.py`) have since been removed
-> from the tree and are recoverable from git history; `eval/curriculum.py`,
-> `eval/curriculum_mining.py` and `eval/curriculum_replay.py` remain.
+> from the tree and are recoverable from git history. The remaining curriculum
+> modules (`eval/curriculum.py`, `eval/curriculum_mining.py`,
+> `eval/curriculum_replay.py`) were removed later and are preserved on the
+> `archive-1` branch; only the task-record format survives, as
+> `eval/task_archive.py` (Section 8.1).
 
 This section walks one real round — EXP-0036, "Track A round 2" — through
 every stage, with the actual numbers.
@@ -772,7 +775,7 @@ Kept in the tree, not on the active skill-training path.
 
 | Component | What it was | Status |
 |---|---|---|
-| `train/smoke_ppo.py` | The original PPO trainer. Now retained for the shared pieces the live stack imports: actor networks, action masks, checkpoint load/save, `behavior_clone`, `staged_config` | Backbone; PPO training itself rejected for this stage |
+| `train/mlp_actor.py` | The flat MLP actors the champion checkpoints load into: actor networks, action masks, checkpoint load/save, `behavior_clone` / `dagger_clone`, `staged_config` (formerly `train/smoke_ppo.py`, minus its PPO trainer) | Backbone for the shipped champion; PPO trainer removed |
 | `train/clone_fidelity.py` | Behaviour-cloning + DAgger tooling for the flat (non-portable) producer | Superseded by scorer distillation; retained for checkpoint loading and focused clone diagnostics |
 | `train/orderer_improve.py` | Search-labelled orderer fitting and stochastic checkpoint evaluation | Retained for the product-stream champion path; rejected enriched/elite variants removed |
 
@@ -785,6 +788,21 @@ elite/value relabel branches, flat/no-edge producer ablations, and the curriculu
 (`eval/orderer_representability.py`, `eval/ceiling_bound.py`, `eval/gap_attribution.py`,
 `eval/train_closure.py`, and siblings). See [experiments/HISTORY.md](experiments/HISTORY.md)
 sections 4, 7 and 8 for why each branch closed.
+
+Removed in the second cleanup (preserved on the `archive-1` branch, commit `7aeef1f`):
+the MAPPO trainer (formerly in `train/smoke_ppo.py`; PPO rejected, EXP-0003); the
+curriculum game-master (`eval/curriculum.py`, `eval/curriculum_mining.py`,
+`eval/curriculum_replay.py`; arc closed, §7); the marginal-value routing teacher
+(`eval/value_router.py`, `eval/value_router_errors.py`, `train/value_router.py`,
+`eval/producer_product_features.py`, `eval/observation_ladder.py`; EXP-0037 → 0038B, §8);
+the graph branch (`domain/graph_view.py`, `eval/graph_value_router_dump.py`,
+`eval/graph_generalization_dump.py`, `eval/graph_generalization_budget.py`,
+`eval/graph_residual_router.py`, `eval/rollout_target_stability.py`,
+`train/graph_router_probe.py`, `train/graph_generalization_probe.py`; EXP-0039 → 0041, §9);
+and the EXP-0043 scenario rollout surrogate (`eval/scenario_rollout_surrogate.py`; rejected
+by the baseline plan because it still rolls out at decision time). The EXP-0042 teacher
+keeps the pieces it needs: `eval/task_archive.py` (world records) and
+`eval/provenance.py` (input pins, source and environment identity).
 
 ## 11. How We Got Here — the Experiment History
 

@@ -1,7 +1,7 @@
 {
   "version": "gnn-generalization-residual-router-v1",
   "date": "2026-08-09",
-  "status": "CANCELLED BY EXP-0040 SEARCH_ONLY; implementation retained, no dataset or fit run",
+  "status": "CANCELLED BY EXP-0040 SEARCH_ONLY; no dataset or fit run; implementation removed from new-model 2026-10-25, preserved on archive-1 (7aeef1f)",
   "driver": [
     "tokenomics.eval.graph_generalization_dump (splits + conditional target + dump artifacts)",
     "tokenomics.train.graph_generalization_probe (--stage fit | gate-a)",

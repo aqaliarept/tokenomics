@@ -36,22 +36,28 @@ import numpy as np
 from ..env import TokenomicsAECEnv
 from ..env.future_fork import fork_future_demand
 from .baselines import Policy, ordering_blend
-from .curriculum import TaskRecord, replay
-from .graph_generalization_dump import TASK_IDS, TASK_S29, TASK_S45, TASK_S77
-from .graph_value_router_dump import (
+from .joint_stack import joint_stack_env
+from .orderer_oracle import _rollout_units
+from .provenance import (
     assert_inputs_match,
     decision_digest,
     environment_manifest,
     sha256_file,
     source_fingerprint,
 )
-from .joint_stack import joint_stack_env
-from .orderer_oracle import _rollout_units
 from .runner import run_episode
-from .value_router import _one_cycle_bump
+from .task_archive import TaskRecord, replay
 
 
 EXPERIMENT = "EXP-0042"
+# Frozen task set: the three EXP-0036 archive worlds first registered by the EXP-0039 gate.
+TASK_S29 = ("mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.3-"
+            "producers_per_layer2-quantity_max14-s29")
+TASK_S77 = ("mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-"
+            "producers_per_layer3-quantity_max14-s77")
+TASK_S45 = ("mine-build_scale_config-capacity_scale0.6-depth3-primal_capacity_scale0.22-"
+            "producers_per_layer3-quantity_max14-s45")
+TASK_IDS: tuple[str, ...] = (TASK_S29, TASK_S77, TASK_S45)
 FLOOR = "blend_0.5"
 DEPTHS = (1, 2, 3)
 SCENARIO_CHECKPOINTS = (4, 8, 16)
@@ -112,6 +118,26 @@ ScenarioScorer = Callable[
     [TokenomicsAECEnv, str, Sequence[StreamCandidate], int],
     Mapping[int, np.ndarray],
 ]
+
+
+def _one_cycle_bump(
+    base: Policy, target_agent: str, k: int, col: int, delta: float, at_cycle: int
+) -> Policy:
+    """`base` routing, but with `delta` added to stream `k` / producer column `col` **only**
+    for `target_agent` at cycle `at_cycle` (base everywhere else). Gating on the agent is
+    essential: many product-stream ordering agents act each cycle sharing the same stream
+    indices/producer columns, so a cycle-only bump would leak into every other agent and
+    confound the gain — this isolates the single searched decision (from EXP-0037)."""
+
+    def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        logits = np.asarray(base(env, agent), dtype=np.float32).copy()
+        if agent == target_agent and env.current_cycle == at_cycle:
+            mat = logits.reshape(env.spec_.k_stream, env.spec_.num_producers)
+            mat[k, col] += delta
+            logits = mat.flatten()
+        return logits
+
+    return pol
 
 
 def _softmax_gap(logits: Sequence[float]) -> float:
@@ -550,8 +576,8 @@ def run_registered_experiment(
 
 
 def main() -> None:
-    from .curriculum_replay import _load_archive
-    from .graph_value_router_dump import resolve_verified_commit
+    from .provenance import resolve_verified_commit
+    from .task_archive import load_archive
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", required=True)
@@ -566,7 +592,7 @@ def main() -> None:
     if args.verify_source_commit:
         source_commit = resolve_verified_commit()
     run_registered_experiment(
-        _load_archive(args.archive), archive=args.archive, prod_ckpt=args.prod_ckpt,
+        load_archive(args.archive), archive=args.archive, prod_ckpt=args.prod_ckpt,
         out_dir=args.out_dir, source_commit=source_commit, workers=args.workers,
         smoke=args.smoke)
 

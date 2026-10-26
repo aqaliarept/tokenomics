@@ -122,7 +122,7 @@ def test_producer_clone_overfits_decoded_command_on_tiny_set():
         fit_producer_clone,
         predict_actions,
     )
-    from tokenomics.train.smoke_ppo import (
+    from tokenomics.train.mlp_actor import (
         DEFAULT_ORDER_LOG_STD,
         DEFAULT_PROD_LOG_STD,
         DEFAULT_PROD_REPLEN_BIAS,
@@ -177,7 +177,7 @@ def test_dagger_producer_first_saves_high_fidelity_loadable_checkpoint(tmp_path)
         load_producer_actor,
         predict_actions,
     )
-    from tokenomics.train.smoke_ppo import load_policies
+    from tokenomics.train.mlp_actor import load_policies
 
     cfg = build_scale_config(0, depth=2)
     spec = build_spec(cfg)
@@ -210,7 +210,7 @@ def test_producer_clone_fit_freezes_masked_action_dims():
     import numpy as np
     import torch
 
-    from tokenomics.train.smoke_ppo import GaussianActor, _fit_producer_clone
+    from tokenomics.train.mlp_actor import GaussianActor, _fit_producer_clone
 
     g = 2  # 2 replenish dims + 3 toggles
     adim = g + 3

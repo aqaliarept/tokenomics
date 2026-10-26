@@ -72,7 +72,7 @@ def fork_future_demand(
     sorted-id order so the RNG stream is deterministic. Fixed `ScriptedConsumer`s and
     non-randomized `ScheduledConsumer`s are left unchanged.
 
-    Because only the future suffix moves, the encoded pre-action graph, current open orders,
+    Because only the future suffix moves, every agent's observation, current open orders,
     and current demand are byte-identical to the source (validated in tests)."""
     clone = copy.deepcopy(env)
     rng = np.random.default_rng(continuation_seed(

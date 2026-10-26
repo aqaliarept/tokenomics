@@ -42,11 +42,16 @@ the named cause.
 
 **What is open.** Online search works but is not deployable: EXP-0042 confidence-bounded
 rollout passes its fixed-topology gate (§10) at ~16k–33k rollouts per episode. EXP-0043
-(scenario rollout surrogate, teacher-cost reduction) is implemented and registered, not
-yet run. The forward plan — measurement gate, shocks, development audit, bounded
+(scenario rollout surrogate, teacher-cost reduction) was cancelled before running: the
+baseline plan rejects it because it still rolls out at decision time. The forward plan — measurement gate, shocks, development audit, bounded
 evolution-strategies training on whole-episode outcomes instead of per-decision imitation —
 is the OpenSpec change `openspec/changes/establish-project-baseline/` (`design.md`,
 milestones M1–M7), against the acceptance specs in `openspec/specs/`.
+
+**Where the code for closed arcs went.** The drivers of every closed or rejected arc (the
+PPO trainer, the curriculum game-master, the marginal-value router, the graph branch, and
+EXP-0043) were removed from `new-model` on 2026-10-25. They are preserved on branch
+`archive-1` (commit `7aeef1f`); reproduce those experiments from there.
 
 ---
 
@@ -400,5 +405,6 @@ product-agnostic and transfer across size and recipe shape with zero contract fa
 
 **Current routing direction:** keep EXP-0041 and direct imitation cancelled. EXP-0042
 validated confidence-bounded online rollout and promotes depth 2 on the three fixed gate
-topologies. The next experiment should reduce its simulator cost without weakening the
-paired value/death gates or removing the `blend_0.5` fallback.
+topologies, as a teacher only: deployed search breaks the bounded per-decision cost rule.
+The cost-reduction follow-up (EXP-0043) was cancelled by the baseline plan; the next steps
+are that plan's milestones (§0).

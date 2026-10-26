@@ -26,7 +26,7 @@ import torch
 from tokenomics.eval.runner import evaluate
 from tokenomics.eval.scale import build_scale_config
 from tokenomics.train.orderer_improve import _stochastic_closure, eval_m2
-from tokenomics.train.smoke_ppo import load_order_actor, load_policies
+from tokenomics.train.mlp_actor import load_order_actor, load_policies
 
 # repo_root/experiments/...  — tests/ -> project(tokenomics) -> repo_root
 CHAMPION = (
@@ -36,8 +36,16 @@ CHAMPION = (
     / "artifacts"
     / "m2_v3_obs_stochastic.pt"
 )
+def _lfs_pulled(path: Path) -> bool:
+    """True only for real content: an un-pulled git-lfs file is a small text pointer."""
+    if not path.exists():
+        return False
+    with path.open("rb") as f:
+        return not f.read(64).startswith(b"version https://git-lfs.github.com/spec/v1")
+
+
 requires_champion = pytest.mark.skipif(
-    not CHAMPION.exists(), reason="champion artifact absent (git-lfs not pulled)"
+    not _lfs_pulled(CHAMPION), reason="champion artifact absent (git-lfs not pulled)"
 )
 
 # Provenance pinned in EXP-0006B/spec.json + RESULT.md.

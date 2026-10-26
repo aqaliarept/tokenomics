@@ -28,26 +28,26 @@ Pod profiles (--cpu):
 
 Usage:
   python run_pod_training.py --pod-id h8n0zosgxesksp \
-      --train "-m tokenomics.train.smoke_ppo --iters 50 --steps 1024 --seed 0"
+      --train "-m tokenomics.eval.signal_check"
 
   # CPU pod (base image): install CPU torch via the [train] extra
-  python run_pod_training.py --pod-id <cpu-pod-id> --cpu \
-      --train "-m tokenomics.train.smoke_ppo --iters 50 --steps 1024 --seed 0"
+  python run_pod_training.py --pod-id <cpu-pod-id> --cpu --python python3.12 \
+      --train "-m tokenomics.eval.signal_check"
 
   # leave the pod running for inspection afterwards:
   python run_pod_training.py --pod-id <id> --no-stop
 
-  # pull a checkpoint back when training writes one:
-  python run_pod_training.py --pod-id <id> \
-      --train "-m tokenomics.train.smoke_ppo --iters 400 --save /workspace/model.pt" \
-      --pull /workspace/model.pt:./model.pt
+  # pull an experiment dir back when the run writes one:
+  python run_pod_training.py --pod-id <id> --cpu --python python3.12 \
+      --train "-u -m tokenomics.eval.bounded_rollout_orderer ... --out-dir /workspace/tokenomics/runs/exp" \
+      --pull /workspace/tokenomics/runs/exp:./experiments/EXP-NNNN-title
 
   # create a FRESH pod from an explicit spec, run, then stop + TERMINATE it (for when an
   # existing pod's host is stuck and `pod start` keeps failing). Pick an --image that ships
   # python3.11+ and SSH so no Python is installed on the pod:
   python run_pod_training.py --create-pod --image <img-with-py311+ssh> \
       --vcpu 16 --mem 32 --disk 30 \
-      --train "-m tokenomics.eval.curriculum_mining ..." \
+      --train "-u -m tokenomics.eval.bounded_rollout_orderer ..." \
       --pull /workspace/tokenomics/mine:./experiments/EXP-NNNN-title
 
 Pod target (exactly one):
@@ -726,8 +726,8 @@ def setup_env(ssh: Ssh, remote_dir: str, *, cpu: bool = False, python_bin: str =
       * CPU (`cpu=True`): a `runpod/base:*` image has no torch. Make an ISOLATED venv
         (no system site-packages, so a stray system torch can't shadow it) and install
         the `[train]` extra so pip pulls CPU torch into the venv. This is the right
-        profile for the single-threaded, CPU-bound trainers (smoke_ppo / parallel /
-        producer_improve) — the GPU buys nothing for batch-1 inference + a Python
+        profile for the single-threaded, CPU-bound work (scorer distillation, DAgger,
+        rollout search) — the GPU buys nothing for batch-1 inference + a Python
         round-robin rollout, so a cheap CPU pod is the correct off-box target.
 
     `python_bin` selects the interpreter the venv is built from — base CPU images
@@ -973,8 +973,8 @@ def main() -> int:
                     help="created pod: use community cloud (default secure cloud)")
     ap.add_argument(
         "--train",
-        default="-m tokenomics.train.smoke_ppo --iters 50 --steps 1024 --seed 0",
-        help="args passed to the pod's `.venv/bin/python` (default: a smoke PPO run)",
+        default="-m tokenomics.eval.signal_check",
+        help="args passed to the pod's `.venv/bin/python` (default: the baseline signal check)",
     )
     ap.add_argument("--verify-source-commit", action="store_true",
                     help="before rsync, resolve the LOCAL git HEAD, verify it exists AND the synced "
