@@ -21,10 +21,10 @@ build-backend = "setuptools.build_meta"
 include = ["tokenomics*"]
 
 # Runtime JSON resources loaded by Path(__file__) (env DEFAULT_CONFIG and the shipped
-# held-out manifest + its base) must ship in the wheel/sdist, else they are missing
+# held-out manifest + its base, the gate registry files) must ship in the wheel/sdist, else they are missing
 # from a non-source install and loading raises FileNotFoundError.
 [tool.setuptools.package-data]
-tokenomics = ["config/*.json", "eval/manifests/*.json"]
+tokenomics = ["config/*.json", "eval/manifests/*.json", "eval/registry/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

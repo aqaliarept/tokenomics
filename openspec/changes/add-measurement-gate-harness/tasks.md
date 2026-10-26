@@ -22,7 +22,7 @@ Paths are under /srv/research/tokenomics/tokenomics/ unless absolute. "Full suit
 ## 4. Seeding and roster
 
 - [x] 4.1 [code][local-exclusive] Add `action_seed` to `run_episode` in `/srv/research/tokenomics/tokenomics/tokenomics/eval/runner.py`, with today's seeding as the default, and the hash-derived replicate seed helper (design D5). Add `blend_0.5` to `ORDERING_BASELINES` in `/srv/research/tokenomics/tokenomics/tokenomics/eval/baselines.py`. Verify: tests for both "Random-baseline replicates" scenarios; `python -m tokenomics.eval.signal_check --seeds 1 --horizon 12` shows the new rows with the existing rows unchanged; the full suite, including 1.1, is green.
-- [ ] 4.2 [code][local] Add `/srv/research/tokenomics/tokenomics/tokenomics/eval/roster.py`. It defines the roster file format (members, env contract, random flag, R, pruning record), uses the content hash as the version, refuses a mismatched hash, and implements the development-only pruning rule. Add draft roster v1 = producing × (ordering + `blend_0.5`). Verify: tests for the "Frozen baseline roster" and "Roster pruning uses development evidence only" scenarios.
+- [x] 4.2 [code][local] Add `/srv/research/tokenomics/tokenomics/tokenomics/eval/roster.py`. It defines the roster file format (members, env contract, random flag, R, pruning record), uses the content hash as the version, refuses a mismatched hash, and implements the development-only pruning rule. Add draft roster v1 = producing × (ordering + `blend_0.5`). Verify: tests for the "Frozen baseline roster" and "Roster pruning uses development evidence only" scenarios.
 
 ## 5. Hindsight-baseline and verdict arithmetic
 

@@ -1,0 +1,249 @@
+{
+  "content_hash": "8791e24b2760a24bc2b40ef588578ee96b7e8e93502b76c50ef0d2fac6b83239",
+  "frozen": false,
+  "members": [
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "always_both",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "always_restore",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "entity_planner",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "noop",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "blend_0.5",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "even_split",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "proportional",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "random",
+      "producing": "obs_stock_aware",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "restore_when_low",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "stock_aware",
+      "random": true
+    }
+  ],
+  "name": "roster-v1",
+  "pruning": null,
+  "replicates": 5
+}
