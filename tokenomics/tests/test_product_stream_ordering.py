@@ -279,31 +279,31 @@ def test_stream_encoder_length_matches_spec() -> None:
 # --- eval bars must be scored in the candidate's agent layout (review P2) ---
 
 
-def test_random_envelope_is_layout_sensitive() -> None:
+def test_random_hindsight_baseline_is_layout_sensitive() -> None:
     # The premise behind the eval-bar fix: `random` ordering draws action-space RNG
     # over the agent set, and the (source, product) stream split changes that set —
-    # so the random-inclusive envelope is a *different bar* under each layout, even
+    # so the random-inclusive hindsight baseline is a *different bar* under each layout, even
     # though the deterministic baselines are grouping-invariant (parity). A stream-mode
-    # candidate must therefore be scored against a stream-mode envelope.
+    # candidate must therefore be scored against a stream-mode hindsight baseline.
     from tokenomics.eval.baselines import PRODUCING_BASELINES, ORDERING_BASELINES
     from tokenomics.eval.runner import evaluate
     from tokenomics.eval.scale import build_scale_config
 
-    cfg = build_scale_config(8, depth=3)  # s8 envelope-best is stock_aware+random
+    cfg = build_scale_config(8, depth=3)  # s8 hindsight-best is stock_aware+random
     sa, rnd = PRODUCING_BASELINES["stock_aware"], ORDERING_BASELINES["random"]
     legacy = evaluate(sa, rnd, seeds=range(3), horizon=100, config=cfg, product_stream=False)
     stream = evaluate(sa, rnd, seeds=range(3), horizon=100, config=cfg, product_stream=True)
     assert legacy["consumer_completed_units"][0] != stream["consumer_completed_units"][0]
 
 
-def test_eval_m2_scores_envelope_in_candidate_layout() -> None:
-    # Regression for review P2: eval_m2 must report an env_cu computed in the SAME
-    # layout as the (stream-mode) M2 candidate — i.e. the stream-mode envelope, not a
-    # legacy-mode one. The M2 policy quality is irrelevant here (random init); env_cu is
+def test_eval_m2_scores_hindsight_baseline_in_candidate_layout() -> None:
+    # Regression for review P2: eval_m2 must report an hb_cu computed in the SAME
+    # layout as the (stream-mode) M2 candidate — i.e. the stream-mode hindsight baseline, not a
+    # legacy-mode one. The M2 policy quality is irrelevant here (random init); hb_cu is
     # baseline-only, so we only assert the bar's layout.
     pytest.importorskip("torch")
     from tokenomics.eval.baselines import PRODUCING_BASELINES, ORDERING_BASELINES
-    from tokenomics.eval.orderer_oracle import ENVELOPE_COMBOS
+    from tokenomics.eval.orderer_oracle import HINDSIGHT_BASELINE_COMBOS
     from tokenomics.eval.runner import evaluate
     from tokenomics.eval.scale import build_scale_config
     from tokenomics.train.orderer_improve import eval_m2
@@ -325,10 +325,10 @@ def test_eval_m2_scores_envelope_in_candidate_layout() -> None:
                        horizon=100, product_stream=True, log=lambda *a, **k: None)
 
     row = rows[0]
-    pp, oo = ENVELOPE_COMBOS[row["env_name"]]
+    pp, oo = HINDSIGHT_BASELINE_COMBOS[row["hb_name"]]
     direct = evaluate(PRODUCING_BASELINES[pp], ORDERING_BASELINES[oo], seeds=range(eval_seeds),
                       horizon=100, config=cfg, product_stream=True)
-    assert row["env_cu"] == round(direct["consumer_completed_units"][0], 1)
+    assert row["hb_cu"] == round(direct["consumer_completed_units"][0], 1)
 
 
 # --- corrected product-stream contract (orderer_obs_version 4, O0) ---

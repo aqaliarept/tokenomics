@@ -181,8 +181,8 @@ a *contract* failure means the model crashed, emitted an illegal command, or
 could not load on a world; a *policy* failure means it ran fine and played
 badly. The two are never mixed in a result table.
 
-**Envelope** — the per-world best of *all* baselines combined (including the
-random one). "Clearing the strict envelope" means beating, on every held-out
+**Hindsight baseline** (formerly *envelope*; older EXP records use that word) — the per-world best of *all* baselines combined (including the
+random one). "Clearing the strict hindsight baseline" means beating, on every held-out
 world, whichever baseline happens to be best there — a much harder test than
 beating any single baseline.
 

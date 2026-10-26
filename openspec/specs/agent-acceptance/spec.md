@@ -10,12 +10,12 @@ economy size and what it may cost per decision.
 
 ### Requirement: Primary metric
 Acceptance SHALL be judged on fulfilled consumer units (`consumer_completed_units`) per
-episode, compared pairwise against the best-of-baseline envelope: per evaluated world and
+episode, compared pairwise against the hindsight baseline: per evaluated world and
 episode seed, the best result any hand-written baseline achieves on that same episode.
 
-#### Scenario: Envelope ratio computed per world
+#### Scenario: Hindsight-baseline ratio computed per world
 - **WHEN** a candidate and all baselines are evaluated on the same world and episode seeds
-- **THEN** the candidate's ratio for that world is its mean units divided by the envelope's
+- **THEN** the candidate's ratio for that world is its mean units divided by the hindsight baseline's
   mean units on those identical episodes
 
 ### Requirement: Held-out evaluation
@@ -27,46 +27,46 @@ each world's recorded episode seed.
 - **WHEN** a gate world's seed appears in the candidate's training or selection data
 - **THEN** the gate run is invalid and is not used for acceptance
 
-### Requirement: Gate worlds have a non-zero envelope
-Every gate world SHALL have a strictly positive envelope mean, checked from baseline runs
-alone before any candidate is evaluated. A world whose envelope mean is zero SHALL be
-replaced by another held-out world before the gate runs, so every envelope ratio is finite
+### Requirement: Gate worlds have a non-zero hindsight baseline
+Every gate world SHALL have a strictly positive hindsight baseline mean, checked from baseline runs
+alone before any candidate is evaluated. A world whose hindsight baseline mean is zero SHALL be
+replaced by another held-out world before the gate runs, so every hindsight-baseline ratio is finite
 and the gate set does not depend on candidate results.
 
 #### Scenario: All baselines deliver zero
 - **WHEN** every baseline delivers 0 units on a proposed gate world
 - **THEN** that world is removed from the gate set and replaced before any candidate run
 
-#### Scenario: Candidate positive on a zero-envelope world
-- **WHEN** a candidate would deliver positive units on a world whose envelope mean is 0
+#### Scenario: Candidate positive on a zero-baseline world
+- **WHEN** a candidate would deliver positive units on a world whose hindsight baseline mean is 0
 - **THEN** the world is still excluded, no infinite ratio enters any regime mean, and the
   result is reported separately as a non-gating observation
 
 ### Requirement: Calm-regime margin
-On held-out worlds without shocks, a candidate SHALL reach a mean envelope ratio of at
+On held-out worlds without shocks, a candidate SHALL reach a mean hindsight-baseline ratio of at
 least 1.05 across the gate worlds.
 
 #### Scenario: Calm margin met
-- **WHEN** the candidate's mean envelope ratio over calm gate worlds is 1.06
+- **WHEN** the candidate's mean hindsight-baseline ratio over calm gate worlds is 1.06
 - **THEN** the calm-regime margin passes
 
 #### Scenario: Calm margin missed
-- **WHEN** the candidate's mean envelope ratio over calm gate worlds is 1.03
+- **WHEN** the candidate's mean hindsight-baseline ratio over calm gate worlds is 1.03
 - **THEN** the candidate is rejected
 
 ### Requirement: Shocked-regime margin
 On held-out worlds with supply shocks or stochastic demand enabled, a candidate SHALL
-reach a mean envelope ratio of at least 1.10 across the gate worlds.
+reach a mean hindsight-baseline ratio of at least 1.10 across the gate worlds.
 
 #### Scenario: Shocked margin missed
-- **WHEN** the candidate passes the calm margin but its mean shocked envelope ratio is 1.07
+- **WHEN** the candidate passes the calm margin but its mean shocked hindsight-baseline ratio is 1.07
 - **THEN** the candidate is rejected
 
 ### Requirement: No losing world
-A candidate SHALL reach an envelope ratio of at least 1.0 on every individual gate world,
+A candidate SHALL reach a hindsight-baseline ratio of at least 1.0 on every individual gate world,
 in every regime.
 
-#### Scenario: One world below the envelope
+#### Scenario: One world below the hindsight baseline
 - **WHEN** the candidate's mean ratio passes but one gate world scores 0.97
 - **THEN** the candidate is rejected
 

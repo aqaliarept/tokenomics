@@ -12,8 +12,8 @@ Findings from the code and experiment record that shape the approach:
   `blend_0.5` (absent from `ORDERING_BASELINES`, `eval/baselines.py:346`) on mined,
   non-held-out worlds s29/s45/s77 (`TASK_S29`/`TASK_S77`/`TASK_S45` in
   `eval/bounded_rollout_orderer.py`); s45 depth-2 death rate was 0.2. It is not an
-  envelope/held-out acceptance result.
-- **EXP-0033's 0.9902 is search-bar/upper-bound**, not envelope/bound (champion 0.983). It
+  hindsight-baseline/held-out acceptance result.
+- **EXP-0033's 0.9902 is search-bar/upper-bound**, not hindsight-baseline/bound (champion 0.983). It
   does not prove +5% impossible, nor that only capacity-binding worlds have headroom.
 - **EXP-0043 is not deployable**: its surrogate only short-circuits predicted-zero streams;
   all others still run real depth-2 rollouts (`eval/scenario_rollout_surrogate.py:1-15`, now
@@ -82,14 +82,14 @@ M7 follows all supply shocks (M6) per `project-mission`. M6/M7 never wait for ag
 - **Side-effect metrics** per `side-effect-guards`, with exact aggregation (incl.
   zero-ordered consumers). X and Y frozen from baseline-only calibration on development
   worlds before any gate.
-- **Frozen envelope roster**: all hand-written producer × orderer stacks + `blend_0.5` + a
+- **Frozen baseline roster**: all hand-written producer × orderer stacks + `blend_0.5` + a
   shock-reactive baseline (frozen from development evidence before any gate). Random-policy
   replicate count R frozen with the roster; replicate seeds = SHA-256(world, episode,
   replicate), never the event seed.
-- **Envelope arithmetic**: per-episode max over roster → mean over episodes →
-  candidate/envelope per world → equal-weight world mean per regime.
+- **Hindsight-baseline arithmetic**: per-episode max over roster → mean over episodes →
+  candidate/hindsight baseline per world → equal-weight world mean per regime.
 - **World registry**: development worlds (method selection, teacher audits, calibration) vs
-  sealed gate worlds (never inspected for algorithm selection); zero-envelope worlds
+  sealed gate worlds (never inspected for algorithm selection); zero-baseline worlds
   replaced; candidate-independent filters.
 - **Regimes**: calm = no stochasticity, using explicitly configured deterministic cyclic
   schedules (never a silent replacement of legacy fixed demand); shocked = any stochastic
@@ -118,8 +118,8 @@ M7 follows all supply shocks (M6) per `project-mission`. M6/M7 never wait for ag
 
 ### D4. Development audit (M3)
 
-- **PoC-A — teacher vs envelope** (CPU pod): EXP-0042 depth 2/3 + upper bound on
-  development worlds, calm and shocked. UB/envelope ≥ 1.15 is an optional slack target;
+- **PoC-A — teacher vs hindsight baseline** (CPU pod): EXP-0042 depth 2/3 + upper bound on
+  development worlds, calm and shocked. UB/hindsight baseline ≥ 1.15 is an optional slack target;
   necessary checks are the regime margin and per-world no-loss rule.
 - **Teacher fork rule** (prevents the EXP-0038B "target not a function of observation"
   cause): preserve realised observable history and current observable state; resample all
@@ -143,7 +143,7 @@ current context term cannot rerank. Initialise u_r ≠ 0, v_r = 0 (residual star
 without a degenerate zero-gradient point under antithetic sampling). Explicit producer-toggle
 parameterisation (EXP-0002). Bounded residual magnitude.
 
-- **Fitness**: paired units/envelope with common random numbers + pre-registered holding
+- **Fitness**: paired units/hindsight baseline with common random numbers + pre-registered holding
   penalty term; death, run-down or starvation disqualifies a population member.
 - **Data**: ≥50 generated worlds with ≤12 producers, fanout varied, shocks + drift on;
   train / validation / untouched final worlds.
@@ -177,7 +177,7 @@ failure in EXP-0042).
 
 ## Risks / Trade-offs
 
-- [No envelope headroom: depth-3 teacher below 1.10 shocked on development worlds] → diagnose
+- [No hindsight baseline headroom: depth-3 teacher below 1.10 shocked on development worlds] → diagnose
   (world family, roster, fork) before any training; margins are not renegotiated reactively.
 - [Shocked margin is a benchmark artifact: a trivial reactive baseline closes most of it] →
   that baseline joins the frozen roster before the gate; the margin must be re-earned.

@@ -48,7 +48,7 @@ def test_scale_config_supply_chain_is_at_least_three_levels_deep():
 def test_scale_config_dims_are_seed_invariant():
     from tokenomics.eval.scale import build_scale_config
 
-    # the whole point: values/topology vary with the seed, dims do NOT (fixed envelope)
+    # the whole point: values/topology vary with the seed, dims do NOT (fixed bounds)
     d = {_dims(build_scale_config(seed=s)) for s in (1, 2, 3, 7)}
     assert len(d) == 1
 
@@ -335,7 +335,7 @@ def test_product_permutation_preserves_recipe_dag_and_eligibility():
 
 def test_scale_topology_set_expands_seeds_into_permuted_same_shape_configs():
     # Phase 2 step 5+1-4: the training set is each base seed plus `perms` slot-permuted
-    # variants. All share the dims envelope (one net spans them), every variant is a
+    # variants. All share the same dims (one net spans them), every variant is a
     # genuine relabel of its base (different fingerprint), and identity-only (perms=0)
     # returns exactly the base configs.
     from tokenomics.eval.scale import build_scale_config, config_to_dict, scale_topology_set

@@ -10,7 +10,7 @@
   "held_out_topology_seeds": [6, 7, 8, 9],
   "hard_cells": [6, 9],
   "eval_episode_seeds": 40,
-  "strict_envelope": true,
+  "strict_hindsight_baseline": true,
   "primary_metric": "consumer_completed_units",
   "max_death_rate": 0.0
 }

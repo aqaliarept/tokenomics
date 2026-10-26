@@ -1,5 +1,5 @@
 """EXP-0006B stochastic orderer distillation: EXP-0006A found the residual seed-9 gap
-is *distillation form*, not state — s9's envelope-best is `stock_aware+random`, so a
+is *distillation form*, not state — s9's hindsight-best is `stock_aware+random`, so a
 single deterministic mean cannot reproduce the winning routing *diversity* regardless
 of inputs. The fix is to distill a *stochastic* orderer (learned per-dim log_std,
 sampled at deploy) instead of collapsing the teacher's per-cycle variety into one mean.

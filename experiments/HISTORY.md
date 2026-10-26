@@ -27,7 +27,7 @@ tested, never executed against real compute.
 | Promoted producer candidate | `producer_candidate.pt` | EXP-0035 |
 
 Primary metric is `consumer_completed_units` against a strict best-of-baseline
-envelope on held-out topology seeds 6–9, with a hard 0% death-rate requirement.
+hindsight baseline on held-out topology seeds 6–9, with a hard 0% death-rate requirement.
 
 **What is settled.** The environment poses a real learning problem; imitation of a
 strong heuristic works; a learned orderer beats the best hand-written baseline; the
@@ -105,16 +105,16 @@ hand-written baseline rather than match it.
 - **EXP-0005 — headroom audit first. PASS.** Before trying to beat the baseline, check
   there is anything to win. Demand was not saturated, and `random` routing beat
   `stock_aware + proportional` on seed 3 — proof of reachable headroom. The lever was the
-  orderer. The bar became a strict *best-of-baseline envelope* (per seed, the best any
+  orderer. The bar became a strict *hindsight baseline* (per seed, the best any
   baseline achieved), which is much harder than beating one named baseline.
 - **EXP-0006A — is the gap missing observation? REJECT (strict).** Enriching the orderer's
   view from capacity-blind to load/makeability-aware was a partial lever: it missed the
-  envelope on seeds 6 and 9, both dominated by `stock_aware + random`. A "cliff" at seed 9
+  hindsight baseline on seeds 6 and 9, both dominated by `stock_aware + random`. A "cliff" at seed 9
   turned out to be an artifact of a buggy price observation, since fixed.
 - **EXP-0006B — is the gap missing *diversity*? ACCEPT (strict).** The two seeds 6A missed
   were exactly the ones where a *random* orderer won. So the missing ingredient was
   stochasticity, not state. Learning a per-dimension `log_std` and deploying by sampling
-  cleared the strict envelope on all four held-out seeds (1.026 / 1.086 / 1.057 / 1.022)
+  cleared the strict hindsight baseline on all four held-out seeds (1.026 / 1.086 / 1.057 / 1.022)
   with zero death — the first policy in the arc to do so.
 - **EXP-0007A — make the contract scale. ACCEPT.** Ordering agents were refactored to one
   per `(source, product)` stream (ADR-0052), with an observation whose width scales with

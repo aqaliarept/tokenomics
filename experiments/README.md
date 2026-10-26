@@ -59,7 +59,7 @@ only a lookup index into the per-experiment directories.
 | [EXP-0008](EXP-0008-elite-set-distillation/RESULT.md) | 2026-06-25 | Elite-set distillation — **REJECT** promotion |
 | [EXP-0007B](EXP-0007B-champion-iteration-r1/RESULT.md) | 2026-06-25 | Champion-iteration driver — **ACCEPT** automation, no promotion |
 | [EXP-0007A](EXP-0007A-product-stream-ordering/RESULT.md) | 2026-06-24 | Product-stream ordering (ADR-0052) — **ACCEPT**, current champion orderer |
-| [EXP-0006B](EXP-0006B-orderer-stochastic/RESULT.md) | 2026-06-24 | Stochastic orderer — **ACCEPT (strict)**, first to clear the envelope 4/4 |
+| [EXP-0006B](EXP-0006B-orderer-stochastic/RESULT.md) | 2026-06-24 | Stochastic orderer — **ACCEPT (strict)**, first to clear the hindsight baseline 4/4 |
 | [EXP-0006A](EXP-0006A-orderer-observation/RESULT.md) | 2026-06-24 | Enriched orderer observation — **REJECT (strict)**, partial lever |
 | [EXP-0005](EXP-0005-learning-vs-baseline/RESULT.md) | 2026-06-23 | Learning vs baseline + headroom audit — improvement **PROVEN**, partial vs strict |
 

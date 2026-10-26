@@ -10,7 +10,7 @@ randomized demand (B9).
 degradation, investment amounts/costs, and demand bounds are randomized, and within a
 level capacities vary so some declarers are strong and others marginal (feasible-
 topology variation, like competition.json). What stays fixed — and therefore the dims
-envelope (ADR-0039 dims-preserving rule, generalized) — is the recipe DAG, the
+bounds (ADR-0039 dims-preserving rule, generalized) — is the recipe DAG, the
 capacity-type set, the per-producer `produces` assignment (so `max_rel` and thus the
 ordering `k` are seed-invariant), and the producer/consumer counts. Pure: no torch,
 deterministic for a given seed."""
@@ -98,7 +98,7 @@ def build_scale_config(
 ) -> Configuration:
     """A valid layered economy (see module docstring). Defaults: 3 levels × 4 products
     = 12 products, 4 producers/level = 12 producers, 3 consumers — inside the stage-5
-    envelope (8-16 / 10-20 / 3-5, ≥3 levels deep).
+    range (8-16 / 10-20 / 3-5, ≥3 levels deep).
 
     Depth defaults to 3 as the cheapest scale smoke target. ADR-0041 corrected the
     earlier ADR-0040 diagnosis: depth 4-5 chains are fulfillable once producing
@@ -260,7 +260,7 @@ def scale_topology_set(
 ) -> list[Configuration]:
     """The Phase 2 training-config set (ADR-0049): each base `build_scale_config(seed)`
     followed by `perms` slot-permuted variants of it (distinct product- and producer-
-    index permutations drawn from `perm_seed`). All variants share the dims envelope so
+    index permutations drawn from `perm_seed`). All variants share the same dims so
     one net spans the set; the permutations relabel slots without changing the economy
     (`permute_scale_config`), adding slot-memorization pressure on top of the multi-seed
     mechanics variation. `perms=0` returns exactly the base configs (identity)."""

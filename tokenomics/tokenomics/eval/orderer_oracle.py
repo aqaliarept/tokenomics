@@ -38,12 +38,12 @@ from .scale import build_scale_config
 from ..env import TokenomicsAECEnv
 from ..train.mlp_actor import staged_config
 
-# Best-of-baseline envelope (EXP-0005 Stage 0): the strict M0 bar per topology. The
-# named baseline is stock_aware+proportional, but random beats it on some seeds, so a
-# credible "learning is superior" claim must clear the *upper envelope* of the simple
-# baselines (incl. random+random), not just the fixed combo. Canonical here (eval);
+# Hindsight baseline (EXP-0005 Stage 0): the strict M0 bar per topology. The named
+# baseline is stock_aware+proportional, but random beats it on some seeds, so a credible
+# "learning is superior" claim must clear the best of the simple baselines chosen in
+# hindsight (incl. random+random), not just the fixed combo. Canonical here (eval);
 # `train.orderer_improve` imports it for the M2 eval (one source of truth, no cycle).
-ENVELOPE_COMBOS = {
+HINDSIGHT_BASELINE_COMBOS = {
     "stock_aware+proportional": ("stock_aware", "proportional"),
     "stock_aware+even_split": ("stock_aware", "even_split"),
     "stock_aware+random": ("stock_aware", "random"),
@@ -61,13 +61,13 @@ def _agent_done(env: TokenomicsAECEnv, agent: str) -> bool:
     return env.terminations[agent] or env.truncations[agent]
 
 
-def _envelope_units(cfg, eval_seeds: int, horizon: int) -> tuple[float, str]:
-    """Best-of-baseline-envelope consumer units on one config (max over ENVELOPE_COMBOS),
+def _hindsight_baseline_units(cfg, eval_seeds: int, horizon: int) -> tuple[float, str]:
+    """Hindsight-baseline consumer units on one config (max over HINDSIGHT_BASELINE_COMBOS),
     over `eval_seeds` episode seeds — the strict bar a learned policy must beat."""
     from .runner import evaluate
 
     best_cu, best_name = -1.0, ""
-    for name, (pp, oo) in ENVELOPE_COMBOS.items():
+    for name, (pp, oo) in HINDSIGHT_BASELINE_COMBOS.items():
         m = evaluate(PRODUCING_BASELINES[pp], ORDERING_BASELINES[oo],
                      seeds=range(eval_seeds), horizon=horizon, config=cfg)
         cu = m["consumer_completed_units"][0]
@@ -288,7 +288,7 @@ def orderer_oracle(
     horizon: int,
     out: str,
     prod_ckpt: "str | None" = None,
-    report_envelope: bool = False,
+    report_hindsight_baseline: bool = False,
 ) -> None:
     prod = _load_prod_closure(prod_ckpt) if prod_ckpt else PRODUCING_BASELINES[prod_name]
     prod_label = prod_ckpt if prod_ckpt else prod_name
@@ -301,10 +301,10 @@ def orderer_oracle(
 
     print(f"\n=== orderer oracle [{mode}]  prod={prod_label}  base_candidates={candidates}  "
           f"lookahead={lookahead}  depth={depth}  rung={rung}  seeds={config_seeds}"
-          f"{'  +envelope' if report_envelope else ''} ===")
+          f"{'  +hindsight-baseline' if report_hindsight_baseline else ''} ===")
     hdr = f"  {'cseed':>5} {'oracle_cu':>9} {'base_cu':>8} {'o/base':>6} "
-    if report_envelope:
-        hdr += f"{'env_cu':>8} {'o/env':>6} {'env_name':>22} "
+    if report_hindsight_baseline:
+        hdr += f"{'hb_cu':>8} {'o/hb':>6} {'hb_name':>22} "
     print(hdr + f"{'or_dead':>7}  {'detail':>0}")
     rows = []
     for cs in config_seeds:
@@ -341,12 +341,12 @@ def orderer_oracle(
             "base_dead": round(statistics.mean(deads_b), 3), "detail": detail,
         }
         line = (f"  {cs:>5} {o_mean:>9.1f} {b_mean:>8.1f} {ratio:>6.2f} ")
-        if report_envelope:
-            env_cu, env_name = _envelope_units(cfg, eval_seeds, horizon)
-            r_env = o_mean / env_cu if env_cu else float("nan")
-            row.update({"env_cu": round(env_cu, 2), "env_name": env_name,
-                        "ratio_env": round(r_env, 4)})
-            line += f"{env_cu:>8.1f} {r_env:>6.2f} {env_name:>22} "
+        if report_hindsight_baseline:
+            hb_cu, hb_name = _hindsight_baseline_units(cfg, eval_seeds, horizon)
+            r_hb = o_mean / hb_cu if hb_cu else float("nan")
+            row.update({"hb_cu": round(hb_cu, 2), "hb_name": hb_name,
+                        "ratio_hb": round(r_hb, 4)})
+            line += f"{hb_cu:>8.1f} {r_hb:>6.2f} {hb_name:>22} "
         print(line + f"{statistics.mean(deads_o):>7.2f}  {detail}")
         rows.append(row)
     with open(out, "w", newline="") as f:
@@ -355,9 +355,9 @@ def orderer_oracle(
         w.writerows(rows)
     wins = sum(1 for r in rows if r["ratio"] > 1.02)
     msg = f"\n{len(rows)} rows -> {out}  ({wins} cells where oracle beats base_order by >2%)"
-    if report_envelope:
-        env_wins = sum(1 for r in rows if r.get("ratio_env", 0) >= 1.0)
-        print(msg + f"; oracle >= envelope on {env_wins}/{len(rows)}")
+    if report_hindsight_baseline:
+        hb_wins = sum(1 for r in rows if r.get("ratio_hb", 0) >= 1.0)
+        print(msg + f"; oracle >= hindsight baseline on {hb_wins}/{len(rows)}")
     else:
         print(msg)
 
@@ -380,8 +380,8 @@ def main() -> None:
                     help="producer checkpoint to hold fixed instead of --prod (e.g. EXP-0004 v4); "
                          "runs the audit on the SAME producer M2 deploys with")
     ap.add_argument("--base-order", default="proportional", help="baseline orderer (denominator)")
-    ap.add_argument("--envelope", action="store_true",
-                    help="also report the best-of-baseline envelope per seed (oracle vs the strict M0 bar)")
+    ap.add_argument("--hindsight-baseline", action="store_true",
+                    help="also report the hindsight baseline per seed (oracle vs the strict M0 bar)")
     ap.add_argument("--horizon", type=int, default=100)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -393,7 +393,7 @@ def main() -> None:
         n_samples=args.samples, sample_scale=args.sample_scale,
         prod_name=args.prod, base_order=args.base_order,
         horizon=args.horizon, out=args.out,
-        prod_ckpt=args.prod_ckpt, report_envelope=args.envelope,
+        prod_ckpt=args.prod_ckpt, report_hindsight_baseline=args.hindsight_baseline,
     )
 
 

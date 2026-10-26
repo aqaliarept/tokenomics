@@ -45,7 +45,7 @@ from ..eval.baselines import (
     Policy,
     ordering_obs_price_from_state,
 )
-from ..eval.orderer_oracle import ENVELOPE_COMBOS as _ENVELOPE_COMBOS
+from ..eval.orderer_oracle import HINDSIGHT_BASELINE_COMBOS as _HINDSIGHT_BASELINE_COMBOS
 from ..eval.orderer_oracle import _agent_done
 from ..eval.orderer_oracle import _search_best_pol
 from ..eval.runner import evaluate
@@ -339,7 +339,7 @@ def _load_v4_producer(path: str):
 
 
 # --- evaluation against both bars (RESULT.md success criterion) ---
-# best-of-baseline envelope (_ENVELOPE_COMBOS) = the strict M0 bar; canonical in
+# hindsight baseline (_HINDSIGHT_BASELINE_COMBOS) = the strict M0 bar; canonical in
 # eval.orderer_oracle (imported at top — one source of truth, no import cycle).
 
 
@@ -359,8 +359,8 @@ def eval_m2(
     stochastic: bool = False,
     log=print,
 ) -> list[dict]:
-    """Score the saved M2 pair vs M0 (`stock_aware+proportional`) and the best-of-baseline
-    envelope on held-out topologies (mean ± 95% CI over `eval_seeds`). Primary metric is
+    """Score the saved M2 pair vs M0 (`stock_aware+proportional`) and the hindsight
+    baseline on held-out topologies (mean ± 95% CI over `eval_seeds`). Primary metric is
     consumer units; rejects + investment churn are reported for the efficiency criterion.
 
     `stochastic=True` (EXP-0006B): deploy the orderer by *sampling* its learned `log_std`
@@ -374,8 +374,8 @@ def eval_m2(
         m2_order = _stochastic_closure(order_actor, bound)
     rows: list[dict] = []
     log(f"\n=== M2 eval (v4 producer + learned orderer)  depth={depth}  seeds={seeds} ===")
-    log(f"  {'seed':>4} {'M2_cu':>8} {'M0_cu':>8} {'env_cu':>8} {'M2/M0':>6} "
-        f"{'M2/env':>6} {'M2_rej':>7} {'env_name':>22}")
+    log(f"  {'seed':>4} {'M2_cu':>8} {'M0_cu':>8} {'hb_cu':>8} {'M2/M0':>6} "
+        f"{'M2/hb':>6} {'M2_rej':>7} {'hb_name':>22}")
     for s in seeds:
         cfg = build_scale_config(s, depth=depth)
         rng = range(eval_seeds)
@@ -387,31 +387,31 @@ def eval_m2(
         # must be measured against stream-mode baselines. Deterministic baselines are
         # grouping-invariant (parity, ADR-0052), but `random` ordering consumes the
         # action-space RNG over a different set/order of agents when keyed by
-        # (source, product), so a legacy-mode envelope would be a different bar.
+        # (source, product), so a legacy-mode hindsight baseline would be a different bar.
         m0 = evaluate(PRODUCING_BASELINES["stock_aware"], ORDERING_BASELINES["proportional"],
                       seeds=rng, horizon=horizon, config=cfg, product_stream=product_stream)
         m0_cu = m0["consumer_completed_units"][0]
-        env_best_cu, env_best_name = -1.0, ""
-        for name, (pp, oo) in _ENVELOPE_COMBOS.items():
+        hb_best_cu, hb_best_name = -1.0, ""
+        for name, (pp, oo) in _HINDSIGHT_BASELINE_COMBOS.items():
             m = evaluate(PRODUCING_BASELINES[pp], ORDERING_BASELINES[oo],
                          seeds=rng, horizon=horizon, config=cfg, product_stream=product_stream)
-            if m["consumer_completed_units"][0] > env_best_cu:
-                env_best_cu, env_best_name = m["consumer_completed_units"][0], name
+            if m["consumer_completed_units"][0] > hb_best_cu:
+                hb_best_cu, hb_best_name = m["consumer_completed_units"][0], name
         r_m0 = m2_cu / m0_cu if m0_cu else float("nan")
-        r_env = m2_cu / env_best_cu if env_best_cu else float("nan")
+        r_hb = m2_cu / hb_best_cu if hb_best_cu else float("nan")
         log(f"  {s:>4} {m2_cu:>7.0f}± {m2_cu and _ci(m2_sd, eval_seeds):<5.0f}"
-            f"{m0_cu:>7.0f} {env_best_cu:>7.0f} {r_m0:>6.2f} {r_env:>6.2f} "
-            f"{m2['consumer_rejected_units'][0]:>7.0f} {env_best_name:>22}")
+            f"{m0_cu:>7.0f} {hb_best_cu:>7.0f} {r_m0:>6.2f} {r_hb:>6.2f} "
+            f"{m2['consumer_rejected_units'][0]:>7.0f} {hb_best_name:>22}")
         rows.append({
             "seed": s, "m2_cu": round(m2_cu, 1), "m2_ci": round(_ci(m2_sd, eval_seeds), 1),
-            "m0_cu": round(m0_cu, 1), "env_cu": round(env_best_cu, 1),
-            "env_name": env_best_name, "ratio_m0": round(r_m0, 3), "ratio_env": round(r_env, 3),
+            "m0_cu": round(m0_cu, 1), "hb_cu": round(hb_best_cu, 1),
+            "hb_name": hb_best_name, "ratio_m0": round(r_m0, 3), "ratio_hb": round(r_hb, 3),
             "m2_dead": m2["dead_rate"][0], "m2_rej_units": round(m2["consumer_rejected_units"][0], 1),
             "m2_invest": round(m2["investment_completed"][0], 1),
         })
     won_m0 = sum(1 for r in rows if r["ratio_m0"] >= 1.10)
-    won_env = sum(1 for r in rows if r["ratio_env"] >= 1.10)
-    log(f"\n{len(rows)} seeds: M2 beats M0 by >=10% on {won_m0}; beats ENVELOPE by >=10% on {won_env}")
+    won_hb = sum(1 for r in rows if r["ratio_hb"] >= 1.10)
+    log(f"\n{len(rows)} seeds: M2 beats M0 by >=10% on {won_m0}; beats the hindsight baseline by >=10% on {won_hb}")
     return rows
 
 
@@ -442,7 +442,7 @@ def run_orderer_improve(
     log=print,
 ) -> list[dict]:
     """EXP-0005 Stage 2 driver: expert-iterate the orderer toward the search oracle with
-    the producer fixed at the v4 clone, save the M2 pair, score it vs M0 + envelope on
+    the producer fixed at the v4 clone, save the M2 pair, score it vs M0 + hindsight baseline on
     held-out topologies. Returns the eval rows. Train/held-out topology seeds are the
     contiguous `range(train_seeds)` / `range(train_seeds, +held_out_seeds)` by default, or
     explicit `train_seed_list` / `held_out_seed_list` (M2-v2: widen coverage without
@@ -546,7 +546,7 @@ def main() -> None:
                          "(orderer_obs_version 3, ADR-0052) — one ordering agent per "
                          "(source, product), obs scales with producers not products")
     ap.add_argument("--eval-only", action="store_true",
-                    help="skip training: load --save and score it vs M0 + envelope on the held-out "
+                    help="skip training: load --save and score it vs M0 + hindsight baseline on the held-out "
                          "seeds (regenerate the eval CSV from an existing checkpoint)")
     args = ap.parse_args()
     train_seed_list = ([int(x) for x in args.train_seed_list.split(",")]

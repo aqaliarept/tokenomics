@@ -432,7 +432,7 @@ beat the learner. A mean gap with win fraction 1/3 is a coin flip; 3/3 is a
 reproduced weakness. Both floors are enforced before anything is mined
 (Section 8.4).
 
-### 7.2 The baseline ladder and the envelope
+### 7.2 The baseline ladder and the hindsight baseline
 
 Hand-written strategies (`eval/baselines.py`) serve as floors and bars:
 
@@ -441,8 +441,8 @@ Hand-written strategies (`eval/baselines.py`) serve as floors and bars:
 | Producer | `noop`, `random`, `always_restore`, `restore_when_low`, `stock_aware`, `entity_planner` |
 | Orderer | `random`, `even_split`, `proportional` |
 
-The **envelope** is the per-world maximum over baseline combinations
-*including random ones*. Clearing "the strict envelope" means beating
+The **hindsight baseline** is the per-world maximum over baseline combinations
+*including random ones*. Clearing "the strict hindsight baseline" means beating
 whichever baseline happens to be best on each held-out world separately — a
 much harder claim than beating any single named baseline, and the standard
 the champion orderer line had to meet (EXP-0006B was the first to do it).

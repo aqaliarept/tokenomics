@@ -70,7 +70,7 @@ do-nothing, and the strongest baseline is the bar a learned policy has to clear.
 ## The champion stack
 
 `tokenomics/champion.json` pins the current policies. The primary metric is
-`consumer_completed_units` against a strict best-of-baseline envelope on held-out topology
+`consumer_completed_units` against a strict hindsight baseline on held-out topology
 seeds, with a hard 0% death-rate requirement. See
 [experiments/HISTORY.md](experiments/HISTORY.md) §0 for the checkpoint table.
 

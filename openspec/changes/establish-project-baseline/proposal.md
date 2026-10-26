@@ -21,7 +21,7 @@ grow while training continues.
   (ADR-0030 semantics).
 - Fix the order of rule work: stochastic demand + supply shocks first, then the order
   lifecycle (TTL / multi-stage).
-- Define agent acceptance as a regime-split margin over the best-of-baseline envelope
+- Define agent acceptance as a regime-split margin over the hindsight baseline
   (>= +5% calm, >= +10% shocked, >= 1.0 on every world, 0% death) on held-out worlds.
 - Define environment-agnostic behaviour: train small (~12 producers), gate at ~10x
   (~120 producers), record 100x as a future target, bound per-decision cost to at most

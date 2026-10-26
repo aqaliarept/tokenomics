@@ -4,10 +4,10 @@ so a later retrain/refactor cannot silently swap in a weaker or non-stochastic p
 
 Distinct from `test_orderer_stochastic.py`, which tests the distillation *mechanism* on
 synthetic data — these tests load the actual artifact and assert its provenance + the
-empirical bar it was accepted on (RESULT.md: beats the strict envelope on all held-out
+empirical bar it was accepted on (RESULT.md: beats the strict hindsight baseline on all held-out
 seeds 6,7,8,9, zero death; the 40-eval-seed audit clears even at the lower 95% CI bound).
 
-Fast structural + P2 gates run in the default suite. The full envelope gate is a ~13-min
+Fast structural + P2 gates run in the default suite. The full hindsight-baseline gate is a ~13-min
 eval marked `champion` (deselected by default via pyproject `addopts`; opt in with
 `pytest -m champion`). All skip cleanly if the LFS artifact is not present.
 """
@@ -112,9 +112,9 @@ _AUDIT_SEEDS = 40
 
 @pytest.mark.champion
 @requires_champion
-def test_champion_beats_strict_envelope_at_lower_ci_bound():
+def test_champion_beats_strict_hindsight_baseline_at_lower_ci_bound():
     """The acceptance bar, as a gate: scored over `_AUDIT_SEEDS` stochastic eval seeds the
-    champion must beat the strict random-inclusive envelope on *every* held-out topology
+    champion must beat the strict random-inclusive hindsight baseline on *every* held-out topology
     at its lower 95% CI bound (not merely on the mean — the stronger claim the audit
     established), with zero death. Slow (~13 min full eval) → `pytest -m champion`."""
     rows = eval_m2(
@@ -124,7 +124,7 @@ def test_champion_beats_strict_envelope_at_lower_ci_bound():
     assert len(rows) == len(_HELD_OUT)
     for r in rows:
         assert r["m2_dead"] == 0.0, f"seed {r['seed']}: death {r['m2_dead']}"
-        # clears the strict envelope even at the lower 95% CI bound (audit-grade)
-        assert r["m2_cu"] - r["m2_ci"] > r["env_cu"], (
-            f"seed {r['seed']}: {r['m2_cu']}-{r['m2_ci']} !> env {r['env_cu']}"
+        # clears the strict hindsight baseline even at the lower 95% CI bound (audit-grade)
+        assert r["m2_cu"] - r["m2_ci"] > r["hb_cu"], (
+            f"seed {r['seed']}: {r['m2_cu']}-{r['m2_ci']} !> hindsight baseline {r['hb_cu']}"
         )
