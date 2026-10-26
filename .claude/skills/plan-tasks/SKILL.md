@@ -18,7 +18,7 @@ You produce the `tasks.md` of an OpenSpec change in the format the `supervise` s
    ```
    nproc; free -m | head -2; cat /proc/loadavg; df -h /srv | tail -1
    ```
-   This box is shared: the supervisor, one implementer and one reviewer agent can run commands on it at the same time. Plan for that concurrency, not for an idle machine. When this skill was written the box had 2 cores, about 3 GB RAM (about 2 GB available) and 26 GB free disk.
+   This box is shared: the supervisor, the review orchestrator (another harness), one implementer and one reviewer agent can run commands on it at the same time. Plan for that concurrency, not for an idle machine. When this skill was written the box had 2 cores, about 3 GB RAM (about 2 GB available) and 26 GB free disk.
 
 ## Phase 1: Slice into kinds
 
