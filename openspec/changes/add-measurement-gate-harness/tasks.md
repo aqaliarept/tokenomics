@@ -26,7 +26,7 @@ Paths are under /srv/research/tokenomics/tokenomics/ unless absolute. "Full suit
 
 ## 5. Hindsight-baseline and verdict arithmetic
 
-- [ ] 5.1 [code][local] Add pure functions in `/srv/research/tokenomics/tokenomics/tokenomics/eval/gate.py`: per-episode max, replicate mean, world hindsight baseline, world ratio, equal-weight regime ratio, and a verdict per acceptance clause (calm ≥ 1.05, shocked ≥ 1.10, no losing world, zero death, run-down, starvation; monitored metrics pass through). Document them in `/srv/research/tokenomics/ARCHITECTURE.md` §7.2 (design D6). Verify: tests for both "Hindsight-baseline arithmetic" scenarios, "One clause fails" and "Recompute from the CSV"; the §7.2 worked example matches the test numbers.
+- [x] 5.1 [code][local] Add pure functions in `/srv/research/tokenomics/tokenomics/tokenomics/eval/gate.py`: per-episode max, replicate mean, world hindsight baseline, world ratio, equal-weight regime ratio, and a verdict per acceptance clause (calm ≥ 1.05, shocked ≥ 1.10, no losing world, zero death, run-down, starvation; monitored metrics pass through). Document them in `/srv/research/tokenomics/ARCHITECTURE.md` §7.2 (design D6). Verify: tests for both "Hindsight-baseline arithmetic" scenarios, "One clause fails" and "Recompute from the CSV"; the §7.2 worked example matches the test numbers.
 
 ## 6. World families
 

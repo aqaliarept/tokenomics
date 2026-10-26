@@ -436,16 +436,58 @@ reproduced weakness. Both floors are enforced before anything is mined
 
 Hand-written strategies (`eval/baselines.py`) serve as floors and bars:
 
-| Role | Baselines (weakest → strongest) |
+| Role | Baselines |
 |---|---|
-| Producer | `noop`, `random`, `always_restore`, `restore_when_low`, `stock_aware`, `entity_planner` |
-| Orderer | `random`, `even_split`, `proportional` |
+| Producer | `noop`, `random`, `always_restore`, `always_both`, `restore_when_low`, `stock_aware`, `obs_stock_aware`, `entity_planner` |
+| Orderer | `random`, `even_split`, `blend_0.5`, `proportional`, `obs_price` |
 
-The **hindsight baseline** is the per-world maximum over baseline combinations
-*including random ones*. Clearing "the strict hindsight baseline" means beating
-whichever baseline happens to be best on each held-out world separately — a
-much harder claim than beating any single named baseline, and the standard
-the champion orderer line had to meet (EXP-0006B was the first to do it).
+The **hindsight baseline** is the best any baseline stack achieves, taken
+*per episode* over a frozen **roster**: gate roster v1 (`eval/roster.py`,
+`eval/registry/roster_v1.json`) is every producer above × every orderer above,
+40 stacks including the random ones and `blend_0.5` (the midpoint of
+`even_split` and `proportional`). A roster's version is the content hash of its
+file; every gate report names it, and an edited roster without a new hash is
+refused. A random stack runs R replicates with hash-derived action seeds and
+counts as their **mean** (a max over replicates would reward luck and grow
+with R). Clearing the hindsight baseline means beating whichever stack happens
+to be best on each episode — a much harder claim than beating any single named
+baseline, and the standard the champion orderer line had to meet (EXP-0006B was
+the first to do it, under the older per-world max-of-means form).
+
+The arithmetic is pure, in `eval/gate.py` (design D6 of
+`add-measurement-gate-harness`), over one row per (world, episode, stack or
+candidate, replicate):
+
+1. **Per-episode baseline** = max over roster stacks of their units on that episode.
+2. **World baseline** = mean of the per-episode baselines over the world's episodes.
+3. **World ratio** = candidate mean units / world baseline, on the same episodes.
+4. **Regime ratio** = equal-weight mean of its worlds' ratios, per economy size.
+
+Worked example (the numbers of `tests/test_gate.py`). On two episodes stack A
+delivers 10 and 4 units, stack B 6 and 8, the candidate 9 and 9. The
+per-episode baselines are 10 and 8, so the world baseline is **9** and the
+world ratio is 9 / 9 = **1.0**. The old max-of-means bar would have been
+max(7, 7) = 7 and scored the same candidate at 1.29. Regimes weigh worlds, not
+episodes: a world at ratio 1.2 over 2 episodes and one at 1.0 over 3 give a
+regime ratio of **1.1**, not the episode-weighted 1.08.
+
+The verdict is one clause per acceptance requirement: calm margin (regime
+ratio ≥ 1.05), shocked margin (≥ 1.10; stochastic demand or supply shocks make
+a world shocked), no losing world (every world ratio ≥ 1.0), zero death,
+run-down (`r_end ≥ X·r_start`) and starvation (fill rate ≥ Y for every consumer
+that ordered something). X and Y come from a versioned side-effect parameter
+file; monitored metrics (inversion, edge margin, crowd-out, holding) are
+reported per world and never gate. Rules the code fixes: bars are inclusive
+(exactly 1.05 passes); only candidate episodes are judged, roster rows only set
+the bar; margins hold separately at each gate size (12 and 120 producers),
+and a gate size with no gating world in a regime fails that margin; rows at any
+other size (the 1000+ producer future target) are refused, since they must not
+gate; a world whose baseline is 0 has no
+finite ratio, so it is excluded from every clause and listed as non-gating;
+run-down with an unmeasured `r_start`/`r_end` fails. Any failing clause rejects,
+and the failure names the clause, size/regime or world, episode and consumer.
+The report records the roster, registry and parameter versions, and
+`recompute_from_csv` rebuilds a byte-identical verdict from the episode CSV.
 
 ### 7.3 Failure classification
 
