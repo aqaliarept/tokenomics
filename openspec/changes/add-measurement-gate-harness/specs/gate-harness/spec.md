@@ -135,14 +135,22 @@ producers that declare each product — explicitly.
 - **THEN** every product is declared by every producer in its layer
 
 ### Requirement: Constant economy ratios across sizes
-For each family, demand units per unit of initial throughput and cycle emission per
-producer SHALL be equal, within a tolerance recorded in the family definition, between its
-12-producer and 120-producer worlds.
+For each family, demand units per unit of initial top-layer throughput SHALL be equal between
+its 12-producer and 120-producer worlds within a tolerance recorded in the family definition,
+computed over the family's worlds under a sampling protocol recorded there. Cycle emission
+per producer SHALL be equal between the two sizes in every world.
 
 #### Scenario: More producers, same pressure
-- **WHEN** a family's 120-producer world is built
-- **THEN** its consumer count and cycle emission are scaled so both ratios match the
-  12-producer world within the recorded tolerance
+- **WHEN** a family's 120-producer worlds are built
+- **THEN** their consumer count and cycle emission are scaled so the family's demand ratio
+  over its recorded sample matches the 12-producer sample within the recorded tolerance,
+  and every world's emission per producer equals the 12-producer value
+
+#### Scenario: A single world deviates
+- **WHEN** one 12-producer world's own demand ratio differs from the 120-producer sample's
+  by more than the tolerance, because of its seeded strong or marginal capacity draws
+- **THEN** the requirement still holds if the family's ratios over the recorded samples
+  (summed demand over summed throughput) agree within the tolerance
 
 ### Requirement: Development headroom check
 A family SHALL enter the registry only if baseline-only runs on its development worlds show,

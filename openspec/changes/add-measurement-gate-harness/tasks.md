@@ -30,7 +30,7 @@ Paths are under /srv/research/tokenomics/tokenomics/ unless absolute. "Full suit
 
 ## 6. World families
 
-- [ ] 6.1 [code][local-exclusive] Add `/srv/research/tokenomics/tokenomics/tokenomics/eval/families.py`: dense and sparse-wide layered builders at 12 and 120 producers with an explicit fanout, plus the calm variant whose schedules are drawn at generation time from the world seed (design D8, D9). Register both in `task_archive.REPRODUCERS`. After 2.2. Verify: tests for both "Scale families" scenarios, both ratios within tolerance between 12 and 120, builder determinism, and identical calm demand under episode seeds 0 and 9; 1.1's `build_scale_config` goldens unchanged; the full suite is green.
+- [x] 6.1 [code][local-exclusive] Add `/srv/research/tokenomics/tokenomics/tokenomics/eval/families.py`: dense and sparse-wide layered builders at 12 and 120 producers with an explicit fanout, plus the calm variant whose schedules are drawn at generation time from the world seed (design D8, D9). Register both in `task_archive.REPRODUCERS`. After 2.2. Verify: tests for both "Scale families" scenarios, both ratios within tolerance between 12 and 120, builder determinism, and identical calm demand under episode seeds 0 and 9; 1.1's `build_scale_config` goldens unchanged; the full suite is green.
 
 ## 7. World registry
 

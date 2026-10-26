@@ -64,6 +64,8 @@ _REPRODUCER_CASES = [
       for v in ("low_funding", "low_inventory", "high_backlog", "degraded", "running_investment")],
     *[("degenerate_variant", {"variant": v, "depth": 3})
       for v in ("single_producer", "primal_only", "no_inventory_expansion", "no_backlog", "minimal")],
+    ("dense_family", {"producers": 12, "regime": "calm"}),
+    ("sparse_wide_family", {"producers": 12, "regime": "shocked", "fanout": 2}),
 ]
 
 

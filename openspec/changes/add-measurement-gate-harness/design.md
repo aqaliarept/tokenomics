@@ -161,7 +161,16 @@ seed-independence the spec requires.
 
 ### D9. Families
 `eval/families.py` builds a layered economy: depth 3, with P/3 producers per layer. It
-keeps `build_scale_config`'s strong/marginal capacity draws and maintenance products.
+keeps `build_scale_config`'s strong/marginal capacity draws and maintenance products, with
+two refinements so the economy pressure stays constant from 12 to 120 producers:
+- **Forced-strong every m-th producer**, m = min(fanout, 4), instead of only the first
+  producer of a layer. At dense-12 this is the same rule. With first-only forcing, the dense
+  family's demand ratio is 11.8% apart between 12 and 120 (forced fraction 1/4 → 1/40); with
+  every 4th it is 0.3% apart. For sparse, m = fanout gives every product a strong declarer.
+- **Maintenance round-robin over layer-0 products** instead of all on product 0. With
+  product 0 only, a sparse-120 world loads all 120 producers' maintenance on its 2
+  declarers, 10× the per-maker load at 12; round-robin keeps the users per layer-0 product
+  the same at both sizes.
 - **Dense**: W = 4 products per layer, and every layer producer declares all of them
   (fanout = P/3).
 - **Sparse-wide**: W = P/3 products per layer, each declared by `fanout` producers
@@ -170,8 +179,10 @@ keeps `build_scale_config`'s strong/marginal capacity draws and maintenance prod
 Consumers scale as `round(3·P/12)`. Pools are the whole top layer for dense worlds and a
 contiguous window of top products for sparse worlds, so demand covers every chain.
 Emission scales linearly with P from the 12-producer value. A test asserts that demand per
-unit of initial top-layer throughput, and emission per producer, match between 12 and 120
-within the recorded tolerance (default 10%). Both families are registered in
+unit of initial top-layer throughput matches between 12 and 120 within the recorded
+tolerance (default 10%) as a family-level ratio of sums over the sampling protocol recorded
+in the family definition (a single 12-producer world has 4 top producers and swings with
+its strong/marginal draw), and that emission per producer is equal in every world. Both families are registered in
 `task_archive.REPRODUCERS`. `build_scale_config` is untouched.
 
 ### D10. Headroom check

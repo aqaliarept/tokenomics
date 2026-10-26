@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..domain.config import Configuration
-from . import fixtures, scale
+from . import families, fixtures, scale
 
 
 @dataclass(frozen=True)
@@ -86,6 +86,9 @@ REPRODUCERS: dict[str, Reproducer] = {
     "build_uneven_strength_config": fixtures.build_uneven_strength_config,
     "scarcity_variant": _scarcity_variant,
     "degenerate_variant": _degenerate_variant,
+    # gate world families (design D9): params {"producers", "regime", "fanout"?, "schedule_length"?}
+    "dense_family": families.build_dense_config,
+    "sparse_wide_family": families.build_sparse_wide_config,
 }
 
 
