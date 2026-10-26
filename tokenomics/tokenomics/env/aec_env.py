@@ -36,6 +36,7 @@ from .encode import (
     encode_producing,
     encode_producing_entity,
 )
+from .demand_digest import demand_digest
 from .side_effects import SideEffectTracker, capacity_ratio
 from .spaces import build_spec
 
@@ -174,19 +175,25 @@ class TokenomicsAECEnv(AECEnv):
         episode demand replays deterministically. Non-randomized consumers keep the
         canonical fixed-product ScriptedConsumer path untouched. An explicit config
         `schedule` (design D8) is replayed as-is and draws nothing from the RNG, so
-        every episode sees the same demand whatever the seed."""
+        every episode sees the same demand whatever the seed.
+
+        Also records each consumer's schedule as built in `self._demand_schedules`, the
+        input of the `demand_digest` stat (design D5, env/demand_digest.py)."""
         rng = np.random.default_rng(seed)
         consumers: dict[str, Consumer] = {}
+        self._demand_schedules: dict[ConsumerId, tuple[ScheduleEntry, ...]] = {}
         for c in self.config.consumers:
             if c.schedule:
                 # Copy: ScheduledConsumer holds a mutable list (future_fork rewrites
                 # randomized suffixes in place); the frozen config must stay untouched.
                 consumers[c.id] = ScheduledConsumer(c.id, list(c.schedule))
+                self._demand_schedules[c.id] = tuple(c.schedule)
                 continue
             # Exact legacy default (no pool, fixed quantity 1) keeps the canonical
             # ScriptedConsumer path bit-identical.
             if not c.products and c.quantity_min == 1 and c.quantity_max == 1:
                 consumers[c.id] = ScriptedConsumer(c.id, c.product)
+                self._demand_schedules[c.id] = ((c.product, 1),)
                 continue
             pool = c.product_pool
             if c.is_randomized:
@@ -200,6 +207,7 @@ class TokenomicsAECEnv(AECEnv):
                 # validated `product_pool`, never the unvalidated `product` field).
                 schedule = [(pool[0], c.quantity_min)]
             consumers[c.id] = ScheduledConsumer(c.id, schedule)
+            self._demand_schedules[c.id] = tuple(schedule)
         return consumers
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> None:
@@ -236,6 +244,15 @@ class TokenomicsAECEnv(AECEnv):
             "consumer_ordered_units": {cid: 0 for cid in self.system.consumers},
             "consumer_fulfilled_units": {cid: 0 for cid in self.system.consumers},
         }
+        # Demand-schedule digest (design D5): sha256 hex of every consumer's schedule as
+        # built above. The gate compares it across contracts per (world, episode seed);
+        # what is and is not digested is documented in env/demand_digest.py.
+        if set(self._demand_schedules) != set(self.system.consumers):
+            raise ValueError(
+                f"demand digest covers {sorted(self._demand_schedules)}, "
+                f"episode consumers are {sorted(self.system.consumers)}"
+            )
+        self.episode_stats["demand_digest"] = demand_digest(self._demand_schedules)
         # Side-effect metrics (design D3): raw quantities only, no X/Y verdict. The key
         # list and every edge case (None on a zero denominator) are documented in
         # env/side_effects.py; written now so they exist before the first cycle.
