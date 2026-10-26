@@ -6,7 +6,7 @@ Paths are under /srv/research/tokenomics/tokenomics/ unless absolute. "Full suit
 
 ## 1. Legacy-invariance safety net
 
-- [ ] 1.1 [code][local] Add `/srv/research/tokenomics/tokenomics/tests/test_legacy_invariance.py` and `/srv/research/tokenomics/tokenomics/tests/data/legacy_goldens.json`, captured on the unmodified tree before any other change. The goldens cover every existing `episode_stats` key and `capacity_trace`, for a fixed set of (fixture world, baseline pair, seed) cells at horizon ≤ 30 on the legacy and joint env contracts, plus `build_scale_config(seed)` output for seeds 0–3. Verify: the new test passes on the unmodified tree and runs in ≤ 60 s.
+- [x] 1.1 [code][local] Add `/srv/research/tokenomics/tokenomics/tests/test_legacy_invariance.py` and `/srv/research/tokenomics/tokenomics/tests/data/legacy_goldens.json`, captured on the unmodified tree before any other change. The goldens cover every existing `episode_stats` key and `capacity_trace`, for a fixed set of (fixture world, baseline pair, seed) cells at horizon ≤ 30 on the legacy and joint env contracts, plus `build_scale_config(seed)` output for seeds 0–3. Verify: the new test passes on the unmodified tree and runs in ≤ 60 s.
 
 ## 2. Domain: outcome records and cyclic demand
 
