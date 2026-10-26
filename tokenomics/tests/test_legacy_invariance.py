@@ -73,10 +73,19 @@ def _legacy_env(config: Configuration, horizon: int) -> TokenomicsAECEnv:
 
 CONTRACTS: dict[str, ContractFn] = {"legacy": _legacy_env, "joint": joint_stack_env}
 
+# The baseline names on the capture tree. The grid is pinned to these, not read from the live
+# dicts: a baseline added later (e.g. `blend_0.5`, design D5) has no legacy number to protect,
+# and must not demand golden cells the capture tree never had.
+LEGACY_PRODUCING = (
+    "noop", "always_restore", "always_both", "restore_when_low", "stock_aware",
+    "entity_planner", "obs_stock_aware", "random",
+)
+LEGACY_ORDERING = ("even_split", "proportional", "obs_price", "random")
+
 # The joint contract is 2-10x slower per episode than legacy, so (to stay well under the
 # 60 s budget) it runs a pinned pair subset instead of the full 8x4 cross product: every
 # producing baseline against `proportional`, plus every ordering baseline at least once.
-JOINT_PAIRS = tuple((p, "proportional") for p in PRODUCING_BASELINES) + (
+JOINT_PAIRS = tuple((p, "proportional") for p in LEGACY_PRODUCING) + (
     ("entity_planner", "even_split"), ("entity_planner", "obs_price"),
     ("obs_stock_aware", "obs_price"), ("stock_aware", "random"), ("random", "random"),
 )
@@ -91,7 +100,7 @@ Cell = tuple[str, str, str, str, int]  # (world, contract, producing, ordering, 
 
 
 def _all_pairs() -> list[tuple[str, str]]:
-    return [(p, o) for p in PRODUCING_BASELINES for o in ORDERING_BASELINES]
+    return [(p, o) for p in LEGACY_PRODUCING for o in LEGACY_ORDERING]
 
 
 def _random_pairs() -> list[tuple[str, str]]:

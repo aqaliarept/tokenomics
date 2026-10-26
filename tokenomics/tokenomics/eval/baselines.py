@@ -347,5 +347,8 @@ ORDERING_BASELINES: dict[str, Policy] = {
     "even_split": ordering_even_split,
     "proportional": ordering_proportional,
     "obs_price": ordering_obs_price,  # observation-compatible (cut-off price routing)
+    # gate roster v1 member (design D5, add-measurement-gate-harness): the midpoint of the
+    # even_split..proportional family, so the hindsight baseline covers a tempered router too.
+    "blend_0.5": ordering_blend(0.5),
     "random": random_action,
 }

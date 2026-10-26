@@ -53,11 +53,22 @@ def summarize_seeds(
     return out
 
 
-def run_episode(env: TokenomicsAECEnv, prod_policy: Policy, order_policy: Policy, seed: int) -> dict:
+def run_episode(
+    env: TokenomicsAECEnv,
+    prod_policy: Policy,
+    order_policy: Policy,
+    seed: int,
+    action_seed: int | None = None,
+) -> dict:
+    """Drive one episode. `seed` is the event seed (demand RNG at reset); `action_seed`
+    seeds the action spaces `random` baselines sample from. None keeps the legacy coupling
+    (action spaces seeded with `seed`, pinned by test_legacy_invariance); the gate passes
+    `eval.seeding.replicate_seed(...)` so replicates vary actions over identical demand
+    (design D5, add-measurement-gate-harness)."""
     env.reset(seed=seed)
     # seed action spaces so `random` baselines are reproducible
     for a in env.possible_agents:
-        env.action_space(a).seed(seed)
+        env.action_space(a).seed(seed if action_seed is None else action_seed)
     max_iter = env.horizon * len(env.possible_agents) * 3 + 100
     for agent in env.agent_iter(max_iter=max_iter):
         _, _, term, trunc, _ = env.last()
