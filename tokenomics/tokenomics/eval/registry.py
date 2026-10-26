@@ -18,7 +18,11 @@ Seed scheme (`build_worlds_v1`, the draft generator):
 Statuses: `gate` (in the gate set), `reserve` (ordered by `reserve_position` within its
 (split, family, size, regime) group, used only by zero-baseline replacement) and `replaced`
 (a zero-baseline world taken out by screening). Screening is pure over roster-only episode rows
-and records its outcome in the registry, so a screened registry has a new version.
+and records its outcome in the registry, so a screened registry has a new version. Screening is by
+split and records the splits it covered: M1 (tasks 8.2/10.1) screens development only; the sealed
+split gets its own roster-only screen in M5, before any candidate touches a sealed world, and a
+report on a split requires that split to be screened. The development headroom check (D10) is
+recorded in the same `ScreeningRecord` against the pre-registered `saturation_ceiling`.
 
 Sealed worlds are gated: `check_sealed_access` refuses them without a pre-registration manifest
 whose checkpoint hashes (via `eval/provenance.py`) and roster / registry / parameter versions match,
@@ -39,9 +43,9 @@ from typing import Collection, Iterable, Mapping, Sequence
 
 from ..domain.config import Configuration
 from .families import CALM, DENSE, REGIMES, SHOCKED, SPARSE_WIDE
-from .gate import CANDIDATE, EpisodeRow, episode_baseline, world_baseline
+from .gate import CANDIDATE, EpisodeRow, Headroom, episode_baseline, world_baseline
 from .provenance import assert_inputs_match, sha256_file
-from .roster import Roster, content_hash
+from .roster import GATE_SIZES, Roster, content_hash
 from .seeding import replicate_mean
 from .task_archive import REPRODUCERS
 
@@ -67,6 +71,7 @@ WORLD_COUNTS = {
     SEALED: {CALM: (16, 3), SHOCKED: (8, 10)},
 }
 RESERVES_PER_GROUP = 4  # per (split, family, size, regime)
+DEFAULT_SATURATION_CEILING = 0.95  # D10: headroom ceiling on the hindsight-baseline fill rate
 SPARSE_FANOUT = 2
 CALM_SCHEDULE_LENGTH = 7
 
@@ -143,17 +148,22 @@ class Replacement:
 @dataclass(frozen=True)
 class ScreeningRecord:
     """Zero-baseline screening outcome (gate-harness "Zero-baseline screening"): the roster it ran,
-    the world baseline means it saw (gate and consulted reserve worlds), and the replacements."""
+    the splits it covered, the world baseline means it saw (gate and consulted reserve worlds), the
+    replacements, and (once recorded) the D10 headroom check per family × size."""
 
     roster_version: str
     baseline_means: tuple[tuple[str, float], ...]
     replacements: tuple[Replacement, ...]
+    splits: tuple[str, ...] = (DEVELOPMENT,)
+    headroom: tuple[Headroom, ...] | None = None
 
     def to_dict(self) -> dict:
         return {
             "roster_version": self.roster_version,
             "baseline_means": {k: v for k, v in self.baseline_means},
             "replacements": [r.to_dict() for r in self.replacements],
+            "splits": list(self.splits),
+            "headroom": None if self.headroom is None else [h.to_dict() for h in self.headroom],
         }
 
     @classmethod
@@ -163,6 +173,8 @@ class ScreeningRecord:
             baseline_means=tuple(sorted((k, float(v)) for k, v in d["baseline_means"].items())),
             replacements=tuple(Replacement(r["replaced"], r["by"], tuple(r["skipped"]))
                                for r in d["replacements"]),
+            splits=tuple(d["splits"]),
+            headroom=None if d["headroom"] is None else tuple(Headroom(**h) for h in d["headroom"]),
         )
 
 
@@ -175,6 +187,7 @@ class Registry:
     seed_ranges: tuple[tuple[str, int, int], ...]
     entries: tuple[WorldEntry, ...]
     screening: ScreeningRecord | None = None
+    saturation_ceiling: float = DEFAULT_SATURATION_CEILING
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "entries", tuple(sorted(self.entries, key=lambda e: e.id)))
@@ -187,6 +200,13 @@ class Registry:
         (family, size) and disjoint across splits per family; episode seeds non-empty, unique
         registry-wide and disjoint from world seeds; at each (split, size), gate calm worlds >= 2x
         gate shocked worlds; reserve positions contiguous per group."""
+        if not 0 < self.saturation_ceiling <= 1:
+            raise ValueError(f"saturation ceiling must be in (0, 1], got {self.saturation_ceiling}")
+        if self.screening is not None and (not self.screening.splits
+                                           or not set(self.screening.splits) <= set(SPLITS)):
+            raise ValueError(f"screened splits {self.screening.splits} not a subset of {SPLITS}")
+        for h in (self.screening.headroom or ()) if self.screening is not None else ():
+            _check_headroom(h, self.saturation_ceiling)
         ranges = {s: (lo, hi) for s, lo, hi in self.seed_ranges}
         if set(ranges) != set(SPLITS):
             raise ValueError(f"seed ranges must cover exactly {SPLITS}, got {sorted(ranges)}")
@@ -303,6 +323,35 @@ class Registry:
                 raise ValueError(f"{e.id}: replays {len(cfg.producer_configs)} producers, "
                                  f"declares size {e.size}")
 
+    def coverage_problems(self, sizes: Collection[int] = GATE_SIZES) -> list[str]:
+        """D10 admits a family only on development evidence at both sizes: every family with gate
+        worlds in any split (a sealed-only family included) must have development gate worlds at
+        every gate size."""
+        have = {(e.family, e.size) for e in self.gate_worlds(DEVELOPMENT)}
+        families = sorted({e.family for e in self.gate_worlds()})
+        return [f"no development gate worlds for {f}/{z}"
+                for f in families for z in sorted(sizes) if (f, z) not in have]
+
+    def admission_problems(self, split: str, sizes: Collection[int] = GATE_SIZES) -> list[str]:
+        """Why a real report on `split` may not run on this registry (empty = admitted): the split
+        must be screened, every family must have development gate worlds at every gate size, and
+        the development headroom check (D10, the family admission) must be recorded for every
+        family × size and pass."""
+        sc = self.screening
+        if sc is None or split not in sc.splits:
+            return [f"registry {self.version[:12]} has not screened the {split} split"]
+        if DEVELOPMENT not in sc.splits:
+            return [f"registry {self.version[:12]} has not screened the development split"]
+        if sc.headroom is None:
+            return [f"registry {self.version[:12]} records no development headroom check"]
+        groups = {(e.family, e.size) for e in self.gate_worlds(DEVELOPMENT)}
+        got = {(h.family, h.size): h for h in sc.headroom}
+        problems = self.coverage_problems(sizes)
+        problems += [f"no headroom result for {g}" for g in sorted(groups - set(got))]
+        problems += [f"headroom failed for {h.family}/{h.size}: median fill {h.median_fill!r} "
+                     f">= ceiling {h.ceiling!r}" for h in sc.headroom if not h.passed]
+        return problems
+
     def gate_worlds(self, split: str | None = None) -> tuple[WorldEntry, ...]:
         return tuple(e for e in self.entries
                      if e.status == GATE and (split is None or e.split == split))
@@ -319,6 +368,7 @@ class Registry:
             "seed_ranges": {s: [lo, hi] for s, lo, hi in self.seed_ranges},
             "entries": [e.to_dict() for e in self.entries],
             "screening": None if self.screening is None else self.screening.to_dict(),
+            "saturation_ceiling": self.saturation_ceiling,
         }
 
     @property
@@ -346,6 +396,7 @@ def registry_from_dict(d: dict) -> Registry:
         seed_ranges=tuple((s, lo, hi) for s, (lo, hi) in d["seed_ranges"].items()),
         entries=tuple(WorldEntry.from_dict(e) for e in d["entries"]),
         screening=None if d["screening"] is None else ScreeningRecord.from_dict(d["screening"]),
+        saturation_ceiling=d["saturation_ceiling"],
     )
     if reg.version != recorded:
         raise RegistryHashMismatch(
@@ -463,18 +514,28 @@ def world_baseline_means(
 
 def screen_zero_baselines(
     registry: Registry, roster: Roster, rows: Sequence[EpisodeRow],
+    splits: Collection[str] = (DEVELOPMENT,),
 ) -> Registry:
     """Replace every zero-baseline gate world by the next unused reserve of its (split, family,
     size, regime) group, in reserve-position order, skipping reserves whose own baseline is zero.
     Pure over roster-only rows, so the outcome is the same whichever candidate is evaluated later.
     Returns a new registry (new version) carrying the `ScreeningRecord`.
 
-    Needs a baseline mean for every gate world and for every reserve it consults; refuses an
-    already-screened registry and raises when a group runs out of reserves."""
+    Screens only the gate worlds of `splits` (development by default, module docstring) and
+    refuses rows of worlds in other splits. Needs a baseline mean for every such gate world and for
+    every reserve it consults; refuses an already-screened registry and raises when a group runs
+    out of reserves."""
     if registry.screening is not None:
         raise ValueError(f"registry {registry.version} is already screened")
+    splits = tuple(sorted(set(splits)))
+    if not splits or not set(splits) <= set(SPLITS):
+        raise ValueError(f"splits {splits} must be a non-empty subset of {SPLITS}")
     means = world_baseline_means(registry, roster, rows)
-    missing = [e.id for e in registry.gate_worlds() if e.id not in means]
+    outside = sorted(w for w in means if registry.entry(w).split not in splits)
+    if outside:
+        raise ValueError(f"rows for worlds outside the screened splits {splits}: {outside[:3]}")
+    targets = [e for e in registry.gate_worlds() if e.split in splits]
+    missing = [e.id for e in targets if e.id not in means]
     if missing:
         raise ValueError(f"no baseline rows for gate worlds {missing}")
     reserves: dict[tuple[str, str, int, str], list[WorldEntry]] = {}
@@ -485,7 +546,7 @@ def screen_zero_baselines(
         q.sort(key=lambda e: e.reserve_position)  # type: ignore[arg-type, return-value]
     updated = {e.id: e for e in registry.entries}
     replacements: list[Replacement] = []
-    for e in registry.gate_worlds():
+    for e in targets:
         if means[e.id] != 0:
             continue
         skipped: list[str] = []
@@ -508,9 +569,37 @@ def screen_zero_baselines(
         roster_version=roster.version,
         baseline_means=tuple(sorted(means.items())),
         replacements=tuple(replacements),
+        splits=splits,
     )
     return Registry(name=registry.name, seed_ranges=registry.seed_ranges,
-                    entries=tuple(updated.values()), screening=record)
+                    entries=tuple(updated.values()), screening=record,
+                    saturation_ceiling=registry.saturation_ceiling)
+
+
+def _check_headroom(h: Headroom, ceiling: float) -> None:
+    """A headroom result must use the registry's ceiling and its verdict must follow from its own
+    numbers (pass iff median < ceiling), so a hand-edited pass flag is refused."""
+    if h.ceiling != ceiling:
+        raise ValueError(f"headroom {h.family}/{h.size} used ceiling {h.ceiling}, registry "
+                         f"pre-registers {ceiling}")
+    if h.passed != (h.median_fill < h.ceiling) or h.worlds < 1:
+        raise ValueError(f"headroom {h.family}/{h.size} is inconsistent: passed={h.passed}, "
+                         f"median {h.median_fill!r}, ceiling {h.ceiling!r}, worlds {h.worlds}")
+
+
+def record_headroom(registry: Registry, results: Sequence[Headroom]) -> Registry:
+    """Record the D10 headroom check in a screened registry (a new version). Every result must use
+    the registry's pre-registered ceiling; the results are recorded whether or not they pass, and
+    the caller decides what a failure stops."""
+    if registry.screening is None:
+        raise ValueError("headroom is recorded on a screened registry")
+    if registry.screening.headroom is not None:
+        raise ValueError(f"registry {registry.version} already records a headroom check")
+    if not results:
+        raise ValueError("no headroom results")
+    for h in results:
+        _check_headroom(h, registry.saturation_ceiling)
+    return replace(registry, screening=replace(registry.screening, headroom=tuple(results)))
 
 
 # --- sealed access (gate-harness "Sealed worlds need a pre-registration") ---

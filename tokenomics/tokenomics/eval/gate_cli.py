@@ -9,7 +9,12 @@ Modes:
   `RESULT.md` skeleton). All arithmetic is `gate.compute_report`; this module only produces rows.
 - `recompute`: rebuild the report from `episodes.csv` plus the roster / parameter payloads embedded
   in `spec.json` (hash-checked against the named versions) and compare it with `verdict.json`.
-- `screen`: roster-only screening and calibration, task 8.2 (not implemented here).
+- `screen`: roster only, on the development gate worlds and their reserves. In order: zero-baseline
+  replacement (registry screening, development split) -> headroom per family × size on the final
+  world set (D10; any failure stops with exit 3 and writes no frozen files) -> optional pruning
+  (`--prune`, roster.prune_roster) -> X/Y calibration (D4) over the final worlds' episodes with the
+  (pruned) roster -> candidate frozen files `frozen/worlds_v1.json` (screened, headroom recorded),
+  `frozen/roster_v1.json` (frozen), `frozen/side_effect_params_v1.json`, plus `screening.json`.
 
 Jobs fan out over a spawn-context `ProcessPoolExecutor`, one process per worker, BLAS pinned to one
 thread: inference is batch-1 and rollouts are sequential Python (CLAUDE.md "Parallel work").
@@ -32,7 +37,8 @@ import json
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from statistics import fmean
 from datetime import datetime, timezone
 from multiprocessing import get_context
 from pathlib import Path
@@ -40,22 +46,31 @@ from typing import Callable, Mapping, Sequence
 
 from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from .gate import (
+    CALIBRATION_RULE,
     CANDIDATE,
     CSV_COLUMNS,
     DigestMismatch,
     EpisodeRow,
     GateReport,
+    Calibration,
+    Headroom,
     SideEffectParams,
+    calibrate_x_y,
     compute_report,
+    episode_bests,
+    headroom,
     load_side_effect_params,
     params_from_dict,
     row_from_dict,
     row_from_stats,
     row_to_dict,
+    side_effect_params_json,
 )
 from .provenance import environment_manifest, sha256_file, source_fingerprint
 from .registry import (
     DEFAULT_REGISTRY,
+    DEVELOPMENT,
+    RESERVE,
     SEALED,
     SEALED_ACCESS_LOG,
     SPLITS,
@@ -64,15 +79,23 @@ from .registry import (
     check_sealed_access,
     load_preregistration,
     load_registry,
+    record_headroom,
+    save_registry,
+    screen_zero_baselines,
 )
 from .roster import (
     DEFAULT_ROSTER,
+    GATE_SIZES,
     JOINT_STACK,
     RANDOM_POLICY,
+    DevRow,
     Roster,
     contract_for,
+    freeze_roster,
     load_roster,
+    prune_roster,
     roster_from_dict,
+    save_roster,
 )
 from .seeding import replicate_seed
 
@@ -111,18 +134,21 @@ def select_worlds(registry: Registry, split: str, *, sizes: Sequence[int] | None
     return worlds[:max_worlds] if max_worlds else worlds
 
 
-def build_jobs(worlds: Sequence[WorldEntry], roster: Roster, subject: str, *,
+def build_jobs(worlds: Sequence[WorldEntry], roster: Roster, subject: str | None, *,
                episodes_per_world: int | None = None) -> list[Job]:
-    """Every (world, episode, subject, replicate) the report needs: the candidate once per episode
-    (R times when a baseline subject is random), each member `roster.replicates_for` times."""
-    pair = parse_subject(subject)
+    """Every (world, episode, subject, replicate) the run needs: the candidate once per episode
+    (R times when a baseline subject is random; none when `subject` is None, the roster-only screen),
+    each member `roster.replicates_for` times."""
+    pair = parse_subject(subject) if subject is not None else None
     jobs: list[Job] = []
     for e in worlds:
         episodes = e.episode_seeds[:episodes_per_world] if episodes_per_world else e.episode_seeds
         for ep in episodes:
             base = {"world": e.id, "size": e.size, "regime": e.regime, "world_seed": e.world_seed,
                     "generator": e.generator, "episode": ep}
-            if pair is None:
+            if subject is None:
+                pass
+            elif pair is None:
                 jobs.append({**base, "subject": CANDIDATE, "replicate": 0, "producing": PORTABLE,
                              "ordering": PORTABLE, "contract": JOINT_STACK, "action_seed": None})
             else:
@@ -378,6 +404,97 @@ def check_rows(rows: Sequence[EpisodeRow], grid: Mapping[str, Mapping], expected
                          f"rows missing, e.g. {missing[:3]}")
 
 
+# --- shared run machinery (report and screen) ---
+
+
+def _write_spec(out: Path, spec: Mapping[str, object]) -> None:
+    (out / "spec.json").write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
+
+
+def _prepare_resume(out: Path, pins: Mapping[str, object], grid: Mapping[str, Mapping],
+                    expected: set[Key]) -> tuple[dict | None, list[EpisodeRow]]:
+    """Refuse anything a resume cannot honestly continue, before any write: rows without a spec
+    (orphans), a spec with different pins (inputs, source or grid), rows outside the grid."""
+    spec_path, episodes = out / "spec.json", out / "episodes.csv"
+    old_spec = json.loads(spec_path.read_text()) if spec_path.exists() else None
+    if old_spec is None and episodes.exists() and episodes.stat().st_size:
+        raise ValueError(f"{episodes} exists without spec.json: orphan rows, refusing to resume")
+    if old_spec is not None and old_spec.get("pins") != pins:
+        raise ValueError(f"{out} holds a run with different pins (inputs, source or grid); "
+                         f"refusing to resume:\n  recorded {old_spec.get('pins')}\n  now      {pins}")
+    done = read_rows(episodes) if old_spec is not None else []
+    check_rows(done, grid, expected, complete=False)
+    return old_spec, done
+
+
+def _open_spec(out: Path, old_spec: dict | None, workers: int, fresh: dict) -> dict:
+    """A new spec (provenance taken now) or, on a resume with matching pins, the original one with
+    the resume appended: rows keep the provenance they were produced under."""
+    out.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).isoformat()
+    if old_spec is None:
+        spec = {**fresh, "date": now[:10], "started": now, "environment": environment_manifest(),
+                "blas_threads": None, "workers": workers, "resumes": [], "status": "running"}
+    else:
+        spec = old_spec
+        spec["resumes"] = spec.get("resumes", []) + [
+            {"time": now, "workers": workers, "environment": environment_manifest()}]
+        spec["status"] = "running"
+    _write_spec(out, spec)
+    return spec
+
+
+def _execute(out: Path, spec: dict, done: Sequence[EpisodeRow], jobs: Sequence[Job],
+             expected: set[Key], workers: int, init: tuple,
+             run_job_fn: Callable[[Job], dict[str, str]], log: Callable[[str], None]) -> None:
+    """Run every job not already in `done`, appending each row as it lands and checking demand
+    digests per (world, episode) as rows arrive."""
+    episodes = out / "episodes.csv"
+    done_keys = {job_key(r.world, r.episode, r.subject, r.replicate) for r in done}
+    digests: dict[tuple[str, int], tuple[str, str]] = {}
+
+    def note_digest(row: EpisodeRow) -> None:
+        ref = digests.setdefault((row.world, row.episode), (row.demand_digest, row.subject))
+        if row.demand_digest != ref[0]:
+            raise DigestMismatch(
+                f"world {row.world} episode {row.episode}: {row.subject} replicate "
+                f"{row.replicate} saw demand digest {row.demand_digest}, {ref[1]} saw {ref[0]}")
+
+    for r in done:
+        note_digest(r)
+    if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
+        raise AssertionError("job list and pinned grid disagree")  # internal invariant
+    todo = [j for j in jobs
+            if job_key(j["world"], j["episode"], j["subject"], j["replicate"]) not in done_keys]
+    log(f"[gate] {len(jobs)} jobs, {len(jobs) - len(todo)} already done, {len(todo)} to run")
+
+    def finish(d: dict[str, str]) -> None:
+        row = row_from_dict(d)
+        note_digest(row)
+        _append_row(episodes, d)
+        log(f"[gate] {row.world} ep={row.episode} {row.subject} r{row.replicate} "
+            f"units={row.units:g} dead={row.dead}")
+
+    pin_blas()  # before the pool spawns: children inherit the forced env
+    if spec.get("blas_threads") is None:
+        spec["blas_threads"] = blas_threads()
+    if workers <= 1 or len(todo) <= 1:
+        _worker_init(*init)
+        for job in todo:
+            finish(run_job_fn(job))
+    else:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn"),
+                                 initializer=_worker_init, initargs=init) as pool:
+            futures = [pool.submit(run_job_fn, j) for j in todo]
+            try:
+                for fut in as_completed(futures):
+                    finish(fut.result())
+            except BaseException:
+                for f in futures:
+                    f.cancel()
+                raise
+
+
 # --- report ---
 
 
@@ -419,7 +536,8 @@ def run_report(
     if not dry_run:
         problems = [msg for bad, msg in (
             (not roster.frozen, f"roster {roster.version[:12]} is not frozen"),
-            (registry.screening is None, f"registry {registry.version[:12]} is not screened"),
+            (bool(registry.admission_problems(split)),
+             "; ".join(registry.admission_problems(split))),
             (len(source_commit) != 40 or any(c not in "0123456789abcdef" for c in source_commit),
              "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
             (any(f is not None for f in (sizes, families, max_worlds, episodes_per_world)),
@@ -444,16 +562,8 @@ def run_report(
         "candidate_replicates": candidate_replicates, "grid": grid,
     }
     out = Path(out_dir)
-    spec_path, episodes = out / "spec.json", out / "episodes.csv"
-    old_spec = json.loads(spec_path.read_text()) if spec_path.exists() else None
-    if old_spec is None and episodes.exists() and episodes.stat().st_size:
-        raise ValueError(f"{episodes} exists without spec.json: orphan rows, refusing to resume")
-    if old_spec is not None and old_spec.get("pins") != pins:
-        raise ValueError(f"{out} holds a run with different pins (inputs, source or grid); "
-                         f"refusing to resume:\n  recorded {old_spec.get('pins')}\n  now      {pins}")
     expected = expected_keys(grid, roster, candidate_replicates)
-    done = read_rows(episodes) if old_spec is not None else []
-    check_rows(done, grid, expected, complete=False)
+    old_spec, done = _prepare_resume(out, pins, grid, expected)
     if split == SEALED:
         # Before any episode: refuses without a matching pre-registration, logs the access.
         check_sealed_access(
@@ -461,75 +571,19 @@ def run_report(
             preregistration=load_preregistration(preregistration) if preregistration else None,
             checkpoints=checkpoints, roster_version=roster.version,
             params_version=params.version, log_path=access_log)
-
-    out.mkdir(parents=True, exist_ok=True)
-    now = datetime.now(timezone.utc).isoformat()
-    if old_spec is None:
-        spec = {
-            "experiment": out.name, "driver": DRIVER, "mode": "report",
-            "kind": "dry-run" if dry_run else "report",
-            "date": now[:10], "started": now, "pins": pins,
-            "roster": roster.payload() | {"content_hash": roster.version},
-            "side_effect_params": params_payload,
-            "inputs": {k: {"path": str(v), "sha256": pins["checkpoints"][k]}
-                       for k, v in checkpoints.items()},
-            "source": source, "environment": environment_manifest(),
-            "blas_threads": None, "workers": workers, "resumes": [], "status": "running",
-        }
-    else:
-        # Same pins (so same source tree and commit): keep the original provenance, log the resume.
-        spec = old_spec
-        spec["resumes"] = spec.get("resumes", []) + [
-            {"time": now, "workers": workers, "environment": environment_manifest()}]
-        spec["status"] = "running"
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
-
-    done_keys = {job_key(r.world, r.episode, r.subject, r.replicate) for r in done}
-    digests: dict[tuple[str, int], tuple[str, str]] = {}
-
-    def note_digest(row: EpisodeRow) -> None:
-        ref = digests.setdefault((row.world, row.episode), (row.demand_digest, row.subject))
-        if row.demand_digest != ref[0]:
-            raise DigestMismatch(
-                f"world {row.world} episode {row.episode}: {row.subject} replicate "
-                f"{row.replicate} saw demand digest {row.demand_digest}, {ref[1]} saw {ref[0]}")
-
-    for r in done:
-        note_digest(r)
+    spec = _open_spec(out, old_spec, workers, {
+        "experiment": out.name, "driver": DRIVER, "mode": "report",
+        "kind": "dry-run" if dry_run else "report", "pins": pins,
+        "roster": roster.payload() | {"content_hash": roster.version},
+        "side_effect_params": params_payload,
+        "inputs": {k: {"path": str(v), "sha256": pins["checkpoints"][k]}
+                   for k, v in checkpoints.items()},
+        "source": source,
+    })
     jobs = build_jobs(worlds, roster, subject, episodes_per_world=episodes_per_world)
-    if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
-        raise AssertionError("job list and pinned grid disagree")  # internal invariant
-    todo = [j for j in jobs
-            if job_key(j["world"], j["episode"], j["subject"], j["replicate"]) not in done_keys]
-    log(f"[gate] {len(jobs)} jobs, {len(jobs) - len(todo)} already done, {len(todo)} to run")
-
-    def finish(d: dict[str, str]) -> None:
-        row = row_from_dict(d)
-        note_digest(row)
-        _append_row(episodes, d)
-        log(f"[gate] {row.world} ep={row.episode} {row.subject} r{row.replicate} "
-            f"units={row.units:g} dead={row.dead}")
-
-    pin_blas()  # before the pool spawns: children inherit the forced env
-    if spec.get("blas_threads") is None:
-        spec["blas_threads"] = blas_threads()
     init = (horizon, prod_ckpt if pair is None else None, orderer_ckpt if pair is None else None)
-    if workers <= 1 or len(todo) <= 1:
-        _worker_init(*init)
-        for job in todo:
-            finish(run_job_fn(job))
-    else:
-        with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn"),
-                                 initializer=_worker_init, initargs=init) as pool:
-            futures = [pool.submit(run_job_fn, j) for j in todo]
-            try:
-                for fut in as_completed(futures):
-                    finish(fut.result())
-            except BaseException:
-                for f in futures:
-                    f.cancel()
-                raise
-
+    episodes = out / "episodes.csv"
+    _execute(out, spec, done, jobs, expected, workers, init, run_job_fn, log)
     rows = read_rows(episodes)
     check_rows(rows, grid, expected, complete=True)
     report = compute_report(rows, roster, params, registry.version)
@@ -537,7 +591,7 @@ def run_report(
     spec["status"] = "complete"
     spec["result"] = {"overall": report.overall, "failing_clauses": list(report.failing_clauses),
                       "non_gating_worlds": list(report.non_gating_worlds)}
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
+    _write_spec(out, spec)
     if not (out / "RESULT.md").exists():
         (out / "RESULT.md").write_text(RESULT_SKELETON.format(
             title=out.name, banner=DRY_BANNER if dry_run else "",
@@ -547,7 +601,7 @@ def run_report(
             subject=subject, driver=DRIVER))
     log(f"[gate] {'DRY RUN ' if dry_run else ''}verdict {report.overall}; failing clauses: "
         f"{', '.join(report.failing_clauses) or 'none'}")
-    return report, {"jobs": len(jobs), "skipped": len(jobs) - len(todo), "run": len(todo)}
+    return report, {"jobs": len(jobs), "skipped": len(done), "run": len(jobs) - len(done)}
 
 
 # --- recompute ---
@@ -573,6 +627,198 @@ def recompute(out_dir: str | Path) -> tuple[GateReport, bool]:
     report = compute_report(rows, roster, params, pins["registry_version"])
     recorded = (out / "verdict.json").read_text()
     return report, report.to_json() == recorded
+
+
+# --- screen (tasks 8.2 / 10.1) ---
+
+HEADROOM_FAILED = 3  # exit status: a family × size failed D10; no frozen files written
+
+
+@dataclass(frozen=True)
+class ScreenOutcome:
+    """Everything screening decides, a pure function of roster-only rows (`screen_outcome`)."""
+
+    registry: Registry  # screened, headroom recorded
+    headroom: tuple[Headroom, ...]
+    passed: bool
+    roster: Roster | None  # frozen (and pruned if asked); None when headroom failed
+    calibration: Calibration | None
+    params_json: str | None
+
+    def report(self) -> dict[str, object]:
+        sc = self.registry.screening
+        assert sc is not None
+        cal = self.calibration
+        return {
+            "registry_version": self.registry.version,
+            "passed_headroom": self.passed,
+            "headroom": [h.to_dict() for h in self.headroom],
+            "replacements": [r.to_dict() for r in sc.replacements],
+            "baseline_means": dict(sc.baseline_means),
+            "roster_version": None if self.roster is None else self.roster.version,
+            "pruned": (list(self.roster.pruning.dropped)
+                       if self.roster is not None and self.roster.pruning else []),
+            "x": None if cal is None else cal.x, "y": None if cal is None else cal.y,
+            "q": None if cal is None else cal.q,
+            "calibration_evidence": None if cal is None else cal.evidence(),
+        }
+
+
+def screen_outcome(scope: Registry, roster: Roster, rows: Sequence[EpisodeRow], *, q: float,
+                   prune: bool, prune_sizes: Sequence[int] = GATE_SIZES) -> ScreenOutcome:
+    """Zero-baseline replacement -> headroom -> pruning -> X/Y, in that order (module docstring).
+    Headroom and X/Y read only the final development gate worlds (after replacement); reserves
+    feed replacement only."""
+    screened = screen_zero_baselines(scope, roster, rows, splits=(DEVELOPMENT,))
+    final = {e.id: e for e in screened.gate_worlds(DEVELOPMENT)}
+    final_rows = [r for r in rows if r.world in final]
+    bests = episode_bests(final_rows, roster)
+    hr = tuple(headroom(bests, {w: e.family for w, e in final.items()},
+                        screened.saturation_ceiling))
+    screened = record_headroom(screened, hr)
+    if not all(h.passed for h in hr):
+        return ScreenOutcome(screened, hr, False, None, None, None)
+    kept = roster
+    if prune:
+        dev = {}
+        for r in final_rows:
+            dev.setdefault((r.world, r.size, r.episode, r.subject), []).append(r.units)
+        kept = prune_roster(roster, [DevRow(w, DEVELOPMENT, size, ep, m, fmean(v))
+                                     for (w, size, ep, m), v in sorted(dev.items())],
+                            sizes=prune_sizes)
+        final_rows = [r for r in final_rows if r.subject in set(kept.member_ids)]
+    frozen = freeze_roster(kept)
+    cal = calibrate_x_y(final_rows, kept, q)
+    params = side_effect_params_json(
+        cal.x, cal.y, q, name="side-effect-params-v1", rule=CALIBRATION_RULE, method=cal.method,
+        evidence=cal.evidence() | {"roster_version": frozen.version,
+                                   "registry_version": screened.version})
+    return ScreenOutcome(screened, hr, True, frozen, cal, params)
+
+
+def run_screen(
+    *,
+    out_dir: str | Path,
+    horizon: int,
+    workers: int,
+    registry: Registry,
+    roster: Roster,
+    q: float = 0.05,
+    prune: bool = False,
+    reserves: bool = True,
+    sizes: Sequence[int] | None = None,
+    families: Sequence[str] | None = None,
+    max_worlds: int | None = None,
+    episodes_per_world: int | None = None,
+    source_commit: str = "",
+    dry_run: bool = False,
+    run_job_fn: Callable[[Job], dict[str, str]] = run_job,
+    log: Callable[[str], None] = print,
+) -> tuple[ScreenOutcome, int]:
+    """Run (or resume) the roster on the development gate worlds and their reserves, then
+    `screen_outcome`; write the screening report and, if headroom passes, `frozen/`. Returns the
+    outcome and the exit status (0, or `HEADROOM_FAILED`). A real screen needs an unscreened
+    registry, a 40-hex source commit, reserves and no filters; a dry run screens the selected
+    worlds as a sub-registry."""
+    if registry.screening is not None:
+        raise ValueError(f"registry {registry.version[:12]} is already screened")
+    if not dry_run:
+        problems = [msg for bad, msg in (
+            (len(source_commit) != 40 or any(c not in "0123456789abcdef" for c in source_commit),
+             "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
+            (any(f is not None for f in (sizes, families, max_worlds, episodes_per_world)),
+             "world/episode filters are set"),
+            (not reserves, "reserves are skipped"),
+            (bool(registry.coverage_problems()), "; ".join(registry.coverage_problems())),
+        ) if bad]
+        if problems:
+            raise ValueError("not a valid real screen (" + "; ".join(problems)
+                             + "); pass --dry-run for a smoke run")
+    gate = select_worlds(registry, DEVELOPMENT, sizes=sizes, families=families,
+                         max_worlds=max_worlds)
+    if not gate:
+        raise ValueError("no development gate worlds selected")
+    groups = {e.group for e in gate}
+    extra = [e for e in registry.entries
+             if reserves and e.status == RESERVE and e.group in groups]
+    if dry_run:  # a sub-registry of exactly what runs (selected worlds, truncated episodes)
+        def cut(e: WorldEntry) -> WorldEntry:
+            return replace(e, episode_seeds=e.episode_seeds[:episodes_per_world]
+                           if episodes_per_world else e.episode_seeds)
+
+        scope = Registry(name=f"{registry.name}-dry-run", seed_ranges=registry.seed_ranges,
+                         entries=tuple(cut(e) for e in (*gate, *extra)),
+                         saturation_ceiling=registry.saturation_ceiling)
+    else:
+        scope = registry
+    worlds = list(gate) + extra
+    grid = job_grid(worlds, episodes_per_world)
+    source = source_fingerprint(source_commit or None)
+    pins = {
+        "mode": "screen", "horizon": horizon, "dry_run": dry_run, "q": q, "prune": prune,
+        "registry_version": registry.version, "scope_version": scope.version,
+        "roster_version": roster.version,
+        "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
+        "candidate_replicates": 0, "grid": grid,
+    }
+    out = Path(out_dir)
+    expected = expected_keys(grid, roster, 0)
+    old_spec, done = _prepare_resume(out, pins, grid, expected)
+    spec = _open_spec(out, old_spec, workers, {
+        "experiment": out.name, "driver": DRIVER, "mode": "screen",
+        "kind": "dry-run" if dry_run else "screen", "pins": pins,
+        "roster": roster.payload() | {"content_hash": roster.version}, "source": source,
+    })
+    jobs = build_jobs(worlds, roster, None, episodes_per_world=episodes_per_world)
+    _execute(out, spec, done, jobs, expected, workers, (horizon, None, None), run_job_fn, log)
+
+    rows = read_rows(out / "episodes.csv")
+    check_rows(rows, grid, expected, complete=True)
+    prune_sizes = GATE_SIZES if not dry_run else sorted({e.size for e in gate})
+    outcome = screen_outcome(scope, roster, rows, q=q, prune=prune, prune_sizes=prune_sizes)
+    report = outcome.report()
+    (out / "screening.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    _write_table(out / "headroom.csv", [h.to_dict() for h in outcome.headroom])
+    if outcome.passed:
+        frozen = out / "frozen"
+        frozen.mkdir(exist_ok=True)
+        save_registry(outcome.registry, frozen / "worlds_v1.json")
+        assert outcome.roster is not None and outcome.params_json is not None
+        save_roster(outcome.roster, frozen / "roster_v1.json")
+        (frozen / "side_effect_params_v1.json").write_text(outcome.params_json)
+        params_hash = json.loads(outcome.params_json)["content_hash"]
+        spec["frozen"] = {"worlds_v1.json": outcome.registry.version,
+                          "roster_v1.json": outcome.roster.version,
+                          "side_effect_params_v1.json": params_hash}
+    spec["status"] = "complete" if outcome.passed else "headroom-failed"
+    spec["result"] = report
+    _write_spec(out, spec)
+    if not (out / "RESULT.md").exists():
+        (out / "RESULT.md").write_text(SCREEN_SKELETON.format(
+            title=out.name, banner=DRY_BANNER if dry_run else "",
+            status="HEADROOM PASSED" if outcome.passed else "HEADROOM FAILED (no frozen files)",
+            driver=DRIVER))
+    log(f"[gate] screen {'(dry run) ' if dry_run else ''}"
+        f"{'passed' if outcome.passed else 'FAILED'} headroom; "
+        + ("" if outcome.calibration is None else
+           f"X={outcome.calibration.x!r} Y={outcome.calibration.y!r}"))
+    return outcome, (0 if outcome.passed else HEADROOM_FAILED)
+
+
+SCREEN_SKELETON = """# {title}
+
+{banner}**Screening: {status}** (see `screening.json`, `headroom.csv`, `frozen/`)
+
+Produced by `python -m {driver} --mode screen` (see `spec.json`).
+
+## Result
+
+TODO: admitted families, replacements, pruned members, X and Y, in plain English.
+
+## Conclusions
+
+TODO
+"""
 
 
 # --- CLI ---
@@ -612,22 +858,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--replicates", type=int, help="dry run: override roster R")
     ap.add_argument("--source-commit", default="")
     ap.add_argument("--verify-source-commit", action="store_true")
+    ap.add_argument("--q", type=float, default=0.05, help="screen: X/Y calibration quantile (D4)")
+    ap.add_argument("--prune", action="store_true", help="screen: apply the never-argmax rule")
+    ap.add_argument("--no-reserves", action="store_true", help="screen dry run: skip reserves")
     ap.add_argument("--dry-run", action="store_true",
                     help="smoke run: allows filters, an unfrozen roster, an unscreened registry and "
                          "no source commit; marked as not an acceptance read")
     args = ap.parse_args(argv)
 
-    if args.mode == "screen":
-        ap.error("--mode screen is task 8.2 (roster-only screening and X/Y calibration); "
-                 "not implemented yet")
     if args.mode == "recompute":
         report, ok = recompute(args.out_dir)
         print(f"[gate] recomputed verdict {report.overall}; "
               f"{'MATCH' if ok else 'MISMATCH'} with {Path(args.out_dir) / 'verdict.json'}")
         return 0 if ok else 1
 
-    if not args.params:
+    if args.mode == "report" and not args.params:
         ap.error("--mode report needs --params (the side-effect parameter file)")
+    if args.no_reserves and not args.dry_run:
+        ap.error("--no-reserves is a dry-run option")
     source_commit = args.source_commit
     if args.verify_source_commit:
         from .provenance import resolve_verified_commit
@@ -641,6 +889,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         roster = replace(roster, name=f"{roster.name}-dry-run", members=members,
                          replicates=args.replicates or roster.replicates, frozen=False,
                          pruning=None)
+    if args.mode == "screen":
+        _, status = run_screen(
+            out_dir=args.out_dir, horizon=args.horizon, workers=args.workers,
+            registry=load_registry(args.registry), roster=roster, q=args.q, prune=args.prune,
+            reserves=not args.no_reserves, sizes=_csv_ints(args.sizes),
+            families=_csv_strs(args.families), max_worlds=args.max_worlds,
+            episodes_per_world=args.episodes_per_world, source_commit=source_commit,
+            dry_run=args.dry_run)
+        return status
     params_payload = json.loads(Path(args.params).read_text())
     params = load_side_effect_params(args.params)
     run_report(

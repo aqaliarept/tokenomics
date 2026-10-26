@@ -256,11 +256,6 @@ def test_blas_pinned_in_spawned_workers_despite_inherited_settings(
         assert blas_threads() == 1  # the in-process (--workers 1) path is pinned too
 
 
-def test_screen_mode_is_a_stub(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit):
-        main(["--mode", "screen", "--out-dir", str(tmp_path)])
-
-
 # --- resume / recompute integrity (pinned job grid, provenance) ---
 
 
@@ -343,7 +338,7 @@ def test_resume_refuses_changed_source(report_dir: Path, inputs: dict[str, Path]
 def test_real_report_requires_frozen_inputs_and_commit(inputs: dict[str, Path],
                                                        tmp_path: Path) -> None:
     out = tmp_path / "real"
-    with pytest.raises(ValueError, match=r"roster .* is not frozen.*registry .* is not screened"
+    with pytest.raises(ValueError, match=r"roster .* is not frozen.*registry .* has not screened the development split"
                                          r".*no full 40-hex source commit.*filters are set"):
         _run(inputs, out, dry_run=False, source_commit="")
     assert not out.exists()
@@ -357,14 +352,37 @@ def test_real_report_accepts_frozen_screened_full_commit(inputs: dict[str, Path]
     from tokenomics.eval.registry import screen_zero_baselines
     from tokenomics.eval.roster import freeze_roster
 
-    reg = load_registry(inputs["registry"])
+    def boom_unused(job: dict) -> dict:
+        raise AssertionError("a refused report must not run any job")
+
+    reg = build_worlds_v1()  # both families at both gate sizes (D10 admission needs 12 and 120)
     roster = freeze_roster(load_roster(inputs["roster"]))
     rows = [EpisodeRow(world=e.id, size=e.size, regime=e.regime, episode=ep, subject=m.id,
                        replicate=r, units=1.0, dead=False, demand_digest="d", r_start=1.0,
                        r_end=1.0, consumer_fill_rate={})
-            for e in reg.gate_worlds() for ep in e.episode_seeds for m in roster.members
-            for r in range(roster.replicates_for(m))]
-    screened = screen_zero_baselines(reg, roster, rows)
+            for e in reg.gate_worlds("development") for ep in e.episode_seeds
+            for m in roster.members for r in range(roster.replicates_for(m))]
+    from tokenomics.eval.families import DENSE, SPARSE_WIDE
+    from tokenomics.eval.gate import Headroom
+    from tokenomics.eval.registry import record_headroom
+
+    unrecorded = screen_zero_baselines(reg, roster, rows)
+    ok = [Headroom(f, z, 8, 0.5, 0.95, True) for f in (DENSE, SPARSE_WIDE) for z in (12, 120)]
+    screened = record_headroom(unrecorded, ok)
+    fixture = load_registry(inputs["registry"])  # 12 producers only
+    fixture_screened = record_headroom(
+        screen_zero_baselines(fixture, roster, [r for r in rows if r.world in WORLDS]),
+        [Headroom(DENSE, 12, 1, 0.5, 0.95, True), Headroom(SPARSE_WIDE, 12, 1, 0.5, 0.95, True)])
+    for bad, why in ((unrecorded, "records no development headroom check"),
+                     (record_headroom(unrecorded, ok[:-1] + [Headroom(SPARSE_WIDE, 120, 8, 0.97,
+                                                                      0.95, False)]),
+                      "headroom failed"),
+                     (record_headroom(unrecorded, ok[:-1]), "no headroom result for"),
+                     (fixture_screened, "no development gate worlds for dense/120")):
+        with pytest.raises(ValueError, match=why):
+            _run(inputs, tmp_path / "refused", dry_run=False, registry=bad, roster=roster,
+                 episodes_per_world=None, source_commit="b" * 40, run_job_fn=boom_unused)
+    assert not (tmp_path / "refused").exists()
 
     class Boom(Exception):
         pass

@@ -269,7 +269,8 @@ def _rows(reg: Registry, means: dict[str, tuple[float, float]], *,
 
 
 def _all_gate(reg: Registry, value: float = 5.0) -> dict[str, tuple[float, float]]:
-    return {e.id: (value, 1.0) for e in reg.gate_worlds()}
+    """Every development gate world (M1 screens development only)."""
+    return {e.id: (value, 1.0) for e in reg.gate_worlds(DEVELOPMENT)}
 
 
 def test_baseline_means_are_per_episode_max_means(draft: Registry) -> None:
@@ -330,7 +331,7 @@ def test_replacement_is_candidate_independent(draft: Registry) -> None:
 
 def test_screening_refuses_incomplete_evidence(draft: Registry) -> None:
     means = _all_gate(draft)
-    del means["sea-dense-120-calm-15"]
+    del means["dev-dense-120-calm-07"]
     with pytest.raises(ValueError, match="no baseline rows for gate worlds"):
         screen_zero_baselines(draft, ROSTER, _rows(draft, means))
     means = _all_gate(draft)
@@ -475,3 +476,44 @@ def test_sealed_access_appended_to_log(draft: Registry, tmp_path: Path) -> None:
 def test_unknown_world_refused(draft: Registry, tmp_path: Path) -> None:
     with pytest.raises(KeyError):
         _check(draft, tmp_path, None, {}, worlds=("nope",))
+
+
+# --- screening by split, headroom record (D7, D10) ---
+
+
+def test_screening_covers_development_only_by_default(draft: Registry) -> None:
+    screened = screen_zero_baselines(draft, ROSTER, _rows(draft, _all_gate(draft)))
+    assert screened.screening.splits == (DEVELOPMENT,)
+    assert screened.entry("sea-dense-12-calm-00").status == GATE  # sealed untouched
+    sealed = {e.id: (5.0, 1.0) for e in draft.gate_worlds(SEALED)}
+    with pytest.raises(ValueError, match="outside the screened splits"):
+        screen_zero_baselines(draft, ROSTER, _rows(draft, {**_all_gate(draft), **sealed}))
+    both = screen_zero_baselines(draft, ROSTER, _rows(draft, {**_all_gate(draft), **sealed}),
+                                 splits=(DEVELOPMENT, SEALED))
+    assert both.screening.splits == (DEVELOPMENT, SEALED)
+
+
+def test_draft_preregisters_saturation_ceiling(draft: Registry) -> None:
+    assert draft.saturation_ceiling == 0.95
+    assert json.loads(DEFAULT_REGISTRY.read_text())["saturation_ceiling"] == 0.95
+    with pytest.raises(ValueError, match="saturation ceiling"):
+        replace(draft, saturation_ceiling=1.5)
+
+
+def test_headroom_recorded_in_screened_registry(draft: Registry) -> None:
+    from tokenomics.eval.gate import Headroom
+    from tokenomics.eval.registry import record_headroom
+
+    screened = screen_zero_baselines(draft, ROSTER, _rows(draft, _all_gate(draft)))
+    results = [Headroom(DENSE, 12, 8, 0.6, 0.95, True), Headroom(SPARSE_WIDE, 120, 8, 0.97, 0.95,
+                                                                 False)]
+    with pytest.raises(ValueError, match="headroom is recorded on a screened registry"):
+        record_headroom(draft, results)
+    rec = record_headroom(screened, results)
+    assert rec.version != screened.version
+    assert registry_from_dict(json.loads(rec.to_json())) == rec
+    assert rec.screening.headroom == tuple(results)
+    with pytest.raises(ValueError, match="already records"):
+        record_headroom(rec, results)
+    with pytest.raises(ValueError, match="pre-registers 0.95"):
+        record_headroom(screened, [Headroom(DENSE, 12, 8, 0.6, 0.9, True)])

@@ -35,7 +35,7 @@ import json
 import math
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from statistics import fmean
+from statistics import fmean, median
 from typing import Collection, Iterable, Mapping, Sequence
 
 from .roster import GATE_SIZES, Roster, content_hash
@@ -120,15 +120,21 @@ class SideEffectParams:
 DEFAULT_PARAMS = Path(__file__).parent / "registry" / "side_effect_params_v1.json"
 
 
+PARAMS_FIELDS = {"name", "x", "y", "q", "rule", "method", "evidence"}
+
+
 def side_effect_params_payload(
     x: float, y: float, q: float, *, name: str = "side-effect-params", rule: str = "",
+    method: str = "", evidence: Mapping[str, object] | None = None,
 ) -> dict:
-    """The file payload (no hash). `q` and `rule` record how X and Y were calibrated (D4)."""
-    return {"name": name, "x": float(x), "y": float(y), "q": float(q), "rule": rule}
+    """The file payload (no hash). `q`, `rule`, `method` (the quantile method) and `evidence`
+    (episode counts + digest of the calibration rows) record how X and Y were obtained (D4)."""
+    return {"name": name, "x": float(x), "y": float(y), "q": float(q), "rule": rule,
+            "method": method, "evidence": dict(evidence or {})}
 
 
-def side_effect_params_json(x: float, y: float, q: float, **kw: str) -> str:
-    d = side_effect_params_payload(x, y, q, **kw)
+def side_effect_params_json(x: float, y: float, q: float, **kw: object) -> str:
+    d = side_effect_params_payload(x, y, q, **kw)  # type: ignore[arg-type]
     d["content_hash"] = content_hash(d)
     return json.dumps(d, indent=2, sort_keys=True) + "\n"
 
@@ -139,8 +145,8 @@ def params_from_dict(d: Mapping[str, object]) -> SideEffectParams:
     recorded = d.pop("content_hash", None)
     if recorded is None:
         raise ValueError("side-effect parameter file records no content_hash; it has no version")
-    if set(d) != {"name", "x", "y", "q", "rule"}:
-        raise ValueError(f"side-effect parameter file fields {sorted(d)} != name, x, y, q, rule")
+    if set(d) != PARAMS_FIELDS:
+        raise ValueError(f"side-effect parameter file fields {sorted(d)} != {sorted(PARAMS_FIELDS)}")
     if content_hash(d) != recorded:
         raise ValueError(f"side-effect parameter hash {content_hash(d)} != recorded {recorded}: "
                          "edited without a new version")
@@ -198,6 +204,10 @@ class EpisodeRow:
     consumer_rejection_rate: float | None = None
     holding_units: float | None = None
     holding_units_per_cycle: float | None = None
+    # consumer units ordered / fulfilled over the played-cycle cohort, summed over consumers
+    # (env `consumer_ordered_units` / `consumer_fulfilled_units`): the headroom fill rate (D10)
+    ordered_units: float | None = None
+    fulfilled_units: float | None = None
 
     def __post_init__(self) -> None:
         if self.regime not in REGIMES:
@@ -211,7 +221,7 @@ class EpisodeRow:
             raise ValueError(f"row {self.world}/{self.episode}/{self.subject}: units {self.units!r}")
         object.__setattr__(self, "units", units)
         where = f"row {self.world}/{self.episode}/{self.subject}/{self.replicate}"
-        for name in ("r_start", "r_end", *MONITORED):
+        for name in ("r_start", "r_end", *MONITORED, "ordered_units", "fulfilled_units"):
             object.__setattr__(self, name, _opt_float(getattr(self, name), f"{where} {name}"))
         rates = self.consumer_fill_rate
         if isinstance(rates, Mapping):
@@ -244,6 +254,8 @@ def row_from_stats(
         r_end=stats["r_end"],  # type: ignore[arg-type]
         consumer_fill_rate=stats["consumer_fill_rate"],  # type: ignore[arg-type]
         **{k: stats[k] for k in MONITORED},  # type: ignore[arg-type]
+        ordered_units=sum(stats["consumer_ordered_units"].values()),  # type: ignore[union-attr]
+        fulfilled_units=sum(stats["consumer_fulfilled_units"].values()),  # type: ignore[union-attr]
     )
 
 
@@ -632,6 +644,178 @@ def recompute_from_csv(
 ) -> GateReport:
     """`--mode recompute` core (D6): the report rebuilt from `episodes.csv` text alone."""
     return compute_report(rows_from_csv(text), roster, params, registry_version, gate_sizes)
+
+
+
+# --- screening: X/Y calibration and headroom (design D4, D10) ---
+
+QUANTILE_METHOD = "nearest-rank"
+CALIBRATION_RULE = (
+    "D4: on every development episode take the roster member attaining the per-episode hindsight "
+    "baseline (ties: smallest member id); X = q-quantile of its run-down ratio r_end/r_start, "
+    "Y = q-quantile of its per-consumer fill rates (consumers that ordered nothing excluded); "
+    "random members contribute replicate means."
+)
+
+
+def quantile_nearest_rank(values: Sequence[float], q: float) -> float:
+    """Nearest-rank quantile (Hyndman-Fan type 1, the inverted empirical CDF): the k-th smallest
+    value, k = ceil(q·n), at least 1. Deterministic, and always one of the observed values, so the
+    bar is something a best baseline actually did."""
+    if not values:
+        raise ValueError("quantile of no values")
+    if not 0 < q <= 1:
+        raise ValueError(f"q must be in (0, 1], got {q}")
+    xs = sorted(values)
+    return xs[max(math.ceil(q * len(xs)), 1) - 1]
+
+
+@dataclass(frozen=True)
+class EpisodeBest:
+    """The member attaining one episode's hindsight baseline and its side-effect values (replicate
+    means for a random member). `run_down` is None when no replicate had a measurable ratio
+    (r_start None or 0, or r_end None); `fill_rates` omits consumers that ordered nothing; `fill`
+    is fulfilled / ordered units, None when nothing was ordered."""
+
+    world: str
+    size: int
+    episode: int
+    member: str
+    units: float
+    run_down: float | None
+    fill_rates: tuple[float, ...]
+    fill: float | None
+
+
+def _mean_or_none(vals: Sequence[float]) -> float | None:
+    return fmean(vals) if vals else None
+
+
+def episode_bests(rows: Iterable[EpisodeRow], roster: Roster) -> list[EpisodeBest]:
+    """Per (world, episode): the argmax member by replicate-mean units. Ties go to the smallest
+    member id: the pick never looks at run-down or fill, so it cannot bias X or Y toward a lenient
+    (or a strict) bar. Refuses candidate rows, non-members and incomplete member/replicate sets."""
+    members = set(roster.member_ids)
+    by_ep: dict[tuple[str, int], dict[str, list[EpisodeRow]]] = {}
+    for r in rows:
+        if r.subject == CANDIDATE:
+            raise ValueError(f"candidate row on {r.world}/{r.episode}: calibration is roster-only")
+        if r.subject not in members:
+            raise ValueError(f"row subject {r.subject!r} is not a member of roster {roster.version}")
+        by_ep.setdefault((r.world, r.episode), {}).setdefault(r.subject, []).append(r)
+    out: list[EpisodeBest] = []
+    for (world, ep), subj in sorted(by_ep.items()):
+        values: dict[str, float] = {}
+        for mid in roster.member_ids:
+            reps = sorted(subj.get(mid, []), key=lambda r: r.replicate)
+            want = list(range(roster.replicates_for(roster.member(mid))))
+            if [r.replicate for r in reps] != want:
+                raise ValueError(f"{world}/{ep}: {mid} has replicates "
+                                 f"{[r.replicate for r in reps]}, roster wants {want}")
+            values[mid] = replicate_mean([r.units for r in reps])
+        best = max(values.values())
+        member = min(mid for mid, v in values.items() if v == best)
+        reps = subj[member]
+        run_downs = [r.r_end / r.r_start for r in reps
+                     if r.r_start not in (None, 0) and r.r_end is not None]
+        consumers = sorted({c for r in reps for c, _ in r.consumer_fill_rate})
+        fill_rates = []
+        for c in consumers:
+            v = _mean_or_none([dict(r.consumer_fill_rate)[c] for r in reps
+                               if dict(r.consumer_fill_rate).get(c) is not None])
+            if v is not None:
+                fill_rates.append(v)
+        fills = [r.fulfilled_units / r.ordered_units for r in reps
+                 if r.ordered_units and r.fulfilled_units is not None]
+        out.append(EpisodeBest(world=world, size=reps[0].size, episode=ep, member=member,
+                               units=best, run_down=_mean_or_none(run_downs),
+                               fill_rates=tuple(fill_rates), fill=_mean_or_none(fills)))
+    return out
+
+
+def rows_digest(rows: Iterable[EpisodeRow]) -> str:
+    """sha256 over the exact rows, order-independent: each row in its CSV form (`row_to_dict`,
+    every identity and value field, floats as repr), sorted. Any change to any field of any row
+    changes it; reordering the rows does not."""
+    canon = sorted(json.dumps(row_to_dict(r), sort_keys=True) for r in rows)
+    return content_hash({"rows": canon})
+
+
+@dataclass(frozen=True)
+class Calibration:
+    x: float
+    y: float
+    q: float
+    method: str
+    episodes: int
+    run_down_values: int
+    fill_values: int
+    rows_digest: str  # the exact roster rows calibrated on (`rows_digest`)
+    bests_digest: str  # the per-episode argmax summary those rows reduced to
+
+    def evidence(self) -> dict[str, object]:
+        return {"episodes": self.episodes, "run_down_values": self.run_down_values,
+                "fill_values": self.fill_values, "rows_digest": self.rows_digest,
+                "bests_digest": self.bests_digest}
+
+
+def calibrate_x_y(rows: Sequence[EpisodeRow], roster: Roster, q: float) -> Calibration:
+    """X and Y by the D4 rule (`CALIBRATION_RULE`) with the nearest-rank quantile, over the
+    roster-only `rows` (reduced by `episode_bests`). The evidence binds the exact input rows."""
+    bests = episode_bests(rows, roster)
+    run_downs = [b.run_down for b in bests if b.run_down is not None]
+    fills = [f for b in bests for f in b.fill_rates]
+    if not run_downs or not fills:
+        raise ValueError("no measurable run-down ratios or fill rates to calibrate on")
+    canon = sorted((b.world, b.episode, b.member, b.run_down, b.fill_rates) for b in bests)
+    return Calibration(
+        x=quantile_nearest_rank(run_downs, q), y=quantile_nearest_rank(fills, q), q=q,
+        method=QUANTILE_METHOD, episodes=len(bests), run_down_values=len(run_downs),
+        fill_values=len(fills), rows_digest=rows_digest(rows),
+        bests_digest=content_hash({"bests": [list(c) for c in canon]}))
+
+
+@dataclass(frozen=True)
+class Headroom:
+    """D10 for one family × size: the median over its development worlds of the hindsight-baseline
+    fill rate (per world: mean over episodes of the argmax member's fulfilled / ordered units).
+    Admitted iff strictly below the saturation ceiling."""
+
+    family: str
+    size: int
+    worlds: int
+    median_fill: float
+    ceiling: float
+    passed: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
+
+def headroom(bests: Sequence[EpisodeBest], world_family: Mapping[str, str],
+             ceiling: float) -> list[Headroom]:
+    """Headroom per family × size over the worlds in `world_family` (world -> family)."""
+    per_world: dict[str, list[float]] = {}
+    size_of: dict[str, int] = {}
+    for b in bests:
+        if b.world not in world_family:
+            continue
+        if b.fill is None:
+            raise ValueError(f"{b.world}/{b.episode}: the argmax member ordered nothing; "
+                             "no fill rate for the headroom check")
+        per_world.setdefault(b.world, []).append(b.fill)
+        size_of[b.world] = b.size
+    missing = sorted(set(world_family) - set(per_world))
+    if missing:
+        raise ValueError(f"no rows for headroom worlds {missing}")
+    groups: dict[tuple[str, int], list[float]] = {}
+    for w, fills in per_world.items():
+        groups.setdefault((world_family[w], size_of[w]), []).append(fmean(fills))
+    out = []
+    for (family, size), vals in sorted(groups.items()):
+        med = median(vals)
+        out.append(Headroom(family, size, len(vals), med, ceiling, med < ceiling))
+    return out
 
 
 if __name__ == "__main__":

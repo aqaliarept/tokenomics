@@ -141,7 +141,10 @@ Defaults, pre-registered in the file:
 | Development | 1000–1999 | 8 worlds × 3 episode seeds | 4 worlds × 10 episode seeds |
 | Sealed | 5000–5999 | 16 worlds × 3 episode seeds | 8 worlds × 10 episode seeds |
 
-Each family × size also has a reserve list for zero-baseline replacement.
+Each family × size also has a reserve list for zero-baseline replacement. Screening runs by
+split and records the splits it covered: M1 screens development only (no sealed evaluation in
+M1); the sealed split gets its own roster-only screen in M5, before any candidate touches a
+sealed world. The headroom ceiling (D10) is pre-registered in the registry file.
 
 Calm worlds get several episode seeds even though their demand is fixed, because future
 stochastic candidates may sample actions. Sealed evaluation requires `--preregistration
