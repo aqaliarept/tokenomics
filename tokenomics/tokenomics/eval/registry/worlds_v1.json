@@ -1,0 +1,5385 @@
+{
+ "content_hash": "a2dfccbc0ee085f3c5ec31c3ea3e7737740502ae8730cecdb5c4afd3e7326586",
+ "entries": [
+  {
+   "episode_seeds": [
+    1535777546,
+    1953872198,
+    610048034
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-00",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1000
+  },
+  {
+   "episode_seeds": [
+    1829359734,
+    1010824239,
+    370118039
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-01",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1001
+  },
+  {
+   "episode_seeds": [
+    24174983,
+    246880318,
+    1525996235
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-02",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1002
+  },
+  {
+   "episode_seeds": [
+    237559170,
+    1097101902,
+    702926047
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-03",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1003
+  },
+  {
+   "episode_seeds": [
+    1630037295,
+    1486684216,
+    1551147533
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-04",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1004
+  },
+  {
+   "episode_seeds": [
+    1186654837,
+    1519673764,
+    2133411251
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-05",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1005
+  },
+  {
+   "episode_seeds": [
+    2091916502,
+    1877593672,
+    1607119210
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-06",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1006
+  },
+  {
+   "episode_seeds": [
+    2049181156,
+    1443856784,
+    1228036527
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-07",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1007
+  },
+  {
+   "episode_seeds": [
+    897754865,
+    741201083,
+    1546394144
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-r0",
+   "regime": "calm",
+   "reserve_position": 0,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1008
+  },
+  {
+   "episode_seeds": [
+    594632792,
+    438413612,
+    1335831201
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-r1",
+   "regime": "calm",
+   "reserve_position": 1,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1009
+  },
+  {
+   "episode_seeds": [
+    1433047895,
+    98113765,
+    706867996
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-r2",
+   "regime": "calm",
+   "reserve_position": 2,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1010
+  },
+  {
+   "episode_seeds": [
+    2027311087,
+    878184743,
+    1888598151
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-12-calm-r3",
+   "regime": "calm",
+   "reserve_position": 3,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1011
+  },
+  {
+   "episode_seeds": [
+    786645359,
+    1093516654,
+    1678953676,
+    1051988705,
+    352393752,
+    1338229439,
+    942688687,
+    1829641071,
+    2132020923,
+    719302918
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-12-shocked-00",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1012
+  },
+  {
+   "episode_seeds": [
+    679865169,
+    1141088138,
+    770337389,
+    2115057569,
+    288722063,
+    1467994651,
+    842408256,
+    331453277,
+    100895201,
+    1965587607
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-12-shocked-01",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1013
+  },
+  {
+   "episode_seeds": [
+    1934299904,
+    853674214,
+    434396876,
+    1652062884,
+    1507244273,
+    955299761,
+    40627518,
+    920537115,
+    248141384,
+    1683675492
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-12-shocked-02",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1014
+  },
+  {
+   "episode_seeds": [
+    360106295,
+    1960496474,
+    2019260493,
+    2129215731,
+    737383371,
+    2089677573,
+    2097713695,
+    1402262938,
+    773307513,
+    335519771
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-12-shocked-03",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1015
+  },
+  {
+   "episode_seeds": [
+    1375262192,
+    1326256285,
+    1418371471,
+    79472993,
+    2096580139,
+    520161397,
+    346254430,
+    377098571,
+    308601192,
+    1526075520
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-12-shocked-r0",
+   "regime": "shocked",
+   "reserve_position": 0,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1016
+  },
+  {
+   "episode_seeds": [
+    594833868,
+    1948274747,
+    1265863170,
+    1399189006,
+    1527562378,
+    1523402883,
+    502979605,
+    435543367,
+    1620518452,
+    2001846731
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-12-shocked-r1",
+   "regime": "shocked",
+   "reserve_position": 1,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1017
+  },
+  {
+   "episode_seeds": [
+    1716812868,
+    300332424,
+    1041785400,
+    1411029428,
+    55578862,
+    225393127,
+    1740526117,
+    251623750,
+    1934526489,
+    1569435509
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-12-shocked-r2",
+   "regime": "shocked",
+   "reserve_position": 2,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1018
+  },
+  {
+   "episode_seeds": [
+    1685501479,
+    1236590883,
+    808681115,
+    1089520160,
+    1167762188,
+    123158845,
+    543273239,
+    770008777,
+    1717438491,
+    1601363450
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-12-shocked-r3",
+   "regime": "shocked",
+   "reserve_position": 3,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1019
+  },
+  {
+   "episode_seeds": [
+    429390797,
+    684767875,
+    1668440443
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-00",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1020
+  },
+  {
+   "episode_seeds": [
+    1502708716,
+    1628328380,
+    1167989586
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-01",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1021
+  },
+  {
+   "episode_seeds": [
+    283895106,
+    546607098,
+    1665599572
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-02",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1022
+  },
+  {
+   "episode_seeds": [
+    614650106,
+    1870925076,
+    925059990
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-03",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1023
+  },
+  {
+   "episode_seeds": [
+    1300034041,
+    627036276,
+    618823776
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-04",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1024
+  },
+  {
+   "episode_seeds": [
+    1135925750,
+    1610670853,
+    1635863806
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-05",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1025
+  },
+  {
+   "episode_seeds": [
+    206984165,
+    1613215398,
+    1383739650
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-06",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1026
+  },
+  {
+   "episode_seeds": [
+    1389501451,
+    1404867324,
+    418532030
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-07",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1027
+  },
+  {
+   "episode_seeds": [
+    1863777745,
+    322557086,
+    1538692605
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-r0",
+   "regime": "calm",
+   "reserve_position": 0,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1028
+  },
+  {
+   "episode_seeds": [
+    462821270,
+    340884092,
+    698525288
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-r1",
+   "regime": "calm",
+   "reserve_position": 1,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1029
+  },
+  {
+   "episode_seeds": [
+    929318269,
+    678207827,
+    1780315376
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-r2",
+   "regime": "calm",
+   "reserve_position": 2,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1030
+  },
+  {
+   "episode_seeds": [
+    365727712,
+    1107793249,
+    1543525324
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-dense-120-calm-r3",
+   "regime": "calm",
+   "reserve_position": 3,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1031
+  },
+  {
+   "episode_seeds": [
+    969671091,
+    2055592778,
+    2034311045,
+    1838975738,
+    1765195991,
+    490197564,
+    53130319,
+    767369810,
+    1839081489,
+    1401182629
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-120-shocked-00",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1032
+  },
+  {
+   "episode_seeds": [
+    564234809,
+    1664616505,
+    1422217361,
+    1455032396,
+    1063926221,
+    24832912,
+    200463313,
+    269116297,
+    1241852715,
+    1038083481
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-120-shocked-01",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1033
+  },
+  {
+   "episode_seeds": [
+    722847563,
+    1125820137,
+    1063757871,
+    178111436,
+    20314852,
+    1948060786,
+    1366057932,
+    1087673482,
+    1682654244,
+    752972716
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-120-shocked-02",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1034
+  },
+  {
+   "episode_seeds": [
+    1517135994,
+    652595673,
+    1178065366,
+    172974204,
+    1929136061,
+    339615783,
+    1731732731,
+    851881783,
+    396861595,
+    1661722462
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-120-shocked-03",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1035
+  },
+  {
+   "episode_seeds": [
+    775608641,
+    896997457,
+    1701013789,
+    1448242385,
+    2057453787,
+    2128460002,
+    152371260,
+    1806589867,
+    1429432019,
+    497747375
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-120-shocked-r0",
+   "regime": "shocked",
+   "reserve_position": 0,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1036
+  },
+  {
+   "episode_seeds": [
+    1082555266,
+    687190600,
+    1609039280,
+    775920535,
+    77018596,
+    1277371188,
+    819057199,
+    1149747344,
+    2018406714,
+    308657921
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-120-shocked-r1",
+   "regime": "shocked",
+   "reserve_position": 1,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1037
+  },
+  {
+   "episode_seeds": [
+    1347946289,
+    2017033487,
+    845766760,
+    1028357781,
+    1335798486,
+    447972994,
+    371469935,
+    1882994542,
+    1764809379,
+    1848025450
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-120-shocked-r2",
+   "regime": "shocked",
+   "reserve_position": 2,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1038
+  },
+  {
+   "episode_seeds": [
+    1179571355,
+    929071109,
+    1182388851,
+    893962950,
+    1276802089,
+    1119704525,
+    544546797,
+    937349930,
+    949220864,
+    747196598
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-dense-120-shocked-r3",
+   "regime": "shocked",
+   "reserve_position": 3,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1039
+  },
+  {
+   "episode_seeds": [
+    853180902,
+    573722738,
+    1263959127
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-00",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1040
+  },
+  {
+   "episode_seeds": [
+    4173060,
+    1548830927,
+    1404012444
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-01",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1041
+  },
+  {
+   "episode_seeds": [
+    1450220932,
+    1626927891,
+    156449616
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-02",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1042
+  },
+  {
+   "episode_seeds": [
+    1142209014,
+    1429071718,
+    1312845591
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-03",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1043
+  },
+  {
+   "episode_seeds": [
+    561383371,
+    839488060,
+    2062681473
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-04",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1044
+  },
+  {
+   "episode_seeds": [
+    825691700,
+    341127217,
+    998580260
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-05",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1045
+  },
+  {
+   "episode_seeds": [
+    807440443,
+    934409798,
+    1583800300
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-06",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1046
+  },
+  {
+   "episode_seeds": [
+    302957182,
+    684142130,
+    1215385322
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-07",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1047
+  },
+  {
+   "episode_seeds": [
+    1167517639,
+    1987198237,
+    562709652
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-r0",
+   "regime": "calm",
+   "reserve_position": 0,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1048
+  },
+  {
+   "episode_seeds": [
+    1453879109,
+    37510162,
+    1102898519
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-r1",
+   "regime": "calm",
+   "reserve_position": 1,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1049
+  },
+  {
+   "episode_seeds": [
+    1979567839,
+    582777529,
+    2085590293
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-r2",
+   "regime": "calm",
+   "reserve_position": 2,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1050
+  },
+  {
+   "episode_seeds": [
+    292460433,
+    944125024,
+    1614657681
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-12-calm-r3",
+   "regime": "calm",
+   "reserve_position": 3,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1051
+  },
+  {
+   "episode_seeds": [
+    1648273883,
+    403593754,
+    403330798,
+    411733136,
+    1344356697,
+    780216897,
+    1678546418,
+    469180525,
+    1202186258,
+    1523693189
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-12-shocked-00",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1052
+  },
+  {
+   "episode_seeds": [
+    480920748,
+    1962673112,
+    144403646,
+    1906499098,
+    1390414481,
+    1552390792,
+    1113839877,
+    797901344,
+    1763938669,
+    1379500898
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-12-shocked-01",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1053
+  },
+  {
+   "episode_seeds": [
+    1596453724,
+    2019752305,
+    1546132854,
+    2129989729,
+    952913334,
+    1512164500,
+    1868313768,
+    280198481,
+    137742314,
+    1385045357
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-12-shocked-02",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1054
+  },
+  {
+   "episode_seeds": [
+    1918321488,
+    1173714013,
+    800294722,
+    299142319,
+    605789734,
+    309898481,
+    1744692017,
+    64327752,
+    825435124,
+    1853533776
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-12-shocked-03",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1055
+  },
+  {
+   "episode_seeds": [
+    1519026937,
+    1299124166,
+    1024282806,
+    378402316,
+    1324378533,
+    264505585,
+    1500763800,
+    1770024585,
+    1226611552,
+    2028231001
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-12-shocked-r0",
+   "regime": "shocked",
+   "reserve_position": 0,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1056
+  },
+  {
+   "episode_seeds": [
+    891026104,
+    1234920293,
+    1263412926,
+    1116556422,
+    730938629,
+    791677113,
+    1601253085,
+    2054792361,
+    2075640840,
+    504224183
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-12-shocked-r1",
+   "regime": "shocked",
+   "reserve_position": 1,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1057
+  },
+  {
+   "episode_seeds": [
+    239062665,
+    208607578,
+    1948778639,
+    1431944772,
+    544050598,
+    349364943,
+    655529997,
+    725555387,
+    911034960,
+    2068218775
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-12-shocked-r2",
+   "regime": "shocked",
+   "reserve_position": 2,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1058
+  },
+  {
+   "episode_seeds": [
+    1015947301,
+    319635906,
+    218691233,
+    2006856140,
+    859783077,
+    2009886172,
+    1473249572,
+    1121164548,
+    1472127071,
+    2006944874
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-12-shocked-r3",
+   "regime": "shocked",
+   "reserve_position": 3,
+   "size": 12,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1059
+  },
+  {
+   "episode_seeds": [
+    729519565,
+    1982504274,
+    763172253
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-00",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1060
+  },
+  {
+   "episode_seeds": [
+    2111483954,
+    1445641490,
+    192061328
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-01",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1061
+  },
+  {
+   "episode_seeds": [
+    226489432,
+    716555718,
+    399042363
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-02",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1062
+  },
+  {
+   "episode_seeds": [
+    1070098855,
+    1353896596,
+    538548167
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-03",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1063
+  },
+  {
+   "episode_seeds": [
+    685441162,
+    1106745047,
+    325008606
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-04",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1064
+  },
+  {
+   "episode_seeds": [
+    467275126,
+    1511928549,
+    81905486
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-05",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1065
+  },
+  {
+   "episode_seeds": [
+    752899860,
+    165236234,
+    283163431
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-06",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1066
+  },
+  {
+   "episode_seeds": [
+    1850271651,
+    952125185,
+    1285929587
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-07",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1067
+  },
+  {
+   "episode_seeds": [
+    1816851813,
+    138879691,
+    684914947
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-r0",
+   "regime": "calm",
+   "reserve_position": 0,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1068
+  },
+  {
+   "episode_seeds": [
+    382839120,
+    1914097707,
+    1023501957
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-r1",
+   "regime": "calm",
+   "reserve_position": 1,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1069
+  },
+  {
+   "episode_seeds": [
+    1649374613,
+    1281620909,
+    1645949813
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-r2",
+   "regime": "calm",
+   "reserve_position": 2,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1070
+  },
+  {
+   "episode_seeds": [
+    132807127,
+    1225344169,
+    882405596
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "dev-sparse_wide-120-calm-r3",
+   "regime": "calm",
+   "reserve_position": 3,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1071
+  },
+  {
+   "episode_seeds": [
+    1733432257,
+    432427150,
+    616299885,
+    1891669288,
+    536584729,
+    1570755497,
+    1555188358,
+    1389779921,
+    1431586151,
+    1727328271
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-120-shocked-00",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1072
+  },
+  {
+   "episode_seeds": [
+    944719942,
+    971977677,
+    1850293092,
+    30402827,
+    1140884482,
+    500906465,
+    898340284,
+    158733020,
+    1760899344,
+    907458984
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-120-shocked-01",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1073
+  },
+  {
+   "episode_seeds": [
+    613928026,
+    686993682,
+    782242196,
+    1306019918,
+    1053608745,
+    2092506247,
+    1524619402,
+    1375773662,
+    1380714780,
+    730933476
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-120-shocked-02",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1074
+  },
+  {
+   "episode_seeds": [
+    1135543786,
+    1995394643,
+    1008266277,
+    911978742,
+    1097565053,
+    603061914,
+    1963714922,
+    1222027723,
+    1520156228,
+    899932447
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-120-shocked-03",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "development",
+   "status": "gate",
+   "world_seed": 1075
+  },
+  {
+   "episode_seeds": [
+    129232066,
+    686316771,
+    1444919843,
+    1203328540,
+    54438858,
+    1238570839,
+    72817555,
+    14155168,
+    729307120,
+    2129711135
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-120-shocked-r0",
+   "regime": "shocked",
+   "reserve_position": 0,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1076
+  },
+  {
+   "episode_seeds": [
+    1187768100,
+    841237313,
+    1644434243,
+    1460893456,
+    1023203301,
+    2015564008,
+    210966588,
+    762976624,
+    1045138646,
+    316234317
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-120-shocked-r1",
+   "regime": "shocked",
+   "reserve_position": 1,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1077
+  },
+  {
+   "episode_seeds": [
+    1601189177,
+    1949230130,
+    249198468,
+    836781400,
+    1154053592,
+    1402672850,
+    683962183,
+    2030992657,
+    1766786844,
+    1359558657
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-120-shocked-r2",
+   "regime": "shocked",
+   "reserve_position": 2,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1078
+  },
+  {
+   "episode_seeds": [
+    243028152,
+    291103534,
+    1828129565,
+    43543090,
+    1781391537,
+    942091407,
+    796065461,
+    1564964928,
+    1900125416,
+    740365055
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "dev-sparse_wide-120-shocked-r3",
+   "regime": "shocked",
+   "reserve_position": 3,
+   "size": 120,
+   "split": "development",
+   "status": "reserve",
+   "world_seed": 1079
+  },
+  {
+   "episode_seeds": [
+    420401306,
+    1384556884,
+    703651866
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-00",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5000
+  },
+  {
+   "episode_seeds": [
+    1911617240,
+    1968940482,
+    1782525315
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-01",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5001
+  },
+  {
+   "episode_seeds": [
+    761725423,
+    179018335,
+    2009548570
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-02",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5002
+  },
+  {
+   "episode_seeds": [
+    1723782283,
+    663688310,
+    1130269711
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-03",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5003
+  },
+  {
+   "episode_seeds": [
+    869471032,
+    610985252,
+    1198062740
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-04",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5004
+  },
+  {
+   "episode_seeds": [
+    940442464,
+    847688762,
+    1919046181
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-05",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5005
+  },
+  {
+   "episode_seeds": [
+    1811911278,
+    2129594446,
+    2046202045
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-06",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5006
+  },
+  {
+   "episode_seeds": [
+    1508249001,
+    1597263256,
+    1310493575
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-07",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5007
+  },
+  {
+   "episode_seeds": [
+    634769375,
+    728876765,
+    1967505611
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-08",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5008
+  },
+  {
+   "episode_seeds": [
+    1732778554,
+    856558195,
+    2052562335
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-09",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5009
+  },
+  {
+   "episode_seeds": [
+    1916973068,
+    1143758101,
+    879154011
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-10",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5010
+  },
+  {
+   "episode_seeds": [
+    1719851583,
+    1545570502,
+    1980729504
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-11",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5011
+  },
+  {
+   "episode_seeds": [
+    968458057,
+    259987652,
+    1739234421
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-12",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5012
+  },
+  {
+   "episode_seeds": [
+    387484184,
+    302283195,
+    1198840570
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-13",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5013
+  },
+  {
+   "episode_seeds": [
+    258421516,
+    1276931411,
+    2060627978
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-14",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5014
+  },
+  {
+   "episode_seeds": [
+    1886614465,
+    246704871,
+    406077825
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-15",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5015
+  },
+  {
+   "episode_seeds": [
+    542447297,
+    574484261,
+    1272834360
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-r0",
+   "regime": "calm",
+   "reserve_position": 0,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5016
+  },
+  {
+   "episode_seeds": [
+    120350559,
+    1355549061,
+    2040460491
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-r1",
+   "regime": "calm",
+   "reserve_position": 1,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5017
+  },
+  {
+   "episode_seeds": [
+    566664211,
+    1589265528,
+    157751937
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-r2",
+   "regime": "calm",
+   "reserve_position": 2,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5018
+  },
+  {
+   "episode_seeds": [
+    1881547564,
+    772425801,
+    1077163371
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-12-calm-r3",
+   "regime": "calm",
+   "reserve_position": 3,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5019
+  },
+  {
+   "episode_seeds": [
+    1894393551,
+    43181273,
+    2028420039,
+    1981526429,
+    1699271325,
+    1438640432,
+    1504859813,
+    1996774073,
+    1568964837,
+    836174078
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-00",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5020
+  },
+  {
+   "episode_seeds": [
+    1567983083,
+    1237674474,
+    2029467737,
+    172996244,
+    260047618,
+    15482275,
+    824185874,
+    905263844,
+    882703631,
+    1180714107
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-01",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5021
+  },
+  {
+   "episode_seeds": [
+    2116865618,
+    1819410823,
+    352970339,
+    378261403,
+    1052729128,
+    237060572,
+    1541531253,
+    1151938334,
+    809568770,
+    557130371
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-02",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5022
+  },
+  {
+   "episode_seeds": [
+    1283833213,
+    2005525788,
+    34291931,
+    1275261168,
+    2087616302,
+    409337433,
+    771373616,
+    1468340880,
+    1122889618,
+    335222030
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-03",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5023
+  },
+  {
+   "episode_seeds": [
+    1424499496,
+    1439012124,
+    50739974,
+    548946748,
+    1169360933,
+    916571568,
+    1297686159,
+    1080747476,
+    1528048844,
+    2113456455
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-04",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5024
+  },
+  {
+   "episode_seeds": [
+    1920364495,
+    1127948153,
+    1455308934,
+    292259423,
+    750213800,
+    239189180,
+    1006704168,
+    1509982441,
+    178458869,
+    1268386905
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-05",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5025
+  },
+  {
+   "episode_seeds": [
+    1265791581,
+    1615419481,
+    1457023477,
+    290883814,
+    1104888067,
+    981092149,
+    1145049791,
+    1280040973,
+    536842857,
+    479124002
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-06",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5026
+  },
+  {
+   "episode_seeds": [
+    528482979,
+    1484874269,
+    1286739599,
+    637240297,
+    479427163,
+    1180158711,
+    1073528245,
+    1362971945,
+    207364888,
+    484252777
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-07",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5027
+  },
+  {
+   "episode_seeds": [
+    526892050,
+    1941219519,
+    1146627425,
+    584807953,
+    1885571425,
+    451905828,
+    922766633,
+    1790285661,
+    1599264716,
+    894683203
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-r0",
+   "regime": "shocked",
+   "reserve_position": 0,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5028
+  },
+  {
+   "episode_seeds": [
+    1739533711,
+    1975726985,
+    117001042,
+    1833696883,
+    699698852,
+    2013317145,
+    1459977985,
+    1186483367,
+    1854840327,
+    2060767396
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-r1",
+   "regime": "shocked",
+   "reserve_position": 1,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5029
+  },
+  {
+   "episode_seeds": [
+    1389416219,
+    1582067836,
+    1299496974,
+    1727997808,
+    1902698441,
+    2101747178,
+    180534364,
+    1981830503,
+    526725597,
+    1588985465
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-r2",
+   "regime": "shocked",
+   "reserve_position": 2,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5030
+  },
+  {
+   "episode_seeds": [
+    1148126188,
+    441909756,
+    1875869462,
+    542496607,
+    17072123,
+    1639234917,
+    434604538,
+    1242582396,
+    672008320,
+    771653539
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-12-shocked-r3",
+   "regime": "shocked",
+   "reserve_position": 3,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5031
+  },
+  {
+   "episode_seeds": [
+    880721228,
+    423014435,
+    1396831322
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-00",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5032
+  },
+  {
+   "episode_seeds": [
+    485862674,
+    576715245,
+    647212331
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-01",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5033
+  },
+  {
+   "episode_seeds": [
+    1061766535,
+    379739296,
+    609707871
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-02",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5034
+  },
+  {
+   "episode_seeds": [
+    1200143990,
+    168878533,
+    945107095
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-03",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5035
+  },
+  {
+   "episode_seeds": [
+    1352157208,
+    465112066,
+    1289603717
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-04",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5036
+  },
+  {
+   "episode_seeds": [
+    1084724736,
+    657375082,
+    90319636
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-05",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5037
+  },
+  {
+   "episode_seeds": [
+    1201663298,
+    150730339,
+    222355397
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-06",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5038
+  },
+  {
+   "episode_seeds": [
+    683664222,
+    241808844,
+    1836974568
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-07",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5039
+  },
+  {
+   "episode_seeds": [
+    1115687288,
+    1894458347,
+    1182999681
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-08",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5040
+  },
+  {
+   "episode_seeds": [
+    213061549,
+    1667724079,
+    1028845499
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-09",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5041
+  },
+  {
+   "episode_seeds": [
+    1587933102,
+    2141342646,
+    577840787
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-10",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5042
+  },
+  {
+   "episode_seeds": [
+    1381706236,
+    1703889359,
+    83521836
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-11",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5043
+  },
+  {
+   "episode_seeds": [
+    1472484477,
+    612463704,
+    1124076908
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-12",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5044
+  },
+  {
+   "episode_seeds": [
+    732561721,
+    908144210,
+    930070387
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-13",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5045
+  },
+  {
+   "episode_seeds": [
+    1920786109,
+    1638678634,
+    795331482
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-14",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5046
+  },
+  {
+   "episode_seeds": [
+    1809666212,
+    2032351381,
+    981278422
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-15",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5047
+  },
+  {
+   "episode_seeds": [
+    1999938498,
+    2146327726,
+    1727220127
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-r0",
+   "regime": "calm",
+   "reserve_position": 0,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5048
+  },
+  {
+   "episode_seeds": [
+    614582947,
+    491871632,
+    1034001633
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-r1",
+   "regime": "calm",
+   "reserve_position": 1,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5049
+  },
+  {
+   "episode_seeds": [
+    1512728562,
+    671730833,
+    642068380
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-r2",
+   "regime": "calm",
+   "reserve_position": 2,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5050
+  },
+  {
+   "episode_seeds": [
+    1302712781,
+    1433684178,
+    744023441
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-dense-120-calm-r3",
+   "regime": "calm",
+   "reserve_position": 3,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5051
+  },
+  {
+   "episode_seeds": [
+    366733220,
+    1457044192,
+    1978960551,
+    163084983,
+    365934735,
+    1640343306,
+    1794103484,
+    520025855,
+    1060978724,
+    2111591080
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-00",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5052
+  },
+  {
+   "episode_seeds": [
+    1007871015,
+    399430364,
+    1699440262,
+    1269064971,
+    1107954048,
+    2065817572,
+    398548809,
+    1897020646,
+    1001697558,
+    189723521
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-01",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5053
+  },
+  {
+   "episode_seeds": [
+    967555555,
+    1469912781,
+    73511371,
+    1527615189,
+    122790126,
+    1898600291,
+    755029833,
+    805554943,
+    2133252818,
+    2075391258
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-02",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5054
+  },
+  {
+   "episode_seeds": [
+    993655217,
+    230108739,
+    1486858160,
+    1223888113,
+    1061617764,
+    1859494334,
+    643707529,
+    210282997,
+    1279426614,
+    1527857850
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-03",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5055
+  },
+  {
+   "episode_seeds": [
+    72833716,
+    1212419700,
+    238673251,
+    1770511904,
+    63429169,
+    1610705898,
+    764456087,
+    731681574,
+    1955515653,
+    2007622213
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-04",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5056
+  },
+  {
+   "episode_seeds": [
+    537103752,
+    1201059335,
+    585801278,
+    134954291,
+    933661423,
+    1386883275,
+    569505498,
+    998327664,
+    2081338674,
+    494247132
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-05",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5057
+  },
+  {
+   "episode_seeds": [
+    422401670,
+    405680476,
+    159405256,
+    458162949,
+    960655740,
+    749881917,
+    185129842,
+    2070636970,
+    821672248,
+    2098267766
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-06",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5058
+  },
+  {
+   "episode_seeds": [
+    1207437965,
+    1892196346,
+    1534158856,
+    873844257,
+    2049892515,
+    1503954516,
+    1542962151,
+    2084771970,
+    748294135,
+    1389277750
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-07",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5059
+  },
+  {
+   "episode_seeds": [
+    1613706405,
+    825787096,
+    716711038,
+    941540704,
+    594446177,
+    572145484,
+    172736756,
+    1444545731,
+    2113920520,
+    1770143655
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-r0",
+   "regime": "shocked",
+   "reserve_position": 0,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5060
+  },
+  {
+   "episode_seeds": [
+    884546956,
+    2130443639,
+    1134699496,
+    1302399850,
+    1710528052,
+    1676570919,
+    782470281,
+    2093498071,
+    1233076872,
+    1326014006
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-r1",
+   "regime": "shocked",
+   "reserve_position": 1,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5061
+  },
+  {
+   "episode_seeds": [
+    2140090229,
+    771629591,
+    1764456660,
+    580101266,
+    404440302,
+    774470514,
+    2112570862,
+    1812395686,
+    970315182,
+    691752319
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-r2",
+   "regime": "shocked",
+   "reserve_position": 2,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5062
+  },
+  {
+   "episode_seeds": [
+    156938931,
+    555103813,
+    1542561185,
+    744611854,
+    2009387055,
+    795614517,
+    1658677620,
+    744309720,
+    1912671038,
+    62120404
+   ],
+   "family": "dense",
+   "generator": {
+    "generator": "dense_family",
+    "params": {
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-dense-120-shocked-r3",
+   "regime": "shocked",
+   "reserve_position": 3,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5063
+  },
+  {
+   "episode_seeds": [
+    2039117972,
+    955241235,
+    1685075215
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-00",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5064
+  },
+  {
+   "episode_seeds": [
+    1617738969,
+    1868183517,
+    1098088294
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-01",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5065
+  },
+  {
+   "episode_seeds": [
+    1243574534,
+    643643231,
+    718811794
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-02",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5066
+  },
+  {
+   "episode_seeds": [
+    2006825272,
+    403089595,
+    177790721
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-03",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5067
+  },
+  {
+   "episode_seeds": [
+    521932693,
+    1701886773,
+    1152219887
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-04",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5068
+  },
+  {
+   "episode_seeds": [
+    1297776393,
+    810331767,
+    932587773
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-05",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5069
+  },
+  {
+   "episode_seeds": [
+    2121265496,
+    1571496856,
+    895974653
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-06",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5070
+  },
+  {
+   "episode_seeds": [
+    1521493052,
+    1462486182,
+    1450089517
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-07",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5071
+  },
+  {
+   "episode_seeds": [
+    1349699606,
+    1542834537,
+    1047178825
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-08",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5072
+  },
+  {
+   "episode_seeds": [
+    492499272,
+    781782615,
+    562987236
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-09",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5073
+  },
+  {
+   "episode_seeds": [
+    1115640850,
+    1831250335,
+    1077139914
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-10",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5074
+  },
+  {
+   "episode_seeds": [
+    1733435496,
+    1136866765,
+    153370798
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-11",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5075
+  },
+  {
+   "episode_seeds": [
+    1794111365,
+    1665857266,
+    1236703327
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-12",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5076
+  },
+  {
+   "episode_seeds": [
+    429887084,
+    1150596559,
+    827622998
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-13",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5077
+  },
+  {
+   "episode_seeds": [
+    1521514108,
+    914083142,
+    945055589
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-14",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5078
+  },
+  {
+   "episode_seeds": [
+    1763238398,
+    1604372003,
+    445200477
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-15",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5079
+  },
+  {
+   "episode_seeds": [
+    1363368039,
+    890502912,
+    1522133048
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-r0",
+   "regime": "calm",
+   "reserve_position": 0,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5080
+  },
+  {
+   "episode_seeds": [
+    1792830423,
+    1118993157,
+    2025920190
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-r1",
+   "regime": "calm",
+   "reserve_position": 1,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5081
+  },
+  {
+   "episode_seeds": [
+    1980941444,
+    1221809899,
+    1386948378
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-r2",
+   "regime": "calm",
+   "reserve_position": 2,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5082
+  },
+  {
+   "episode_seeds": [
+    1497135478,
+    1459639419,
+    1149529288
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-12-calm-r3",
+   "regime": "calm",
+   "reserve_position": 3,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5083
+  },
+  {
+   "episode_seeds": [
+    1082672536,
+    1573387727,
+    855651372,
+    104646429,
+    1433120461,
+    1604231558,
+    901562977,
+    370179479,
+    924536727,
+    608464280
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-00",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5084
+  },
+  {
+   "episode_seeds": [
+    1188895862,
+    1458586005,
+    1033149464,
+    1607831956,
+    509237834,
+    1374390899,
+    1252238480,
+    1282128562,
+    408355907,
+    1639385783
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-01",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5085
+  },
+  {
+   "episode_seeds": [
+    1643302126,
+    189970774,
+    1463805248,
+    693062317,
+    73748331,
+    703410706,
+    1990622597,
+    521412779,
+    398344601,
+    394273346
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-02",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5086
+  },
+  {
+   "episode_seeds": [
+    650329607,
+    2013618433,
+    533872782,
+    109115801,
+    223948001,
+    997943842,
+    1265226785,
+    1897296715,
+    826903967,
+    1125608008
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-03",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5087
+  },
+  {
+   "episode_seeds": [
+    1563161562,
+    606752120,
+    1821058815,
+    1607910754,
+    1894465867,
+    299281289,
+    2114242917,
+    1568489226,
+    120849721,
+    255505444
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-04",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5088
+  },
+  {
+   "episode_seeds": [
+    846084350,
+    1603241594,
+    1503612342,
+    910006884,
+    200893863,
+    210582795,
+    1369383803,
+    198924678,
+    905719507,
+    1090214269
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-05",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5089
+  },
+  {
+   "episode_seeds": [
+    1198442610,
+    189079218,
+    770165067,
+    590016143,
+    949251087,
+    1777374193,
+    405029410,
+    1628405422,
+    533677886,
+    1861875609
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-06",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5090
+  },
+  {
+   "episode_seeds": [
+    860737777,
+    1848720491,
+    1075025152,
+    97857331,
+    257910663,
+    1450514274,
+    1462721492,
+    1962041509,
+    553112524,
+    1803293063
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-07",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 12,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5091
+  },
+  {
+   "episode_seeds": [
+    607274465,
+    455344667,
+    1834370662,
+    862773258,
+    1460007863,
+    130228487,
+    143901672,
+    1603563118,
+    415291866,
+    366865516
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-r0",
+   "regime": "shocked",
+   "reserve_position": 0,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5092
+  },
+  {
+   "episode_seeds": [
+    196850194,
+    1966147389,
+    1462208215,
+    575675633,
+    151150386,
+    448887904,
+    1604481989,
+    1181776727,
+    211379770,
+    1374055422
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-r1",
+   "regime": "shocked",
+   "reserve_position": 1,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5093
+  },
+  {
+   "episode_seeds": [
+    1464866396,
+    358323934,
+    1465188153,
+    628148084,
+    262105168,
+    1359970981,
+    955187500,
+    1970187697,
+    2113804271,
+    341462961
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-r2",
+   "regime": "shocked",
+   "reserve_position": 2,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5094
+  },
+  {
+   "episode_seeds": [
+    783105366,
+    775487144,
+    1551402349,
+    1170993855,
+    1473060635,
+    215298663,
+    178950909,
+    1808319913,
+    3839185,
+    2081961986
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 12,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-12-shocked-r3",
+   "regime": "shocked",
+   "reserve_position": 3,
+   "size": 12,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5095
+  },
+  {
+   "episode_seeds": [
+    1284145967,
+    1588476745,
+    835334609
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-00",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5096
+  },
+  {
+   "episode_seeds": [
+    1076039935,
+    851723104,
+    570676508
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-01",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5097
+  },
+  {
+   "episode_seeds": [
+    1363599683,
+    1826760585,
+    508098462
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-02",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5098
+  },
+  {
+   "episode_seeds": [
+    1581371320,
+    1180670453,
+    273669481
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-03",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5099
+  },
+  {
+   "episode_seeds": [
+    1068108802,
+    320231836,
+    2031506975
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-04",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5100
+  },
+  {
+   "episode_seeds": [
+    2107900589,
+    769272943,
+    945081946
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-05",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5101
+  },
+  {
+   "episode_seeds": [
+    1864072958,
+    833865544,
+    1654960918
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-06",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5102
+  },
+  {
+   "episode_seeds": [
+    1243182167,
+    89447766,
+    1144482557
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-07",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5103
+  },
+  {
+   "episode_seeds": [
+    1406341070,
+    909821094,
+    502617134
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-08",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5104
+  },
+  {
+   "episode_seeds": [
+    194573653,
+    912870499,
+    1662652993
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-09",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5105
+  },
+  {
+   "episode_seeds": [
+    1732836251,
+    1538684903,
+    126614357
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-10",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5106
+  },
+  {
+   "episode_seeds": [
+    998642177,
+    1440923781,
+    1930598858
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-11",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5107
+  },
+  {
+   "episode_seeds": [
+    654761711,
+    2036952691,
+    469333209
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-12",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5108
+  },
+  {
+   "episode_seeds": [
+    1518657586,
+    1396614825,
+    649887125
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-13",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5109
+  },
+  {
+   "episode_seeds": [
+    739017693,
+    1162139141,
+    717860328
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-14",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5110
+  },
+  {
+   "episode_seeds": [
+    451971750,
+    255405283,
+    1817291126
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-15",
+   "regime": "calm",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5111
+  },
+  {
+   "episode_seeds": [
+    138934732,
+    205255792,
+    712760425
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-r0",
+   "regime": "calm",
+   "reserve_position": 0,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5112
+  },
+  {
+   "episode_seeds": [
+    2099927,
+    2121606708,
+    1604321047
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-r1",
+   "regime": "calm",
+   "reserve_position": 1,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5113
+  },
+  {
+   "episode_seeds": [
+    1687765086,
+    1828538896,
+    254031403
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-r2",
+   "regime": "calm",
+   "reserve_position": 2,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5114
+  },
+  {
+   "episode_seeds": [
+    1573282881,
+    1869800913,
+    452986713
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "calm",
+     "schedule_length": 7
+    }
+   },
+   "id": "sea-sparse_wide-120-calm-r3",
+   "regime": "calm",
+   "reserve_position": 3,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5115
+  },
+  {
+   "episode_seeds": [
+    705901622,
+    1879935410,
+    1462305061,
+    683753556,
+    1733802060,
+    1861340780,
+    1451494027,
+    1580102793,
+    2082419210,
+    1193136137
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-00",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5116
+  },
+  {
+   "episode_seeds": [
+    1152503159,
+    1852061146,
+    1338367110,
+    67285990,
+    744358829,
+    169746919,
+    50820560,
+    530887883,
+    1932384553,
+    2024235232
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-01",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5117
+  },
+  {
+   "episode_seeds": [
+    2090385056,
+    475572055,
+    1332386455,
+    790760582,
+    859816795,
+    627603353,
+    246713667,
+    1511769122,
+    609782228,
+    1498920279
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-02",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5118
+  },
+  {
+   "episode_seeds": [
+    875677219,
+    709522633,
+    61161728,
+    743736184,
+    171414339,
+    1571623413,
+    866503994,
+    1933017376,
+    1406869142,
+    1435988320
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-03",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5119
+  },
+  {
+   "episode_seeds": [
+    115870788,
+    709269351,
+    1691122220,
+    2128897898,
+    1336256052,
+    150533739,
+    1834283909,
+    207742195,
+    1006643720,
+    1447515435
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-04",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5120
+  },
+  {
+   "episode_seeds": [
+    351435697,
+    1145734234,
+    1562820533,
+    1220240223,
+    660557317,
+    823482616,
+    1266928045,
+    1124338269,
+    1531503917,
+    1437176804
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-05",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5121
+  },
+  {
+   "episode_seeds": [
+    875155059,
+    813841496,
+    1574300143,
+    1099404393,
+    558223980,
+    1087981279,
+    189631566,
+    1784107888,
+    1453881459,
+    302885938
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-06",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5122
+  },
+  {
+   "episode_seeds": [
+    1429008775,
+    985473856,
+    228037932,
+    1202633318,
+    271453238,
+    482863821,
+    1432681177,
+    185817613,
+    1513450159,
+    186918344
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-07",
+   "regime": "shocked",
+   "reserve_position": null,
+   "size": 120,
+   "split": "sealed",
+   "status": "gate",
+   "world_seed": 5123
+  },
+  {
+   "episode_seeds": [
+    1284641006,
+    2105163574,
+    739846305,
+    469638279,
+    1049660269,
+    1259526299,
+    328042982,
+    1963065600,
+    1704585724,
+    93333905
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-r0",
+   "regime": "shocked",
+   "reserve_position": 0,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5124
+  },
+  {
+   "episode_seeds": [
+    593651192,
+    1329019490,
+    370671376,
+    488851237,
+    17753162,
+    1082571674,
+    150598532,
+    417085377,
+    1869000432,
+    881783256
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-r1",
+   "regime": "shocked",
+   "reserve_position": 1,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5125
+  },
+  {
+   "episode_seeds": [
+    1014282921,
+    485646053,
+    1367514168,
+    1934201146,
+    822350948,
+    86860499,
+    345527327,
+    1430965671,
+    981482213,
+    971130214
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-r2",
+   "regime": "shocked",
+   "reserve_position": 2,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5126
+  },
+  {
+   "episode_seeds": [
+    1921218317,
+    1657046802,
+    1108152257,
+    153458654,
+    151318656,
+    1765581022,
+    757014922,
+    1552943320,
+    1297229166,
+    1909113970
+   ],
+   "family": "sparse_wide",
+   "generator": {
+    "generator": "sparse_wide_family",
+    "params": {
+     "fanout": 2,
+     "producers": 120,
+     "regime": "shocked"
+    }
+   },
+   "id": "sea-sparse_wide-120-shocked-r3",
+   "regime": "shocked",
+   "reserve_position": 3,
+   "size": 120,
+   "split": "sealed",
+   "status": "reserve",
+   "world_seed": 5127
+  }
+ ],
+ "name": "worlds-v1",
+ "screening": null,
+ "seed_ranges": {
+  "development": [
+   1000,
+   1999
+  ],
+  "sealed": [
+   5000,
+   5999
+  ]
+ }
+}
