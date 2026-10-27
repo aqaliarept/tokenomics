@@ -254,6 +254,10 @@ class TokenomicsAECEnv(AECEnv):
             # so one that never orders reports 0 ordered units.
             "consumer_ordered_units": {cid: 0 for cid in self.system.consumers},
             "consumer_fulfilled_units": {cid: 0 for cid in self.system.consumers},
+            # Consumer units completed in each played cycle, in order (add-shocks-i-drift D6):
+            # the input of the resilience rows (eval/resilience.py), compared against the
+            # shock-free twin. Its sum equals `consumer_completed_units`.
+            "consumer_fulfilled_units_trace": [],
         }
         # Demand-schedule digest (design D5): sha256 hex of every consumer's schedule as
         # built above. The gate compares it across contracts per (world, episode seed);
@@ -321,6 +325,7 @@ class TokenomicsAECEnv(AECEnv):
         # so cap_final / cap_min never see an unplayed cycle; without shocks = live state.
         caps = [sum(snap.capacities.values()) for snap in result.end_capacities]
         self.capacity_trace.append(sum(caps) / len(caps))
+        s["consumer_fulfilled_units_trace"].append(result.consumer_completed_units)
 
     def _producer_infos(self) -> dict[str, ProducerInfo]:
         return {pid: p.info() for pid, p in self.system.producing_agents.items()}

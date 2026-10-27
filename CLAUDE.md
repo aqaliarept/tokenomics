@@ -267,6 +267,14 @@ _Avoid_: Damage, capacity loss, degradation (degradation is the regular per-cycl
 A shock during which a target producing agent accepts no new bids and completes no production, including reserved production accepted before the outage, for its duration. Its capacity keeps degrading, and it keeps buying and receiving inputs and investments. It resumes in the cycle after the outage ends.
 _Avoid_: Downtime, shutdown, failure (failure is a failed bid or reservation)
 
+**Shock-free Twin:**
+The same world configuration with its shocks removed, run with the same episode seed (ADR-0055). Demand, including demand drift, is identical because every demand and shock stream is drawn independently; equal demand digests confirm it. It is the baseline a shocked episode's resilience is measured against.
+_Avoid_: Calm episode (a calm-regime world has different, cyclic demand), control run, baseline run
+
+**Resilience:**
+How much a policy loses to each shock and how fast it recovers, measured against the shock-free twin. Per shock: the unit dip (twin minus shocked consumer units from the shock's start until recovery) and the recovery time (cycles after the shock ends until fulfilled units over a fixed window are back within a fixed tolerance of the twin). A shock not recovered by the end of the episode, and every shock of an episode that ends in system death, is reported as unrecovered; rows whose span holds another active shock are flagged as overlapped. Resilience is a reported robustness property, not an acceptance clause or a side effect.
+_Avoid_: Robustness score, recovery rate, shock penalty
+
 ### Exchange
 
 **Bid:**
