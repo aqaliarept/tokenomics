@@ -1,5 +1,11 @@
 # EXP-0044 — Gate calibration screen at 12 and 42 producers
 
+> **Current status (attempt 2, task 10.5): HEADROOM PASSED on sparse-wide; frozen files
+> written.** M1 gates on sparse-wide only (task 10.4). The sparse-wide medians were 0.934 at 12
+> producers and 0.886 at 42. Pruning kept the five `entity_planner` members. X = 0.7297,
+> Y = 0.7681. See [`attempt-2/RESULT.md`](attempt-2/RESULT.md). This file below is attempt 1;
+> the dense capacity-scale probe is in [`retune/RESULT.md`](retune/RESULT.md).
+
 **Status: HEADROOM FAILED. The dense family at 12 producers is saturated (median best-baseline
 fill 0.9539, above the 0.95 ceiling). No frozen files; no X/Y calibration; no pruning.**
 Run 2026-10-27 at commit `016695b64a88c14b9bd21e7cea482d9ad89b3349` (OpenSpec change

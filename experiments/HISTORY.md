@@ -437,3 +437,10 @@ worlds, checks that the baselines leave headroom, and calibrates the side-effect
   baseline serves a median 97.7% / 99.4% of orders. Capacity stays about 12× above demand even
   at 0.8×. The retune lever has to change: what the headroom check measures, demand pressure,
   or a much deeper cut. That is a user decision.
+- **EXP-0044 attempt 2 (10.5). Sparse-wide screen passed.** M1 now gates on sparse-wide only
+  (user decision after the probe; a warm-up diagnostic found sparse-wide keeps routing headroom
+  after warm-up, with only 30–34% of its shortfall in cycles 1–20). Headroom medians: 0.934 at
+  12 producers, 0.886 at 42. No world needed a reserve. Pruning dropped 35 of 40 baselines:
+  only the five `entity_planner` producers ever set the per-episode best. X = 0.7297, Y = 0.7681
+  (q 0.05). The frozen world registry, roster and side-effect parameters are ready for 11.1 and
+  the champion report (12.1).
