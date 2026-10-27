@@ -7,8 +7,13 @@ Modes:
   member, action seed `seeding.replicate_seed`) on the registry's gate worlds of one split; write the
   EXP-dir layout (`spec.json`, `episodes.csv`, `worlds.csv`, `regimes.csv`, `verdict.json`, a
   `RESULT.md` skeleton). All arithmetic is `gate.compute_report`; this module only produces rows.
+  On a world whose config has shocks, each subject episode also runs its shock-free twin
+  (subject `gate.TWIN`, add-shocks-i-drift D10); twin rows never enter the verdict and feed only
+  `resilience.csv` (`gate.resilience_table`), written with the report.
 - `recompute`: rebuild the report from `episodes.csv` plus the roster / parameter payloads embedded
-  in `spec.json` (hash-checked against the named versions) and compare it with `verdict.json`.
+  in `spec.json` (hash-checked against the named versions) and compare it with `verdict.json`;
+  rebuild `resilience.csv` too and compare it with the recorded file (a report from before it
+  existed, e.g. EXP-0045, matches when the rebuilt table is empty).
 - `screen`: roster only, on the development gate worlds, plus the reserves they need. By
   default (`--reserves on-demand`, task 8.6) reserves run in waves only when a gate world has a
   zero baseline. `--reserves eager` runs every reserve up front; both give identical frozen
@@ -29,8 +34,9 @@ fresh worker's numpy/torch start single-threaded whatever the shell exported; it
 already-loaded OpenBLAS (numpy's bundled build, via ctypes) and torch in-process, which covers the
 `--workers 1` path where numpy is imported before any flag is parsed. Each finished row is appended to `episodes.csv` at once; a rerun on the same `--out-dir`
 checks the run pins in `spec.json`, drops a torn last line, skips rows already present and runs the
-rest. Demand digests are compared as rows arrive, so a contract mismatch stops the run early; the
-pure layer re-checks them.
+rest. Demand and shock digests are compared as rows arrive, so a contract mismatch stops the run
+early; the pure layer re-checks them. A world naming the test-only `shocks-i-smoke` profile (D7)
+runs only in a dry run.
 """
 
 from __future__ import annotations
@@ -48,7 +54,7 @@ from statistics import fmean
 from datetime import datetime, timezone
 from multiprocessing import get_context
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Collection, Mapping, Sequence
 
 from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from .gate import (
@@ -56,6 +62,8 @@ from .gate import (
     CANDIDATE,
     CSV_COLUMNS,
     DEFAULT_PARAMS,
+    EMPTY_SHOCK_DIGEST,
+    TWIN,
     DigestMismatch,
     EpisodeRow,
     GateReport,
@@ -67,12 +75,17 @@ from .gate import (
     episode_bests,
     headroom,
     load_side_effect_params,
+    is_twin,
     params_from_dict,
+    resilience_table,
+    resilience_to_csv,
     row_from_dict,
     row_from_stats,
     row_to_dict,
     side_effect_params_json,
 )
+from .resilience import DEFAULT_PARAMS as DEFAULT_RESILIENCE, ResilienceParams, shock_free_twin
+from .shock_profiles import load_shock_profile, names_test_only_profile
 from .provenance import environment_manifest, sha256_file, source_fingerprint
 from .families import DENSE, NEUTRAL_CAPACITY_SCALE, check_capacity_scale
 from .registry import (
@@ -137,18 +150,37 @@ def parse_subject(subject: str) -> tuple[str, str] | None:
 
 
 def select_worlds(registry: Registry, split: str, *, sizes: Sequence[int] | None = None,
-                  families: Sequence[str] | None = None,
+                  families: Sequence[str] | None = None, regimes: Sequence[str] | None = None,
                   max_worlds: int | None = None) -> list[WorldEntry]:
     worlds = [e for e in registry.gate_worlds(split)
-              if (not sizes or e.size in sizes) and (not families or e.family in families)]
+              if (not sizes or e.size in sizes) and (not families or e.family in families)
+              and (not regimes or e.regime in regimes)]
     return worlds[:max_worlds] if max_worlds else worlds
 
 
+def test_only_problem(worlds: Sequence[WorldEntry]) -> str | None:
+    """D7: the smoke profile is for dry runs only; a recorded run must use the registered one."""
+    bad = sorted(e.id for e in worlds if names_test_only_profile(e.generator))
+    return (f"worlds {bad} name a test-only shock profile, which runs only with --dry-run"
+            if bad else None)
+
+
+def twin_params(e: WorldEntry) -> ResilienceParams | None:
+    """The resilience window/tolerance when `e`'s config has shocks (its subject episodes get
+    twins), else None. From the world's named profile; the D7 defaults when it names none."""
+    if e.config().shocks is None:
+        return None
+    name = e.generator["params"].get("shock_profile")
+    return load_shock_profile(name).resilience if name else DEFAULT_RESILIENCE
+
+
 def build_jobs(worlds: Sequence[WorldEntry], roster: Roster, subject: str | None, *,
-               episodes_per_world: int | None = None) -> list[Job]:
+               episodes_per_world: int | None = None,
+               twin_worlds: Collection[str] = ()) -> list[Job]:
     """Every (world, episode, subject, replicate) the run needs: the candidate once per episode
     (R times when a baseline subject is random; none when `subject` is None, the roster-only screen),
-    each member `roster.replicates_for` times."""
+    each member `roster.replicates_for` times; on `twin_worlds`, each candidate job's shock-free
+    twin (subject `TWIN`, same policies and seeds)."""
     pair = parse_subject(subject) if subject is not None else None
     jobs: list[Job] = []
     for e in worlds:
@@ -156,18 +188,22 @@ def build_jobs(worlds: Sequence[WorldEntry], roster: Roster, subject: str | None
         for ep in episodes:
             base = {"world": e.id, "size": e.size, "regime": e.regime, "world_seed": e.world_seed,
                     "generator": e.generator, "episode": ep}
+            cand: list[Job] = []
             if subject is None:
                 pass
             elif pair is None:
-                jobs.append({**base, "subject": CANDIDATE, "replicate": 0, "producing": PORTABLE,
+                cand.append({**base, "subject": CANDIDATE, "replicate": 0, "producing": PORTABLE,
                              "ordering": PORTABLE, "contract": JOINT_STACK, "action_seed": None})
             else:
                 random = RANDOM_POLICY in pair
                 for r in range(roster.replicates if random else 1):
-                    jobs.append({**base, "subject": CANDIDATE, "replicate": r,
+                    cand.append({**base, "subject": CANDIDATE, "replicate": r,
                                  "producing": pair[0], "ordering": pair[1],
                                  "contract": contract_for(*pair),
                                  "action_seed": replicate_seed(e.id, ep, r) if random else None})
+            jobs += cand
+            if e.id in twin_worlds:
+                jobs += [{**j, "subject": TWIN} for j in cand]
             for m in roster.members:
                 for r in range(roster.replicates_for(m)):
                     jobs.append({**base, "subject": m.id, "replicate": r,
@@ -263,20 +299,33 @@ def run_job(job: Job) -> dict[str, str]:
     from .runner import run_episode
     from .task_archive import REPRODUCERS
 
+    from ..env.shock_schedule import build_schedule, canonical_events, shock_digest
+
     configs = _W["configs"]
-    if job["world"] not in configs:
+    twin = is_twin(job["subject"])
+    key = (job["world"], twin)
+    if key not in configs:
         g = job["generator"]
         cfg = REPRODUCERS[g["generator"]](job["world_seed"], **g.get("params", {}))
         cfg.validate()
-        configs[job["world"]] = cfg
-    cfg = configs[job["world"]]
+        configs[key] = shock_free_twin(cfg) if twin else cfg
+    cfg = configs[key]
     horizon = _W["horizon"]
     env = (joint_stack_env(cfg, horizon) if job["contract"] == JOINT_STACK
            else TokenomicsAECEnv(config=cfg, horizon=horizon))
     prod, order = _policies(job)
     run_episode(env, prod, order, seed=job["episode"], action_seed=job["action_seed"])
+    schedule = None
+    if job["subject"] == CANDIDATE or twin:  # resilience inputs: candidate and twin rows only
+        events = build_schedule(cfg, job["episode"], horizon)
+        if shock_digest(events) != env.episode_stats["shock_digest"]:
+            raise AssertionError(f"{job['world']}/{job['episode']}: rebuilt shock schedule "
+                                 "differs from the episode's")  # internal invariant
+        schedule = json.dumps(canonical_events(events), sort_keys=True, separators=(",", ":"),
+                              ensure_ascii=True)
     row = row_from_stats(job["world"], job["size"], job["regime"], job["episode"],
-                         job["subject"], job["replicate"], env.episode_stats)
+                         job["subject"], job["replicate"], env.episode_stats,
+                         shock_schedule=schedule)
     return row_to_dict(row)
 
 
@@ -338,10 +387,17 @@ def regime_table(report: GateReport) -> list[dict[str, object]]:
     return [{k: _flat(v) for k, v in r.to_dict().items()} for r in report.regimes]
 
 
-def write_report_files(out: Path, report: GateReport) -> None:
+def write_report_files(out: Path, report: GateReport, resilience: str) -> None:
     _write_table(out / "worlds.csv", world_table(report))
     _write_table(out / "regimes.csv", regime_table(report))
     (out / "verdict.json").write_text(report.to_json())
+    (out / "resilience.csv").write_text(resilience)
+
+
+def grid_resilience(grid: Mapping[str, Mapping]) -> dict[str, ResilienceParams]:
+    """world -> resilience params, for the pinned worlds with twins."""
+    return {w: ResilienceParams(window=g["twin"]["window"], tolerance=g["twin"]["tolerance"])
+            for w, g in grid.items() if "twin" in g}
 
 
 RESULT_SKELETON = """# {title}
@@ -357,7 +413,8 @@ TODO
 
 ## Result
 
-TODO: plain-English reading of `verdict.json`, `worlds.csv` and `regimes.csv`.
+TODO: plain-English reading of `verdict.json`, `worlds.csv` and `regimes.csv`; per-shock
+resilience (not an acceptance clause) in `resilience.csv`.
 
 ## Conclusions
 
@@ -372,13 +429,23 @@ DRY_BANNER = ("> **DRY RUN — not an acceptance read.** Filtered worlds/episode
 Key = tuple[str, int, str, int]
 
 
-def job_grid(worlds: Sequence[WorldEntry], episodes_per_world: int | None) -> dict[str, dict]:
+def job_grid(worlds: Sequence[WorldEntry], episodes_per_world: int | None, *,
+             twins: bool = False) -> dict[str, dict]:
     """world -> {size, regime, episodes}: the episodes a report runs, pinned in `spec.json` so a
-    resume and a recompute can check the CSV against it without the registry."""
-    return {w.id: {"size": w.size, "regime": w.regime,
+    resume and a recompute can check the CSV against it without the registry. With `twins` (a
+    report), a world whose config has shocks also pins `twin` = its resilience window and
+    tolerance: its candidate episodes get twins and resilience rows. The key is absent
+    otherwise, so a grid without shocked configs is unchanged."""
+    grid = {}
+    for w in worlds:
+        g: dict = {"size": w.size, "regime": w.regime,
                    "episodes": list(w.episode_seeds[:episodes_per_world] if episodes_per_world
                                     else w.episode_seeds)}
-            for w in worlds}
+        tp = twin_params(w) if twins else None
+        if tp is not None:
+            g["twin"] = {"window": tp.window, "tolerance": tp.tolerance}
+        grid[w.id] = g
+    return grid
 
 
 def expected_keys(grid: Mapping[str, Mapping], roster: Roster, candidate_replicates: int) -> set[Key]:
@@ -386,6 +453,8 @@ def expected_keys(grid: Mapping[str, Mapping], roster: Roster, candidate_replica
     for world, g in grid.items():
         for ep in g["episodes"]:
             keys.update((world, ep, CANDIDATE, r) for r in range(candidate_replicates))
+            if "twin" in g:
+                keys.update((world, ep, TWIN, r) for r in range(candidate_replicates))
             for m in roster.members:
                 keys.update((world, ep, m.id, r) for r in range(roster.replicates_for(m)))
     return keys
@@ -458,17 +527,27 @@ def _execute(out: Path, spec: dict, done: Sequence[EpisodeRow], jobs: Sequence[J
              expected: set[Key], workers: int, init: tuple,
              run_job_fn: Callable[[Job], dict[str, str]], log: Callable[[str], None]) -> None:
     """Run every job not already in `done`, appending each row as it lands and checking demand
-    digests per (world, episode) as rows arrive."""
+    and shock digests per (world, episode) as rows arrive. A twin pairs on demand only and must
+    have an empty shock schedule."""
     episodes = out / "episodes.csv"
     done_keys = {job_key(r.world, r.episode, r.subject, r.replicate) for r in done}
-    digests: dict[tuple[str, int], tuple[str, str]] = {}
+    demand: dict[tuple[str, int], tuple[str, str]] = {}
+    shocks: dict[tuple[str, int], tuple[str, str]] = {}
 
     def note_digest(row: EpisodeRow) -> None:
-        ref = digests.setdefault((row.world, row.episode), (row.demand_digest, row.subject))
-        if row.demand_digest != ref[0]:
-            raise DigestMismatch(
-                f"world {row.world} episode {row.episode}: {row.subject} replicate "
-                f"{row.replicate} saw demand digest {row.demand_digest}, {ref[1]} saw {ref[0]}")
+        where = (f"world {row.world} episode {row.episode}: {row.subject} replicate "
+                 f"{row.replicate}")
+        checks = [("demand digest", demand, row.demand_digest)]
+        if is_twin(row.subject):
+            if row.shock_events != 0 or row.shock_digest != EMPTY_SHOCK_DIGEST:
+                raise DigestMismatch(f"{where}: the shock-free twin has {row.shock_events} "
+                                     f"shock events (shock digest {row.shock_digest})")
+        else:
+            checks.append(("shock digest", shocks, row.shock_digest))
+        for what, seen, value in checks:
+            ref = seen.setdefault((row.world, row.episode), (value, row.subject))
+            if value != ref[0]:
+                raise DigestMismatch(f"{where} saw {what} {value}, {ref[1]} saw {ref[0]}")
 
     for r in done:
         note_digest(r)
@@ -525,6 +604,7 @@ def run_report(
     access_log: str | Path = SEALED_ACCESS_LOG,
     sizes: Sequence[int] | None = None,
     families: Sequence[str] | None = None,
+    regimes: Sequence[str] | None = None,
     max_worlds: int | None = None,
     episodes_per_world: int | None = None,
     source_commit: str = "",
@@ -543,25 +623,29 @@ def run_report(
     pair = parse_subject(subject)
     if pair is None and not (prod_ckpt and orderer_ckpt):
         raise ValueError("the portable subject needs --prod-ckpt and --orderer-ckpt")
+    worlds = select_worlds(registry, split, sizes=sizes, families=families, regimes=regimes,
+                           max_worlds=max_worlds)
     if not dry_run:
+        smoke = test_only_problem(worlds)
         problems = [msg for bad, msg in (
             (not roster.frozen, f"roster {roster.version[:12]} is not frozen"),
             (bool(registry.admission_problems(split)),
              "; ".join(registry.admission_problems(split))),
             (len(source_commit) != 40 or any(c not in "0123456789abcdef" for c in source_commit),
              "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
-            (any(f is not None for f in (sizes, families, max_worlds, episodes_per_world)),
+            (any(f is not None for f in (sizes, families, regimes, max_worlds,
+                                         episodes_per_world)),
              "world/episode filters are set"),
+            (smoke is not None, smoke or ""),
         ) if bad]
         if problems:
             raise ValueError("not a valid real report (" + "; ".join(problems)
                              + "); pass --dry-run for a smoke run")
-    worlds = select_worlds(registry, split, sizes=sizes, families=families, max_worlds=max_worlds)
     if not worlds:
         raise ValueError("no gate worlds selected")
     checkpoints = ({"producer": prod_ckpt, "orderer": orderer_ckpt} if pair is None else {})
     candidate_replicates = roster.replicates if pair and RANDOM_POLICY in pair else 1
-    grid = job_grid(worlds, episodes_per_world)
+    grid = job_grid(worlds, episodes_per_world, twins=True)
     source = source_fingerprint(source_commit or None)
     pins = {
         "subject": subject, "split": split, "horizon": horizon, "dry_run": dry_run,
@@ -590,17 +674,20 @@ def run_report(
                    for k, v in checkpoints.items()},
         "source": source,
     })
-    jobs = build_jobs(worlds, roster, subject, episodes_per_world=episodes_per_world)
+    jobs = build_jobs(worlds, roster, subject, episodes_per_world=episodes_per_world,
+                      twin_worlds={w for w, g in grid.items() if "twin" in g})
     init = (horizon, prod_ckpt if pair is None else None, orderer_ckpt if pair is None else None)
     episodes = out / "episodes.csv"
     _execute(out, spec, done, jobs, expected, workers, init, run_job_fn, log)
     rows = read_rows(episodes)
     check_rows(rows, grid, expected, complete=True)
     report = compute_report(rows, roster, params, registry.version)
-    write_report_files(out, report)
+    resilience = resilience_table(rows, grid_resilience(grid))
+    write_report_files(out, report, resilience_to_csv(resilience))
     spec["status"] = "complete"
     spec["result"] = {"overall": report.overall, "failing_clauses": list(report.failing_clauses),
-                      "non_gating_worlds": list(report.non_gating_worlds)}
+                      "non_gating_worlds": list(report.non_gating_worlds),
+                      "resilience_rows": len(resilience)}
     _write_spec(out, spec)
     if not (out / "RESULT.md").exists():
         (out / "RESULT.md").write_text(RESULT_SKELETON.format(
@@ -618,9 +705,17 @@ def run_report(
 
 
 def recompute(out_dir: str | Path) -> tuple[GateReport, bool]:
+    """(report, verdict and resilience both match): `recompute_details` folded."""
+    report, verdict_ok, resilience_ok = recompute_details(out_dir)
+    return report, verdict_ok and resilience_ok
+
+
+def recompute_details(out_dir: str | Path) -> tuple[GateReport, bool, bool]:
     """Rebuild the report from `episodes.csv` and the payloads embedded in `spec.json` (hash-checked
     against the pinned versions), after checking the CSV holds exactly the pinned job grid; compare
-    it with the recorded `verdict.json`. Returns (report, matches)."""
+    it with the recorded `verdict.json`, and the rebuilt `resilience.csv` with the recorded one (a
+    run without that file, from before it existed, matches only an empty table). Returns
+    (report, verdict matches, resilience matches)."""
     out = Path(out_dir)
     spec = json.loads((out / "spec.json").read_text())
     pins = spec["pins"]
@@ -636,7 +731,11 @@ def recompute(out_dir: str | Path) -> tuple[GateReport, bool]:
                complete=True)
     report = compute_report(rows, roster, params, pins["registry_version"])
     recorded = (out / "verdict.json").read_text()
-    return report, report.to_json() == recorded
+    table = resilience_table(rows, grid_resilience(grid))
+    res_path = out / "resilience.csv"
+    res_ok = (res_path.read_text() == resilience_to_csv(table) if res_path.exists()
+              else not table)
+    return report, report.to_json() == recorded, res_ok
 
 
 # --- screen (tasks 8.2 / 10.1) ---
@@ -751,6 +850,7 @@ def run_screen(
     reserves: str = "on-demand",
     sizes: Sequence[int] | None = None,
     families: Sequence[str] | None = None,
+    regimes: Sequence[str] | None = None,
     max_worlds: int | None = None,
     episodes_per_world: int | None = None,
     source_commit: str = "",
@@ -779,25 +879,28 @@ def run_screen(
         raise ValueError(f"reserves must be one of {RESERVE_MODES}, got {reserves!r}")
     if registry.screening is not None:
         raise ValueError(f"registry {registry.version[:12]} is already screened")
+    gate = select_worlds(registry, DEVELOPMENT, sizes=sizes, families=families, regimes=regimes,
+                         max_worlds=max_worlds)
+    groups = {e.group for e in gate}
+    extra = [e for e in registry.entries
+             if reserves != "none" and e.status == RESERVE and e.group in groups]
     if not dry_run:
+        smoke = test_only_problem([*gate, *extra])
         problems = [msg for bad, msg in (
             (len(source_commit) != 40 or any(c not in "0123456789abcdef" for c in source_commit),
              "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
-            (any(f is not None for f in (sizes, families, max_worlds, episodes_per_world)),
+            (any(f is not None for f in (sizes, families, regimes, max_worlds,
+                                         episodes_per_world)),
              "world/episode filters are set"),
             (reserves == "none", "reserves are skipped"),
             (bool(registry.coverage_problems()), "; ".join(registry.coverage_problems())),
+            (smoke is not None, smoke or ""),
         ) if bad]
         if problems:
             raise ValueError("not a valid real screen (" + "; ".join(problems)
                              + "); pass --dry-run for a smoke run")
-    gate = select_worlds(registry, DEVELOPMENT, sizes=sizes, families=families,
-                         max_worlds=max_worlds)
     if not gate:
         raise ValueError("no development gate worlds selected")
-    groups = {e.group for e in gate}
-    extra = [e for e in registry.entries
-             if reserves != "none" and e.status == RESERVE and e.group in groups]
     if dry_run:  # a sub-registry of exactly what runs (selected worlds, truncated episodes)
         def cut(e: WorldEntry) -> WorldEntry:
             return replace(e, episode_seeds=e.episode_seeds[:episodes_per_world]
@@ -948,6 +1051,9 @@ def run_probe(
                          max_worlds=max_worlds)
     if not gate:
         raise ValueError("no development gate worlds selected for the probe")
+    smoke = test_only_problem(gate)
+    if smoke is not None:
+        raise ValueError(f"not a valid probe ({smoke}; a probe has no dry run)")
     out = Path(out_dir)
     source = source_fingerprint(source_commit or None)
     config = {
@@ -1105,6 +1211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--sizes", help="dry-run filter, e.g. 12")
     ap.add_argument("--families", help="dry-run filter, e.g. dense,sparse_wide")
+    ap.add_argument("--regimes", help="report/screen dry-run filter, e.g. shocked")
     ap.add_argument("--max-worlds", type=int)
     ap.add_argument("--max-members", type=int, help="dry run: keep the first N roster members")
     ap.add_argument("--episodes-per-world", type=int)
@@ -1125,11 +1232,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.mode == "recompute":
-        report, ok = recompute(args.out_dir)
+        report, verdict_ok, res_ok = recompute_details(args.out_dir)
+        ok = verdict_ok and res_ok
         print(f"[gate] recomputed verdict {report.overall}; "
-              f"{'MATCH' if ok else 'MISMATCH'} with {Path(args.out_dir) / 'verdict.json'}")
+              f"{'MATCH' if ok else 'MISMATCH'} with {Path(args.out_dir) / 'verdict.json'} "
+              f"(verdict {'equal' if verdict_ok else 'differs'}, resilience.csv "
+              f"{'equal' if res_ok else 'differs'})")
         return 0 if ok else 1
 
+    if args.regimes and args.mode not in ("report", "screen"):
+        ap.error("--regimes filters a report or screen dry run")
+    if args.regimes and set(_csv_strs(args.regimes) or []) - {"calm", "shocked"}:
+        ap.error("--regimes takes calm and/or shocked")
     if args.mode == "report" and not args.params:
         ap.error("--mode report needs --params (the side-effect parameter file)")
     if args.reserves == "none" and not args.dry_run:
@@ -1170,7 +1284,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             out_dir=args.out_dir, horizon=args.horizon, workers=args.workers,
             registry=load_registry(args.registry), roster=roster, q=args.q, prune=args.prune,
             reserves=args.reserves, sizes=_csv_ints(args.sizes),
-            families=_csv_strs(args.families), max_worlds=args.max_worlds,
+            families=_csv_strs(args.families), regimes=_csv_strs(args.regimes),
+            max_worlds=args.max_worlds,
             episodes_per_world=args.episodes_per_world, source_commit=source_commit,
             dry_run=args.dry_run)
         return status
@@ -1182,7 +1297,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         params=params, params_payload=params_payload, prod_ckpt=args.prod_ckpt,
         orderer_ckpt=args.orderer_ckpt, preregistration=args.preregistration,
         access_log=args.access_log, sizes=_csv_ints(args.sizes),
-        families=_csv_strs(args.families), max_worlds=args.max_worlds,
+        families=_csv_strs(args.families), regimes=_csv_strs(args.regimes),
+        max_worlds=args.max_worlds,
         episodes_per_world=args.episodes_per_world, source_commit=source_commit,
         dry_run=args.dry_run)
     return 0

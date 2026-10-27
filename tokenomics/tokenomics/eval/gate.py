@@ -30,6 +30,7 @@ Decisions this module fixes (ARCHITECTURE.md §7.2):
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import math
@@ -38,6 +39,8 @@ from pathlib import Path
 from statistics import fmean, median
 from typing import Collection, Iterable, Mapping, Sequence
 
+from ..domain.shocks import shock_model_from_dict
+from .resilience import ResilienceParams, ResilienceRow, resilience_rows
 from .roster import GATE_SIZES, Roster, content_hash
 from .seeding import replicate_mean
 
@@ -53,6 +56,13 @@ MARGINS = {CALM: CALM_MARGIN, SHOCKED: SHOCKED_MARGIN}
 NO_LOSING_FLOOR = 1.0
 
 CANDIDATE = "candidate"  # subject id of candidate rows; every other subject is a roster member id
+# Shock-free twin rows (add-shocks-i-drift D10) carry subject `twin:<subject>`; only the candidate
+# has twins. They pair with the candidate's rows and never enter the baseline or verdict arithmetic.
+TWIN_PREFIX = "twin:"
+TWIN = TWIN_PREFIX + CANDIDATE
+# `env/shock_schedule.shock_digest(())`: sha256 of the canonical JSON "[]" of an empty schedule.
+# Rows of a CSV written before shock digests existed (v1 reports, e.g. EXP-0045) read as this.
+EMPTY_SHOCK_DIGEST = hashlib.sha256(b"[]").hexdigest()
 
 # Clause names, in report order.
 CALM_CLAUSE = "calm_margin"
@@ -88,8 +98,13 @@ class ZeroBaselineWorld(ValueError):
 
 
 class DigestMismatch(ValueError):
-    """Two subjects saw different demand on the same (world, episode) (gate-harness "Identical
-    demand across observation contracts")."""
+    """Two subjects saw different demand or different shocks on the same (world, episode), or a
+    twin's demand differs from its shocked episode's (gate-harness "Identical demand across
+    observation contracts", "Shock digest mismatch", "Twin shares the demand")."""
+
+
+def is_twin(subject: str) -> bool:
+    return subject.startswith(TWIN_PREFIX)
 
 
 # --- side-effect parameters ---
@@ -208,6 +223,14 @@ class EpisodeRow:
     # (env `consumer_ordered_units` / `consumer_fulfilled_units`): the headroom fill rate (D10)
     ordered_units: float | None = None
     fulfilled_units: float | None = None
+    # shock schedule of the episode (env `shock_digest` / `shock_events`); paired like demand
+    shock_digest: str = EMPTY_SHOCK_DIGEST
+    shock_events: int = 0
+    # Resilience inputs, recorded on candidate and twin rows only (None on roster rows and on
+    # rows of CSVs that predate them): the schedule as its canonical compact JSON (the exact text
+    # `shock_digest` hashes) and the per-played-cycle `consumer_fulfilled_units_trace`.
+    shock_schedule: str | None = None
+    fulfilled_trace: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.regime not in REGIMES:
@@ -221,6 +244,22 @@ class EpisodeRow:
             raise ValueError(f"row {self.world}/{self.episode}/{self.subject}: units {self.units!r}")
         object.__setattr__(self, "units", units)
         where = f"row {self.world}/{self.episode}/{self.subject}/{self.replicate}"
+        if isinstance(self.shock_events, bool) or not isinstance(self.shock_events, int) \
+                or self.shock_events < 0:
+            raise ValueError(f"{where}: shock_events must be an int >= 0, got {self.shock_events!r}")
+        if self.shock_schedule is not None:
+            got = hashlib.sha256(self.shock_schedule.encode("utf-8")).hexdigest()
+            if got != self.shock_digest:
+                raise ValueError(f"{where}: recorded shock schedule hashes to {got}, "
+                                 f"row says {self.shock_digest}")
+            if len(json.loads(self.shock_schedule)) != self.shock_events:
+                raise ValueError(f"{where}: recorded shock schedule does not hold "
+                                 f"{self.shock_events} events")
+        if self.fulfilled_trace is not None:
+            trace = tuple(self.fulfilled_trace)
+            if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in trace):
+                raise ValueError(f"{where}: fulfilled trace must hold ints >= 0")
+            object.__setattr__(self, "fulfilled_trace", trace)
         for name in ("r_start", "r_end", *MONITORED, "ordered_units", "fulfilled_units"):
             object.__setattr__(self, name, _opt_float(getattr(self, name), f"{where} {name}"))
         rates = self.consumer_fill_rate
@@ -240,10 +279,13 @@ class EpisodeRow:
 
 def row_from_stats(
     world: str, size: int, regime: str, episode: int, subject: str, replicate: int,
-    stats: Mapping[str, object],
+    stats: Mapping[str, object], *, shock_schedule: str | None = None,
 ) -> EpisodeRow:
     """Build a row from a finished episode's `episode_stats` (keys of env/aec_env.py and
-    env/side_effects.py), so the stats → row mapping lives next to the arithmetic that reads it."""
+    env/side_effects.py), so the stats → row mapping lives next to the arithmetic that reads it.
+    Passing the episode's canonical `shock_schedule` JSON records the resilience inputs (the
+    schedule and the fulfilled-units trace); the driver does so for candidate and twin rows."""
+    detail = shock_schedule is not None
     return EpisodeRow(
         world=world, size=size, regime=regime, episode=episode, subject=subject,
         replicate=replicate,
@@ -256,13 +298,21 @@ def row_from_stats(
         **{k: stats[k] for k in MONITORED},  # type: ignore[arg-type]
         ordered_units=sum(stats["consumer_ordered_units"].values()),  # type: ignore[union-attr]
         fulfilled_units=sum(stats["consumer_fulfilled_units"].values()),  # type: ignore[union-attr]
+        shock_digest=str(stats["shock_digest"]),
+        shock_events=stats["shock_events"],  # type: ignore[arg-type]
+        shock_schedule=shock_schedule,
+        fulfilled_trace=(tuple(stats["consumer_fulfilled_units_trace"])  # type: ignore[arg-type]
+                         if detail else None),
     )
 
 
 # CSV columns, in file order (the `episodes.csv` header of task 8.1).
 CSV_COLUMNS = tuple(f.name for f in fields(EpisodeRow))
-_INT_COLUMNS = ("size", "episode", "replicate")
-_STR_COLUMNS = ("world", "regime", "subject", "demand_digest")
+_INT_COLUMNS = ("size", "episode", "replicate", "shock_events")
+_STR_COLUMNS = ("world", "regime", "subject", "demand_digest", "shock_digest")
+# Columns added by add-shocks-i-drift 5.2. A CSV written before them (a v1 report such as
+# EXP-0045) lacks all four and reads as rows without shocks; a CSV with only some is refused.
+SHOCK_COLUMNS = ("shock_digest", "shock_events", "shock_schedule", "fulfilled_trace")
 
 
 def _cell(name: str, v: object) -> str:
@@ -270,6 +320,8 @@ def _cell(name: str, v: object) -> str:
     (which also writes floats with repr) for the fill-rate pairs."""
     if name == "consumer_fill_rate":
         return json.dumps(dict(v), sort_keys=True)  # type: ignore[call-overload]
+    if name == "fulfilled_trace" and v is not None:
+        return json.dumps(list(v))  # type: ignore[call-overload]
     if v is None:
         return ""
     if isinstance(v, bool):
@@ -285,12 +337,16 @@ def row_to_dict(row: EpisodeRow) -> dict[str, str]:
 
 
 def row_from_dict(d: Mapping[str, str]) -> EpisodeRow:
-    """Inverse of `row_to_dict`; refuses missing columns rather than defaulting them."""
+    """Inverse of `row_to_dict`; refuses missing columns rather than defaulting them, except all
+    of `SHOCK_COLUMNS` at once (a CSV that predates them; those fields keep their defaults)."""
     missing = [c for c in CSV_COLUMNS if c not in d]
-    if missing:
+    legacy = set(missing) == set(SHOCK_COLUMNS)
+    if missing and not legacy:
         raise ValueError(f"episode row lacks columns {missing}")
     kw: dict[str, object] = {}
     for name in CSV_COLUMNS:
+        if legacy and name in SHOCK_COLUMNS:
+            continue
         s = d[name]
         if name in _STR_COLUMNS:
             kw[name] = s
@@ -302,6 +358,10 @@ def row_from_dict(d: Mapping[str, str]) -> EpisodeRow:
             kw[name] = s == "true"
         elif name == "consumer_fill_rate":
             kw[name] = json.loads(s)
+        elif name == "shock_schedule":
+            kw[name] = None if s == "" else s
+        elif name == "fulfilled_trace":
+            kw[name] = None if s == "" else tuple(json.loads(s))
         else:
             kw[name] = None if s == "" else float(s)
     return EpisodeRow(**kw)  # type: ignore[arg-type]
@@ -481,8 +541,8 @@ def _check_rows(
 ) -> dict[str, dict[int, list[EpisodeRow]]]:
     """Group rows by world → episode and refuse anything the arithmetic cannot honestly use:
     rows outside the gate sizes, unknown subjects, duplicate or missing replicates, a missing member or candidate on an episode
-    (a max over a subset would understate the bar), inconsistent world metadata, and demand-digest
-    mismatches."""
+    (a max over a subset would understate the bar), inconsistent world metadata, and demand- or
+    shock-digest mismatches. Twin rows are not accepted here (`split_twins` first)."""
     members = set(roster.member_ids)
     expected = {mid: set(range(roster.replicates_for(roster.member(mid)))) for mid in members}
     by_world: dict[str, dict[int, list[EpisodeRow]]] = {}
@@ -519,14 +579,46 @@ def _check_rows(
             if reps[CANDIDATE] and set(reps[CANDIDATE]) != set(range(len(reps[CANDIDATE]))):
                 raise ValueError(f"{world}/{ep}: candidate replicates {sorted(reps[CANDIDATE])} "
                                  "are not 0..n-1")
-            ref = next(r for r in ep_rows if r.subject == CANDIDATE).demand_digest
+            ref = next(r for r in ep_rows if r.subject == CANDIDATE)
             for r in ep_rows:
-                if r.demand_digest != ref:
-                    raise DigestMismatch(
-                        f"world {world} episode {ep}: {r.subject} replicate {r.replicate} saw "
-                        f"demand digest {r.demand_digest}, candidate saw {ref}"
-                    )
+                for what in ("demand_digest", "shock_digest"):
+                    if getattr(r, what) != getattr(ref, what):
+                        raise DigestMismatch(
+                            f"world {world} episode {ep}: {r.subject} replicate {r.replicate} "
+                            f"saw {what.replace('_', ' ')} {getattr(r, what)}, candidate saw "
+                            f"{getattr(ref, what)}"
+                        )
     return by_world
+
+
+def split_twins(rows: Sequence[EpisodeRow]) -> tuple[list[EpisodeRow], list[EpisodeRow]]:
+    """(judged rows, twin rows), after checking every twin against its shocked candidate row
+    (gate-harness "Twin shares the demand"): one twin per candidate (world, episode, replicate),
+    the same world metadata and demand digest, and an empty shock schedule."""
+    judged = [r for r in rows if not is_twin(r.subject)]
+    twins = [r for r in rows if is_twin(r.subject)]
+    cands = {(r.world, r.episode, r.replicate): r for r in judged if r.subject == CANDIDATE}
+    seen: set[tuple[str, int, int]] = set()
+    for t in twins:
+        k = (t.world, t.episode, t.replicate)
+        where = f"world {t.world} episode {t.episode} {t.subject} replicate {t.replicate}"
+        if t.subject != TWIN:
+            raise ValueError(f"{where}: only the candidate has twins ({TWIN!r})")
+        if k in seen:
+            raise ValueError(f"{where}: duplicate twin row")
+        seen.add(k)
+        c = cands.get(k)
+        if c is None:
+            raise ValueError(f"{where}: twin row without a candidate row")
+        if (t.size, t.regime) != (c.size, c.regime):
+            raise ValueError(f"{where}: twin (size, regime) differs from the candidate's")
+        if t.demand_digest != c.demand_digest:
+            raise DigestMismatch(f"{where} saw demand digest {t.demand_digest}, the shocked "
+                                 f"candidate saw {c.demand_digest}")
+        if t.shock_events != 0 or t.shock_digest != EMPTY_SHOCK_DIGEST:
+            raise DigestMismatch(f"{where}: the shock-free twin has {t.shock_events} shock "
+                                 f"events (shock digest {t.shock_digest})")
+    return judged, twins
 
 
 def _subject_value(rows: Sequence[EpisodeRow], subject: str) -> float:
@@ -570,10 +662,12 @@ def compute_report(
     gate_sizes: Collection[int] = GATE_SIZES,
 ) -> GateReport:
     """The gate report and verdict, a pure function of the rows and the frozen versions (D6).
-    `gate_sizes` defaults to the acceptance sizes; only fixtures narrow it."""
+    `gate_sizes` defaults to the acceptance sizes; only fixtures narrow it. Twin rows are
+    checked (`split_twins`) and then dropped: resilience is a report, not a clause."""
     if not gate_sizes:
         raise ValueError("no gate sizes")
-    by_world = _check_rows(rows, roster, gate_sizes)
+    judged, _ = split_twins(rows)
+    by_world = _check_rows(judged, roster, gate_sizes)
     worlds: list[WorldResult] = []
     failures: dict[str, list[Failure]] = {c: [] for c in CLAUSES}
     for world in sorted(by_world):
@@ -644,6 +738,73 @@ def recompute_from_csv(
 ) -> GateReport:
     """`--mode recompute` core (D6): the report rebuilt from `episodes.csv` text alone."""
     return compute_report(rows_from_csv(text), roster, params, registry_version, gate_sizes)
+
+
+# --- resilience rows (add-shocks-i-drift D6, D10; gate-harness "Resilience rows in a report") ---
+
+RESILIENCE_COLUMNS = (
+    "world", "size", "regime", "episode", "subject", "replicate", "kind", "producer",
+    "capacity_types", "start", "end", "magnitude", "recovered", "recovery_cycle",
+    "recovery_cycles", "dip_units", "dip_fraction", "overlapped",
+)
+
+
+def _res_cell(v: object) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float):
+        return repr(v)
+    if isinstance(v, tuple):
+        return ";".join(str(x) for x in v)
+    return str(v)
+
+
+def resilience_table(
+    rows: Sequence[EpisodeRow], params: Mapping[str, ResilienceParams],
+) -> list[dict[str, str]]:
+    """`resilience.csv`: for every candidate row on a world in `params` (the worlds with shocks,
+    each with its profile's window and tolerance), one line per shock that took effect,
+    against the matching twin row (`eval/resilience.resilience_rows`). A pure function of the
+    rows, so `--mode recompute` rebuilds it. A twin that died before the shocked episode ended
+    completes nothing after its death, so its trace is padded with zeros to the shocked length."""
+    judged, twins = split_twins(rows)
+    twin_of = {(t.world, t.episode, t.replicate): t for t in twins}
+    out: list[dict[str, str]] = []
+    cands = sorted((r for r in judged if r.subject == CANDIDATE and r.world in params),
+                   key=lambda r: (r.world, r.episode, r.replicate))
+    for c in cands:
+        where = f"world {c.world} episode {c.episode} replicate {c.replicate}"
+        t = twin_of.get((c.world, c.episode, c.replicate))
+        if t is None:
+            raise ValueError(f"{where}: no twin row for a candidate episode on a world with shocks")
+        if c.shock_schedule is None or c.fulfilled_trace is None or t.fulfilled_trace is None:
+            raise ValueError(f"{where}: candidate or twin row lacks the recorded schedule/trace")
+        schedule = shock_model_from_dict({"events": json.loads(c.shock_schedule)}).events
+        twin_trace = list(t.fulfilled_trace)
+        if len(twin_trace) < len(c.fulfilled_trace):
+            if not t.dead:
+                raise ValueError(f"{where}: twin played {len(twin_trace)} cycles without dying, "
+                                 f"the shocked episode {len(c.fulfilled_trace)}")
+            twin_trace += [0] * (len(c.fulfilled_trace) - len(twin_trace))
+        res: list[ResilienceRow] = resilience_rows(
+            c.fulfilled_trace, twin_trace, schedule, params[c.world], shocked_dead=c.dead)
+        for x in res:
+            line = {"world": c.world, "size": c.size, "regime": c.regime, "episode": c.episode,
+                    "subject": c.subject, "replicate": c.replicate}
+            line.update({f.name: getattr(x, f.name) for f in fields(x)})
+            out.append({k: _res_cell(line[k]) for k in RESILIENCE_COLUMNS})
+    return out
+
+
+def resilience_to_csv(table: Sequence[Mapping[str, str]]) -> str:
+    """The `resilience.csv` text: the header always (an empty table is a header-only file)."""
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=RESILIENCE_COLUMNS, lineterminator="\n")
+    w.writeheader()
+    w.writerows(table)
+    return buf.getvalue()
 
 
 
@@ -736,9 +897,23 @@ def episode_bests(rows: Iterable[EpisodeRow], roster: Roster) -> list[EpisodeBes
 def rows_digest(rows: Iterable[EpisodeRow]) -> str:
     """sha256 over the exact rows, order-independent: each row in its CSV form (`row_to_dict`,
     every identity and value field, floats as repr), sorted. Any change to any field of any row
-    changes it; reordering the rows does not."""
-    canon = sorted(json.dumps(row_to_dict(r), sort_keys=True) for r in rows)
+    changes it; reordering the rows does not. A `SHOCK_COLUMNS` field at its default (no shocks,
+    nothing recorded) is left out, so rows without shocks digest as they did before those
+    columns existed (a v1 screen's frozen parameter evidence is unchanged)."""
+    canon = sorted(json.dumps(_digest_form(r), sort_keys=True) for r in rows)
     return content_hash({"rows": canon})
+
+
+_SHOCK_DEFAULTS = {name: _cell(name, f.default) for f in fields(EpisodeRow)
+                   for name in (f.name,) if name in SHOCK_COLUMNS}
+
+
+def _digest_form(r: EpisodeRow) -> dict[str, str]:
+    d = row_to_dict(r)
+    for name, default in _SHOCK_DEFAULTS.items():
+        if d[name] == default:
+            del d[name]
+    return d
 
 
 @dataclass(frozen=True)

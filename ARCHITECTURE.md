@@ -489,6 +489,29 @@ and the failure names the clause, size/regime or world, episode and consumer.
 The report records the roster, registry and parameter versions, and
 `recompute_from_csv` rebuilds a byte-identical verdict from the episode CSV.
 
+**Shocks in the gate** (`add-shocks-i-drift` D10, ADR-0055). Every row carries
+the episode's `shock_digest` and `shock_events`; the pairing check that already
+compares demand digests also compares shock digests, so the candidate and every
+roster stack face the same shocks on the same episode, and a mismatch fails the
+run naming the world, episode and stack. On a world whose config has shocks,
+each candidate episode also runs its **shock-free twin** (subject
+`twin:candidate`: same world without shocks, same episode and action seeds).
+The twin must report the shocked episode's demand digest and an empty shock
+schedule. Twin rows are checked and then dropped before any arithmetic: they
+never set the hindsight baseline and never touch a clause, so resilience is a
+report, not an acceptance clause. Candidate and twin rows also record the
+schedule (as the canonical JSON its digest hashes) and the per-cycle fulfilled
+units, from which `resilience.csv` lists one row per candidate episode × shock:
+kind, target, start, end, magnitude, recovery cycle(s), unit dip and the
+overlap flag (`eval/resilience.py`, window and tolerance from the world's shock
+profile, pinned per world in `spec.json`). `--mode recompute` rebuilds
+`resilience.csv` from the rows and compares it as well; a report written before
+these columns existed (EXP-0045) reads as shock-free and still matches.
+`--regimes calm|shocked` is a dry-run filter. The test-only `shocks-i-smoke`
+profile (the registered `shocks-i` with onsets at cycles 2–8, so horizon-12
+smokes see shocks) runs only under `--dry-run`; real reports, screens and
+probes refuse it.
+
 ### 7.3 Failure classification
 
 Every below-bar result in the curriculum is assigned exactly one class, by

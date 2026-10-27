@@ -28,6 +28,12 @@ from .roster import content_hash
 
 DEFAULT_SHOCK_PROFILES = Path(__file__).parent / "registry" / "shock_profiles_v1.json"
 SHOCKS_I = "shocks-i"
+# Test-only smoke profile (D7): "shocks-i" with every start window moved to cycles 2-8, so a
+# horizon-12 smoke fires every resolved event. Derived here, never written to the profile file;
+# the drivers refuse a world naming it unless the run is a dry run.
+SHOCKS_I_SMOKE = "shocks-i-smoke"
+SMOKE_START_WINDOW = (2, 8)
+TEST_ONLY_PROFILES = frozenset({SHOCKS_I_SMOKE})
 
 
 class ShockProfileHashMismatch(ValueError):
@@ -68,9 +74,23 @@ class ShockProfiles:
     version: str  # content hash of the file
 
     def get(self, name: str) -> ShockProfile:
+        if name == SHOCKS_I_SMOKE and name not in self.profiles and SHOCKS_I in self.profiles:
+            return smoke_profile(self.profiles[SHOCKS_I])
         if name not in self.profiles:
             raise KeyError(f"unknown shock profile {name!r}; known: {sorted(self.profiles)}")
         return self.profiles[name]
+
+
+def smoke_profile(base: ShockProfile) -> ShockProfile:
+    """The test-only `SHOCKS_I_SMOKE` profile: `base` with its start windows at
+    `SMOKE_START_WINDOW`; kinds, rates, durations, magnitudes, drift and resilience unchanged."""
+    return replace(base, name=SHOCKS_I_SMOKE,
+                   kinds=tuple(replace(k, start_window=SMOKE_START_WINDOW) for k in base.kinds))
+
+
+def names_test_only_profile(generator: Mapping) -> bool:
+    """Whether a registry generator ref names a test-only shock profile (D7)."""
+    return generator.get("params", {}).get("shock_profile") in TEST_ONLY_PROFILES
 
 
 def _pair(v: object, what: str) -> tuple:
