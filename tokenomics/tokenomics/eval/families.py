@@ -52,7 +52,13 @@ consumer's pool, quantity uniform in its range, drawn per episode from the episo
 pool and quantity range, so every episode sees identical demand. Schedules are drawn after every
 other value, so a world's calm and shocked variants share the exact same topology.
 
-Pure and deterministic in (family, producers, world seed, regime, fanout, schedule_length).
+Shock profile (add-shocks-i-drift D7): a shocked world may name a profile from
+`eval/registry/shock_profiles_v1.json`; it adds seeded shock generators (counts per producer)
+and demand drift after every other value is drawn, so topology and B9 bounds are unchanged.
+Without one, a world is byte for byte what it was before profiles existed.
+
+Pure and deterministic in (family, producers, world seed, regime, fanout, schedule_length,
+capacity_scale, shock_profile).
 `build_scale_config` is not touched.
 """
 
@@ -179,10 +185,14 @@ def build_family_config(
     fanout: int | None = None,
     schedule_length: int = DEFAULT_SCHEDULE_LENGTH,
     capacity_scale: float = NEUTRAL_CAPACITY_SCALE,
+    shock_profile: str | None = None,
 ) -> Configuration:
     """One family world (module docstring). `seed` is the world seed. `capacity_scale` is
     explicit (neutral by default) so a generator ref alone fixes the world; the family default
-    enters through the registry generator, not here."""
+    enters through the registry generator, not here. `shock_profile` (shocked regime only,
+    add-shocks-i-drift D7) names a profile in `eval/registry/shock_profiles_v1.json` that adds
+    seeded shocks and drift after every other value is drawn; None leaves the world exactly as
+    before."""
     if family not in FAMILIES:
         raise ValueError(f"unknown family {family!r}; known: {sorted(FAMILIES)}")
     if regime not in REGIMES:
@@ -191,6 +201,8 @@ def build_family_config(
         raise ValueError(f"producers must be a positive multiple of {DEPTH}, got {producers}")
     if schedule_length < 1:
         raise ValueError(f"schedule_length must be >= 1, got {schedule_length}")
+    if shock_profile is not None and regime != SHOCKED:
+        raise ValueError(f"a {regime} world carries no shock profile, got {shock_profile!r}")
     scale = check_capacity_scale(capacity_scale)
     fam = FAMILIES[family]
     dense = family == DENSE
@@ -262,27 +274,33 @@ def build_family_config(
     cfg = Configuration(cycle_emission=cycle_emission(producers), process_sheets=sheets,
                         producer_configs=configs, consumers=consumers)
     cfg.validate()
+    if shock_profile is not None:
+        from .shock_profiles import apply_shock_profile, load_shock_profile
+
+        cfg = apply_shock_profile(cfg, load_shock_profile(shock_profile), producers)
     return cfg
 
 
 def build_dense_config(seed: int, *, producers: int, regime: str,
                        fanout: int | None = None,
                        schedule_length: int = DEFAULT_SCHEDULE_LENGTH,
-                       capacity_scale: float = NEUTRAL_CAPACITY_SCALE) -> Configuration:
+                       capacity_scale: float = NEUTRAL_CAPACITY_SCALE,
+                       shock_profile: str | None = None) -> Configuration:
     """Generator-ref target for the dense family (`task_archive.REPRODUCERS`)."""
     return build_family_config(seed, family=DENSE, producers=producers, regime=regime,
                                fanout=fanout, schedule_length=schedule_length,
-                               capacity_scale=capacity_scale)
+                               capacity_scale=capacity_scale, shock_profile=shock_profile)
 
 
 def build_sparse_wide_config(seed: int, *, producers: int, regime: str,
                              fanout: int = DEFAULT_SPARSE_FANOUT,
                              schedule_length: int = DEFAULT_SCHEDULE_LENGTH,
-                             capacity_scale: float = NEUTRAL_CAPACITY_SCALE) -> Configuration:
+                             capacity_scale: float = NEUTRAL_CAPACITY_SCALE,
+                             shock_profile: str | None = None) -> Configuration:
     """Generator-ref target for the sparse-wide family (`task_archive.REPRODUCERS`)."""
     return build_family_config(seed, family=SPARSE_WIDE, producers=producers, regime=regime,
                                fanout=fanout, schedule_length=schedule_length,
-                               capacity_scale=capacity_scale)
+                               capacity_scale=capacity_scale, shock_profile=shock_profile)
 
 
 # --- economy ratios (gate-harness "Constant economy ratios across sizes") ---
@@ -326,14 +344,15 @@ def demand_throughput_ratio(cfgs: list[Configuration]) -> float:
 
 
 def family_demand_ratio(family: str, producers: int, regime: str,
-                        fanout: int | None = None, capacity_scale: float | None = None) -> float:
+                        fanout: int | None = None, capacity_scale: float | None = None,
+                        shock_profile: str | None = None) -> float:
     """The family's demand ratio at one size, under its recorded sampling protocol and (unless
-    overridden) its recorded capacity scale."""
+    overridden) its recorded capacity scale; `shock_profile` builds the shocked worlds with it."""
     fam = FAMILIES[family]
     scale = fam.capacity_scale if capacity_scale is None else capacity_scale
     return demand_throughput_ratio([
         build_family_config(s, family=family, producers=producers, regime=regime, fanout=fanout,
-                            capacity_scale=scale)
+                            capacity_scale=scale, shock_profile=shock_profile)
         for s in fam.sample_seeds(producers)
     ])
 

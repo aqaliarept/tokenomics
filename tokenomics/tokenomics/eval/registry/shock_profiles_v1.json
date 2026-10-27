@@ -1,0 +1,51 @@
+{
+ "content_hash": "c92d066085c000a066d91803b48f4b85ad81db22c4bbd4fa61531d94c267bd6f",
+ "name": "shock-profiles-v1",
+ "profiles": {
+  "shocks-i": {
+   "drift_j": 0.34,
+   "kinds": {
+    "capacity_hit": {
+     "duration": [
+      1,
+      1
+     ],
+     "magnitude": [
+      0.3,
+      0.6
+     ],
+     "rate": [
+      1,
+      6
+     ],
+     "start_window": [
+      21,
+      90
+     ]
+    },
+    "producer_outage": {
+     "duration": [
+      3,
+      6
+     ],
+     "magnitude": [
+      1.0,
+      1.0
+     ],
+     "rate": [
+      1,
+      12
+     ],
+     "start_window": [
+      21,
+      90
+     ]
+    }
+   },
+   "resilience": {
+    "tolerance": 0.05,
+    "window": 5
+   }
+  }
+ }
+}

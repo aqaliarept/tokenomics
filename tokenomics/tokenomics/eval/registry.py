@@ -38,6 +38,7 @@ import argparse
 import copy
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,6 +54,8 @@ from .seeding import replicate_mean
 from .task_archive import REPRODUCERS
 
 DEFAULT_REGISTRY = Path(__file__).parent / "registry" / "worlds_v1.json"
+REGISTRY_V2 = Path(__file__).parent / "registry" / "worlds_v2.json"
+V2_SHOCK_PROFILE = "shocks-i"  # add-shocks-i-drift D8: the profile every v2 shocked world names
 SEALED_ACCESS_LOG = Path(__file__).resolve().parents[3] / "experiments" / "SEALED_ACCESS.log"
 
 DEVELOPMENT = "development"
@@ -198,6 +201,10 @@ class Registry:
     entries: tuple[WorldEntry, ...]
     screening: ScreeningRecord | None = None
     saturation_ceiling: float = DEFAULT_SATURATION_CEILING
+    # Content hash of the shock-profile file the entries' `shock_profile` names resolve in
+    # (add-shocks-i-drift D8). None for v1, which names no profile; omitted from the payload
+    # then, so the v1 hash is unchanged.
+    shock_profiles: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "entries", tuple(sorted(self.entries, key=lambda e: e.id)))
@@ -262,6 +269,28 @@ class Registry:
                 episode_owner[s] = e.id
         self._check_reserves()
         self._check_regime_balance()
+        self._check_shock_profiles()
+
+    @property
+    def version_tag(self) -> int:
+        """The registry generation from its name (`worlds-v2`, also a derived scope such as
+        `worlds-v2-dry-run`, -> 2); 1 when the name carries none."""
+        m = re.search(r"-v(\d+)(?:-|$)", self.name)
+        return int(m.group(1)) if m else 1
+
+    def _check_shock_profiles(self) -> None:
+        """gate-harness "Regimes" from v2 on: every shocked entry (gate and reserve, since a
+        reserve can replace a gate world) names a shock profile, and the registry records the
+        hash of the profile file it resolves in. Calm entries never name one (_check_generator)."""
+        named = [e for e in self.entries if "shock_profile" in e.generator["params"]]
+        if named and self.shock_profiles is None:
+            raise ValueError(f"{named[0].id}: names a shock profile but the registry records no "
+                             "shock_profiles hash")
+        if self.version_tag >= 2:
+            for e in self.entries:
+                if e.regime == SHOCKED and "shock_profile" not in e.generator["params"]:
+                    raise ValueError(f"{e.id}: a registry v{self.version_tag} shocked world "
+                                     "names no shock profile")
 
     @staticmethod
     def _check_generator(e: WorldEntry) -> None:
@@ -286,6 +315,13 @@ class Registry:
             keys.add("fanout")
         if e.regime == CALM:
             keys.add("schedule_length")
+        if "shock_profile" in params:
+            if e.regime != SHOCKED:
+                raise ValueError(f"{e.id}: a {e.regime} world names shock profile "
+                                 f"{params['shock_profile']!r}; calm worlds carry no shocks")
+            if not isinstance(params["shock_profile"], str) or not params["shock_profile"]:
+                raise ValueError(f"{e.id}: shock_profile must be a profile name")
+            keys.add("shock_profile")
         if "capacity_scale" in params:
             # optional, and only in canonical form: absent means neutral (task 10.2)
             v = params["capacity_scale"]
@@ -294,7 +330,7 @@ class Registry:
             keys.add("capacity_scale")
         if set(params) != keys:
             raise ValueError(f"{e.id}: generator params {sorted(params)} != {sorted(keys)}")
-        for k in keys - {"regime", "capacity_scale"}:
+        for k in keys - {"regime", "capacity_scale", "shock_profile"}:
             v = params[k]
             if isinstance(v, bool) or not isinstance(v, int):
                 raise ValueError(f"{e.id}: generator param {k} must be an int, got {v!r}")
@@ -339,6 +375,15 @@ class Registry:
             if len(cfg.producer_configs) != e.size:
                 raise ValueError(f"{e.id}: replays {len(cfg.producer_configs)} producers, "
                                  f"declares size {e.size}")
+            if e.regime == CALM and (cfg.shocks is not None or cfg.demand_drift is not None):
+                raise ValueError(f"{e.id}: a calm world replays with shocks or demand drift")
+        if self.shock_profiles is not None:
+            from .shock_profiles import load_shock_profiles
+
+            current = load_shock_profiles().version
+            if current != self.shock_profiles:
+                raise ValueError(f"registry records shock profiles {self.shock_profiles}, the "
+                                 f"packaged profile file is {current}")
 
     def coverage_problems(self, sizes: Collection[int] = GATE_SIZES,
                           gate_families: Collection[str] = GATE_FAMILIES) -> list[str]:
@@ -391,7 +436,7 @@ class Registry:
             "entries": [e.to_dict() for e in self.entries],
             "screening": None if self.screening is None else self.screening.to_dict(),
             "saturation_ceiling": self.saturation_ceiling,
-        }
+        } | ({} if self.shock_profiles is None else {"shock_profiles": self.shock_profiles})
 
     @property
     def version(self) -> str:
@@ -419,6 +464,7 @@ def registry_from_dict(d: dict) -> Registry:
         entries=tuple(WorldEntry.from_dict(e) for e in d["entries"]),
         screening=None if d["screening"] is None else ScreeningRecord.from_dict(d["screening"]),
         saturation_ceiling=d["saturation_ceiling"],
+        shock_profiles=d.get("shock_profiles"),
     )
     if reg.version != recorded:
         raise RegistryHashMismatch(
@@ -444,7 +490,7 @@ def episode_seed(world_id: str, j: int) -> int:
 
 
 def _generator_ref(family: str, size: int, regime: str,
-                   capacity_scale: float | None = None) -> dict:
+                   capacity_scale: float | None = None, shock_profile: str | None = None) -> dict:
     """The family's generator ref. The capacity scale (default: the family's recorded one) is
     written only when it is not neutral, so the ref alone fixes the world and an unscaled
     registry keeps its bytes (task 10.2)."""
@@ -456,6 +502,8 @@ def _generator_ref(family: str, size: int, regime: str,
     scale = FAMILIES[family].capacity_scale if capacity_scale is None else capacity_scale
     if check_capacity_scale(scale) != NEUTRAL_CAPACITY_SCALE:
         params["capacity_scale"] = scale
+    if shock_profile is not None:
+        params["shock_profile"] = shock_profile
     return {"generator": FAMILY_GENERATORS[family], "params": params}
 
 
@@ -498,6 +546,26 @@ def build_worlds_v1(families: Collection[str] = GATE_FAMILIES) -> Registry:
         seed_ranges=tuple((s, *SPLIT_SEED_RANGES[s]) for s in SPLITS),
         entries=tuple(entries),
     )
+
+
+def build_worlds_v2(families: Collection[str] = GATE_FAMILIES) -> Registry:
+    """Draft registry v2 (add-shocks-i-drift D8): the v1 draft's worlds, ids, world seeds,
+    episode seeds and reserve order, with every shocked entry (gate and reserve) naming the
+    "shocks-i" profile and the registry recording the profile file's hash. Calm entries are
+    copied unchanged. Unscreened: the v2 screen (EXP-0047) freezes it."""
+    from .shock_profiles import load_shock_profiles
+
+    v1 = build_worlds_v1(families)
+    entries = []
+    for e in v1.entries:
+        if e.regime == SHOCKED:
+            g = copy.deepcopy(e.generator)
+            g["params"]["shock_profile"] = V2_SHOCK_PROFILE
+            e = replace(e, generator=g)
+        entries.append(e)
+    return Registry(name="worlds-v2", seed_ranges=v1.seed_ranges, entries=tuple(entries),
+                    saturation_ceiling=v1.saturation_ceiling,
+                    shock_profiles=load_shock_profiles().version)
 
 
 # --- zero-baseline screening (gate-harness "Zero-baseline screening") ---
@@ -651,7 +719,8 @@ def screen_zero_baselines(
     )
     return Registry(name=registry.name, seed_ranges=registry.seed_ranges,
                     entries=tuple(updated.values()), screening=record,
-                    saturation_ceiling=registry.saturation_ceiling)
+                    saturation_ceiling=registry.saturation_ceiling,
+                    shock_profiles=registry.shock_profiles)
 
 
 def _check_headroom(h: Headroom, ceiling: float) -> None:
@@ -790,14 +859,17 @@ def append_sealed_access(record: dict, log_path: str | Path = SEALED_ACCESS_LOG)
 def main() -> None:
     ap = argparse.ArgumentParser(description="world registry tools (design D7)")
     ap.add_argument("--write-draft", action="store_true",
-                    help="regenerate the draft worlds_v1.json from build_worlds_v1()")
-    ap.add_argument("--out", default=str(DEFAULT_REGISTRY))
+                    help="regenerate a draft registry (v1: build_worlds_v1, v2: build_worlds_v2)")
+    ap.add_argument("--draft-version", type=int, choices=(1, 2), default=1)
+    ap.add_argument("--out", default=None, help="default: worlds_v1.json / worlds_v2.json")
     args = ap.parse_args()
+    out = args.out or str(REGISTRY_V2 if args.draft_version == 2 else DEFAULT_REGISTRY)
     if not args.write_draft:
-        reg = load_registry(args.out)
-        print(f"{args.out}: {len(reg.entries)} entries, version {reg.version}")
+        reg = load_registry(out)
+        print(f"{out}: {len(reg.entries)} entries, version {reg.version}")
         return
-    reg = build_worlds_v1()
+    args.out = out
+    reg = build_worlds_v1() if args.draft_version == 1 else build_worlds_v2()
     save_registry(reg, args.out)
     print(f"wrote {args.out}: {len(reg.entries)} entries, version {reg.version}")
 

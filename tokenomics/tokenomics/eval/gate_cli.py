@@ -805,7 +805,8 @@ def run_screen(
 
         scope = Registry(name=f"{registry.name}-dry-run", seed_ranges=registry.seed_ranges,
                          entries=tuple(cut(e) for e in (*gate, *extra)),
-                         saturation_ceiling=registry.saturation_ceiling)
+                         saturation_ceiling=registry.saturation_ceiling,
+                         shock_profiles=registry.shock_profiles)
     else:
         scope = registry
     # wave 1: gate worlds (plus every reserve when eager); the pinned grid is wave 1's.
@@ -968,7 +969,8 @@ def run_probe(
     for sc in scales:
         worlds = [scaled_entry(e, sc) for e in gate]
         scope = Registry(name=f"{registry.name}-probe", seed_ranges=registry.seed_ranges,
-                         entries=tuple(worlds), saturation_ceiling=registry.saturation_ceiling)
+                         entries=tuple(worlds), saturation_ceiling=registry.saturation_ceiling,
+                         shock_profiles=registry.shock_profiles)
         sub = out / f"scale-{sc:g}"
         grid = job_grid(worlds, episodes_per_world)
         expected = expected_keys(grid, roster, 0)
