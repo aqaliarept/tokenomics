@@ -76,6 +76,15 @@ from pathlib import Path
 from typing import Callable
 
 RUNPOD_REST = "https://rest.runpod.io/v1"
+# An explicit User-Agent on every REST call (task 11.2): Cloudflare in front of rest.runpod.io
+# rejects Python-urllib's default signature with 403 "error code: 1010" (EXP-0044 attempt 1).
+RUNPOD_USER_AGENT = "tokenomics-run-pod/1.0"
+
+
+def _rest_headers(**extra: str) -> dict[str, str]:
+    """Authorization + User-Agent for a RunPod REST request (the API key is never logged)."""
+    return {"Authorization": f"Bearer {_runpod_api_key()}", "User-Agent": RUNPOD_USER_AGENT,
+            **extra}
 
 # Monitor-loop collaborators (dependency-injected so the reconnect logic is testable).
 PollFn = Callable[[int], str]        # offset -> raw poll output (raises SshDropped on transport loss)
@@ -403,9 +412,7 @@ def fetch_pod_spec(template_id: str) -> PodSpec:
     """Read the template pod's cloneable spec via REST `GET /v1/pods/<id>` (works while it is
     stopped). REST, not `runpodctl pod get`, because only REST returns `cpuFlavorId` — the
     CLI blob omits it, so a CLI-seeded clone would drop the flavor and mis-size vCPU."""
-    req = urllib.request.Request(
-        f"{RUNPOD_REST}/pods/{template_id}",
-        headers={"Authorization": f"Bearer {_runpod_api_key()}"})
+    req = urllib.request.Request(f"{RUNPOD_REST}/pods/{template_id}", headers=_rest_headers())
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             raw = json.loads(resp.read().decode())
@@ -422,9 +429,7 @@ def resolve_pod_image(pod_id: str) -> str:
     code actually ran under. Returns "" on any failure — the manifest then records `image: null`
     rather than aborting the run (the source/version gates remain the hard controls)."""
     try:
-        req = urllib.request.Request(
-            f"{RUNPOD_REST}/pods/{pod_id}",
-            headers={"Authorization": f"Bearer {_runpod_api_key()}"})
+        req = urllib.request.Request(f"{RUNPOD_REST}/pods/{pod_id}", headers=_rest_headers())
         with urllib.request.urlopen(req, timeout=60) as resp:
             raw = json.loads(resp.read().decode())
         return raw.get("imageName") or raw.get("image") or ""
@@ -443,8 +448,7 @@ def create_pod(spec: PodSpec, name: str) -> str:
     req = urllib.request.Request(
         f"{RUNPOD_REST}/pods", method="POST",
         data=json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {_runpod_api_key()}",
-                 "Content-Type": "application/json"})
+        headers=_rest_headers(**{"Content-Type": "application/json"}))
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             out = resp.read().decode()
@@ -458,9 +462,23 @@ def create_pod(spec: PodSpec, name: str) -> str:
 def resolve_ssh(pod_id: str, key_override: str | None) -> Ssh:
     """Resolve the pod's direct SSH endpoint via `runpodctl ssh info` (ip/port + key
     path). On this runpodctl that endpoint is already the direct `root@ip -p port`
-    target the driver connects to."""
-    out = run(["runpodctl", "ssh", "info", pod_id], capture=True).stdout
-    info = json.loads(out)
+    target the driver connects to. runpodctl 3.0.1 can keep answering "pod not ready: no
+    container reported yet" for a running CPU pod that already accepts SSH (EXP-0044); then
+    the same fields are read from `runpodctl pod get <id>`'s `ssh` block (task 11.2). A pod
+    with no endpoint in either raises KeyError, which wait_for_ssh treats as not ready yet."""
+    out = run(["runpodctl", "ssh", "info", pod_id], check=False, capture=True).stdout
+    try:
+        info = json.loads(out)
+    except json.JSONDecodeError:
+        info = {}
+    if not (info.get("ip") and info.get("port")):
+        got = run(["runpodctl", "pod", "get", pod_id], check=False, capture=True).stdout
+        try:
+            info = json.loads(got).get("ssh") or {}
+        except json.JSONDecodeError:
+            info = {}
+    if not (info.get("ip") and info.get("port")):
+        raise KeyError("ssh endpoint not reported yet")
     key = key_override or info["ssh_key"]["path"]
     return Ssh(ip=info["ip"], port=int(info["port"]), key=key)
 
