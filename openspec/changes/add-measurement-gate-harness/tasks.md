@@ -49,7 +49,7 @@ Paths are under /srv/research/tokenomics/tokenomics/ unless absolute. "Full suit
 
 ## 9. Integration check
 
-- [ ] 9.1 [code][local-exclusive] Run the full suite and `openspec validate add-measurement-gate-harness --strict`, then commit the tree so the pod runs a recorded commit. After 8.8. Verify: both are green, 1.1 passes, and `git status` is clean.
+- [x] 9.1 [code][local-exclusive] Run the full suite and `openspec validate add-measurement-gate-harness --strict`, then commit the tree so the pod runs a recorded commit. After 8.8. Verify: both are green, 1.1 passes, and `git status` is clean.
 
 ## 10. EXP-0044: baseline-only calibration
 
