@@ -6,6 +6,7 @@ Port of emulation/domain/configuration.go and producing_agent.go config types.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -123,6 +124,21 @@ class ConsumerConfig:
 
 
 @dataclass(frozen=True)
+class DemandDrift:
+    """Smooth demand drift (ADR-0055, add-shocks-i-drift D4): between consecutive cycles at
+    most floor(j * N) of the N B9-randomized consumers change their order. The env draws
+    it; this is the parameter only."""
+
+    j: float
+
+    def __post_init__(self) -> None:
+        # An exact int j becomes float, so equal configs (j=1 vs the JSON loader's 1.0)
+        # serialize and fingerprint identically; bool and other types are left for validate.
+        if type(self.j) is int:
+            object.__setattr__(self, "j", float(self.j))
+
+
+@dataclass(frozen=True)
 class Configuration:
     cycle_emission: Tokens
     process_sheets: list[ProcessSheet]
@@ -131,6 +147,9 @@ class Configuration:
     # Supply shocks (ADR-0055, add-shocks-i-drift D1): explicit events and/or seeded
     # generators. None = no shocks; the fingerprint then omits the field (D5).
     shocks: ShockModel | None = None
+    # Demand drift (D4) over the B9-randomized consumers. None = per-cycle independent
+    # B9 sampling, unchanged; the fingerprint then omits the field (D5).
+    demand_drift: DemandDrift | None = None
 
     def validate(self) -> None:
         """Port of Configuration.Validate."""
@@ -249,6 +268,12 @@ class Configuration:
             if c.id in producer_ids:
                 raise ValueError(f"consumer id {c.id} collides with producer id {c.id}")
 
+        if self.demand_drift is not None:
+            j = self.demand_drift.j
+            if isinstance(j, bool) or not isinstance(j, (int, float)) or not math.isfinite(j) \
+                    or not 0.0 <= j <= 1.0:
+                raise ValueError(f"demand drift j must be a number in [0, 1], got {j!r}")
+
         # Shocks (design D1): kind table, start cycle >= 2, unbuilt kinds rejected by name.
         if self.shocks is not None:
             validate_shock_model(self.shocks, {
@@ -316,6 +341,12 @@ def _load_producer(p: dict) -> ProducingAgentConfig:
     )
 
 
+def _load_drift(d: dict) -> DemandDrift:
+    """`DemandDrift` itself turns an integer j into a float (one fingerprint per value);
+    anything else is kept for validation to reject."""
+    return DemandDrift(j=d["j"])
+
+
 def load_config(path: str | Path) -> Configuration:
     """Parse the JSON config (same schema as emulation/config.json, plus an
     optional top-level `consumers` array)."""
@@ -349,6 +380,8 @@ def load_config(path: str | Path) -> Configuration:
         consumers=consumers,
         # optional top-level `shocks` object (design D1); absent -> no shocks.
         shocks=shock_model_from_dict(data["shocks"]) if "shocks" in data else None,
+        # optional top-level `demandDrift: {"j": ...}` (design D4); absent -> no drift.
+        demand_drift=_load_drift(data["demandDrift"]) if "demandDrift" in data else None,
     )
     cfg.validate()
     return cfg

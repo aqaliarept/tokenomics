@@ -64,6 +64,12 @@ class ShockEvent:
     duration: int
     magnitude: float
 
+    def __post_init__(self) -> None:
+        # An exact int magnitude becomes float, so equal events (1 vs the JSON loader's 1.0)
+        # serialize and fingerprint identically; other types are left for validation.
+        if type(self.magnitude) is int:
+            object.__setattr__(self, "magnitude", float(self.magnitude))
+
 
 @dataclass(frozen=True)
 class ShockGenerator:
@@ -77,6 +83,13 @@ class ShockGenerator:
     duration: tuple[int, int]
     magnitude: tuple[float, float]
     targets: tuple[ProducerId, ...] = ()
+
+    def __post_init__(self) -> None:
+        # As ShockEvent: exact int magnitude bounds become floats (one fingerprint per value).
+        m = self.magnitude
+        if isinstance(m, tuple) and any(type(x) is int for x in m):
+            object.__setattr__(self, "magnitude",
+                               tuple(float(x) if type(x) is int else x for x in m))
 
 
 @dataclass(frozen=True)

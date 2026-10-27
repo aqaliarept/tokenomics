@@ -61,7 +61,8 @@ def config_to_dict(cfg: Configuration) -> dict:
         ],
         "producerConfigs": producers,
         "consumers": [_consumer_to_dict(c) for c in cfg.consumers],
-    } | ({"shocks": shock_model_to_dict(cfg.shocks)} if cfg.shocks is not None else {})
+    } | ({"shocks": shock_model_to_dict(cfg.shocks)} if cfg.shocks is not None else {}) \
+      | ({"demandDrift": {"j": cfg.demand_drift.j}} if cfg.demand_drift is not None else {})
 
 
 def _consumer_to_dict(c: ConsumerConfig) -> dict:

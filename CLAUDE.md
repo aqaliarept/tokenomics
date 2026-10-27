@@ -287,6 +287,10 @@ _Avoid_: Exchange, marketplace, market
 A demand for a quantity of a product as a whole, backed by tokens. Capacity and input-product requirements scale with the quantity. Can be a consumer order (from a consumer) or an investment order (from a producing agent).
 _Avoid_: Request, demand, task
 
+**Demand Drift:**
+A seeded, slowly changing consumer demand schedule (ADR-0055). Between consecutive cycles at most floor(j·N) of the N randomized consumers change their order, where a change of product or of quantity counts as one changed order. The rest repeat their previous order. The env draws it before the episode starts, from the world configuration and the episode seed, on a stream of its own. Without drift, randomized consumers keep per-cycle independent sampling.
+_Avoid_: Demand noise, demand walk, trend
+
 **TTL (Time to Live):**
 The maximum number of cycles an order can remain in progress before being rejected. Currently fixed at 2 cycles.
 _Avoid_: Timeout, deadline, expiry

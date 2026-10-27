@@ -37,6 +37,7 @@ from .encode import (
     encode_producing_entity,
 )
 from .demand_digest import demand_digest
+from .demand_drift import draw_schedule_entry, drift_schedules  # noqa: F401 (re-export)
 from .shock_schedule import build_schedule, shock_digest
 from .side_effects import SideEffectTracker, capacity_ratio
 from .spaces import build_spec
@@ -47,17 +48,6 @@ Action = np.ndarray | None
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "phase1.json"
 
-
-def draw_schedule_entry(
-    rng: np.random.Generator, pool: tuple[int, ...], quantity_min: int, quantity_max: int
-) -> ScheduleEntry:
-    """Draw one legal (product, quantity) schedule entry for a randomized consumer:
-    a uniform product from `pool`, a uniform quantity in `[quantity_min, quantity_max]`.
-    The single authority for randomized-demand legality — shared by episode-schedule
-    generation (`_build_consumers`) and EXP-0040's future-demand fork so a forked
-    suffix is drawn from exactly the same legal pool. Draw order (product then quantity)
-    is fixed: it defines the RNG stream, so schedules stay byte-identical."""
-    return (pool[int(rng.integers(len(pool)))], int(rng.integers(quantity_min, quantity_max + 1)))
 
 # Shared reward weights (ADR-0002, recalibrated in ADR-0042).
 # Consumer fulfilment is the terminal objective. Instrumental producer-order terms
@@ -181,6 +171,18 @@ class TokenomicsAECEnv(AECEnv):
         Also records each consumer's schedule as built in `self._demand_schedules`, the
         input of the `demand_digest` stat (design D5, env/demand_digest.py)."""
         rng = np.random.default_rng(seed)
+        # Demand drift (add-shocks-i-drift D4): every B9-randomized consumer drifts, drawn on
+        # its own `drift` stream (env/demand_drift.py), so the legacy stream above is never
+        # read for them and every shock stream is untouched.
+        drift = self.config.demand_drift
+        drifted: dict[ConsumerId, list[ScheduleEntry]] = {}
+        if drift is not None:
+            if seed is None:  # refused whatever N is, as for shock generators (D3)
+                raise ValueError("demand drift needs an integer episode seed; "
+                                 "reset(seed=None) would not be reproducible")
+            drifting = [c for c in self.config.consumers if c.is_randomized]
+            if drifting:
+                drifted = drift_schedules(drifting, drift.j, int(seed), self.horizon)
         consumers: dict[str, Consumer] = {}
         self._demand_schedules: dict[ConsumerId, tuple[ScheduleEntry, ...]] = {}
         for c in self.config.consumers:
@@ -197,8 +199,11 @@ class TokenomicsAECEnv(AECEnv):
                 self._demand_schedules[c.id] = ((c.product, 1),)
                 continue
             pool = c.product_pool
-            if c.is_randomized:
-                schedule: list[ScheduleEntry] = [
+            schedule: list[ScheduleEntry]
+            if c.id in drifted:
+                schedule = drifted[c.id]
+            elif c.is_randomized:
+                schedule = [
                     draw_schedule_entry(rng, pool, c.quantity_min, c.quantity_max)
                     for _ in range(self.horizon)
                 ]

@@ -74,6 +74,10 @@ def fork_future_demand(
 
     Because only the future suffix moves, every agent's observation, current open orders,
     and current demand are byte-identical to the source (validated in tests)."""
+    if env.config.demand_drift is not None:
+        # An i.i.d. redraw of each tail would break the drift bound (add-shocks-i-drift D4);
+        # a drift-aware fork is part of the M3 teacher fork rule, not this diagnostic.
+        raise ValueError("fork_future_demand does not support demand drift")
     clone = copy.deepcopy(env)
     rng = np.random.default_rng(continuation_seed(
         task_id, decision_digest, continuation_id, experiment=experiment))
