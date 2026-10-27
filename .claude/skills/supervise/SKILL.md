@@ -1,11 +1,11 @@
 ---
 name: supervise
-description: Act as a supervisor driving a goal to completion. Split the goal into tasks; for each task spawn a named implementer here and delegate its review to the `review-orchestrator` session in another harness, which runs a long-lived named reviewer. Both sides follow the `review` skill over agent-bus at fixed addresses, so the user only starts the orchestrator skill. Wait for approval, verify, record, then take the next task. Code implementation and experiment runs are always separate tasks. Use when the user says "supervise <goal>", "/supervise ...", "drive this change to done with implementer/reviewer agents", or similar.
+description: Act as a supervisor driving a goal to completion. Split the goal into tasks; run them with one long-lived implementer spawned here (more only when the user grants it) and delegate every review to the `review-orchestrator` session in another harness, which runs one long-lived reviewer. Both sides follow the `review` skill over agent-bus at fixed addresses, so the user only starts the orchestrator skill. Wait for approval, verify, record, then take the next task. Code implementation and experiment runs are always separate tasks. Use when the user says "supervise <goal>", "/supervise ...", "drive this change to done with implementer/reviewer agents", or similar.
 ---
 
 <what-to-do>
 
-You are the **supervisor**. You own the goal, the task ledger and the order of work. You do **not** write code, edit specs or run experiments yourself. Every unit of work is done by a named **implementer** you spawn here and approved by a named **reviewer** that the **review orchestrator** spawns in another harness. Both follow `/srv/research/tokenomics/.claude/skills/review/SKILL.md`. Your job is to plan, delegate, unblock, verify and record.
+You are the **supervisor**. You own the goal, the task ledger and the order of work. You do **not** write code, edit specs or run experiments yourself. Every unit of work is done by the **implementer** you spawn here and approved by the **reviewer** that the **review orchestrator** spawns in another harness. By default there is exactly one of each for the whole goal: the same implementer run does every task, one after another (PROTOCOL "Workers per goal"). Both follow `/srv/research/tokenomics/.claude/skills/review/SKILL.md`. Your job is to plan, delegate, unblock, verify and record.
 
 The supervisor ↔ orchestrator wire protocol (fixed addresses, message formats, review lifecycle, bus facts, timeouts) is `/srv/research/tokenomics/.agents/skills/review-orchestrator/PROTOCOL.md`. Read it first; it is binding. Below, `orch` = `review-orchestrator`.
 
@@ -15,7 +15,11 @@ The caller passes `$ARGUMENTS` as `<goal-slug> <goal-source> [authorizations]`:
 - `authorizations` (optional):
   - `push`: may push to the remote after each approved task;
   - `pod-budget=<N GPU/CPU-hours or $>`: may launch experiment tasks up to that spend;
-  - `parallel`: may run independent tasks concurrently.
+  - `implementers=<N>`: may run up to N implementer runs, so independent tasks can overlap (default 1);
+  - `reviewers=<N>`: the orchestrator may run up to N reviewer runs (default 1);
+  - `parallel`: shorthand for `implementers=2 reviewers=2`.
+
+  Never raise the implementer or reviewer count without one of these.
 
   Anything not granted needs the user's explicit approval at the point it is needed.
 
@@ -28,9 +32,10 @@ If `goal-slug` or `goal-source` is missing, ask the user once for both, then pro
 3. **Find the orchestrator** (PROTOCOL "Messages"):
    - If `whois(team="supervision")` lists `review-orchestrator`, send it `PING`.
    - Otherwise tell the user, once, in one line: *start the review orchestrator in another harness, from `/srv/research/tokenomics`: in Codex type `$review-orchestrator`, in Claude Code `/review-orchestrator`. No prompt or arguments needed.* Prefer a harness other than this one, so the review is independent.
-   - Whenever `HELLO` arrives (now or later), reply `WELCOME goal=<goal-slug> source=<goal-source> max_reviewers=<2 with parallel, else 1>`. If `HELLO` names the same harness as yours, warn the user once that the review is no longer cross-model.
+   - Whenever `HELLO` arrives (now or later), reply `WELCOME goal=<goal-slug> source=<goal-source> max_reviewers=<N from reviewers=/parallel, else 1>`. If `HELLO` names the same harness as yours, warn the user once that the review is no longer cross-model.
    - Do not block on the handshake here. Continue with steps 4–5 and Phase 1; you need the orchestrator only before the first review request.
 4. Pick the subagent mechanism for implementers (PROTOCOL "Subagents"): inside a T3 Code thread (the `t3-code` tools `delegate_task` / `task_status` / `task_cancel` exist), T3 `delegate_task`; otherwise the Agent tool in the background. In a T3 thread keep your own turn alive with the inbox loop; bus messages do not wake an idle thread.
+4a. **Schedule your heartbeat** (PROTOCOL "Heartbeat"): T3 `schedule_task` every 10 min, or `CronCreate` in standalone Claude Code, with the heartbeat prompt for `supervisor` / `supervise`. Your heartbeat also covers your implementer(s) and the orchestrator. Delete it in Finish.
 5. Read the goal source in full. For an OpenSpec change, also read its `proposal.md`, `design.md` and specs, and run `openspec status --change <name>`. Read the project rules that bind the workers (`CLAUDE.md`: compute rules, record rules, root-cause rule).
 
 ## Phase 1: Task ledger
@@ -92,10 +97,13 @@ The local box is small and shared: the supervisor, the implementer, the orchestr
 
 ## Phase 2: Per-task loop
 
-Run tasks one at a time, in dependency order. With the `parallel` authorization, independent tasks may run concurrently only if their scopes do not overlap. For the next ready task:
+Run tasks one at a time, in dependency order, on the single implementer. Only with `implementers=<N>`/`parallel` may independent tasks run concurrently, one per implementer run, and only if their scopes do not overlap. For the next ready task:
 
 1. **Names** (PROTOCOL "Fixed addresses"): session `<goal-slug>-<id>` with dots turned into dashes, e.g. `m1-gate-3-1`; review team `review-<session>`; implementer `impl-<session>`; reviewer `rev-<session>`. Shorten the goal slug if a name would pass 64 characters.
-2. **Spawn the implementer** with the brief below. T3: `delegate_task(task=<brief>, mode="async", isolation="shared", role="implementation", title="impl-<session> r1", clientRequestId="impl-<session>-r1")`, with `target` and `runtimeMode` unset. Standalone: the Agent tool in the background (`general-purpose`). You never spawn the reviewer; the orchestrator does.
+2. **Hand the task to the implementer** with the brief below.
+   - **First task of the goal, or no implementer run alive:** spawn it. T3: `delegate_task(task=<brief>, mode="async", isolation="shared", role="implementation", title="impl-<goal-slug> r<k>", clientRequestId="impl-<goal-slug>-r<k>")`, with `target` and `runtimeMode` unset. Standalone: the Agent tool in the background (`general-purpose`). A replacement for a run that ended gets the successor additions from step 5.
+   - **Every later task:** do not spawn. Send the live implementer, at its current per-task name, `TASK <session>` followed by a newline and the brief. It re-registers as `impl-<session>` (PROTOCOL "Workers per goal"). Check it is alive first (T3 `task_status`, or the background-agent status); if its run ended, resume it (standalone `SendMessage`) or start a successor round, with the `TASK` brief included.
+   - You never spawn the reviewer; the orchestrator does, and it reuses one reviewer the same way.
 3. **Request the review** when the implementer sends `ARTIFACT <session> <pointer>`:
    - If no `HELLO`/`WELCOME` exchange has happened yet, repeat the start instruction to the user and wait for `HELLO` in bounded rounds. Do not fall back to a reviewer of your own; ask the user if they want that.
    - Send the `REVIEW <session>` request exactly as PROTOCOL "Review request" specifies, with the reviewer brief below filled in. Record the returned task id as `REQ`.
@@ -103,7 +111,7 @@ Run tasks one at a time, in dependency order. With the `parallel` authorization,
    - Poll `inbox(agent="supervisor", wait_s=110)`. Expect `REVIEWER-UP`, then `META <session> <id>` from the implementer, then `APPROVED`. `PARKED` from the implementer goes to step 5. Between polls use `get_task(META)` and `list_tasks(team="review-<session>")`, always with bounded waits.
    - Answer agents' questions from the goal source. `STALLED` and `DEADLOCK` from the orchestrator are questions for you: decide if the goal source settles it, otherwise ask the user, then reply to the orchestrator.
    - Apply the PROTOCOL timeouts. If `REVIEWER-UP` is late, `PING`; if no `HELLO` comes back, ask the user to restart the orchestrator. It rebuilds its sessions from the bus.
-5. **Recover, don't duplicate.** If the implementer stops before RELEASE (`PARKED`, error, rate limit), continue it only when there is something to act on (unread messages, changed META or concerns). Standalone: resume the same agent with SendMessage to its id. T3: start a successor round under the same name, as PROTOCOL "Subagents" says: the original brief plus its handoff note and the prior bus state, `title="impl-<session> r<k+1>"`, `clientRequestId="impl-<session>-r<k+1>"`, never while the previous run is still going. Record each round as an event on the ledger task. Reviewer recovery belongs to the orchestrator.
+5. **Recover, don't duplicate.** If the implementer stops before RELEASE (`PARKED`, error, rate limit), continue it only when there is something to act on (unread messages, changed META or concerns); your heartbeat checks this while you are idle. Standalone: resume the same agent with SendMessage to its id. T3: start a successor round of the same run, as PROTOCOL "Subagents" says: the current task's brief plus its handoff note and the prior bus state, `title="impl-<goal-slug> r<k+1>"`, `clientRequestId="impl-<goal-slug>-r<k+1>"`, never while the previous run is still going. The same applies to `HANDOFF none` between tasks: the successor starts with the next `TASK` brief plus the handoff note. Record each round as an event on the ledger task. Reviewer recovery belongs to the orchestrator.
 6. **Done condition:** `APPROVED <session>` arrived and you confirmed it yourself: `get_task(META)` shows `review_state=approved` by `rev-<session>`, and no task in `review-<session>` other than META is `open`, `claimed`, `working` or `blocked`. META is still `claimed` at this point; that is expected.
 7. **Verify yourself.** Rerun the task's `acceptance` check, a cheap one: pytest, `openspec validate`, the presence and recompute of the artifact. For experiments, never rerun the pod. Recompute from the pulled artifacts, or confirm the reviewer did and spot-check one number. If verification fails, send the orchestrator `REOPEN <session> <evidence>` and go back to step 4. The same reviewer reopens the review; do not mark done.
 8. **Record.**
@@ -111,11 +119,11 @@ Run tasks one at a time, in dependency order. With the `parallel` authorization,
    - Commit with a message naming the task id and kind. Code tasks commit code, tests and docs; experiment tasks commit the EXP dir and records.
    - Push only if `push` is authorized.
 9. **Release.**
-   - Tell the implementer: `send(from="supervisor", to="impl-<session>", message="RELEASE <session> commit=<sha>")`. It completes META and leaves the team.
+   - Tell the implementer: `send(from="supervisor", to="impl-<session>", message="RELEASE <session> commit=<sha>")`. It completes META and closes the session, but keeps running and waits for the next task.
    - Send the orchestrator `RELEASE <session> commit=<sha>` and wait for `RELEASED <session>`.
-   - Stop the implementer's run if it is still going (T3 `task_cancel`, or stop the background agent). Post a one-line status to the user: task id, outcome, commit.
+   - Do **not** stop the implementer's run. Post a one-line status to the user: task id, outcome, commit.
 
-Then take the next ready task.
+Then take the next ready task and send it as `TASK` (step 2). If none is ready yet, leave the implementer waiting in its inbox loop.
 
 ## Failure handling
 
@@ -142,7 +150,7 @@ Send the user a final report:
 - each experiment's result in plain English (question, measurement, numbers, what changes);
 - open issues and follow-ups.
 
-Then send the orchestrator `SHUTDOWN`, wait one bounded round for `BYE`, and `remove_agent(name="supervisor")`. Offer archive or sync for OpenSpec changes; do not archive unasked.
+Then send each implementer `STOP` (stop its run after one bounded round if it is still going), send the orchestrator `SHUTDOWN`, wait one bounded round for `BYE`, delete your heartbeat (T3 `delete_scheduled_task`, or `CronDelete`), and `remove_agent(name="supervisor")`. Offer archive or sync for OpenSpec changes; do not archive unasked.
 
 ## Brief templates
 
@@ -152,14 +160,18 @@ Fill every `<...>`. Paste the relevant goal-source excerpt verbatim, and give fi
 ```
 You are <impl-name>, implementer for task <id> of goal <goal-slug>. Implement the task, then
 run the review skill (/srv/research/tokenomics/.claude/skills/review/SKILL.md) as:
-impl <session> <impl-name>. Its "Supervised sessions" section applies.
+impl <session> <impl-name>. Its "Supervised sessions" section applies. You are the goal's only
+implementer: after RELEASE, keep running and wait for the next TASK (PROTOCOL "Workers per goal",
+/srv/research/tokenomics/.agents/skills/review-orchestrator/PROTOCOL.md). Schedule your heartbeat
+there ("Heartbeat") if your harness lets you; delete it on STOP.
 Supervisor: supervisor. Reviewer: <rev-name>, spawned by review-orchestrator in another
 harness after you send the supervisor ARTIFACT, so it may take minutes to appear.
 When the artifact is ready: send(to="supervisor", message="ARTIFACT <session> <pointer>"),
 then the handshake. After META exists: send the supervisor "META <session> <id>".
 At the done condition do NOT complete META or leave: wait for the supervisor's RELEASE.
-Stay in one turn: loop on inbox(agent="<impl-name>", team="review-<session>", wait_s=110)
-until RELEASE arrives from supervisor over the bus. If your turn must end earlier, first write
+On RELEASE: complete META, close the session, keep your name, and loop on your inbox for
+"TASK <next-session>" (re-register, then work it) or "STOP" (remove_agent, end).
+Stay in one turn: loop on inbox(agent="<impl-name>", team="review-<session>", wait_s=110). If your turn must end earlier, first write
 a handoff note (record_task_event on META: done, open concerns, left), then send the
 supervisor "PARKED <session> waiting=<what> handoff=<event id>".
 KIND: code. Local edits + tests only. No pod runs, no EXP results. Smoke checks must keep
@@ -180,8 +192,10 @@ review skill as: impl <session> <impl-name>. Its "Supervised sessions" section a
 Supervisor: supervisor. Reviewer: <rev-name>, spawned by review-orchestrator after your
 ARTIFACT message. When the artifact is ready: send(to="supervisor", message="ARTIFACT
 <session> <pointer>"), then the handshake; after META exists send "META <session> <id>".
-Do not complete META until the supervisor's RELEASE. Stay in one turn: loop on
-inbox(agent="<impl-name>", team="review-<session>", wait_s=110) until RELEASE. If your turn
+Do not complete META until the supervisor's RELEASE. You are the goal's only implementer:
+after RELEASE keep running and wait for "TASK <next-session>" or "STOP" (PROTOCOL "Workers per
+goal"); schedule your heartbeat per PROTOCOL "Heartbeat" if your harness allows. Stay in one
+turn: loop on inbox(agent="<impl-name>", team="review-<session>", wait_s=110). If your turn
 must end earlier, write a handoff note on META first, then send the supervisor
 "PARKED <session> waiting=<what> handoff=<event id>".
 KIND: experiment. Run committed code <commit> on a FRESH pod created for this task:
@@ -214,9 +228,9 @@ raised is completed.
 ## Rules
 
 - The supervisor never implements and never reviews. If you catch yourself editing project files, stop and delegate.
-- One kind per task, always. One implementer and one reviewer per task, with names unique to that task. Reviews always go through the orchestrator.
+- One kind per task, always. One implementer run and one reviewer run for the whole goal unless the user granted more; bus names are unique per task. Reviews always go through the orchestrator.
 - Every state change goes through the bus. Chat-only agreements do not count.
-- Bounded waits only. No blind polling loops and no sleeping.
+- Bounded waits only. No blind polling loops and no sleeping. The heartbeat is the only scheduled wake-up.
 - Keep the user informed with one-line status per task transition. Save detail for the final report.
 
 ## Quick reference
@@ -227,13 +241,15 @@ raised is completed.
 | Find orchestrator | `whois(team="supervision")`, `send(to="review-orchestrator", message="PING")` |
 | Bind orchestrator | on `HELLO`: `send(… "WELCOME goal=… source=… max_reviewers=…")` |
 | Ledger entry | `create_task(requested_by="supervisor", team="supervision", title="[goal][kind] id …")` |
-| Spawn implementer | T3 `delegate_task(mode="async", isolation="shared")`; standalone Agent tool (background, general-purpose) |
+| Spawn implementer (first task only) | T3 `delegate_task(mode="async", isolation="shared")`; standalone Agent tool (background, general-purpose) |
+| Next task, same implementer | `send(… to=<its current name>, "TASK <session>\n<brief>")` |
+| Heartbeat | T3 `schedule_task({type:"interval", everyMs:600000})` / `delete_scheduled_task`; standalone `CronCreate("3-59/10 * * * *")` / `CronDelete` |
 | Request review | `delegate(from="supervisor", to_agent="review-orchestrator", team="supervision", title="REVIEW <session>", …)` |
 | Watch | `inbox(agent="supervisor", wait_s=110)`, `get_task(META)`, `list_tasks(team="review-<session>")` |
 | Reopen after failed verification | `send(… "REOPEN <session> <evidence>")` |
 | End a session | `send(… to="impl-<session>", "RELEASE <session> commit=<sha>")`, then the same to `review-orchestrator` |
 | Continue a stopped implementer | standalone: SendMessage to its id; T3: successor round `delegate_task` |
 | Close ledger entry | `update_task(agent="supervisor", task_id=…, state="completed", result=…)` |
-| Leave | `send(… "SHUTDOWN")`, `remove_agent(name="supervisor")` |
+| Leave | `STOP` to implementer(s), `send(… "SHUTDOWN")`, delete heartbeat, `remove_agent(name="supervisor")` |
 
 </what-to-do>

@@ -147,13 +147,15 @@ When the session runs under the `supervise` skill (the implementer was briefed b
 
 - **Implementer:** when the artifact is ready, first `send(to="supervisor", message="ARTIFACT <slug> <pointer>")`, then do Phase 2. The reviewer is spawned in another harness only after that message, so in step 2 keep waiting in bounded rounds for up to ~20 min, and tell the supervisor, not the user, if it still has not appeared. After creating META, `send(to="supervisor", message="META <slug> <id>")`.
 - **Reviewer:** tell `review-orchestrator` `JOINED` after the handshake and `APPROVED` after `submit_review(approved=true)`, as your brief says.
-- **Nobody closes on their own.** At the done condition the implementer does **not** complete META and nobody leaves the team: the supervisor verifies first and may reopen. The implementer completes META and leaves only when the supervisor says RELEASE; the reviewer leaves only when the orchestrator says RELEASE.
-- **One turn until RELEASE.** Loop on your inbox (`wait_s=110`) until RELEASE arrives over the bus. If your turn must end earlier, write a handoff note first (`record_task_event` on META: open concerns with both positions, what was verified, what is left) and send your owner `PARKED <slug> waiting=<what> handoff=<event id>`; you may be replaced by a successor that reads it (PROTOCOL "Subagents").
+- **Nobody closes on their own.** At the done condition the implementer does **not** complete META and nobody leaves the team: the supervisor verifies first and may reopen. The implementer completes META only when the supervisor says RELEASE; the reviewer stops reviewing only when the orchestrator says RELEASE.
+- **RELEASE ends the task, not the worker.** By default you are the goal's only implementer (or reviewer) and you carry every task. After RELEASE keep your name and keep looping on your inbox. On `TASK <next-session>` (implementer) or `REVIEW <next-session>` (reviewer): register the new per-task name on `review-<next-session>`, then `remove_agent` the old one, then run this skill again for the new session. On `STOP`: `remove_agent`, delete your heartbeat, end. Details: PROTOCOL "Workers per goal".
+- **Heartbeat.** When you register for your first session, schedule a heartbeat in your own session if your harness can (PROTOCOL "Heartbeat"; every 10 min, it only checks your inbox and ends at once if nothing is pending). Delete it on `STOP`. If your harness cannot, your owner's heartbeat covers you.
+- **One turn until STOP.** Loop on your inbox (`wait_s=110`) through RELEASE and the next tasks until STOP arrives over the bus. If your turn must end earlier, write a handoff note first (`record_task_event` on META: open concerns with both positions, what was verified, what is left) and send your owner `PARKED <slug> waiting=<what> handoff=<event id>`; you may be replaced by a successor that reads it (PROTOCOL "Subagents").
 - **Reopen:** when the supervisor's verification fails, the reviewer gets the evidence from the orchestrator. It revokes with `submit_review(approved=false, notes="reopened: <evidence>")`, raises the evidence as a normal concern, and the cycle continues from Phase 3.
 
 ## Rules
 
-- One name per agent per session. Do not re-register under a different name mid-stream.
+- One name per agent per session. Do not re-register under a different name mid-stream. (A supervised worker moving to its next task re-registers under that task's name; see Supervised sessions.)
 - Every concern is a task. Chatter without a task has no state and does not block completion.
 - Impl never closes a concern. Reviewer never approves `META` while any of their concerns is still open.
 - "Fixed" means verifiable: cite file:line, commit sha, or the exact diff hunk — not just "done".
