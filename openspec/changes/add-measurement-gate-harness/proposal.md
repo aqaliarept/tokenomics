@@ -50,9 +50,16 @@ from this harness.
 - **Exit deliverable**: an `EXP-NNNN` gate report for the portable champion stack
   (EXP-0012 orderer scorer + EXP-0035 producer) on development families at 12 and 120
   producers, run on a CPU pod.
-- **Not in this change**: the deployed-path cost refactor (eligible-only rows, incremental
-  telemetry, O(E) remainder; D2's last bullet) becomes its own change, because the M1
-  report does not depend on it and it carries its own byte-identical invariant. Supply
+- **Not in this change**: the rest of the deployed-path cost refactor (eligible-only
+  rows, incremental telemetry, O(E) remainder; D2's last bullet) becomes its own change,
+  because it carries its own byte-identical invariant. **Pulled in by user decision
+  (2026-10-27, task 8.4):** the observation-cost part. The task 8.3 sizing put the M1
+  runs at ≈1,600 + 900 vCPU-hours, almost all of it the 120-producer joint-stack orderer
+  observation, and there is no budget for that. Task 8.4 therefore memoizes producer rows
+  across streams and indexes the per-producer telemetry totals, with byte-identical
+  observations (docs/DIAGNOSTICS.md entry 17). Still deferred: eligible-only rows (the
+  observation still carries every producer), incremental telemetry, and the O(E)
+  remainder. Supply
   shocks, drift and the shock-reactive roster member are M2 and arrive as roster v2.
 
 ## Capabilities

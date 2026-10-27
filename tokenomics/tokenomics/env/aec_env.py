@@ -324,18 +324,21 @@ class TokenomicsAECEnv(AECEnv):
     def observe(self, agent: str) -> np.ndarray:
         role, did = self._role[agent]
         cp = min(1.0, self.current_cycle / self.horizon)
-        infos = self._producer_infos()
+        # Producer infos (one `info()` per producer) are built only for the two
+        # encoders that read them, not for every observation (task 8.4).
         if role == "prod":
             if self.spec_.producer_obs_version >= 2:
                 return encode_producing_entity(self.spec_, self.system.producer_entity_view(did), cp)
             view = self.system.producing_agents[did].view()
-            return encode_producing(self.spec_, view, infos, self._open_consumer_demand(), cp)
+            return encode_producing(
+                self.spec_, view, self._producer_infos(), self._open_consumer_demand(), cp
+            )
         if self.spec_.orderer_obs_version >= 3:
             return encode_ordering_stream(self.spec_, self.system.product_stream_view(did), cp)
         if self.spec_.orderer_obs_version >= 2:
             return encode_ordering_enriched(self.spec_, self.system.orderer_economy_view(did), cp)
         incoming = self.system.ordering_agents[did].incoming
-        return encode_ordering(self.spec_, incoming, infos, cp)
+        return encode_ordering(self.spec_, incoming, self._producer_infos(), cp)
 
     def global_state(self) -> np.ndarray:
         """Centralized-critic input (ADR-0004): full system state, shared across

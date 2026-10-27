@@ -43,6 +43,7 @@ from .order import (
 from .orderer_view import (
     OrdererEconomyView,
     ProductStreamView,
+    StreamViewCache,
     build_orderer_economy_view,
     build_product_stream_view,
 )
@@ -277,6 +278,11 @@ class System:
         # routed cycle (see ProducingAgent.place_sub_orders), so production events are
         # attributed a completion/failure latency per bid.
         self.telemetry = EconomyTelemetry()
+        # Producer rows shared by product-stream views while no producer row can change
+        # (task 8.4, StreamViewCache): created at start_cycle / start_ordering, dropped at
+        # every producer mutation (producing_agent_action, complete_cycle). None = build
+        # views fresh.
+        self._stream_view_cache: StreamViewCache | None = None
 
         self.producer_infos: dict[ProducerId, ProducerInfo] = self._snapshot_producer_infos()
         # ADR-0052: product-stream mode keys ordering agents by (source, product) so
@@ -335,6 +341,7 @@ class System:
     def producing_agent_action(self, pid: ProducerId, cmd: ProducingAgentCommand) -> None:
         if self.state != SystemState.ORDERS_PLACEMENT:
             raise WrongStateError()
+        self._stream_view_cache = None  # the producer's investments/inbound may change
         p = must_get(self.producing_agents, pid)
         for r in p.handle_cmd(cmd):
             oid = self.id_gen.new()
@@ -367,7 +374,7 @@ class System:
         incoming = {oid: self.orders[oid] for oid in agent.incoming}
         return build_product_stream_view(
             self.stream_products[aid], incoming, self.producing_agents,
-            self.telemetry, self.process_sheets, self.orders,
+            self.telemetry, self.process_sheets, self.orders, self._stream_view_cache,
         )
 
     def ordering_agent_action(self, aid: OrderingAgentId, cmd: OrderingAgentCommand) -> None:
@@ -405,6 +412,9 @@ class System:
 
     def start_cycle(self) -> None:
         self.state = SystemState.ORDERS_PLACEMENT
+        # Production and the telemetry fold are done; until a producer acts, no producer
+        # row can change (emission and consumer orders touch neither producers nor EMAs).
+        self._stream_view_cache = StreamViewCache()
         self._emit()
         self._place_consumer_orders()
         self.cycle_counter += 1
@@ -421,10 +431,14 @@ class System:
             aid = order.stream_agent_id() if self.product_stream_ordering else order.agent_id()
             must_get(self.ordering_agents, aid).place_order(order.info())
         self.state = SystemState.ORDERING
+        # Fresh memo for this ordering phase (see StreamViewCache for why its rows
+        # cannot change before complete_cycle).
+        self._stream_view_cache = StreamViewCache()
 
     def complete_cycle(self) -> CycleResult:
         if self.state != SystemState.ORDERING:
             raise WrongStateError()
+        self._stream_view_cache = None  # production and the telemetry fold follow
 
         for oa in self.ordering_agents.values():
             oa.complete_cycle()

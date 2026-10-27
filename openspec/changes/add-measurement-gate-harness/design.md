@@ -48,7 +48,12 @@ shapes the approach:
 - No sealed-world evaluation. The sealed path is built and tested on fixtures only; M5
   uses it.
 - No supply shocks, drift, resilience report or shock-reactive baseline (M2, roster v2).
-- No deployed-path cost refactor (separate change); no training or candidate selection.
+- No deployed-path cost refactor (separate change), except its observation-cost part. The
+  user pulled that into M1 on 2026-10-27 (task 8.4) after task 8.3 sized the runs at
+  ≈1,600 + 900 vCPU-hours. Producer rows are memoized per phase and per-producer
+  telemetry totals are indexed, with byte-identical observations (docs/DIAGNOSTICS.md
+  entry 17). Eligible-only rows, incremental telemetry and the O(E) remainder stay
+  deferred. No training or candidate selection.
 - No change to legacy metrics, the legacy scale generator, or default episode seeding.
 
 ## Decisions

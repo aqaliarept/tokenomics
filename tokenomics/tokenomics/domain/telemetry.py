@@ -26,6 +26,9 @@ class _EmaSeries:
         self._alpha = alpha
         self._acc: dict[object, float] = {}
         self._ema: dict[object, float] = {}
+        # producer -> sum of its EMA keys; rebuilt lazily after each fold (the only
+        # mutation of `_ema`), so a producer total costs O(1), not a scan of all keys.
+        self._by_producer: dict[object, float] | None = None
 
     def add(self, key: object, value: float) -> None:
         self._acc[key] = self._acc.get(key, 0.0) + value
@@ -35,8 +38,20 @@ class _EmaSeries:
 
     def sum_by_producer(self, producer_id: object) -> float:
         """Sum the EMA over every (producer_id, product) key — the producer total.
-        Valid because the EMA recurrence is linear in its inputs."""
-        return sum(v for (pid, _x), v in self._ema.items() if pid == producer_id)
+        Valid because the EMA recurrence is linear in its inputs.
+
+        One pass over `_ema` (in its iteration order) groups each producer's values, then
+        builtin `sum` adds each group: the same values, in the same order, through the
+        same `sum` as the per-producer scan this replaced. That matters: Python >= 3.12
+        `sum` compensates float error, so a running `+` would not be bit-identical. A
+        producer with no keys still gets int 0. The scan per producer per stream was the
+        120-producer joint-stack cost (task 8.3 sizing; docs/DIAGNOSTICS.md entry 17)."""
+        if self._by_producer is None:
+            groups: dict[object, list[float]] = {}
+            for (pid, _x), v in self._ema.items():
+                groups.setdefault(pid, []).append(v)
+            self._by_producer = {pid: sum(vs) for pid, vs in groups.items()}
+        return self._by_producer.get(producer_id, 0)
 
     def fold(self) -> None:
         for key in set(self._ema) | set(self._acc):
@@ -44,6 +59,7 @@ class _EmaSeries:
             prev = self._ema.get(key, 0.0)
             self._ema[key] = self._alpha * current + (1.0 - self._alpha) * prev
         self._acc = {}
+        self._by_producer = None
 
 
 class _WeightedEmaSeries:
@@ -89,6 +105,9 @@ class EconomyTelemetry:
         self._failure_latency = _WeightedEmaSeries(alpha)
         self._demand = _EmaSeries(alpha)
         self._rejected_demand = _EmaSeries(alpha)
+        # (producer, product) pairs with an EMA entry in any per-pair series; rebuilt
+        # lazily after each fold, the only time those EMAs gain keys (task 8.4).
+        self._pairs: set[tuple[ProducerId, Product]] | None = None
 
     def record_routed(
         self, producer_id: ProducerId, product: Product, quantity: int, cycle: int
@@ -155,6 +174,19 @@ class EconomyTelemetry:
     def record_consumer_rejected(self, product: Product, quantity: int) -> None:
         """`quantity` units of consumer demand for `product` rejected this cycle."""
         self._rejected_demand.add(product, quantity)
+
+    def has_pair_history(self, producer_id: ProducerId, product: Product) -> bool:
+        """True iff some per-(producer, product) series holds an EMA entry for the pair.
+        Without one, every per-pair read (`routed_ema`, `success_rate`, the latencies, ...)
+        is the missing-key 0.0 — which lets the orderer view share one row for all such
+        pairs of producers that do not declare the product."""
+        if self._pairs is None:
+            pairs: set[tuple[ProducerId, Product]] = set()
+            for series in (self._routed, self._accepted, self._completed, self._rejected,
+                           self._failed, self._completion_latency, self._failure_latency):
+                pairs.update(series._ema)  # type: ignore[arg-type]
+            self._pairs = pairs
+        return (producer_id, product) in self._pairs
 
     def demand_ema(self, product: Product) -> float:
         """EMA of new consumer demand quantity per cycle for `product`."""
@@ -234,3 +266,4 @@ class EconomyTelemetry:
         self._failure_latency.fold()
         self._demand.fold()
         self._rejected_demand.fold()
+        self._pairs = None
