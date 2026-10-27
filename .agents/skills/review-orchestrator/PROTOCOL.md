@@ -94,6 +94,31 @@ The returned task id is `REQ`. `delegate` leaves it `claimed` by the orchestrato
      META and leaves the team), then sends `RELEASE`. The orchestrator tells the reviewer to
      leave, closes the subagent, completes `REQ` with a one-line result, and sends `RELEASED`.
 
+## Subagents
+
+Applies to both sides: the supervisor's implementers and the orchestrator's reviewers.
+
+- **One run holds the session.** A worker works in one turn and loops on its inbox
+  (`wait_s=110`) until `RELEASE`, which always arrives as a bus message: from `supervisor` to
+  `impl-<session>`, from `review-orchestrator` to `rev-<session>`.
+- **Early end.** A worker whose turn must end before `RELEASE` first writes a handoff note
+  (`record_task_event` on META: open concerns with both positions, what was verified and how,
+  what is left), then tells its owner: `PARKED <session> waiting=<what> handoff=<event id>`.
+- **Continue.** Where the harness can resume a subagent (standalone Codex multi-agent tools,
+  standalone Claude Code background Agent + `SendMessage`), the owner resumes the same one.
+  Where it cannot, the owner starts a **successor round** under the same name: the original
+  brief plus the handoff and the prior bus state (META, concern tasks and their states). Never
+  two live runs under one name.
+- **T3 Code threads** use T3 `delegate_task`; T3 requires it when the child inherits model
+  options, and a finished task is not continued. Spawn with `mode="async"`,
+  `isolation="shared"` (the reviewer must see the implementer's uncommitted edits),
+  `target`/`runtimeMode` unset (inherit), `title="<name> r<k>"`,
+  `clientRequestId="<name>-r<k>"`. Round k+1 is a new `delegate_task`; never `t3_thread_send`
+  to the old `childThreadId`. The owner keeps its own turn alive with its inbox loop, since bus
+  messages do not wake an idle T3 thread.
+- Replacements are recorded as task events (on `REQ` for reviewers, on the ledger task for
+  implementers), not as messages, unless the successor fails to start.
+
 ## Bus facts (verified on agent-bus 0.43.0)
 
 - `delegate` creates the task already `claimed` by the assignee; `acknowledge_task(agent=…,
