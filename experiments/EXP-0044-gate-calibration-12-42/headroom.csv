@@ -1,0 +1,5 @@
+family,size,worlds,median_fill,ceiling,passed
+dense,12,12,0.9539092025476696,0.95,False
+dense,42,12,0.9247358468310072,0.95,True
+sparse_wide,12,12,0.9341784122207193,0.95,True
+sparse_wide,42,12,0.8855711648359057,0.95,True

@@ -408,3 +408,26 @@ validated confidence-bounded online rollout and promotes depth 2 on the three fi
 topologies, as a teacher only: deployed search breaks the bounded per-decision cost rule.
 The cost-reduction follow-up (EXP-0043) was cancelled by the baseline plan; the next steps
 are that plan's milestones (§0).
+
+---
+
+## 12. The measurement gate (EXP-0044 →)
+
+The baseline plan's first milestone (M1, OpenSpec change `add-measurement-gate-harness`) builds
+a gate that judges an agent against the per-episode best of 40 hand-written baselines. It uses
+dense and sparse-wide world families at 12 and 42 producers (the large size moved from 120 to
+42 on 2026-10-27). Before any agent is judged, a roster-only screen fixes the development
+worlds, checks that the baselines leave headroom, and calibrates the side-effect bounds X and Y.
+
+- **EXP-0044 — calibration screen. HEADROOM FAILED on dense-12.** The screen ran all 22,528
+  roster episodes. The median best-baseline fill was 0.954 on dense-12, above the 0.95
+  ceiling. 39 of its 64 episodes were filled to ≥ 95%, mostly by `entity_planner/random`;
+  this is one screen, and the spread across repeat screens is not measured.
+  Dense-42 (0.925), sparse-wide-12 (0.934) and sparse-wide-42 (0.886) pass. No world needed
+  a reserve. Dense-12 is the `build_scale_config` economy, which EXP-0033 already found
+  over-capacitated (98.3% of exact demand). Why dense-42 keeps headroom is not isolated. The
+  user-approved response (D10, tasks 10.2–10.5) keeps the 0.95 ceiling: retune the dense
+  family at both sizes with one family-level scale, probe candidate scales on baseline
+  evidence only, then screen again. The champion report (12.1) waits for an admissible world
+  set.
+
