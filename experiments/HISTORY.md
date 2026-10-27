@@ -29,6 +29,13 @@ tested, never executed against real compute.
 Primary metric is `consumer_completed_units` against a strict best-of-baseline
 hindsight baseline on held-out topology seeds 6–9, with a hard 0% death-rate requirement.
 
+**The measurement-gate subject** (design D1, M1) is the portable stack: the EXP-0035 promoted
+producer `producer_candidate.pt` with the EXP-0012 orderer scorer `orderer_scorer.pt`. Its first
+development reading on the frozen M1 gate (sparse-wide, 12/42 producers) is EXP-0045: **REJECT**.
+Mean ratio over the hindsight baseline is 1.011–1.041 against margins of 1.05 calm / 1.10
+shocked; there are losing calm worlds, starvation on calm 42-producer worlds, and zero deaths
+(§12).
+
 **What is settled.** The environment poses a real learning problem; imitation of a
 strong heuristic works; a learned orderer beats the best hand-written baseline; the
 policy contract is product-agnostic and transfers across topology size and recipe shape.
@@ -444,3 +451,16 @@ worlds, checks that the baselines leave headroom, and calibrates the side-effect
   only the five `entity_planner` producers ever set the per-episode best. X = 0.7297, Y = 0.7681
   (q 0.05). The frozen world registry, roster and side-effect parameters are ready for 11.1 and
   the champion report (12.1).
+- **EXP-0045 — champion development report (12.1). REJECT, the M1 starting point.** The
+  portable stack (EXP-0035 producer + EXP-0012 orderer scorer) on the frozen gate: 24
+  sparse-wide development worlds, the 5-member `entity_planner` roster as the hindsight
+  baseline, X 0.7297 / Y 0.7681.
+  - Mean ratio: 1.011 (12 calm), 1.033 (12 shocked), 1.038 (42 calm), 1.041 (42 shocked),
+    against 1.05 / 1.10.
+  - 5 losing calm worlds (worst 0.941, 12-calm-03).
+  - Run-down on one world (12-shocked-00, 8 of 10 episodes).
+  - Starvation on 6 calm worlds (5 of them at 42) and one shocked episode.
+  - Zero deaths, no contract failures; `--mode recompute` MATCH.
+  The stack is a few percent better than the strongest hand-written producer but far from the
+  margins. The cause of the starvation (orderer split vs producer investment) is not yet
+  diagnosed. This opens the measurement arc's baseline for M2+.

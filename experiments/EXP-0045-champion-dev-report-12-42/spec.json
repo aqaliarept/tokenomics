@@ -1,0 +1,1084 @@
+{
+  "blas_threads": 1,
+  "date": "2026-10-27",
+  "driver": "tokenomics.eval.gate",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.14.1+cpu",
+    "torch_build": "452946f6ef64"
+  },
+  "experiment": "exp0045",
+  "inputs": {
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "producer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/producer_candidate.pt",
+      "sha256": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    }
+  },
+  "kind": "report",
+  "mode": "report",
+  "pins": {
+    "candidate_replicates": 1,
+    "checkpoints": {
+      "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+      "producer": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    },
+    "dry_run": false,
+    "grid": {
+      "dev-sparse_wide-12-calm-00": {
+        "episodes": [
+          853180902,
+          573722738,
+          1263959127
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-sparse_wide-12-calm-01": {
+        "episodes": [
+          4173060,
+          1548830927,
+          1404012444
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-sparse_wide-12-calm-02": {
+        "episodes": [
+          1450220932,
+          1626927891,
+          156449616
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-sparse_wide-12-calm-03": {
+        "episodes": [
+          1142209014,
+          1429071718,
+          1312845591
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-sparse_wide-12-calm-04": {
+        "episodes": [
+          561383371,
+          839488060,
+          2062681473
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-sparse_wide-12-calm-05": {
+        "episodes": [
+          825691700,
+          341127217,
+          998580260
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-sparse_wide-12-calm-06": {
+        "episodes": [
+          807440443,
+          934409798,
+          1583800300
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-sparse_wide-12-calm-07": {
+        "episodes": [
+          302957182,
+          684142130,
+          1215385322
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-sparse_wide-12-shocked-00": {
+        "episodes": [
+          1648273883,
+          403593754,
+          403330798,
+          411733136,
+          1344356697,
+          780216897,
+          1678546418,
+          469180525,
+          1202186258,
+          1523693189
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "dev-sparse_wide-12-shocked-01": {
+        "episodes": [
+          480920748,
+          1962673112,
+          144403646,
+          1906499098,
+          1390414481,
+          1552390792,
+          1113839877,
+          797901344,
+          1763938669,
+          1379500898
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "dev-sparse_wide-12-shocked-02": {
+        "episodes": [
+          1596453724,
+          2019752305,
+          1546132854,
+          2129989729,
+          952913334,
+          1512164500,
+          1868313768,
+          280198481,
+          137742314,
+          1385045357
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "dev-sparse_wide-12-shocked-03": {
+        "episodes": [
+          1918321488,
+          1173714013,
+          800294722,
+          299142319,
+          605789734,
+          309898481,
+          1744692017,
+          64327752,
+          825435124,
+          1853533776
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "dev-sparse_wide-42-calm-00": {
+        "episodes": [
+          983659392,
+          2003491298,
+          106209185
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-sparse_wide-42-calm-01": {
+        "episodes": [
+          531048667,
+          1631157762,
+          1111343407
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-sparse_wide-42-calm-02": {
+        "episodes": [
+          366535258,
+          1638545673,
+          1578575598
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-sparse_wide-42-calm-03": {
+        "episodes": [
+          1765041017,
+          1113418926,
+          1696937165
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-sparse_wide-42-calm-04": {
+        "episodes": [
+          1242615372,
+          1700741941,
+          470157921
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-sparse_wide-42-calm-05": {
+        "episodes": [
+          1531763135,
+          282982125,
+          2018346833
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-sparse_wide-42-calm-06": {
+        "episodes": [
+          912946811,
+          96307357,
+          204797563
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-sparse_wide-42-calm-07": {
+        "episodes": [
+          118315526,
+          837907461,
+          353177905
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-sparse_wide-42-shocked-00": {
+        "episodes": [
+          81752346,
+          4145884,
+          1907655396,
+          1060101985,
+          463618645,
+          1637931849,
+          685085498,
+          369292162,
+          435219139,
+          7743056
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "dev-sparse_wide-42-shocked-01": {
+        "episodes": [
+          1968127071,
+          1466441995,
+          1226954377,
+          764460543,
+          1776585508,
+          317210345,
+          1674663210,
+          902957230,
+          746805083,
+          1824585025
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "dev-sparse_wide-42-shocked-02": {
+        "episodes": [
+          160778965,
+          94719794,
+          376871033,
+          438669130,
+          1430791609,
+          911855958,
+          417658043,
+          1491523540,
+          1164095001,
+          1547671687
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "dev-sparse_wide-42-shocked-03": {
+        "episodes": [
+          1925847396,
+          567075104,
+          869067812,
+          1740889567,
+          1028298466,
+          1076392355,
+          845870970,
+          1446351067,
+          1745165639,
+          872925809
+        ],
+        "regime": "shocked",
+        "size": 42
+      }
+    },
+    "horizon": 100,
+    "params_version": "e6651b2ebe541b18ade0a8904f27b0a08844e2a4f8ee0e231ca062514472f2c1",
+    "registry_version": "566946fe0c0363ec888f9a58bfe7bd480bcc948e049c93e9923088e2cab911e3",
+    "roster_version": "c2832dbb44d26601f279fc04c0c483c543c5a5fcdc8cb2231090fc03f76a3731",
+    "source": {
+      "commit": "f2ea280aac1d3eefb182d1cdba71fb1e4fd5b2f8",
+      "tree_sha256": "54627ee936acf26a6f6049b14fc5ef9ff2b387368f5d3282eeefa1364febcf3a"
+    },
+    "split": "development",
+    "subject": "portable"
+  },
+  "result": {
+    "failing_clauses": [
+      "calm_margin",
+      "shocked_margin",
+      "no_losing_world",
+      "run_down",
+      "starvation"
+    ],
+    "non_gating_worlds": [],
+    "overall": "reject"
+  },
+  "resumes": [],
+  "roster": {
+    "content_hash": "c2832dbb44d26601f279fc04c0c483c543c5a5fcdc8cb2231090fc03f76a3731",
+    "frozen": true,
+    "members": [
+      {
+        "contract": "joint_stack",
+        "ordering": "blend_0.5",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "even_split",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "legacy",
+        "ordering": "obs_price",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "proportional",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "random",
+        "producing": "entity_planner",
+        "random": true
+      }
+    ],
+    "name": "roster-v1",
+    "pruning": {
+      "dropped": [
+        "always_both/blend_0.5",
+        "always_both/even_split",
+        "always_both/obs_price",
+        "always_both/proportional",
+        "always_both/random",
+        "always_restore/blend_0.5",
+        "always_restore/even_split",
+        "always_restore/obs_price",
+        "always_restore/proportional",
+        "always_restore/random",
+        "noop/blend_0.5",
+        "noop/even_split",
+        "noop/obs_price",
+        "noop/proportional",
+        "noop/random",
+        "obs_stock_aware/blend_0.5",
+        "obs_stock_aware/even_split",
+        "obs_stock_aware/obs_price",
+        "obs_stock_aware/proportional",
+        "obs_stock_aware/random",
+        "random/blend_0.5",
+        "random/even_split",
+        "random/obs_price",
+        "random/proportional",
+        "random/random",
+        "restore_when_low/blend_0.5",
+        "restore_when_low/even_split",
+        "restore_when_low/obs_price",
+        "restore_when_low/proportional",
+        "restore_when_low/random",
+        "stock_aware/blend_0.5",
+        "stock_aware/even_split",
+        "stock_aware/obs_price",
+        "stock_aware/proportional",
+        "stock_aware/random"
+      ],
+      "episodes": [
+        {
+          "episode": 573722738,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-00"
+        },
+        {
+          "episode": 853180902,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-00"
+        },
+        {
+          "episode": 1263959127,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-00"
+        },
+        {
+          "episode": 4173060,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-01"
+        },
+        {
+          "episode": 1404012444,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-01"
+        },
+        {
+          "episode": 1548830927,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-01"
+        },
+        {
+          "episode": 156449616,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-02"
+        },
+        {
+          "episode": 1450220932,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-02"
+        },
+        {
+          "episode": 1626927891,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-02"
+        },
+        {
+          "episode": 1142209014,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-03"
+        },
+        {
+          "episode": 1312845591,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-03"
+        },
+        {
+          "episode": 1429071718,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-03"
+        },
+        {
+          "episode": 561383371,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-04"
+        },
+        {
+          "episode": 839488060,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-04"
+        },
+        {
+          "episode": 2062681473,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-04"
+        },
+        {
+          "episode": 341127217,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "episode": 825691700,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "episode": 998580260,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "episode": 807440443,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-06"
+        },
+        {
+          "episode": 934409798,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-06"
+        },
+        {
+          "episode": 1583800300,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-06"
+        },
+        {
+          "episode": 302957182,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-07"
+        },
+        {
+          "episode": 684142130,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-07"
+        },
+        {
+          "episode": 1215385322,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-07"
+        },
+        {
+          "episode": 403330798,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 403593754,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 411733136,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 469180525,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 780216897,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1202186258,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1344356697,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1523693189,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1648273883,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1678546418,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 144403646,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 480920748,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 797901344,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1113839877,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1379500898,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1390414481,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1552390792,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1763938669,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1906499098,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1962673112,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 137742314,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 280198481,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 952913334,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1385045357,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1512164500,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1546132854,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1596453724,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1868313768,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 2019752305,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 2129989729,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 64327752,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 299142319,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 309898481,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 605789734,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 800294722,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 825435124,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 1173714013,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 1744692017,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 1853533776,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 1918321488,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 106209185,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "episode": 983659392,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "episode": 2003491298,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "episode": 531048667,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "episode": 1111343407,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "episode": 1631157762,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "episode": 366535258,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-02"
+        },
+        {
+          "episode": 1578575598,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-02"
+        },
+        {
+          "episode": 1638545673,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-02"
+        },
+        {
+          "episode": 1113418926,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "episode": 1696937165,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "episode": 1765041017,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "episode": 470157921,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "episode": 1242615372,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "episode": 1700741941,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "episode": 282982125,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "episode": 1531763135,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "episode": 2018346833,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "episode": 96307357,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-06"
+        },
+        {
+          "episode": 204797563,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-06"
+        },
+        {
+          "episode": 912946811,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-06"
+        },
+        {
+          "episode": 118315526,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-07"
+        },
+        {
+          "episode": 353177905,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-07"
+        },
+        {
+          "episode": 837907461,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-07"
+        },
+        {
+          "episode": 4145884,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 7743056,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 81752346,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 369292162,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 435219139,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 463618645,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 685085498,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 1060101985,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 1637931849,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 1907655396,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 317210345,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 746805083,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 764460543,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 902957230,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1226954377,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1466441995,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1674663210,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1776585508,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1824585025,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1968127071,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 94719794,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 160778965,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 376871033,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 417658043,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 438669130,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 911855958,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 1164095001,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 1430791609,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 1491523540,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 1547671687,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 567075104,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 845870970,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 869067812,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 872925809,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1028298466,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1076392355,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1446351067,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1740889567,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1745165639,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1925847396,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        }
+      ],
+      "parent_version": "8791e24b2760a24bc2b40ef588578ee96b7e8e93502b76c50ef0d2fac6b83239",
+      "rows_digest": "83e945a7aa14f5e1088dafb2755261ebe03d5c86f06def4e663fec916c74fc34",
+      "rule": "never-argmax-v1",
+      "rule_text": "Drop a member that is never the per-episode argmax on any development episode at any measured economy size. Every member attaining an episode's max value counts as its argmax (ties never prune a co-winner). The evidence must cover every member on every episode."
+    },
+    "replicates": 5
+  },
+  "side_effect_params": {
+    "content_hash": "e6651b2ebe541b18ade0a8904f27b0a08844e2a4f8ee0e231ca062514472f2c1",
+    "evidence": {
+      "bests_digest": "021ac2fe2aa93266a123173c1ac4bca1bd43dae24b199f585c3dcc0f2556659a",
+      "episodes": 128,
+      "fill_values": 896,
+      "registry_version": "566946fe0c0363ec888f9a58bfe7bd480bcc948e049c93e9923088e2cab911e3",
+      "roster_version": "c2832dbb44d26601f279fc04c0c483c543c5a5fcdc8cb2231090fc03f76a3731",
+      "rows_digest": "8ef4513c3a76a937df356c9b42f2aa2b8be17b64b8f1869155e1c0d2a4fa6bf1",
+      "run_down_values": 128
+    },
+    "method": "nearest-rank",
+    "name": "side-effect-params-v1",
+    "q": 0.05,
+    "rule": "D4: on every development episode take the roster member attaining the per-episode hindsight baseline (ties: smallest member id); X = q-quantile of its run-down ratio r_end/r_start, Y = q-quantile of its per-consumer fill rates (consumers that ordered nothing excluded); random members contribute replicate means.",
+    "x": 0.729674051435041,
+    "y": 0.768075117370892
+  },
+  "source": {
+    "commit": "f2ea280aac1d3eefb182d1cdba71fb1e4fd5b2f8",
+    "n_files": 52,
+    "tree_sha256": "54627ee936acf26a6f6049b14fc5ef9ff2b387368f5d3282eeefa1364febcf3a"
+  },
+  "started": "2026-10-27T17:10:33.237328+00:00",
+  "status": "complete",
+  "workers": 8
+}

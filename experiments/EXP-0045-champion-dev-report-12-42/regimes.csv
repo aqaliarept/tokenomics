@@ -1,0 +1,5 @@
+size,regime,worlds,mean_ratio,margin,margin_passed,no_losing_passed
+12,calm,dev-sparse_wide-12-calm-00;dev-sparse_wide-12-calm-01;dev-sparse_wide-12-calm-02;dev-sparse_wide-12-calm-03;dev-sparse_wide-12-calm-04;dev-sparse_wide-12-calm-05;dev-sparse_wide-12-calm-06;dev-sparse_wide-12-calm-07,1.0107723309594363,1.05,False,False
+12,shocked,dev-sparse_wide-12-shocked-00;dev-sparse_wide-12-shocked-01;dev-sparse_wide-12-shocked-02;dev-sparse_wide-12-shocked-03,1.0327199363761153,1.1,False,True
+42,calm,dev-sparse_wide-42-calm-00;dev-sparse_wide-42-calm-01;dev-sparse_wide-42-calm-02;dev-sparse_wide-42-calm-03;dev-sparse_wide-42-calm-04;dev-sparse_wide-42-calm-05;dev-sparse_wide-42-calm-06;dev-sparse_wide-42-calm-07,1.0376213253818134,1.05,False,False
+42,shocked,dev-sparse_wide-42-shocked-00;dev-sparse_wide-42-shocked-01;dev-sparse_wide-42-shocked-02;dev-sparse_wide-42-shocked-03,1.0409620320320503,1.1,False,True

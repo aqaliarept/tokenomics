@@ -1,0 +1,1269 @@
+{
+  "clauses": [
+    {
+      "clause": "calm_margin",
+      "failures": [
+        {
+          "clause": "calm_margin",
+          "consumer": null,
+          "detail": "mean ratio 1.0107723309594363 < 1.05",
+          "episode": null,
+          "regime": "calm",
+          "replicate": null,
+          "size": 12,
+          "threshold": 1.05,
+          "value": 1.0107723309594363,
+          "world": null
+        },
+        {
+          "clause": "calm_margin",
+          "consumer": null,
+          "detail": "mean ratio 1.0376213253818134 < 1.05",
+          "episode": null,
+          "regime": "calm",
+          "replicate": null,
+          "size": 42,
+          "threshold": 1.05,
+          "value": 1.0376213253818134,
+          "world": null
+        }
+      ],
+      "passed": false
+    },
+    {
+      "clause": "shocked_margin",
+      "failures": [
+        {
+          "clause": "shocked_margin",
+          "consumer": null,
+          "detail": "mean ratio 1.0327199363761153 < 1.1",
+          "episode": null,
+          "regime": "shocked",
+          "replicate": null,
+          "size": 12,
+          "threshold": 1.1,
+          "value": 1.0327199363761153,
+          "world": null
+        },
+        {
+          "clause": "shocked_margin",
+          "consumer": null,
+          "detail": "mean ratio 1.0409620320320503 < 1.1",
+          "episode": null,
+          "regime": "shocked",
+          "replicate": null,
+          "size": 42,
+          "threshold": 1.1,
+          "value": 1.0409620320320503,
+          "world": null
+        }
+      ],
+      "passed": false
+    },
+    {
+      "clause": "no_losing_world",
+      "failures": [
+        {
+          "clause": "no_losing_world",
+          "consumer": null,
+          "detail": "world ratio 0.9940828402366864 < 1.0",
+          "episode": null,
+          "regime": "calm",
+          "replicate": null,
+          "size": 12,
+          "threshold": 1.0,
+          "value": 0.9940828402366864,
+          "world": "dev-sparse_wide-12-calm-01"
+        },
+        {
+          "clause": "no_losing_world",
+          "consumer": null,
+          "detail": "world ratio 0.9977876106194691 < 1.0",
+          "episode": null,
+          "regime": "calm",
+          "replicate": null,
+          "size": 12,
+          "threshold": 1.0,
+          "value": 0.9977876106194691,
+          "world": "dev-sparse_wide-12-calm-02"
+        },
+        {
+          "clause": "no_losing_world",
+          "consumer": null,
+          "detail": "world ratio 0.9405594405594405 < 1.0",
+          "episode": null,
+          "regime": "calm",
+          "replicate": null,
+          "size": 12,
+          "threshold": 1.0,
+          "value": 0.9405594405594405,
+          "world": "dev-sparse_wide-12-calm-03"
+        },
+        {
+          "clause": "no_losing_world",
+          "consumer": null,
+          "detail": "world ratio 0.9900497512437811 < 1.0",
+          "episode": null,
+          "regime": "calm",
+          "replicate": null,
+          "size": 12,
+          "threshold": 1.0,
+          "value": 0.9900497512437811,
+          "world": "dev-sparse_wide-12-calm-07"
+        },
+        {
+          "clause": "no_losing_world",
+          "consumer": null,
+          "detail": "world ratio 0.9860879243183083 < 1.0",
+          "episode": null,
+          "regime": "calm",
+          "replicate": null,
+          "size": 42,
+          "threshold": 1.0,
+          "value": 0.9860879243183083,
+          "world": "dev-sparse_wide-42-calm-03"
+        }
+      ],
+      "passed": false
+    },
+    {
+      "clause": "zero_death",
+      "failures": [],
+      "passed": true
+    },
+    {
+      "clause": "run_down",
+      "failures": [
+        {
+          "clause": "run_down",
+          "consumer": null,
+          "detail": "r_end 0.6483549973288346 < X\u00b7r_start 0.729674051435041",
+          "episode": 403330798,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.729674051435041,
+          "value": 0.6483549973288346,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "clause": "run_down",
+          "consumer": null,
+          "detail": "r_end 0.6294870728005327 < X\u00b7r_start 0.729674051435041",
+          "episode": 403593754,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.729674051435041,
+          "value": 0.6294870728005327,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "clause": "run_down",
+          "consumer": null,
+          "detail": "r_end 0.7039201695635585 < X\u00b7r_start 0.729674051435041",
+          "episode": 411733136,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.729674051435041,
+          "value": 0.7039201695635585,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "clause": "run_down",
+          "consumer": null,
+          "detail": "r_end 0.6661843205069548 < X\u00b7r_start 0.729674051435041",
+          "episode": 469180525,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.729674051435041,
+          "value": 0.6661843205069548,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "clause": "run_down",
+          "consumer": null,
+          "detail": "r_end 0.6724736286830554 < X\u00b7r_start 0.729674051435041",
+          "episode": 1344356697,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.729674051435041,
+          "value": 0.6724736286830554,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "clause": "run_down",
+          "consumer": null,
+          "detail": "r_end 0.678762936859156 < X\u00b7r_start 0.729674051435041",
+          "episode": 1523693189,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.729674051435041,
+          "value": 0.678762936859156,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "clause": "run_down",
+          "consumer": null,
+          "detail": "r_end 0.6724736286830554 < X\u00b7r_start 0.729674051435041",
+          "episode": 1648273883,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.729674051435041,
+          "value": 0.6724736286830554,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "clause": "run_down",
+          "consumer": null,
+          "detail": "r_end 0.6661843205069548 < X\u00b7r_start 0.729674051435041",
+          "episode": 1678546418,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.729674051435041,
+          "value": 0.6661843205069548,
+          "world": "dev-sparse_wide-12-shocked-00"
+        }
+      ],
+      "passed": false
+    },
+    {
+      "clause": "starvation",
+      "failures": [
+        {
+          "clause": "starvation",
+          "consumer": "c1",
+          "detail": "consumer c1 fill rate 0.7463235294117647 < Y",
+          "episode": 341127217,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.768075117370892,
+          "value": 0.7463235294117647,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c1",
+          "detail": "consumer c1 fill rate 0.7463235294117647 < Y",
+          "episode": 825691700,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.768075117370892,
+          "value": 0.7463235294117647,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c1",
+          "detail": "consumer c1 fill rate 0.7463235294117647 < Y",
+          "episode": 998580260,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 12,
+          "threshold": 0.768075117370892,
+          "value": 0.7463235294117647,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c5",
+          "detail": "consumer c5 fill rate 0.7083333333333334 < Y",
+          "episode": 106209185,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7083333333333334,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c5",
+          "detail": "consumer c5 fill rate 0.7083333333333334 < Y",
+          "episode": 983659392,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7083333333333334,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c5",
+          "detail": "consumer c5 fill rate 0.7083333333333334 < Y",
+          "episode": 2003491298,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7083333333333334,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c0",
+          "detail": "consumer c0 fill rate 0.7418032786885246 < Y",
+          "episode": 531048667,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7418032786885246,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c0",
+          "detail": "consumer c0 fill rate 0.7418032786885246 < Y",
+          "episode": 1111343407,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7418032786885246,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c0",
+          "detail": "consumer c0 fill rate 0.7418032786885246 < Y",
+          "episode": 1631157762,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7418032786885246,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c10",
+          "detail": "consumer c10 fill rate 0.7394366197183099 < Y",
+          "episode": 1113418926,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7394366197183099,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c9",
+          "detail": "consumer c9 fill rate 0.7121771217712177 < Y",
+          "episode": 1113418926,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7121771217712177,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c10",
+          "detail": "consumer c10 fill rate 0.7394366197183099 < Y",
+          "episode": 1696937165,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7394366197183099,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c9",
+          "detail": "consumer c9 fill rate 0.7121771217712177 < Y",
+          "episode": 1696937165,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7121771217712177,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c10",
+          "detail": "consumer c10 fill rate 0.7394366197183099 < Y",
+          "episode": 1765041017,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7394366197183099,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c9",
+          "detail": "consumer c9 fill rate 0.7121771217712177 < Y",
+          "episode": 1765041017,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7121771217712177,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c2",
+          "detail": "consumer c2 fill rate 0.7623762376237624 < Y",
+          "episode": 470157921,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7623762376237624,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c2",
+          "detail": "consumer c2 fill rate 0.7623762376237624 < Y",
+          "episode": 1242615372,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7623762376237624,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c2",
+          "detail": "consumer c2 fill rate 0.7623762376237624 < Y",
+          "episode": 1700741941,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7623762376237624,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c6",
+          "detail": "consumer c6 fill rate 0.7130434782608696 < Y",
+          "episode": 282982125,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7130434782608696,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c6",
+          "detail": "consumer c6 fill rate 0.7130434782608696 < Y",
+          "episode": 1531763135,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7130434782608696,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c6",
+          "detail": "consumer c6 fill rate 0.7130434782608696 < Y",
+          "episode": 2018346833,
+          "regime": "calm",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7130434782608696,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "clause": "starvation",
+          "consumer": "c1",
+          "detail": "consumer c1 fill rate 0.7574257425742574 < Y",
+          "episode": 911855958,
+          "regime": "shocked",
+          "replicate": 0,
+          "size": 42,
+          "threshold": 0.768075117370892,
+          "value": 0.7574257425742574,
+          "world": "dev-sparse_wide-42-shocked-02"
+        }
+      ],
+      "passed": false
+    }
+  ],
+  "failing_clauses": [
+    "calm_margin",
+    "shocked_margin",
+    "no_losing_world",
+    "run_down",
+    "starvation"
+  ],
+  "non_gating_worlds": [],
+  "overall": "reject",
+  "params_version": "e6651b2ebe541b18ade0a8904f27b0a08844e2a4f8ee0e231ca062514472f2c1",
+  "regimes": [
+    {
+      "margin": 1.05,
+      "margin_passed": false,
+      "mean_ratio": 1.0107723309594363,
+      "no_losing_passed": false,
+      "regime": "calm",
+      "size": 12,
+      "worlds": [
+        "dev-sparse_wide-12-calm-00",
+        "dev-sparse_wide-12-calm-01",
+        "dev-sparse_wide-12-calm-02",
+        "dev-sparse_wide-12-calm-03",
+        "dev-sparse_wide-12-calm-04",
+        "dev-sparse_wide-12-calm-05",
+        "dev-sparse_wide-12-calm-06",
+        "dev-sparse_wide-12-calm-07"
+      ]
+    },
+    {
+      "margin": 1.1,
+      "margin_passed": false,
+      "mean_ratio": 1.0327199363761153,
+      "no_losing_passed": true,
+      "regime": "shocked",
+      "size": 12,
+      "worlds": [
+        "dev-sparse_wide-12-shocked-00",
+        "dev-sparse_wide-12-shocked-01",
+        "dev-sparse_wide-12-shocked-02",
+        "dev-sparse_wide-12-shocked-03"
+      ]
+    },
+    {
+      "margin": 1.05,
+      "margin_passed": false,
+      "mean_ratio": 1.0376213253818134,
+      "no_losing_passed": false,
+      "regime": "calm",
+      "size": 42,
+      "worlds": [
+        "dev-sparse_wide-42-calm-00",
+        "dev-sparse_wide-42-calm-01",
+        "dev-sparse_wide-42-calm-02",
+        "dev-sparse_wide-42-calm-03",
+        "dev-sparse_wide-42-calm-04",
+        "dev-sparse_wide-42-calm-05",
+        "dev-sparse_wide-42-calm-06",
+        "dev-sparse_wide-42-calm-07"
+      ]
+    },
+    {
+      "margin": 1.1,
+      "margin_passed": false,
+      "mean_ratio": 1.0409620320320503,
+      "no_losing_passed": true,
+      "regime": "shocked",
+      "size": 42,
+      "worlds": [
+        "dev-sparse_wide-42-shocked-00",
+        "dev-sparse_wide-42-shocked-01",
+        "dev-sparse_wide-42-shocked-02",
+        "dev-sparse_wide-42-shocked-03"
+      ]
+    }
+  ],
+  "registry_version": "566946fe0c0363ec888f9a58bfe7bd480bcc948e049c93e9923088e2cab911e3",
+  "roster_version": "c2832dbb44d26601f279fc04c0c483c543c5a5fcdc8cb2231090fc03f76a3731",
+  "worlds": [
+    {
+      "baseline": 556.0,
+      "candidate_mean": 563.0,
+      "deaths": 0,
+      "episodes": [
+        573722738,
+        853180902,
+        1263959127
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.05695142378559464,
+        "holding_units": 3432.0,
+        "holding_units_per_cycle": 34.32,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.0,
+        "min_capacity_ratio": 0.6988761318459757,
+        "min_spare_fraction": 0.11111111111111116
+      },
+      "ratio": 1.0125899280575539,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-calm-00"
+    },
+    {
+      "baseline": 507.0,
+      "candidate_mean": 504.0,
+      "deaths": 0,
+      "episodes": [
+        4173060,
+        1404012444,
+        1548830927
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.017543859649122806,
+        "holding_units": 3672.0,
+        "holding_units_per_cycle": 36.72,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.0,
+        "min_capacity_ratio": 0.6413476880046706,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 0.9940828402366864,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-calm-01"
+    },
+    {
+      "baseline": 452.0,
+      "candidate_mean": 451.0,
+      "deaths": 0,
+      "episodes": [
+        156449616,
+        1450220932,
+        1626927891
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.013129102844638951,
+        "holding_units": 3705.0,
+        "holding_units_per_cycle": 37.05,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.007142857142857143,
+        "min_capacity_ratio": 0.6747077914918472,
+        "min_spare_fraction": 0.6210526315789473
+      },
+      "ratio": 0.9977876106194691,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-calm-02"
+    },
+    {
+      "baseline": 572.0,
+      "candidate_mean": 538.0,
+      "deaths": 0,
+      "episodes": [
+        1142209014,
+        1312845591,
+        1429071718
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.07718696397941681,
+        "holding_units": 3530.0,
+        "holding_units_per_cycle": 35.3,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.0,
+        "min_capacity_ratio": 0.6862084874581195,
+        "min_spare_fraction": 0.368421052631579
+      },
+      "ratio": 0.9405594405594405,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-calm-03"
+    },
+    {
+      "baseline": 564.0666666666666,
+      "candidate_mean": 618.0,
+      "deaths": 0,
+      "episodes": [
+        561383371,
+        839488060,
+        2062681473
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.09912536443148688,
+        "holding_units": 3486.0,
+        "holding_units_per_cycle": 34.86,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.06707317073170732,
+        "min_capacity_ratio": 0.6725595301857461,
+        "min_spare_fraction": 0.09999999999999998
+      },
+      "ratio": 1.095615175511169,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-calm-04"
+    },
+    {
+      "baseline": 541.6666666666666,
+      "candidate_mean": 566.0,
+      "deaths": 0,
+      "episodes": [
+        341127217,
+        825691700,
+        998580260
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.18208092485549132,
+        "holding_units": 3636.0,
+        "holding_units_per_cycle": 36.36,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.0136986301369863,
+        "min_capacity_ratio": 0.6679568260210372,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 1.044923076923077,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 3,
+      "world": "dev-sparse_wide-12-calm-05"
+    },
+    {
+      "baseline": 473.0,
+      "candidate_mean": 478.0,
+      "deaths": 0,
+      "episodes": [
+        807440443,
+        934409798,
+        1583800300
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.012396694214876033,
+        "holding_units": 3599.0,
+        "holding_units_per_cycle": 35.99,
+        "inversion_rate": null,
+        "investment_rejection_rate": 0.04225352112676056,
+        "min_capacity_ratio": 0.6901828078622297,
+        "min_spare_fraction": 0.3333333333333333
+      },
+      "ratio": 1.0105708245243128,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-calm-06"
+    },
+    {
+      "baseline": 603.0,
+      "candidate_mean": 597.0,
+      "deaths": 0,
+      "episodes": [
+        302957182,
+        684142130,
+        1215385322
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.022913256955810146,
+        "holding_units": 3419.0,
+        "holding_units_per_cycle": 34.19,
+        "inversion_rate": null,
+        "investment_rejection_rate": 0.0,
+        "min_capacity_ratio": 0.6698264091242624,
+        "min_spare_fraction": 0.3636363636363636
+      },
+      "ratio": 0.9900497512437811,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-calm-07"
+    },
+    {
+      "baseline": 503.78000000000003,
+      "candidate_mean": 536.6,
+      "deaths": 0,
+      "episodes": [
+        403330798,
+        403593754,
+        411733136,
+        469180525,
+        780216897,
+        1202186258,
+        1344356697,
+        1523693189,
+        1648273883,
+        1678546418
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.1040008238458187,
+        "holding_units": 3526.5,
+        "holding_units_per_cycle": 35.265,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.23235019826190015,
+        "min_capacity_ratio": 0.6216455204402642,
+        "min_spare_fraction": 0.1993387522547135
+      },
+      "ratio": 1.0651474850132994,
+      "regime": "shocked",
+      "run_down_failures": 8,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-shocked-00"
+    },
+    {
+      "baseline": 520.54,
+      "candidate_mean": 531.7,
+      "deaths": 0,
+      "episodes": [
+        144403646,
+        480920748,
+        797901344,
+        1113839877,
+        1379500898,
+        1390414481,
+        1552390792,
+        1763938669,
+        1906499098,
+        1962673112
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.09634121216138544,
+        "holding_units": 3544.8,
+        "holding_units_per_cycle": 35.448,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.0103183044913456,
+        "min_capacity_ratio": 0.6606972457291407,
+        "min_spare_fraction": 0.4139820012828842
+      },
+      "ratio": 1.0214392745994545,
+      "regime": "shocked",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-shocked-01"
+    },
+    {
+      "baseline": 465.4,
+      "candidate_mean": 470.5,
+      "deaths": 0,
+      "episodes": [
+        137742314,
+        280198481,
+        952913334,
+        1385045357,
+        1512164500,
+        1546132854,
+        1596453724,
+        1868313768,
+        2019752305,
+        2129989729
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.048472890250493485,
+        "holding_units": 3725.0,
+        "holding_units_per_cycle": 37.25,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.08687427956658726,
+        "min_capacity_ratio": 0.6406318999663565,
+        "min_spare_fraction": 0.5366532139171458
+      },
+      "ratio": 1.0109583154275892,
+      "regime": "shocked",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-shocked-02"
+    },
+    {
+      "baseline": 498.58000000000004,
+      "candidate_mean": 515.2,
+      "deaths": 0,
+      "episodes": [
+        64327752,
+        299142319,
+        309898481,
+        605789734,
+        800294722,
+        825435124,
+        1173714013,
+        1744692017,
+        1853533776,
+        1918321488
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.054881375647203356,
+        "holding_units": 3565.5,
+        "holding_units_per_cycle": 35.655,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.00589106455979521,
+        "min_capacity_ratio": 0.66738345730907,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 1.0333346704641182,
+      "regime": "shocked",
+      "run_down_failures": 0,
+      "size": 12,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-12-shocked-03"
+    },
+    {
+      "baseline": 1842.1333333333332,
+      "candidate_mean": 1900.0,
+      "deaths": 0,
+      "episodes": [
+        106209185,
+        983659392,
+        2003491298
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.09738717339667459,
+        "holding_units": 11961.0,
+        "holding_units_per_cycle": 119.61,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.16555183946488294,
+        "min_capacity_ratio": 0.6782138056050028,
+        "min_spare_fraction": 0.1428571428571429
+      },
+      "ratio": 1.0314128546612624,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 3,
+      "world": "dev-sparse_wide-42-calm-00"
+    },
+    {
+      "baseline": 1609.2,
+      "candidate_mean": 1662.0,
+      "deaths": 0,
+      "episodes": [
+        531048667,
+        1111343407,
+        1631157762
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.08981380065717415,
+        "holding_units": 12508.0,
+        "holding_units_per_cycle": 125.08,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.019342359767891684,
+        "min_capacity_ratio": 0.682799427706836,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 1.0328113348247576,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 3,
+      "world": "dev-sparse_wide-42-calm-01"
+    },
+    {
+      "baseline": 1688.9333333333334,
+      "candidate_mean": 1776.0,
+      "deaths": 0,
+      "episodes": [
+        366535258,
+        1578575598,
+        1638545673
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.03948080043266631,
+        "holding_units": 12010.0,
+        "holding_units_per_cycle": 120.09999999999998,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.024299065420560748,
+        "min_capacity_ratio": 0.6671178102073597,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 1.0515512749664482,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-42-calm-02"
+    },
+    {
+      "baseline": 1797.0,
+      "candidate_mean": 1772.0,
+      "deaths": 0,
+      "episodes": [
+        1113418926,
+        1696937165,
+        1765041017
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.08518327310273617,
+        "holding_units": 12399.0,
+        "holding_units_per_cycle": 123.99,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.002079002079002079,
+        "min_capacity_ratio": 0.6857435956064292,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 0.9860879243183083,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 3,
+      "world": "dev-sparse_wide-42-calm-03"
+    },
+    {
+      "baseline": 1700.4666666666665,
+      "candidate_mean": 1751.0,
+      "deaths": 0,
+      "episodes": [
+        470157921,
+        1242615372,
+        1700741941
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.04888647474198805,
+        "holding_units": 12316.0,
+        "holding_units_per_cycle": 123.16000000000001,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.2158054711246201,
+        "min_capacity_ratio": 0.6610775146924605,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 1.0297173324969617,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 3,
+      "world": "dev-sparse_wide-42-calm-04"
+    },
+    {
+      "baseline": 1686.6666666666667,
+      "candidate_mean": 1766.0,
+      "deaths": 0,
+      "episodes": [
+        282982125,
+        1531763135,
+        2018346833
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.07732497387669801,
+        "holding_units": 12447.0,
+        "holding_units_per_cycle": 124.46999999999998,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.023076923076923078,
+        "min_capacity_ratio": 0.6738411436967778,
+        "min_spare_fraction": 0.1923076923076923
+      },
+      "ratio": 1.0470355731225296,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 3,
+      "world": "dev-sparse_wide-42-calm-05"
+    },
+    {
+      "baseline": 1721.5333333333335,
+      "candidate_mean": 1817.0,
+      "deaths": 0,
+      "episodes": [
+        96307357,
+        204797563,
+        912946811
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.09195402298850575,
+        "holding_units": 11908.0,
+        "holding_units_per_cycle": 119.08,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.016981132075471698,
+        "min_capacity_ratio": 0.6878049891843835,
+        "min_spare_fraction": 0.03448275862068961
+      },
+      "ratio": 1.0554544398404522,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-42-calm-06"
+    },
+    {
+      "baseline": 1829.6000000000001,
+      "candidate_mean": 1952.0,
+      "deaths": 0,
+      "episodes": [
+        118315526,
+        353177905,
+        837907461
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.03747534516765286,
+        "holding_units": 11906.0,
+        "holding_units_per_cycle": 119.06,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.0074487895716946,
+        "min_capacity_ratio": 0.6650035674689521,
+        "min_spare_fraction": 0.19999999999999996
+      },
+      "ratio": 1.0668998688237865,
+      "regime": "calm",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-42-calm-07"
+    },
+    {
+      "baseline": 1648.86,
+      "candidate_mean": 1705.8,
+      "deaths": 0,
+      "episodes": [
+        4145884,
+        7743056,
+        81752346,
+        369292162,
+        435219139,
+        463618645,
+        685085498,
+        1060101985,
+        1637931849,
+        1907655396
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.05884409656912894,
+        "holding_units": 12380.9,
+        "holding_units_per_cycle": 123.809,
+        "inversion_rate": 0.008333333333333333,
+        "investment_rejection_rate": 0.04980581249202482,
+        "min_capacity_ratio": 0.6967300705121875,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 1.0345329500382083,
+      "regime": "shocked",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-42-shocked-00"
+    },
+    {
+      "baseline": 1744.2599999999998,
+      "candidate_mean": 1811.0,
+      "deaths": 0,
+      "episodes": [
+        317210345,
+        746805083,
+        764460543,
+        902957230,
+        1226954377,
+        1466441995,
+        1674663210,
+        1776585508,
+        1824585025,
+        1968127071
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.07278127469335356,
+        "holding_units": 12468.5,
+        "holding_units_per_cycle": 124.68499999999999,
+        "inversion_rate": 0.007142857142857143,
+        "investment_rejection_rate": 0.007836449241920047,
+        "min_capacity_ratio": 0.6918206525035068,
+        "min_spare_fraction": 0.0
+      },
+      "ratio": 1.0382626443305472,
+      "regime": "shocked",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-42-shocked-01"
+    },
+    {
+      "baseline": 1673.64,
+      "candidate_mean": 1746.3,
+      "deaths": 0,
+      "episodes": [
+        94719794,
+        160778965,
+        376871033,
+        417658043,
+        438669130,
+        911855958,
+        1164095001,
+        1430791609,
+        1491523540,
+        1547671687
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.07988068001324086,
+        "holding_units": 12372.9,
+        "holding_units_per_cycle": 123.729,
+        "inversion_rate": 0.011513157894736841,
+        "investment_rejection_rate": 0.009225400299050997,
+        "min_capacity_ratio": 0.7033743772680686,
+        "min_spare_fraction": 0.037543437745050645
+      },
+      "ratio": 1.0434143543414354,
+      "regime": "shocked",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 1,
+      "world": "dev-sparse_wide-42-shocked-02"
+    },
+    {
+      "baseline": 1742.3,
+      "candidate_mean": 1825.3,
+      "deaths": 0,
+      "episodes": [
+        567075104,
+        845870970,
+        869067812,
+        872925809,
+        1028298466,
+        1076392355,
+        1446351067,
+        1740889567,
+        1745165639,
+        1925847396
+      ],
+      "gating": true,
+      "monitored": {
+        "consumer_rejection_rate": 0.08316351474850019,
+        "holding_units": 12339.2,
+        "holding_units_per_cycle": 123.39200000000001,
+        "inversion_rate": 0.0,
+        "investment_rejection_rate": 0.12557572243051396,
+        "min_capacity_ratio": 0.6702355899571654,
+        "min_spare_fraction": 0.035072142064372924
+      },
+      "ratio": 1.0476381794180107,
+      "regime": "shocked",
+      "run_down_failures": 0,
+      "size": 42,
+      "starvation_failures": 0,
+      "world": "dev-sparse_wide-42-shocked-03"
+    }
+  ],
+  "x": 0.729674051435041,
+  "y": 0.768075117370892
+}
