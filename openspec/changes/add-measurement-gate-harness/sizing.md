@@ -17,6 +17,10 @@ neither 10.1 nor 12.1 overrides it).
 
 ## Plain-English summary
 
+> **Interim (2026-10-27).** These numbers size the large economy at 120 producers. The user has
+> since moved the large size to 42 producers (task 8.7). Task 8.8 re-sizes 10.1 and 12.1 at
+> 12/42, and its Part A replaces the figures below; this round then becomes history.
+
 The task 8.4 speed-up cut the dominant cost, a 120-producer episode under the joint-stack
 contract, **8.6× (sparse-wide) to 9.9× (dense)**. That is measured old vs new code at the same
 horizon (h = 12); at h = 16 the sparse-wide ratio is 8.4×. At horizon 100, now measured directly,
@@ -30,14 +34,18 @@ about 1 s, against 1.6–2.5 s before (2.0–2.3×, measured at h = 100 on both 
 
 Totals are **conditional scenarios, not bounds** (§A4). The **reference scenario**, where every
 roster job costs as much as the measured `entity_planner/proportional` episode, puts:
-- **10.1 (screen) at ≈160 CPU-hours**, about 10 h wall on a cpu16 pod or 5 h on cpu32;
+- **10.1 (screen) at ≈90 CPU-hours**, about 5.6 h wall on a cpu16 pod or 2.8 h on cpu32. This
+  uses on-demand reserves, the user's choice on 2026-10-27, implemented in task 8.6: reserve
+  worlds run only when a gate world has a zero hindsight baseline. None is expected (§A4); each
+  one that occurs adds 0.05–7.7 CPU-hours.
 - **12.1 (report) at ≈90 CPU-hours**, about 6 h on cpu16 or 3 h on cpu32.
 
-Before the speed-up these were ≈1,600 and ≈910. Those old totals rested on the h = 100
-extrapolation above, so the ≈10× drop in the totals is not a measured speed-up either. Within what the data supports, the scenarios span
-**≈136–192 CPU-hours for 10.1** and **≈77–108 for 12.1**. Pod CPU speed and contention between
-concurrent workers are not measured, and they come on top of that range. 120-producer jobs are
-97% of the cost.
+Running every reserve up front (`--reserves eager`) would put 10.1 at ≈162. Before the speed-up
+the eager screen was ≈1,600 and the report ≈910. Those old totals rested on the h = 100
+extrapolation above, so their ≈10× drop is not a measured speed-up either. Within what the data
+supports, the scenarios span **≈75–106 CPU-hours for 10.1** (on-demand, no replacement) and
+**≈77–108 for 12.1**. Pod CPU speed and contention between concurrent workers are not measured,
+and they come on top of that range. 120-producer jobs are 97% of the cost.
 
 The next dominant cost, inside a 120-producer joint episode, is still the orderer observation.
 In one profiled h = 12 episode:
@@ -49,9 +57,9 @@ The following estimates hold only if those profiled h = 12 shares carry over to 
 roster jobs (not shown; profiling inflates Python-call-heavy code). On that condition, removing
 the encode cost entirely would save about 47 of 10.1's 162 reference CPU-hours. Removing encode and
 view together would save about 80, which is roughly the deferred eligible-only-rows refactor, and
-that refactor changes the observation (§A5). Two plan-level levers cost no code
-here, only arithmetic (§A6). Running reserve worlds only when needed would drop 10.1 from 162 to
-≈90 CPU-hours plus ≈0.05–7.7 per reserve actually consulted. A smaller R gives, for 10.1:
+that refactor changes the observation (§A5); these figures are on the eager basis (162). Of
+the two plan-level levers in §A6, the user chose on-demand reserves (now the default). R stays at
+5. For the record, a smaller R would give, for an eager 10.1:
 
 | R | 10.1 CPU-hours |
 |---|---|
@@ -60,7 +68,7 @@ here, only arithmetic (§A6). Running reserve worlds only when needed would drop
 | 2 | 93 |
 | 1 | 70 |
 
-No recommendation is made here; the budget and R are the user's decisions.
+The user kept R = 5 (2026-10-27).
 
 # Part A. After the task 8.4 optimization (commit c31e1a7)
 
@@ -179,6 +187,37 @@ at h = 50, and it moves the totals by under 1%.
 | reference | 10.1 h / 5.1 h | 5.8 h / 2.9 h |
 | high | 12.0 h / 6.0 h | 6.8 h / 3.4 h |
 
+The 10.1 rows above are the **eager** screen, where every reserve runs. **10.1 as planned uses
+on-demand reserves** (`--reserves on-demand`, the default since task 8.6). Wave 1 screens the 64
+development gate worlds only. Further waves run just the reserves needed to replace zero-baseline
+worlds, in fixed order. The frozen files are identical to the eager screen's (tested). Same
+multipliers, gate worlds only (shocked share 62.5%; `after85/size86.out`):
+
+| scenario (10.1 on-demand, no replacement) | CPU-h | cpu16 / cpu32 wall |
+|---|---|---|
+| low | 74.9 | 4.7 h / 2.3 h |
+| **reference** | **89.6** | **5.6 h / 2.8 h** |
+| member mix | 103.6 | 6.5 h / 3.2 h |
+| regime | 91.4 | 5.7 h / 2.9 h |
+| high | 105.7 | 6.6 h / 3.3 h |
+
+**Expected replacements: none.** A gate world needs replacing only if all 40 roster members
+deliver 0 units on every episode. One member alone, `entity_planner/proportional`, delivered
+327–4,283 units at h = 100 (shocked at h = 50 for 120 producers) on each of the 8 development
+worlds timed: calm-00 and shocked-00 for each family × size, in `after85/` and `evidence/`. The
+zero baselines seen in the 8.3 dry runs came from a 3-member subset of only `always_both/*`
+members at h ≤ 12 (§B6), which the full roster at h = 100 does not reproduce. Those 8 worlds are
+8 of the 64 gate worlds, so a zero world elsewhere cannot be excluded. Each one adds the cost of
+the reserves it consults (§A6(a) table), and waves run one after another:
+
+| sensitivity | CPU-h | cpu16 / cpu32 wall |
+|---|---|---|
+| reference + 1 dense-120 shocked replacement (7.72 CPU-h) | 97.3 | 6.1 h / 3.0 h, plus one sequential wave |
+| reference + 4 such replacements | 120.5 | 7.5 h / 3.8 h, plus up to four sequential waves |
+
+A wave cannot overlap the one before it. One dense-120 shocked reserve is 10 episodes × 88 jobs,
+about 7.7 CPU-hours, so ≈0.5 h on cpu16 if its jobs keep all workers busy.
+
 Reference split for 10.1 by family × size: dense-120 89.6, sparse-120 68.2, dense-12 2.7,
 sparse-12 1.9 CPU-hours. Within the 120-producer part, the joint-stack jobs are 141 of the 158
 CPU-hours and legacy is 17. The subject in 12.1 now costs ≈2.5 CPU-hours (≈28 in §B2): 128
@@ -242,9 +281,11 @@ any of it is worth doing.
 
 ## A6. Plan-level levers (arithmetic only, reference scenario)
 
-**(a) On-demand reserves in 10.1.** 10.1 currently runs every reserve world up front: 208 of
-its 464 world-episodes, 72.8 of its 162.4 CPU-hours (44.8%). Screening gate worlds only costs 89.6
-CPU-hours. Each reserve actually consulted adds its own cost:
+**(a) On-demand reserves in 10.1. Chosen by the user on 2026-10-27 and implemented in task 8.6**
+(`--mode screen --reserves on-demand`, the default; the 10.1 plan in §A4). The eager screen runs
+every reserve world up front: 208 of its 464 world-episodes, 72.8 of its 162.4 CPU-hours (44.8%).
+Screening gate worlds only costs 89.6 CPU-hours. Each reserve actually consulted adds its own
+cost:
 
 | reserve world | CPU-hours |
 |---|---|
@@ -254,21 +295,21 @@ CPU-hours. Each reserve actually consulted adds its own cost:
 | sparse-120 calm | 1.76 |
 | any 12-producer reserve | 0.05–0.23 |
 
-So 10.1 would cost 89.6 + Σ(consulted reserves) CPU-hours. That needs a code change: a second,
-conditional screening wave, run only after the first wave finds zero-baseline worlds.
+So 10.1 costs 89.6 + Σ(consulted reserves) CPU-hours. Each wave is decided only after the
+previous one completes, from the rows alone, so the waves are deterministic (task 8.6).
 
 **(b) R, the replicates per random member.** Jobs per world-episode are 18 + 10·R joint and
 10 + 2·R legacy.
 
 | R | jobs per world-episode (joint + legacy) | 10.1 CPU-h | 12.1 CPU-h |
 |---|---|---|---|
-| 5 (current) | 68 + 20 | 162.4 | 92.1 |
+| 5 (current, kept by the user) | 68 + 20 | 162.4 | 92.1 |
 | 3 | 48 + 16 | 116.2 | 66.6 |
 | 2 | 38 + 14 | 93.1 | 53.9 |
 | 1 | 28 + 12 | 70.1 | 41.2 |
 
 R is a pre-registered design default (D5): changing it changes how the hindsight baseline averages
-random members. No recommendation is made here.
+random members. The user kept R = 5 (2026-10-27).
 
 ## A7. Raw data for Part A
 

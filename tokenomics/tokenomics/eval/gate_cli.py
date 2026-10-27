@@ -9,8 +9,10 @@ Modes:
   `RESULT.md` skeleton). All arithmetic is `gate.compute_report`; this module only produces rows.
 - `recompute`: rebuild the report from `episodes.csv` plus the roster / parameter payloads embedded
   in `spec.json` (hash-checked against the named versions) and compare it with `verdict.json`.
-- `screen`: roster only, on the development gate worlds and their reserves. In order: zero-baseline
-  replacement (registry screening, development split) -> headroom per family × size on the final
+- `screen`: roster only, on the development gate worlds, plus the reserves they need. By
+  default (`--reserves on-demand`, task 8.6) reserves run in waves only when a gate world has a
+  zero baseline. `--reserves eager` runs every reserve up front; both give identical frozen
+  files. In order: zero-baseline replacement (registry screening, development split) -> headroom per family × size on the final
   world set (D10; any failure stops with exit 3 and writes no frozen files) -> optional pruning
   (`--prune`, roster.prune_roster) -> X/Y calibration (D4) over the final worlds' episodes with the
   (pruned) roster -> candidate frozen files `frozen/worlds_v1.json` (screened, headroom recorded),
@@ -79,9 +81,11 @@ from .registry import (
     check_sealed_access,
     load_preregistration,
     load_registry,
+    plan_replacements,
     record_headroom,
     save_registry,
     screen_zero_baselines,
+    world_baseline_means,
 )
 from .roster import (
     DEFAULT_ROSTER,
@@ -632,6 +636,7 @@ def recompute(out_dir: str | Path) -> tuple[GateReport, bool]:
 # --- screen (tasks 8.2 / 10.1) ---
 
 HEADROOM_FAILED = 3  # exit status: a family × size failed D10; no frozen files written
+RESERVE_MODES = ("on-demand", "eager", "none")
 
 
 @dataclass(frozen=True)
@@ -696,6 +701,38 @@ def screen_outcome(scope: Registry, roster: Roster, rows: Sequence[EpisodeRow], 
     return ScreenOutcome(screened, hr, True, frozen, cal, params)
 
 
+def _check_waves(waves: Sequence[object], *, reserves: str, scope: Registry, registry: Registry,
+                 roster: Roster, rows: Sequence[EpisodeRow], grid: Mapping[str, Mapping],
+                 episodes_per_world: int | None) -> None:
+    """Refuse recorded reserve waves the planner would not have scheduled (review concern 92).
+    `spec.json` "waves" sits outside the pins, so an edited or corrupt list would otherwise widen
+    the job grid and turn arbitrary rows into expected ones. Wave n (numbered from 2) is valid only
+    if every wave before it is complete in the rows and `plan_replacements` over exactly those rows
+    gives n's pending reserves with their canonical grid. Only the last wave may be incomplete:
+    that is a mid-wave resume."""
+    if reserves != "on-demand":
+        raise ValueError(f"spec.json records reserve waves but reserves={reserves!r}; "
+                         f"refusing to resume")
+    cum = dict(grid)
+    for i, wave in enumerate(waves):
+        n = i + 2
+        if not isinstance(wave, dict) or set(wave) != {"wave", "worlds"} or wave["wave"] != n:
+            raise ValueError(f"recorded reserve wave #{n} is malformed: {wave!r}; "
+                             f"refusing to resume")
+        prefix = [r for r in rows if r.world in cum]
+        try:
+            check_rows(prefix, cum, expected_keys(cum, roster, 0), complete=True)
+        except ValueError as exc:
+            raise ValueError(f"recorded reserve wave {n} but the waves before it are incomplete "
+                             f"({exc}); refusing to resume") from None
+        plan = plan_replacements(scope, world_baseline_means(scope, roster, prefix))
+        want = job_grid([registry.entry(w) for w in plan.pending], episodes_per_world)
+        if not want or wave["worlds"] != want:
+            raise ValueError(f"recorded reserve wave {n} {sorted(wave['worlds'])} is not the "
+                             f"planned wave {sorted(want)}; refusing to resume")
+        cum.update(want)
+
+
 def run_screen(
     *,
     out_dir: str | Path,
@@ -705,7 +742,7 @@ def run_screen(
     roster: Roster,
     q: float = 0.05,
     prune: bool = False,
-    reserves: bool = True,
+    reserves: str = "on-demand",
     sizes: Sequence[int] | None = None,
     families: Sequence[str] | None = None,
     max_worlds: int | None = None,
@@ -715,11 +752,25 @@ def run_screen(
     run_job_fn: Callable[[Job], dict[str, str]] = run_job,
     log: Callable[[str], None] = print,
 ) -> tuple[ScreenOutcome, int]:
-    """Run (or resume) the roster on the development gate worlds and their reserves, then
+    """Run (or resume) the roster on the development gate worlds and the reserves they need, then
     `screen_outcome`; write the screening report and, if headroom passes, `frozen/`. Returns the
     outcome and the exit status (0, or `HEADROOM_FAILED`). A real screen needs an unscreened
     registry, a 40-hex source commit, reserves and no filters; a dry run screens the selected
-    worlds as a sub-registry."""
+    worlds as a sub-registry.
+
+    `reserves` (user decision 2026-10-27, task 8.6):
+    - "on-demand" (default): wave 1 runs the gate worlds only. Each later wave runs exactly the
+      reserves `registry.plan_replacements` reports pending, i.e. the reserves the fixed order is
+      certain to consult. Each wave is decided only after the previous one has completed, so worker
+      timing cannot change it. The waves stop when the plan has no pending reserve, or raise when
+      a group runs out.
+    - "eager": every reserve of the selected groups runs up front (the 8.2 behaviour).
+    - "none": dry runs only.
+    Both modes feed the same `screen_outcome`, whose record keeps only consulted reserves, so they
+    give identical frozen files. The waves are recorded in `spec.json` ("waves"); a resume reruns
+    the recorded waves first and then continues planning from the rows."""
+    if reserves not in RESERVE_MODES:
+        raise ValueError(f"reserves must be one of {RESERVE_MODES}, got {reserves!r}")
     if registry.screening is not None:
         raise ValueError(f"registry {registry.version[:12]} is already screened")
     if not dry_run:
@@ -728,7 +779,7 @@ def run_screen(
              "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
             (any(f is not None for f in (sizes, families, max_worlds, episodes_per_world)),
              "world/episode filters are set"),
-            (not reserves, "reserves are skipped"),
+            (reserves == "none", "reserves are skipped"),
             (bool(registry.coverage_problems()), "; ".join(registry.coverage_problems())),
         ) if bad]
         if problems:
@@ -740,7 +791,7 @@ def run_screen(
         raise ValueError("no development gate worlds selected")
     groups = {e.group for e in gate}
     extra = [e for e in registry.entries
-             if reserves and e.status == RESERVE and e.group in groups]
+             if reserves != "none" and e.status == RESERVE and e.group in groups]
     if dry_run:  # a sub-registry of exactly what runs (selected worlds, truncated episodes)
         def cut(e: WorldEntry) -> WorldEntry:
             return replace(e, episode_seeds=e.episode_seeds[:episodes_per_world]
@@ -751,29 +802,63 @@ def run_screen(
                          saturation_ceiling=registry.saturation_ceiling)
     else:
         scope = registry
-    worlds = list(gate) + extra
+    # wave 1: gate worlds (plus every reserve when eager); the pinned grid is wave 1's.
+    worlds = list(gate) + (extra if reserves == "eager" else [])
     grid = job_grid(worlds, episodes_per_world)
     source = source_fingerprint(source_commit or None)
     pins = {
         "mode": "screen", "horizon": horizon, "dry_run": dry_run, "q": q, "prune": prune,
+        "reserves": reserves,
         "registry_version": registry.version, "scope_version": scope.version,
         "roster_version": roster.version,
         "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
-        "candidate_replicates": 0, "grid": grid,
+        "candidate_replicates": 0, "grid": dict(grid),  # a copy: later waves extend `grid`
     }
     out = Path(out_dir)
+    # Reserve waves already scheduled by an earlier run of this screen: their worlds join the
+    # grid before the resume check, so their rows are not orphans. A pin mismatch is refused by
+    # _prepare_resume anyway, so the waves of a different run are never read. The waves are not
+    # pinned, so each one is replayed from the rows before any job runs (`_check_waves`).
+    prior = (json.loads((out / "spec.json").read_text())
+             if (out / "spec.json").exists() else {})
+    waves: list[dict] = prior.get("waves", []) if prior.get("pins") == pins else []
+    if waves:
+        _check_waves(waves, reserves=reserves, scope=scope, registry=registry, roster=roster,
+                     rows=read_rows(out / "episodes.csv"), grid=grid,
+                     episodes_per_world=episodes_per_world)
+    for wave in waves:
+        worlds += [registry.entry(w) for w in wave["worlds"]]
+        grid.update(wave["worlds"])
     expected = expected_keys(grid, roster, 0)
     old_spec, done = _prepare_resume(out, pins, grid, expected)
     spec = _open_spec(out, old_spec, workers, {
         "experiment": out.name, "driver": DRIVER, "mode": "screen",
         "kind": "dry-run" if dry_run else "screen", "pins": pins,
         "roster": roster.payload() | {"content_hash": roster.version}, "source": source,
+        "waves": [],
     })
-    jobs = build_jobs(worlds, roster, None, episodes_per_world=episodes_per_world)
-    _execute(out, spec, done, jobs, expected, workers, (horizon, None, None), run_job_fn, log)
-
-    rows = read_rows(out / "episodes.csv")
-    check_rows(rows, grid, expected, complete=True)
+    while True:
+        jobs = build_jobs(worlds, roster, None, episodes_per_world=episodes_per_world)
+        _execute(out, spec, done, jobs, expected, workers, (horizon, None, None), run_job_fn,
+                 log)
+        rows = read_rows(out / "episodes.csv")
+        check_rows(rows, grid, expected, complete=True)
+        if reserves != "on-demand":
+            break
+        # Decided only now, after every scheduled job finished: deterministic in the rows.
+        plan = plan_replacements(scope, world_baseline_means(scope, roster, rows))
+        if not plan.pending:
+            break
+        new = [registry.entry(w) for w in plan.pending]
+        wave_grid = job_grid(new, episodes_per_world)
+        spec["waves"] = spec.get("waves", []) + [
+            {"wave": len(spec.get("waves", [])) + 2, "worlds": wave_grid}]
+        _write_spec(out, spec)
+        log(f"[gate] reserve wave {spec['waves'][-1]['wave']}: {sorted(wave_grid)}")
+        worlds += new
+        grid.update(wave_grid)
+        expected = expected_keys(grid, roster, 0)
+        done = rows
     prune_sizes = GATE_SIZES if not dry_run else sorted({e.size for e in gate})
     outcome = screen_outcome(scope, roster, rows, q=q, prune=prune, prune_sizes=prune_sizes)
     report = outcome.report()
@@ -860,7 +945,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--verify-source-commit", action="store_true")
     ap.add_argument("--q", type=float, default=0.05, help="screen: X/Y calibration quantile (D4)")
     ap.add_argument("--prune", action="store_true", help="screen: apply the never-argmax rule")
-    ap.add_argument("--no-reserves", action="store_true", help="screen dry run: skip reserves")
+    ap.add_argument("--reserves", choices=("on-demand", "eager", "none"), default="on-demand",
+                    help="screen: run reserve worlds only when a gate world needs replacing "
+                         "(default), all up front (eager), or not at all (dry runs only)")
     ap.add_argument("--dry-run", action="store_true",
                     help="smoke run: allows filters, an unfrozen roster, an unscreened registry and "
                          "no source commit; marked as not an acceptance read")
@@ -874,8 +961,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.mode == "report" and not args.params:
         ap.error("--mode report needs --params (the side-effect parameter file)")
-    if args.no_reserves and not args.dry_run:
-        ap.error("--no-reserves is a dry-run option")
+    if args.reserves == "none" and not args.dry_run:
+        ap.error("--reserves none is a dry-run option")
     source_commit = args.source_commit
     if args.verify_source_commit:
         from .provenance import resolve_verified_commit
@@ -893,7 +980,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _, status = run_screen(
             out_dir=args.out_dir, horizon=args.horizon, workers=args.workers,
             registry=load_registry(args.registry), roster=roster, q=args.q, prune=args.prune,
-            reserves=not args.no_reserves, sizes=_csv_ints(args.sizes),
+            reserves=args.reserves, sizes=_csv_ints(args.sizes),
             families=_csv_strs(args.families), max_worlds=args.max_worlds,
             episodes_per_world=args.episodes_per_world, source_commit=source_commit,
             dry_run=args.dry_run)

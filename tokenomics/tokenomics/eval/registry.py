@@ -512,19 +512,81 @@ def world_baseline_means(
     return means
 
 
+@dataclass(frozen=True)
+class ReplacementPlan:
+    """What zero-baseline screening decides from the baseline means known so far
+    (`plan_replacements`). `consulted` are the reserves examined, in order; `pending` are
+    reserves the fixed order will certainly consult but whose rows are not in yet. The plan is
+    final when `pending` is empty."""
+
+    replacements: tuple[Replacement, ...]
+    consulted: tuple[str, ...]
+    pending: tuple[str, ...]
+
+
+def plan_replacements(
+    registry: Registry, means: Mapping[str, float], splits: Collection[str] = (DEVELOPMENT,),
+) -> ReplacementPlan:
+    """The single replacement rule behind both the eager and the on-demand screen (task 8.6).
+
+    Gate worlds of `splits` are visited in id order. Each one with a zero hindsight baseline
+    takes reserves from its (split, family, size, regime) group in reserve-position order,
+    skipping zero reserves, until a reserve has a non-zero mean. A reserve with no mean yet goes
+    to `pending` and leaves its slot unresolved. Later slots of the same group keep popping the
+    queue. That is exact: every unresolved slot will consume at least one more reserve, so the
+    next reserve in order is consulted whatever the pending one turns out to be. On-demand
+    screening therefore runs exactly the reserves the eager screen consults. Raises when a group
+    runs out of reserves even if every pending reserve proves usable."""
+    targets = [e for e in registry.gate_worlds() if e.split in splits]
+    missing = [e.id for e in targets if e.id not in means]
+    if missing:
+        raise ValueError(f"no baseline rows for gate worlds {missing}")
+    queues: dict[tuple[str, str, int, str], list[WorldEntry]] = {}
+    for e in registry.entries:
+        if e.status == RESERVE:
+            queues.setdefault(e.group, []).append(e)
+    for q in queues.values():
+        q.sort(key=lambda e: e.reserve_position)  # type: ignore[arg-type, return-value]
+    replacements: list[Replacement] = []
+    consulted: list[str] = []
+    pending: list[str] = []
+    for e in targets:
+        if means[e.id] != 0:
+            continue
+        skipped: list[str] = []
+        queue = queues.get(e.group, [])
+        while True:
+            if not queue:
+                raise ValueError(f"{e.id}: zero hindsight baseline and no usable reserve left in "
+                                 f"{e.group}")
+            r = queue.pop(0)
+            if r.id not in means:
+                pending.append(r.id)
+                break
+            consulted.append(r.id)
+            if means[r.id] != 0:
+                replacements.append(Replacement(e.id, r.id, tuple(skipped)))
+                break
+            skipped.append(r.id)
+    return ReplacementPlan(tuple(replacements), tuple(consulted), tuple(pending))
+
+
 def screen_zero_baselines(
     registry: Registry, roster: Roster, rows: Sequence[EpisodeRow],
     splits: Collection[str] = (DEVELOPMENT,),
 ) -> Registry:
     """Replace every zero-baseline gate world by the next unused reserve of its (split, family,
-    size, regime) group, in reserve-position order, skipping reserves whose own baseline is zero.
-    Pure over roster-only rows, so the outcome is the same whichever candidate is evaluated later.
-    Returns a new registry (new version) carrying the `ScreeningRecord`.
+    size, regime) group, in reserve-position order, skipping reserves whose own baseline is zero
+    (`plan_replacements`). Pure over roster-only rows, so the outcome is the same whichever
+    candidate is evaluated later. Returns a new registry (new version) carrying the
+    `ScreeningRecord`.
 
     Screens only the gate worlds of `splits` (development by default, module docstring) and
     refuses rows of worlds in other splits. Needs a baseline mean for every such gate world and for
     every reserve it consults; refuses an already-screened registry and raises when a group runs
-    out of reserves."""
+    out of reserves. The record keeps the means of the gate worlds and the consulted reserves
+    only, so rows of reserves never consulted (an eager screen runs them all) do not change the
+    outcome: eager and on-demand screens give the same registry."""
     if registry.screening is not None:
         raise ValueError(f"registry {registry.version} is already screened")
     splits = tuple(sorted(set(splits)))
@@ -534,41 +596,20 @@ def screen_zero_baselines(
     outside = sorted(w for w in means if registry.entry(w).split not in splits)
     if outside:
         raise ValueError(f"rows for worlds outside the screened splits {splits}: {outside[:3]}")
-    targets = [e for e in registry.gate_worlds() if e.split in splits]
-    missing = [e.id for e in targets if e.id not in means]
-    if missing:
-        raise ValueError(f"no baseline rows for gate worlds {missing}")
-    reserves: dict[tuple[str, str, int, str], list[WorldEntry]] = {}
-    for e in registry.entries:
-        if e.status == RESERVE:
-            reserves.setdefault(e.group, []).append(e)
-    for q in reserves.values():
-        q.sort(key=lambda e: e.reserve_position)  # type: ignore[arg-type, return-value]
+    plan = plan_replacements(registry, means, splits)
+    if plan.pending:
+        raise ValueError(f"reserve {plan.pending[0]} was consulted but has no baseline rows")
     updated = {e.id: e for e in registry.entries}
-    replacements: list[Replacement] = []
-    for e in targets:
-        if means[e.id] != 0:
-            continue
-        skipped: list[str] = []
-        queue = reserves.get(e.group, [])
-        while True:
-            if not queue:
-                raise ValueError(f"{e.id}: zero hindsight baseline and no usable reserve left in "
-                                 f"{e.group}")
-            r = queue.pop(0)
-            if r.id not in means:
-                raise ValueError(f"reserve {r.id} was consulted but has no baseline rows")
-            if means[r.id] != 0:
-                break
-            skipped.append(r.id)
-            updated[r.id] = replace(r, status=REPLACED)
-        updated[e.id] = replace(e, status=REPLACED)
-        updated[r.id] = replace(r, status=GATE)
-        replacements.append(Replacement(e.id, r.id, tuple(skipped)))
+    for rep in plan.replacements:
+        updated[rep.replaced] = replace(updated[rep.replaced], status=REPLACED)
+        for sk in rep.skipped:
+            updated[sk] = replace(updated[sk], status=REPLACED)
+        updated[rep.by] = replace(updated[rep.by], status=GATE)
+    kept = {e.id for e in registry.gate_worlds() if e.split in splits} | set(plan.consulted)
     record = ScreeningRecord(
         roster_version=roster.version,
-        baseline_means=tuple(sorted(means.items())),
-        replacements=tuple(replacements),
+        baseline_means=tuple(sorted((w, m) for w, m in means.items() if w in kept)),
+        replacements=plan.replacements,
         splits=splits,
     )
     return Registry(name=registry.name, seed_ranges=registry.seed_ranges,

@@ -26,6 +26,7 @@ from tokenomics.eval.gate import (
 )
 from tokenomics.eval.gate_cli import (
     HEADROOM_FAILED,
+    job_grid,
     main,
     row_to_dict,
     run_screen,
@@ -453,3 +454,207 @@ def test_inconsistent_headroom_refused() -> None:
     d["content_hash"] = content_hash(d)
     with pytest.raises(ValueError, match="inconsistent"):
         registry_from_dict(d)
+
+
+# --- on-demand reserves (task 8.6, user decision 2026-10-27) ---
+
+GATE_IDS = ("dev-dense-12-calm-00", "dev-sparse_wide-12-calm-00")
+RES_IDS = tuple(f"dev-{f}-12-calm-r{k}" for f in ("dense", "sparse_wide") for k in range(4))
+
+
+@pytest.fixture(scope="module")
+def reserve_registry(tmp_path_factory: pytest.TempPathFactory) -> Registry:
+    full = build_worlds_v1()
+    return Registry(name="fixture-reserves", seed_ranges=full.seed_ranges,
+                    entries=tuple(full.entry(w) for w in (*GATE_IDS, *RES_IDS)))
+
+
+def _zero_stub(zero: set[str], ran: list[dict] | None = None,
+               crash_on: str | None = None) -> Callable[[dict], dict]:
+    """Deterministic roster rows: worlds in `zero` deliver nothing, the others 10 - k units."""
+    def stub(job: dict) -> dict:
+        if crash_on is not None and job["world"] == crash_on:
+            raise RuntimeError("simulated crash")
+        if ran is not None:
+            ran.append(job)
+        k = 0 if job["subject"] == A else 1
+        units = 0.0 if job["world"] in zero else 10.0 - k
+        return row_to_dict(_row(job["world"], job["episode"], job["subject"], units,
+                                replicate=job["replicate"], size=job["size"],
+                                regime=job["regime"], ordered=100, fulfilled=50))
+    return stub
+
+
+def _screen(reg: Registry, out: Path, stub: Callable[[dict], dict], reserves: str) -> tuple:
+    return run_screen(out_dir=out, horizon=12, workers=1, registry=reg, roster=ROSTER,
+                      episodes_per_world=1, dry_run=True, reserves=reserves,
+                      run_job_fn=stub, log=lambda s: None)
+
+
+def test_on_demand_runs_no_reserve_when_no_zero_world(reserve_registry: Registry,
+                                                      tmp_path: Path) -> None:
+    """(a) No gate world has a zero baseline -> not one reserve job is scheduled."""
+    ran: list[dict] = []
+    outcome, status = _screen(reserve_registry, tmp_path / "a", _zero_stub(set(), ran),
+                              "on-demand")
+    assert status == 0 and outcome.passed
+    assert {j["world"] for j in ran} == set(GATE_IDS)
+    assert json.loads((tmp_path / "a" / "spec.json").read_text())["waves"] == []
+
+
+def test_on_demand_runs_exactly_the_needed_reserves(reserve_registry: Registry,
+                                                    tmp_path: Path) -> None:
+    """(b) A zero gate world triggers its group's reserves in fixed order, one wave at a time:
+    r0 (itself zero, so skipped) then r1 (usable). r2/r3 and the other group's reserves never
+    run."""
+    ran: list[dict] = []
+    zero = {"dev-dense-12-calm-00", "dev-dense-12-calm-r0"}
+    outcome, status = _screen(reserve_registry, tmp_path / "b", _zero_stub(zero, ran),
+                              "on-demand")
+    assert status == 0
+    assert {j["world"] for j in ran} == {*GATE_IDS, "dev-dense-12-calm-r0", "dev-dense-12-calm-r1"}
+    assert len(ran) == 4 * len(ROSTER.members)  # one episode per world, no repeats
+    waves = json.loads((tmp_path / "b" / "spec.json").read_text())["waves"]
+    assert [(w["wave"], sorted(w["worlds"])) for w in waves] == [
+        (2, ["dev-dense-12-calm-r0"]), (3, ["dev-dense-12-calm-r1"])]
+    (rep,) = outcome.registry.screening.replacements
+    assert (rep.replaced, rep.by, rep.skipped) == (
+        "dev-dense-12-calm-00", "dev-dense-12-calm-r1", ("dev-dense-12-calm-r0",))
+
+
+def test_eager_and_on_demand_give_identical_frozen_files(reserve_registry: Registry,
+                                                         tmp_path: Path) -> None:
+    """(c) Same rows, both modes: identical frozen files, screening record and report."""
+    zero = {"dev-dense-12-calm-00", "dev-dense-12-calm-r0"}
+    eager_ran: list[dict] = []
+    e_out, _ = _screen(reserve_registry, tmp_path / "eager", _zero_stub(zero, eager_ran), "eager")
+    d_out, _ = _screen(reserve_registry, tmp_path / "ondemand", _zero_stub(zero), "on-demand")
+    assert {j["world"] for j in eager_ran} == {*GATE_IDS, *RES_IDS}  # eager ran every reserve
+    for name in ("worlds_v1.json", "roster_v1.json", "side_effect_params_v1.json"):
+        assert ((tmp_path / "eager" / "frozen" / name).read_bytes()
+                == (tmp_path / "ondemand" / "frozen" / name).read_bytes()), name
+    assert e_out.registry == d_out.registry
+    assert ((tmp_path / "eager" / "screening.json").read_text()
+            == (tmp_path / "ondemand" / "screening.json").read_text())
+
+
+def test_on_demand_resumes_mid_wave(reserve_registry: Registry, tmp_path: Path) -> None:
+    """A crash inside wave 3 leaves its world recorded in spec.json; the rerun runs only the
+    missing wave-3 jobs and ends with the same frozen files as an uninterrupted screen."""
+    zero = {"dev-dense-12-calm-00", "dev-dense-12-calm-r0"}
+    out = tmp_path / "resume"
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        _screen(reserve_registry, out, _zero_stub(zero, crash_on="dev-dense-12-calm-r1"),
+                "on-demand")
+    spec = json.loads((out / "spec.json").read_text())
+    assert [sorted(w["worlds"]) for w in spec["waves"]] == [["dev-dense-12-calm-r0"],
+                                                            ["dev-dense-12-calm-r1"]]
+    ran: list[dict] = []
+    _screen(reserve_registry, out, _zero_stub(zero, ran), "on-demand")
+    assert {j["world"] for j in ran} == {"dev-dense-12-calm-r1"}
+    _screen(reserve_registry, tmp_path / "clean", _zero_stub(zero), "on-demand")
+    for name in ("worlds_v1.json", "roster_v1.json", "side_effect_params_v1.json"):
+        assert ((out / "frozen" / name).read_bytes()
+                == (tmp_path / "clean" / "frozen" / name).read_bytes()), name
+
+
+def _tamper(out: Path, edit: Callable[[list[dict]], list[dict]]) -> None:
+    spec = json.loads((out / "spec.json").read_text())
+    spec["waves"] = edit(spec["waves"])
+    (out / "spec.json").write_text(json.dumps(spec))
+
+
+def _wave(world: str, wave: int) -> dict:
+    return {"wave": wave, "worlds": job_grid([build_worlds_v1().entry(world)], 1)}
+
+
+@pytest.mark.parametrize("case, match", [
+    ("unplanned", "not the planned wave"),      # no zero gate world, yet a reserve wave
+    ("empty", "not the planned wave"),          # an empty wave the planner never writes
+    ("eager", "reserves='eager'"),              # eager screens record no waves
+    ("renumbered", "malformed"),
+    ("extra_key", "malformed"),
+    ("wrong_grid", "not the planned wave"),     # right world, different episodes
+    ("non_reserve", "not the planned wave"),    # a gate world smuggled in as a "reserve"
+    ("skipped_order", "not the planned wave"),  # r1 recorded where the plan needs r0
+])
+def test_resume_refuses_waves_the_planner_would_not_schedule(
+        reserve_registry: Registry, tmp_path: Path, case: str, match: str) -> None:
+    """spec.json "waves" is outside the pins; a resume replays the planner over the rows and
+    refuses any recorded wave it would not have scheduled, before a single job runs."""
+    no_zero = case in ("unplanned", "empty", "eager")
+    zero = set() if no_zero else {"dev-dense-12-calm-00", "dev-dense-12-calm-r0"}
+    mode = "eager" if case == "eager" else "on-demand"
+    out = tmp_path / case
+    _screen(reserve_registry, out, _zero_stub(zero), mode)
+    edits: dict[str, Callable[[list[dict]], list[dict]]] = {
+        "unplanned": lambda w: w + [_wave("dev-sparse_wide-12-calm-r3", 2)],
+        "empty": lambda w: [{"wave": 2, "worlds": {}}],
+        "eager": lambda w: [_wave("dev-dense-12-calm-r0", 2)],
+        "renumbered": lambda w: [{**w[0], "wave": 5}, *w[1:]],
+        "extra_key": lambda w: [{**w[0], "note": "x"}, *w[1:]],
+        "wrong_grid": lambda w: [{"wave": 2, "worlds": {
+            "dev-dense-12-calm-r0": {**w[0]["worlds"]["dev-dense-12-calm-r0"], "episodes": []}}},
+            *w[1:]],
+        "non_reserve": lambda w: w + [_wave("dev-sparse_wide-12-calm-00", 4)],
+        "skipped_order": lambda w: [_wave("dev-dense-12-calm-r1", 2)],
+    }
+    _tamper(out, edits[case])
+    before = (out / "episodes.csv").read_bytes()
+    ran: list[dict] = []
+    with pytest.raises(ValueError, match=match):
+        _screen(reserve_registry, out, _zero_stub(zero, ran), mode)
+    assert ran == [] and (out / "episodes.csv").read_bytes() == before
+
+
+def test_resume_refuses_wave_after_incomplete_wave(reserve_registry: Registry,
+                                                    tmp_path: Path) -> None:
+    """A wave may only follow complete predecessors: after a crash inside wave 3, a recorded
+    wave 4 cannot have been planned (only the last wave may be partial)."""
+    zero = {"dev-dense-12-calm-00", "dev-dense-12-calm-r0"}
+    out = tmp_path / "w"
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        _screen(reserve_registry, out, _zero_stub(zero, crash_on="dev-dense-12-calm-r1"),
+                "on-demand")
+    _tamper(out, lambda w: w + [_wave("dev-dense-12-calm-r2", 4)])
+    ran: list[dict] = []
+    with pytest.raises(ValueError, match="waves before it are incomplete"):
+        _screen(reserve_registry, out, _zero_stub(zero, ran), "on-demand")
+    assert ran == []
+
+
+def test_mode_change_refuses_resume(reserve_registry: Registry, tmp_path: Path) -> None:
+    out = tmp_path / "m"
+    _screen(reserve_registry, out, _zero_stub(set()), "on-demand")
+    with pytest.raises(ValueError, match="different pins"):
+        _screen(reserve_registry, out, _zero_stub(set()), "eager")
+
+
+def test_plan_replacements_pending_order(reserve_registry: Registry) -> None:
+    """Two zero gate slots in one group request the next two reserves at once (both are
+    certain to be consulted). Once r0 proves zero and r1 usable, slot 1 takes r1 and slot 2 needs
+    r2. All reserves zero -> exhausted."""
+    from tokenomics.eval.registry import plan_replacements
+
+    full = build_worlds_v1()
+    reg = Registry(name="two-slots", seed_ranges=full.seed_ranges, entries=tuple(
+        full.entry(w) for w in ("dev-dense-12-calm-00", "dev-dense-12-calm-01",
+                                *(f"dev-dense-12-calm-r{k}" for k in range(4)))))
+    zero_gate = {"dev-dense-12-calm-00": 0.0, "dev-dense-12-calm-01": 0.0}
+    plan = plan_replacements(reg, zero_gate)
+    assert plan.pending == ("dev-dense-12-calm-r0", "dev-dense-12-calm-r1")
+    assert plan.replacements == ()
+    plan = plan_replacements(reg, {**zero_gate, "dev-dense-12-calm-r0": 0.0,
+                                   "dev-dense-12-calm-r1": 3.0})
+    assert [(r.replaced, r.by, r.skipped) for r in plan.replacements] == [
+        ("dev-dense-12-calm-00", "dev-dense-12-calm-r1", ("dev-dense-12-calm-r0",))]
+    assert plan.pending == ("dev-dense-12-calm-r2",)
+    assert plan.consulted == ("dev-dense-12-calm-r0", "dev-dense-12-calm-r1")
+    with pytest.raises(ValueError, match="no usable reserve left"):
+        plan_replacements(reg, {**zero_gate, **{f"dev-dense-12-calm-r{k}": 0.0
+                                                for k in range(4)}})
+
+
+def test_cli_reserves_none_needs_dry_run(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(["--mode", "screen", "--reserves", "none", "--out-dir", str(tmp_path / "x")])
