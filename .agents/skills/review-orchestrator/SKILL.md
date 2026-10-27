@@ -30,14 +30,14 @@ No arguments. Everything you need arrives from the supervisor over the bus.
 1. `register(name="review-orchestrator", team="supervision", capabilities=["review:orchestrator"], role="orchestrator", replace=true)`.
 2. Find the supervisor: `wait_for_agents(names=["supervisor"], team="supervision", timeout_s=110)`, repeated. Tell the user once that you are waiting for the `supervise` session. Keep waiting in bounded rounds; the user may start it later.
 3. Send `HELLO harness=<h> model=<m> active=none` (or the live sessions after a restart, see Recovery).
-4. Wait for `WELCOME` with `inbox(agent="review-orchestrator", wait_s=110)`. Record `goal`, `source` and `max_reviewers` (1 unless the supervisor sends more, or the user tells you a number directly). Answer any `PING` with `HELLO`, now and for the rest of the session.
+4. Wait for `WELCOME` with `inbox(agent="review-orchestrator", team="*", wait_s=110)`. Record `goal`, `source` and `max_reviewers` (1 unless the supervisor sends more, or the user tells you a number directly). Answer any `PING` with `HELLO`, now and for the rest of the session.
 5. Read the goal source the supervisor named (for an OpenSpec change: its `proposal.md`, `design.md`, specs and `tasks.md`) and `/srv/research/tokenomics/CLAUDE.md`, so you can judge whether a reviewer is staying on scope. Tell the user one line: bound to goal `<goal>`.
 
 ## Phase 2: Main loop
 
 Repeat until `SHUTDOWN`. Each round:
 
-1. `inbox(agent="review-orchestrator", wait_s=60)` and handle everything that arrived:
+1. `inbox(agent="review-orchestrator", team="*", wait_s=60)` and handle everything that arrived:
    - **Task `REVIEW <session>`** (a delegated task assigned to you): parse the description block (PROTOCOL "Review request"). `acknowledge_task(agent="review-orchestrator", task_id=REQ, response="claimed")`. Then assign it (below): to an idle live reviewer if there is one; else spawn one if live reviewer runs are fewer than `max_reviewers`; else `record_task_event` "queued" and assign it when a reviewer is released.
    - **`REOPEN <session> <evidence>`**: forward to that session's reviewer, with the instruction to revoke its approval and raise the evidence as a concern (PROTOCOL Lifecycle 8). `record_task_event` on `REQ`.
    - **`RELEASE <session> commit=<sha>`**: end the session (below).
@@ -74,7 +74,7 @@ round yourself, so keep your notes on each concern. You are also the goal's only
 after RELEASE you stay running and take the next review from a "REVIEW <next-session>" message
 (PROTOCOL "Workers per goal"). Schedule your heartbeat per PROTOCOL "Heartbeat" if your harness
 lets you; delete it on STOP. Work in a loop: act, then
-inbox(agent="<rev-name>", team="review-<session>", wait_s=110), then act on what arrived.
+inbox(agent="<rev-name>", team="*", wait_s=110), then act on what arrived.
 Between rounds use list_tasks/get_task, not more inbox calls. Do not end your turn after
 approving: the supervisor may reopen.
 
@@ -115,7 +115,7 @@ The point of a long-lived reviewer is that one context sees the artifact, every 
 For each live session, each round:
 - **Your heartbeat** runs these checks while you are idle; a reviewer whose turn ended with unread messages is resumed from there.
 - **Running:** if the subagent is still working, leave it alone. Check without blocking (T3 `task_status(taskId)`; Codex `wait` with a short timeout; Claude Code: the background-task status).
-- **Turn ended** before `RELEASE` (it sent `PARKED`, or the run finished or failed): look at `inbox_status(agent="<rev-name>", team="review-<session>")`. If it has unread messages, or META or its concern tasks changed since it stopped, continue the review:
+- **Turn ended** before `RELEASE` (it sent `PARKED`, or the run finished or failed): look at `inbox_status(agent="<rev-name>", team="*")`. If it has unread messages, or META or its concern tasks changed since it stopped, continue the review:
   - Codex / Claude Code: resume the **same** subagent (`send_input` / `SendMessage`) with "continue the review of <session>: new bus activity".
   - T3: start a successor round (below). Do not `t3_thread_send` to the old `childThreadId`.
 
@@ -164,14 +164,14 @@ Close reviewer runs only on `SHUTDOWN` (send `STOP`, then `close_agent`, stop th
 |---|---|
 | Register | `register(name="review-orchestrator", team="supervision", replace=true)` |
 | Find supervisor | `wait_for_agents(names=["supervisor"], team="supervision", timeout_s=110)` |
-| Pull requests and control | `inbox(agent="review-orchestrator", wait_s=60)` |
+| Pull requests and control | `inbox(agent="review-orchestrator", team="*", wait_s=60)` |
 | Accept a request | `acknowledge_task(agent="review-orchestrator", task_id=REQ, response="claimed")` |
 | Next review, same reviewer | `send(… to=<its current name>, "REVIEW <session>\n<brief>")` |
 | Heartbeat | T3 `schedule_task({type:"interval", everyMs:600000})` / `delete_scheduled_task`; standalone `CronCreate("3-59/10 * * * *")` / `CronDelete` |
 | Spawn / resume / stop reviewer | T3 `delegate_task(mode="async", isolation="shared")` / successor round / `task_cancel`; Codex `spawn_agent` / `send_input` / `close_agent`; Claude Code Agent tool / `SendMessage` |
 | Reviewer run still going? | T3 `task_status(taskId)`; Codex `wait` (short); Claude Code background status |
 | Reviewer on the bus? | `wait_for_agents(names=[rev], team="review-<session>", timeout_s=110)` |
-| Unread for reviewer | `inbox_status(agent=rev, team="review-<session>")` |
+| Unread for reviewer | `inbox_status(agent=rev, team="*")` |
 | Done condition | `get_task(META)`, `list_tasks(team="review-<session>", state=["open","claimed","working","blocked"])` |
 | Session log | `activity(team="review-<session>")` |
 | Report | `send(from="review-orchestrator", to="supervisor", message="<TYPE> …")` |

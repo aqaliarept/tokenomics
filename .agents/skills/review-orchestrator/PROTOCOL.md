@@ -185,7 +185,7 @@ it leaves (`SHUTDOWN`/`BYE`/`STOP`).
     into its own context; the owner's heartbeat covers it (below).
 - **Prompt** (fill `<name>` and `<skill>`):
   ```
-  HEARTBEAT <name>. You are <name> under the <skill> skill. Check inbox_status for <name>.
+  HEARTBEAT <name>. You are <name> under the <skill> skill. Check inbox_status(agent=<name>, team="*").
   If messages are unread, or a worker you own has stopped while its bus state changed, handle
   them per your skill and go back to your inbox loop. If nothing is pending, answer "idle"
   and end the turn. Do not start new work the bus did not ask for.
@@ -199,6 +199,14 @@ it leaves (`SHUTDOWN`/`BYE`/`STOP`).
 
 ## Bus facts (verified on agent-bus 0.43.0)
 
+- **Every inbox read and inbox check uses `team="*"`.** A message carries the *sender's*
+  registered team, and `inbox(team=X)` / `inbox_status(team=X)` return only messages stamped X.
+  Control messages from `supervisor` and `review-orchestrator` are stamped `supervision`, so a
+  worker reading `inbox(team="review-<session>")` never sees `TASK`, `REVIEW`, `RELEASE`,
+  `REOPEN` or `STOP`, and they sit unread. Messages are addressed by agent name, so `"*"` adds no
+  noise. Use `team="review-<session>"` only for `activity`, `project_board`, `list_tasks` and
+  `send_team`. (Failure seen in m2-shocks: a released reviewer and a working implementer each
+  missed control messages until someone relayed from a name registered on their review team.)
 - `delegate` creates the task already `claimed` by the assignee; `acknowledge_task(agent=…,
   task_id=…, response="claimed")` records the receipt.
 - A `claimed` task can be completed by its requester or claimer. An `open` task cannot be

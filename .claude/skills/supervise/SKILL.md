@@ -108,7 +108,7 @@ Run tasks one at a time, in dependency order, on the single implementer. Only wi
    - If no `HELLO`/`WELCOME` exchange has happened yet, repeat the start instruction to the user and wait for `HELLO` in bounded rounds. Do not fall back to a reviewer of your own; ask the user if they want that.
    - Send the `REVIEW <session>` request exactly as PROTOCOL "Review request" specifies, with the reviewer brief below filled in. Record the returned task id as `REQ`.
 4. **Monitor without doing the work.**
-   - Poll `inbox(agent="supervisor", wait_s=110)`. Expect `REVIEWER-UP`, then `META <session> <id>` from the implementer, then `APPROVED`. `PARKED` from the implementer goes to step 5. Between polls use `get_task(META)` and `list_tasks(team="review-<session>")`, always with bounded waits.
+   - Poll `inbox(agent="supervisor", team="*", wait_s=110)`. Expect `REVIEWER-UP`, then `META <session> <id>` from the implementer, then `APPROVED`. `PARKED` from the implementer goes to step 5. Between polls use `get_task(META)` and `list_tasks(team="review-<session>")`, always with bounded waits.
    - Answer agents' questions from the goal source. `STALLED` and `DEADLOCK` from the orchestrator are questions for you: decide if the goal source settles it, otherwise ask the user, then reply to the orchestrator.
    - Apply the PROTOCOL timeouts. If `REVIEWER-UP` is late, `PING`; if no `HELLO` comes back, ask the user to restart the orchestrator. It rebuilds its sessions from the bus.
 5. **Recover, don't duplicate.** If the implementer stops before RELEASE (`PARKED`, error, rate limit), continue it only when there is something to act on (unread messages, changed META or concerns); your heartbeat checks this while you are idle. Standalone: resume the same agent with SendMessage to its id. T3: start a successor round of the same run, as PROTOCOL "Subagents" says: the current task's brief plus its handoff note and the prior bus state, `title="impl-<goal-slug> r<k+1>"`, `clientRequestId="impl-<goal-slug>-r<k+1>"`, never while the previous run is still going. The same applies to `HANDOFF none` between tasks: the successor starts with the next `TASK` brief plus the handoff note. Record each round as an event on the ledger task. Reviewer recovery belongs to the orchestrator.
@@ -171,7 +171,7 @@ then the handshake. After META exists: send the supervisor "META <session> <id>"
 At the done condition do NOT complete META or leave: wait for the supervisor's RELEASE.
 On RELEASE: complete META, close the session, keep your name, and loop on your inbox for
 "TASK <next-session>" (re-register, then work it) or "STOP" (remove_agent, end).
-Stay in one turn: loop on inbox(agent="<impl-name>", team="review-<session>", wait_s=110). If your turn must end earlier, first write
+Stay in one turn: loop on inbox(agent="<impl-name>", team="*", wait_s=110). If your turn must end earlier, first write
 a handoff note (record_task_event on META: done, open concerns, left), then send the
 supervisor "PARKED <session> waiting=<what> handoff=<event id>".
 KIND: code. Local edits + tests only. No pod runs, no EXP results. Smoke checks must keep
@@ -195,7 +195,7 @@ ARTIFACT message. When the artifact is ready: send(to="supervisor", message="ART
 Do not complete META until the supervisor's RELEASE. You are the goal's only implementer:
 after RELEASE keep running and wait for "TASK <next-session>" or "STOP" (PROTOCOL "Workers per
 goal"); schedule your heartbeat per PROTOCOL "Heartbeat" if your harness allows. Stay in one
-turn: loop on inbox(agent="<impl-name>", team="review-<session>", wait_s=110). If your turn
+turn: loop on inbox(agent="<impl-name>", team="*", wait_s=110). If your turn
 must end earlier, write a handoff note on META first, then send the supervisor
 "PARKED <session> waiting=<what> handoff=<event id>".
 KIND: experiment. Run committed code <commit> on a FRESH pod created for this task:
@@ -245,7 +245,7 @@ raised is completed.
 | Next task, same implementer | `send(… to=<its current name>, "TASK <session>\n<brief>")` |
 | Heartbeat | T3 `schedule_task({type:"interval", everyMs:600000})` / `delete_scheduled_task`; standalone `CronCreate("3-59/10 * * * *")` / `CronDelete` |
 | Request review | `delegate(from="supervisor", to_agent="review-orchestrator", team="supervision", title="REVIEW <session>", …)` |
-| Watch | `inbox(agent="supervisor", wait_s=110)`, `get_task(META)`, `list_tasks(team="review-<session>")` |
+| Watch | `inbox(agent="supervisor", team="*", wait_s=110)`, `get_task(META)`, `list_tasks(team="review-<session>")` |
 | Reopen after failed verification | `send(… "REOPEN <session> <evidence>")` |
 | End a session | `send(… to="impl-<session>", "RELEASE <session> commit=<sha>")`, then the same to `review-orchestrator` |
 | Continue a stopped implementer | standalone: SendMessage to its id; T3: successor round `delegate_task` |

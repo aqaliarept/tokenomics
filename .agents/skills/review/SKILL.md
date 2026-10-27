@@ -56,7 +56,7 @@ The handshake must be visible on the bus so late joiners (and the human) can cat
 
 ### Reviewer
 
-1. On registering, call `inbox(agent="rev<N>", team="review-<slug>", wait_s=30)` and read the implementer's handshake. If you joined after it was sent and it is not in your inbox, read it from `activity(team="review-<slug>")`. Extract the implementer's name, the artifact pointer and `META` (META may follow a little later).
+1. On registering, call `inbox(agent="rev<N>", team="*", wait_s=30)` and read the implementer's handshake. If you joined after it was sent and it is not in your inbox, read it from `activity(team="review-<slug>")`. Extract the implementer's name, the artifact pointer and `META` (META may follow a little later).
 2. `send_team(team="review-<slug>", from="rev<N>", message="rev<N> joined, reviewing <artifact pointer>")`.
 3. Read the artifact. Do a real review — the challenge/tdd/openspec skills' trust rules apply here too: numbers get recomputed from raw artifacts, specs get checked against code, no "looks fine" without evidence.
 
@@ -87,7 +87,7 @@ Do not create a concern for stylistic nits unless the user explicitly asked for 
 
 ### Implementer: pick up and act
 
-Pull work with `inbox(agent="impl", team="review-<slug>", wait_s=110)`. For each delegated task:
+Pull work with `inbox(agent="impl", team="*", wait_s=110)`. For each delegated task:
 
 1. `acknowledge_task(agent="impl", task_id=<id>, response="claimed")` — within the first poll. Reviewers get `AGENT_HAS_ACTIVE_TASKS` surfaced if you don't.
 2. Decide: **fix** or **argue**. There is no third option.
@@ -161,7 +161,8 @@ When the session runs under the `supervise` skill (the implementer was briefed b
 - "Fixed" means verifiable: cite file:line, commit sha, or the exact diff hunk — not just "done".
 - "Disagree" means specific: cite the counter-evidence or the spec clause — not "I don't think so".
 - If the review is deadlocked for more than two round-trips on the same concern, surface the impasse: in a supervised session send `DEADLOCK` (reviewer → orchestrator); otherwise tell the human via `remember(kind="handoff", content="deadlock on task <id>: <impl position> vs <rev position>", pinned=true)` and `record_decision`. Do not loop forever.
-- Do not enter a blind polling loop. Each inbox call uses a bounded `wait_s`; between calls, consult `inbox_status`, `project_board(team="review-<slug>")`, or `activity(team="review-<slug>")` for a non-consuming view.
+- Every `inbox` / `inbox_status` call passes `team="*"`: messages carry the sender's team, so a filter on `review-<slug>` hides control messages from the supervisor and orchestrator (PROTOCOL "Bus facts"). Team filters belong only on `activity`, `project_board`, `list_tasks` and `send_team`.
+- Do not enter a blind polling loop. Each inbox call uses a bounded `wait_s`; between calls, consult `inbox_status(team="*")`, `project_board(team="review-<slug>")`, or `activity(team="review-<slug>")` for a non-consuming view.
 - When the user opens this skill as a one-shot (e.g. `/review impl add-foo` then exits the thread), register and run through Phases 1–3, then stop with a clear hand-off note. Do not expect to be alive for Phase 5 unless the user keeps the session running.
 
 ## Quick reference — the tools you actually call
@@ -180,7 +181,7 @@ When the session runs under the `supervise` skill (the implementer was briefed b
 | Reviewer closes concern | `update_task(agent=rev<N>, task_id=…, state="completed", result=…)` |
 | Approve/veto session | `submit_review(reviewer=rev<N>, task_id=<META>, approved=…, notes=…)` |
 | Inspect state | `get_task(task_id=…)`, `list_tasks(team=…, state=[…])`, `project_board(team=…)`, `activity(team=…)` |
-| Pull inbox | `inbox(agent=…, team=review-<slug>, wait_s=…)` |
+| Pull inbox | `inbox(agent=…, team="*", wait_s=…)` (always `"*"`, see PROTOCOL "Bus facts") |
 | Leave | `remove_agent(name=…)` |
 
 </what-to-do>
