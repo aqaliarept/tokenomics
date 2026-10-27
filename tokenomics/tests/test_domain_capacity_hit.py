@@ -140,9 +140,12 @@ def test_schedule_checked_against_the_config() -> None:
         build_system(cfg, shock_schedule=(_hit(3, types=("capacity-2",)),))
     with pytest.raises(ValueError, match=r"start cycle must be >= 2"):
         build_system(cfg, shock_schedule=(_hit(1),))
-    outage = ShockEvent(ShockKind.PRODUCER_OUTAGE, ShockTarget(producer="p1"), 3, 2, 1.0)
-    with pytest.raises(ValueError, match=r"no domain mechanics yet"):
+    outage = ShockEvent(ShockKind.PRODUCER_OUTAGE, ShockTarget(producer="ghost"), 3, 2, 1.0)
+    with pytest.raises(ValueError, match=r"producer 'ghost' does not exist"):
         build_system(cfg, shock_schedule=(outage,))
+    fund = ShockEvent(ShockKind.FUND_SHOCK, ShockTarget(), 3, 2, 0.5)
+    with pytest.raises(ValueError, match=r"unsupported shock kind 'fund_shock'"):
+        build_system(cfg, shock_schedule=(fund,))
 
 
 def test_schedule_is_not_mutated() -> None:

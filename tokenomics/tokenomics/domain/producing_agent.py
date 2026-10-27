@@ -398,13 +398,19 @@ class ProducingAgent:
                 dropped.append(r)
         return survivors, dropped
 
-    def produce(self) -> ProductionResult:
+    def produce(self, outage: bool = False) -> ProductionResult:
         """One cycle of production (ADR-0025). Order: re-validate live reservations
         against post-degradation capacity (drop → fail); reserved capacity blocks
         the per-cycle budget; assemble reservations whose inputs arrived; fail
         those that hit TTL; then run the atomic price-greedy auction over the
         remaining budget — composites without inputs reserve and wait, everything
-        else completes."""
+        else completes.
+
+        `outage` (producer outage, ADR-0055, add-shocks-i-drift D2): the producer
+        assembles no reservation (each ages toward its TTL as if its inputs were
+        missing) and accepts no bid (all rejected, requested capacity still recorded,
+        cut-off price kept); re-validation and degradation run as usual. Its own
+        purchases and deliveries are untouched: they are resolved by the system."""
         accepted: list[Bid] = []
         completed: list[Bid] = []
         failed: list[Bid] = []
@@ -429,7 +435,7 @@ class ProducingAgent:
         # `accepted`; they only surface here when they resolve (completed/failed).
         still: list[_Reservation] = []
         for r in survivors:
-            if self._has_inputs(r.bid):
+            if not outage and self._has_inputs(r.bid):
                 self._consume_inputs(r.bid)
                 completed.append(r.bid)
             else:
@@ -452,7 +458,7 @@ class ProducingAgent:
             requested += bid.total_capacity()
             for t, c in bid.capacities.items():
                 requested_by_type[t] = requested_by_type.get(t, 0) + c
-            if not self._fits(available, bid.capacities):
+            if outage or not self._fits(available, bid.capacities):
                 rejected.append(bid)
                 continue
             self._subtract(available, bid.capacities)

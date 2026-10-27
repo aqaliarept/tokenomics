@@ -317,9 +317,14 @@ class System:
         self._shock_schedule: tuple[ShockEvent, ...] = self._check_shock_schedule(
             config, tuple(shock_schedule))
         self._hits_by_cycle: dict[int, list[ShockEvent]] = {}
+        # played cycle -> producers in an outage that cycle (overlapping outages = union)
+        self._outages_by_cycle: dict[int, set[ProducerId]] = {}
         for e in self._shock_schedule:
             if e.kind is ShockKind.CAPACITY_HIT:
                 self._hits_by_cycle.setdefault(e.start_cycle, []).append(e)
+            elif e.kind is ShockKind.PRODUCER_OUTAGE:
+                for c in range(e.start_cycle, e.start_cycle + e.duration):
+                    self._outages_by_cycle.setdefault(c, set()).add(e.target.producer)
         # ADR-0052: product-stream mode keys ordering agents by (source, product) so
         # one agent never multiplexes products; legacy mode keys them by source.
         self.product_stream_ordering = product_stream_ordering
@@ -346,15 +351,14 @@ class System:
         config: Configuration, schedule: tuple[ShockEvent, ...]
     ) -> tuple[ShockEvent, ...]:
         """Validate the injected schedule against the config with the config-level rules
-        (design D1). Outage mechanics land in task 2.2; until then an outage is refused
-        here rather than silently ignored."""
+        (design D1); a kind without domain mechanics is refused rather than ignored."""
         if not schedule:
             return ()
         validate_shock_model(ShockModel(events=schedule), {
             p.id: ProducerFacts(frozenset(p.capacities), p.produces) for p in config.producer_configs
         })
         for e in schedule:
-            if e.kind is not ShockKind.CAPACITY_HIT:
+            if e.kind not in (ShockKind.CAPACITY_HIT, ShockKind.PRODUCER_OUTAGE):
                 raise ValueError(f"shock kind {e.kind.value!r} has no domain mechanics yet")
         return schedule
 
@@ -512,9 +516,11 @@ class System:
             oa.complete_cycle()
 
         producer_auctions: list[ProducerAuctionRecord] = []
+        # producers in an outage during this played cycle (D2)
+        out = self._outages_by_cycle.get(self.cycle_counter, set())
         for pid, p in self.producing_agents.items():
             capacity_at_auction = sum(p.capacities.values())  # produce() degrades after
-            result = p.produce()
+            result = p.produce(outage=pid in out)
             producer_auctions.append(ProducerAuctionRecord(
                 pid, capacity_at_auction, sum(bid.total_capacity() for bid in result.accepted),
             ))
