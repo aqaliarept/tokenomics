@@ -25,6 +25,7 @@ from tokenomics.eval.registry import (
     RegistryHashMismatch,
     SealedAccessError,
     WorldEntry,
+    SEED_ORDER,
     build_worlds_v1,
     check_sealed_access,
     load_preregistration,
@@ -45,7 +46,9 @@ ROSTER = Roster(name="t", replicates=2, members=tuple(
 
 @pytest.fixture(scope="module")
 def draft() -> Registry:
-    return load_registry()
+    """The two-family draft (dense included, non-gating): schema and screening logic tests need
+    both families; the shipped M1 registry is its sparse-wide subset (task 10.4)."""
+    return build_worlds_v1(SEED_ORDER)
 
 
 def _entries_dict(reg: Registry) -> dict:
@@ -59,7 +62,7 @@ def _entries_dict(reg: Registry) -> dict:
 
 def test_draft_is_reproduced_byte_for_byte(draft: Registry) -> None:
     assert build_worlds_v1().to_json() == DEFAULT_REGISTRY.read_text()
-    assert draft == build_worlds_v1()
+    assert load_registry() == build_worlds_v1()
 
 
 def test_draft_has_d7_defaults(draft: Registry) -> None:
@@ -553,3 +556,25 @@ def test_family_default_scale_reaches_only_its_family(monkeypatch: pytest.Monkey
     for e in reg.entries:
         if e.family == SPARSE_WIDE:
             assert e == shipped.entry(e.id)
+
+
+# --- M1 gates on sparse-wide only (task 10.4) ---
+
+
+def test_m1_registry_is_sparse_wide_only_with_unmoved_worlds() -> None:
+    """The shipped registry holds no dense world, and each sparse-wide world is the same entry
+    (id, seeds, episode seeds, generator) as in the two-family draft that EXP-0044 screened:
+    dense keeps its seed block reserved."""
+    shipped = load_registry()
+    assert {e.family for e in shipped.entries} == {SPARSE_WIDE}
+    both = build_worlds_v1(SEED_ORDER)
+    assert all(both.entry(e.id) == e for e in shipped.entries)
+    assert len(shipped.entries) == sum(e.family == SPARSE_WIDE for e in both.entries)
+    assert shipped.coverage_problems() == []
+
+
+def test_dense_in_the_registry_is_a_coverage_problem() -> None:
+    assert build_worlds_v1(SEED_ORDER).coverage_problems() == [
+        "family dense is not a gate family in M1 (gate families: sparse_wide)"]
+    with pytest.raises(ValueError, match="unknown families"):
+        build_worlds_v1(("triangle",))

@@ -1,0 +1,12 @@
+{"world": "dev-sparse_wide-12-calm-00", "member": "entity_planner/random", "fill100": 0.8831, "short_first20": 18, "short_total": 70, "rate_after20": 0.8914, "dead": false}
+{"world": "dev-sparse_wide-12-calm-01", "member": "entity_planner/random", "fill100": 0.9493, "short_first20": 12, "short_total": 26, "rate_after20": 0.966, "dead": false}
+{"world": "dev-sparse_wide-12-calm-02", "member": "entity_planner/random", "fill100": 0.9781, "short_first20": 5, "short_total": 10, "rate_after20": 0.9863, "dead": false}
+{"world": "dev-sparse_wide-12-calm-03", "member": "entity_planner/random", "fill100": 0.8803, "short_first20": 21, "short_total": 70, "rate_after20": 0.8955, "dead": false}
+{"world": "dev-sparse_wide-12-calm-04", "member": "entity_planner/random", "fill100": 0.8032, "short_first20": 35, "short_total": 135, "rate_after20": 0.8175, "dead": false}
+{"world": "dev-sparse_wide-12-calm-05", "member": "entity_planner/random", "fill100": 0.79, "short_first20": 40, "short_total": 147, "rate_after20": 0.8093, "dead": false}
+{"world": "dev-sparse_wide-12-calm-06", "member": "entity_planner/random", "fill100": 0.9628, "short_first20": 16, "short_total": 18, "rate_after20": 0.9948, "dead": false}
+{"world": "dev-sparse_wide-12-calm-07", "member": "entity_planner/random", "fill100": 0.9349, "short_first20": 14, "short_total": 40, "rate_after20": 0.9472, "dead": false}
+{"world": "dev-sparse_wide-12-shocked-00", "member": "entity_planner/random", "fill100": 0.869, "short_first20": 26, "short_total": 76, "rate_after20": 0.8929, "dead": false}
+{"world": "dev-sparse_wide-12-shocked-01", "member": "entity_planner/random", "fill100": 0.8256, "short_first20": 18, "short_total": 101, "rate_after20": 0.8207, "dead": false}
+{"world": "dev-sparse_wide-12-shocked-02", "member": "entity_planner/random", "fill100": 0.9349, "short_first20": 17, "short_total": 33, "rate_after20": 0.9596, "dead": false}
+{"world": "dev-sparse_wide-12-shocked-03", "member": "entity_planner/random", "fill100": 0.9497, "short_first20": 22, "short_total": 28, "rate_after20": 0.9864, "dead": false}

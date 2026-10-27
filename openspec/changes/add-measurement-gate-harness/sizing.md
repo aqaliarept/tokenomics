@@ -1,6 +1,29 @@
 # Sizing for tasks 10.1 and 12.1 (task 8.8; history: tasks 8.3 and 8.5)
 
-**Headline (gate sizes 12 and 42 producers, reference scenario, h = 100, R = 5):
+**Current plan: sparse-wide only (task 10.4, user decision 2026-10-27).** M1 now gates on the
+sparse-wide family alone (design D10 note), so the rescreen (10.5) and the report (12.1) run
+half of Part A's worlds. Same raw timings and method as §A4, restricted to the sparse-wide cells
+(`/tmp/gate_timing/s104/size104.py`, output `size104.out`; registry 0f8b09b0…). The 12.1 column
+assumes the full, unpruned roster.
+
+| scenario | 10.5 vCPU-h (on-demand, no replacement) | 12.1 vCPU-h |
+|---|---|---|
+| low: measured roster | 5.0 | 5.3 |
+| **reference** | **7.0** (cpu16 0.44 h) | **7.3** (cpu16 0.45 h) |
+| regime | 6.9 | 7.2 |
+| high: costliest member × regime | 7.9 | 8.1 |
+
+Each consulted reserve adds 0.05 (12 calm), 0.15 (12 shocked), 0.28 (42 calm) or 0.92 (42 shocked)
+vCPU-h; reference + 4 consulted reserves at the costliest is 10.7. These are compute only.
+
+Measured anchor from EXP-0044 attempt 1: its jobs took about 10.4 vCPU-h, against a reference of
+16.9 for the same work (0.62×). If the sparse-wide half behaves alike, 10.5's compute is about
+4–5 vCPU-h. Pod setup was about 1–5 minutes once the SSH-info shim was in place, so the billed
+total on a cpu16 pod should stay well inside the 12 vCPU-h budget for 10.5.
+
+The rest of this file (Part A) sizes the two-family plan of task 8.8 and is kept for reference.
+
+**Headline of task 8.8 (both families; gate sizes 12 and 42 producers, reference scenario, h = 100, R = 5):
 10.1 ≈ 17 vCPU-h (≈ 0.5 h on cpu32, ≈ 1.1 h on cpu16); 12.1 ≈ 18 vCPU-h (≈ 0.55 h on cpu32,
 ≈ 1.1 h on cpu16).** Scenario range 13.6–22.4 vCPU-h for 10.1 and 14.2–23.1 for 12.1. Pod setup
 (start, code sync, install) and pod CPU speed are not included (§A5). The 12.1 figure assumes the

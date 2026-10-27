@@ -9,8 +9,10 @@ without a new hash is refused on load, so a report naming the version names exac
 
 Seed scheme (`build_worlds_v1`, the draft generator):
 - World seeds are allocated sequentially from the split's range (development 1000-1999, sealed
-  5000-5999) in a fixed order (family, size, regime, gate worlds then reserves), so every world
-  seed is unique in the registry and the two splits are disjoint by construction.
+  5000-5999) in a fixed order (family in `SEED_ORDER`, size, regime, gate worlds then reserves),
+  so every world seed is unique in the registry and the two splits are disjoint by construction.
+  Only the M1 gate families (`GATE_FAMILIES`: sparse-wide, task 10.4) are emitted; dense keeps
+  its seed block reserved, so the sparse-wide worlds are the ones EXP-0044 attempt 1 screened.
 - Episode seed j of world `id` is `int(sha256(f"episode|{id}|{j}")[:8], 16) % 2**31`: different
   across worlds (episodes are not correlated between worlds), stable across processes, and
   checked on load to be unique registry-wide and disjoint from every world seed.
@@ -62,6 +64,13 @@ REPLACED = "replaced"
 STATUSES = (GATE, RESERVE, REPLACED)
 
 FAMILY_GENERATORS = {DENSE: "dense_family", SPARSE_WIDE: "sparse_wide_family"}
+# Seed allocation order of the draft generator: every defined family keeps its seed block, so a
+# family's worlds never move when another family is (not) emitted.
+SEED_ORDER = (DENSE, SPARSE_WIDE)
+# Families the M1 gate admits (task 10.4, user decision 2026-10-27). Dense stays buildable but
+# non-gating: EXP-0044 found dense-12 saturated (median best fill 0.954 > 0.95) and the 10.3
+# probe found capacity is not binding there (the shortfall is mostly warm-up; DIAGNOSTICS 18).
+GATE_FAMILIES = (SPARSE_WIDE,)
 SIZES = GATE_SIZES  # the registry holds worlds at exactly the gate sizes
 CALM_PER_SHOCKED = 2  # gate-harness "Regimes": calm >= 2x shocked at each size
 
@@ -331,14 +340,19 @@ class Registry:
                 raise ValueError(f"{e.id}: replays {len(cfg.producer_configs)} producers, "
                                  f"declares size {e.size}")
 
-    def coverage_problems(self, sizes: Collection[int] = GATE_SIZES) -> list[str]:
+    def coverage_problems(self, sizes: Collection[int] = GATE_SIZES,
+                          gate_families: Collection[str] = GATE_FAMILIES) -> list[str]:
         """D10 admits a family only on development evidence at both sizes: every family with gate
         worlds in any split (a sealed-only family included) must have development gate worlds at
-        every gate size."""
+        every gate size. Only the M1 gate families may appear (task 10.4: dense is non-gating),
+        and every one of them must be present."""
         have = {(e.family, e.size) for e in self.gate_worlds(DEVELOPMENT)}
-        families = sorted({e.family for e in self.gate_worlds()})
-        return [f"no development gate worlds for {f}/{z}"
-                for f in families for z in sorted(sizes) if (f, z) not in have]
+        present = {e.family for e in self.entries}
+        families = sorted(present | set(gate_families))
+        problems = [f"family {f} is not a gate family in M1 (gate families: "
+                    f"{', '.join(gate_families)})" for f in sorted(present - set(gate_families))]
+        return problems + [f"no development gate worlds for {f}/{z}"
+                           for f in families for z in sorted(sizes) if (f, z) not in have]
 
     def admission_problems(self, split: str, sizes: Collection[int] = GATE_SIZES) -> list[str]:
         """Why a real report on `split` may not run on this registry (empty = admitted): the split
@@ -445,20 +459,28 @@ def _generator_ref(family: str, size: int, regime: str,
     return {"generator": FAMILY_GENERATORS[family], "params": params}
 
 
-def build_worlds_v1() -> Registry:
+def build_worlds_v1(families: Collection[str] = GATE_FAMILIES) -> Registry:
     """Draft registry v1 with the D7 defaults: per split × family × size, the calm and shocked
-    gate worlds plus `RESERVES_PER_GROUP` reserves per regime, seeds per the module docstring."""
+    gate worlds plus `RESERVES_PER_GROUP` reserves per regime, seeds per the module docstring.
+    Seeds are allocated over every family in `SEED_ORDER` and only `families` are emitted, so a
+    sparse-wide world is the same world whether or not dense is in the registry (task 10.4)."""
+    unknown = sorted(set(families) - set(SEED_ORDER))
+    if unknown:
+        raise ValueError(f"unknown families {unknown}; known: {list(SEED_ORDER)}")
     entries: list[WorldEntry] = []
     for split in SPLITS:
         lo, hi = SPLIT_SEED_RANGES[split]
         nxt = lo
-        for family in (DENSE, SPARSE_WIDE):
+        for family in SEED_ORDER:
             for size in SIZES:
                 for regime in REGIMES:
                     worlds, episodes = WORLD_COUNTS[split][regime]
                     slots = [(GATE, i, None) for i in range(worlds)]
                     slots += [(RESERVE, k, k) for k in range(RESERVES_PER_GROUP)]
                     for status, i, pos in slots:
+                        if family not in families:
+                            nxt += 1  # the seed block stays reserved
+                            continue
                         tag = f"{i:02d}" if status == GATE else f"r{i}"
                         wid = f"{split[:3]}-{family}-{size}-{regime}-{tag}"
                         entries.append(WorldEntry(

@@ -152,7 +152,11 @@ Defaults, pre-registered in the file:
 | Sealed | 5000–5999 | 16 worlds × 3 episode seeds | 8 worlds × 10 episode seeds |
 
 Sizes are the gate sizes, 12 and 42 producers ("Economy sizes"; task 8.7 regenerated the draft
-from 120 to 42 without changing any seed rule). Each family × size also has a reserve list for
+from 120 to 42 without changing any seed rule). **M1 registers the sparse-wide family only**
+(task 10.4, D10 note): the generator still allocates seeds over both families in a fixed order
+(`SEED_ORDER`) but emits only `GATE_FAMILIES`, so every sparse-wide world, with its seeds and
+episode seeds, is the one EXP-0044 attempt 1 screened. A real screen or report refuses a
+registry that holds a non-gate family (`coverage_problems`). Each family × size also has a reserve list for
 zero-baseline replacement. Screening runs by
 split and records the splits it covered: M1 screens development only (no sealed evaluation in
 M1); the sealed split gets its own roster-only screen in M5, before any candidate touches a
@@ -193,7 +197,8 @@ evidence below was measured at 120, where the effect is largest):
 - **Sparse-wide**: W = P/3 products per layer, each declared by `fanout` producers
   (default 2, round-robin).
 
-Consumers scale as 3·P/12 **rounded half up** (3 at 12, 11 at 42, 30 at 120). At 42 the exact
+Both families stay buildable; in M1 only sparse-wide gates (D10 note). Consumers scale as
+3·P/12 **rounded half up** (3 at 12, 11 at 42, 30 at 120). At 42 the exact
 value is 10.5; Python's banker's `round` gives 10, which put the 42-producer demand ratio 7–9%
 under the 12-producer one, close to the tolerance, while 11 keeps it within 3% (task 8.7). Emission
 per consumer is therefore exact at 12 and 120 and 1400 instead of 1467 (−4.5%) at 42. Pools are the whole top layer for dense worlds and a
@@ -214,6 +219,17 @@ A family × size (sizes 12 and 42) is admitted only if the median hindsight base
 its development worlds is below the saturation ceiling, default 0.95. EXP-0033 found over-capacitated
 worlds with no headroom at 98.3%. A failing family is retuned with `capacity_scale` and
 rescreened on baseline evidence only. Each attempt is recorded in the calibration EXP.
+
+**M1 outcome (tasks 10.1–10.4, user decision 2026-10-27).**
+- EXP-0044 attempt 1 failed headroom on dense-12 (0.954).
+- The capacity-scale probe (10.3) did not move it: 0.955–0.962 at 0.8×–1.0×.
+- The diagnostic (DIAGNOSTICS 18) found why. Dense's best-baseline shortfall is mostly warm-up:
+  62% of it in cycles 1–20 at 12 producers and 86% at 42, with ≥ 97.7% served afterwards.
+  Capacity is ≈ 12× above demand, so it is not the lever.
+- Sparse-wide's shortfall is only 30–34% warm-up, with 0.90–0.97 served afterwards, so it keeps
+  real routing headroom.
+M1 therefore gates on sparse-wide only; dense stays buildable and non-gating, to be revisited
+with a demand-side retune. The 0.95 ceiling is unchanged.
 
 ### D11. Driver and parallelism
 `python -m tokenomics.eval.gate` has three modes:

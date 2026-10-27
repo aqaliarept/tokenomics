@@ -37,6 +37,7 @@ from tokenomics.eval.registry import (
     GATE,
     REPLACED,
     Registry,
+    SEED_ORDER,
     build_worlds_v1,
     load_registry,
     save_registry,
@@ -241,7 +242,7 @@ def _dev_rows(reg: Registry, *, zero: set[str] = frozenset(), fill: float = 0.5,
 
 
 def test_zero_baseline_world_replaced_by_its_reserve() -> None:
-    reg = build_worlds_v1()
+    reg = build_worlds_v1(SEED_ORDER)
     zero = "dev-dense-42-shocked-02"
     out = screen_outcome(reg, ROSTER, _dev_rows(reg, zero={zero}), q=0.05, prune=False)
     assert out.passed
@@ -254,7 +255,7 @@ def test_zero_baseline_world_replaced_by_its_reserve() -> None:
 
 
 def test_saturated_screen_writes_no_calibration() -> None:
-    reg = build_worlds_v1()
+    reg = build_worlds_v1(SEED_ORDER)
     out = screen_outcome(reg, ROSTER, _dev_rows(reg, fill=0.99), q=0.05, prune=False)
     assert not out.passed
     assert out.roster is None and out.params_json is None and out.calibration is None
@@ -263,7 +264,7 @@ def test_saturated_screen_writes_no_calibration() -> None:
 
 def test_screen_outcome_calibrates_and_freezes() -> None:
     """X/Y from the argmax member (A: r_end 0.8, c0 fill 0.6), never from the loser (B)."""
-    reg = build_worlds_v1()
+    reg = build_worlds_v1(SEED_ORDER)
     out = screen_outcome(reg, ROSTER, _dev_rows(reg), q=0.05, prune=False)
     assert out.roster is not None and out.roster.frozen
     p = params_from_dict(json.loads(out.params_json))
@@ -275,7 +276,7 @@ def test_screen_outcome_calibrates_and_freezes() -> None:
 
 
 def test_screen_outcome_prunes_never_winning_member() -> None:
-    reg = build_worlds_v1()
+    reg = build_worlds_v1(SEED_ORDER)
     out = screen_outcome(reg, ROSTER, _dev_rows(reg), q=0.05, prune=True)
     assert out.roster is not None
     assert out.roster.member_ids == (A,) and out.roster.pruning.dropped == (B,)
@@ -290,7 +291,7 @@ WORLDS = ("dev-dense-12-calm-00", "dev-sparse_wide-12-calm-00")
 @pytest.fixture(scope="module")
 def fixture_inputs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     d = tmp_path_factory.mktemp("screen-inputs")
-    full = build_worlds_v1()
+    full = build_worlds_v1(SEED_ORDER)
     save_registry(Registry(name="fixture", seed_ranges=full.seed_ranges,
                            entries=tuple(full.entry(w) for w in WORLDS)), d / "registry.json")
     save_roster(_roster(("entity_planner", "proportional"), ("random", "even_split")),
@@ -394,7 +395,7 @@ def test_admission_requires_screened_split_and_passing_headroom() -> None:
     from tokenomics.eval.gate import Headroom
     from tokenomics.eval.registry import SEALED, record_headroom, screen_zero_baselines
 
-    reg = build_worlds_v1()
+    reg = build_worlds_v1()  # the M1 registry: sparse-wide only (task 10.4)
     assert "has not screened the development split" in reg.admission_problems(DEVELOPMENT)[0]
     rows = _dev_rows(reg)
     dev = screen_zero_baselines(reg, ROSTER, rows)
@@ -424,14 +425,24 @@ def test_admission_requires_screened_split_and_passing_headroom() -> None:
     small_dev = screen_zero_baselines(small, ROSTER, [r for r in rows if r.size == 12])
     small_ok = record_headroom(small_dev, [h for h in ok if h.size == 12])
     assert small_ok.admission_problems(DEVELOPMENT) == [
-        "no development gate worlds for dense/42", "no development gate worlds for sparse_wide/42"]
+        "no development gate worlds for sparse_wide/42"]
+    # dense is not a gate family in M1: a registry holding it is never admitted (task 10.4)
+    full = build_worlds_v1(SEED_ORDER)
+    full_rows = _dev_rows(full)
+    full_dev = screen_zero_baselines(full, ROSTER, full_rows)
+    full_ok = record_headroom(full_dev, [
+        Headroom(f, z, 8, 0.5, 0.95, True)
+        for f, z in sorted({(e.family, e.size) for e in full_dev.gate_worlds(DEVELOPMENT)})])
+    assert full_ok.admission_problems(DEVELOPMENT) == [
+        "family dense is not a gate family in M1 (gate families: sparse_wide)"]
     # a family present only in the sealed split has no development evidence at all
-    sealed_family = Registry(name="sf", seed_ranges=reg.seed_ranges, entries=tuple(
-        e for e in reg.entries if e.family == DENSE or e.split == SEALED))
+    sealed_family = Registry(name="sf", seed_ranges=full.seed_ranges, entries=tuple(
+        e for e in full.entries if e.family == DENSE or e.split == SEALED))
     sf = screen_zero_baselines(sealed_family, ROSTER,
-                               [r for r in rows if r.world.startswith("dev-dense")])
-    sf_ok = record_headroom(sf, [h for h in ok if h.family == DENSE])
+                               [r for r in full_rows if r.world.startswith("dev-dense")])
+    sf_ok = record_headroom(sf, [Headroom(DENSE, z, 8, 0.5, 0.95, True) for z in (12, 42)])
     assert sf_ok.admission_problems(DEVELOPMENT) == [
+        "family dense is not a gate family in M1 (gate families: sparse_wide)",
         "no development gate worlds for sparse_wide/12",
         "no development gate worlds for sparse_wide/42"]
 
@@ -442,7 +453,7 @@ def test_inconsistent_headroom_refused() -> None:
     from tokenomics.eval.gate import Headroom
     from tokenomics.eval.registry import record_headroom, registry_from_dict, screen_zero_baselines
 
-    reg = build_worlds_v1()
+    reg = build_worlds_v1(SEED_ORDER)
     dev = screen_zero_baselines(reg, ROSTER, _dev_rows(reg))
     with pytest.raises(ValueError, match="inconsistent"):
         record_headroom(dev, [Headroom(DENSE, 12, 8, 0.97, 0.95, True)])
@@ -464,7 +475,7 @@ RES_IDS = tuple(f"dev-{f}-12-calm-r{k}" for f in ("dense", "sparse_wide") for k 
 
 @pytest.fixture(scope="module")
 def reserve_registry(tmp_path_factory: pytest.TempPathFactory) -> Registry:
-    full = build_worlds_v1()
+    full = build_worlds_v1(SEED_ORDER)
     return Registry(name="fixture-reserves", seed_ranges=full.seed_ranges,
                     entries=tuple(full.entry(w) for w in (*GATE_IDS, *RES_IDS)))
 
@@ -565,7 +576,7 @@ def _tamper(out: Path, edit: Callable[[list[dict]], list[dict]]) -> None:
 
 
 def _wave(world: str, wave: int) -> dict:
-    return {"wave": wave, "worlds": job_grid([build_worlds_v1().entry(world)], 1)}
+    return {"wave": wave, "worlds": job_grid([build_worlds_v1(SEED_ORDER).entry(world)], 1)}
 
 
 @pytest.mark.parametrize("case, match", [
@@ -636,7 +647,7 @@ def test_plan_replacements_pending_order(reserve_registry: Registry) -> None:
     r2. All reserves zero -> exhausted."""
     from tokenomics.eval.registry import plan_replacements
 
-    full = build_worlds_v1()
+    full = build_worlds_v1(SEED_ORDER)
     reg = Registry(name="two-slots", seed_ranges=full.seed_ranges, entries=tuple(
         full.entry(w) for w in ("dev-dense-12-calm-00", "dev-dense-12-calm-01",
                                 *(f"dev-dense-12-calm-r{k}" for k in range(4)))))

@@ -124,7 +124,20 @@ worlds.
 ### Requirement: Scale families
 The harness SHALL provide sparse-wide and dense layered world families, each buildable at
 about 12 and about 42 producers. Each family SHALL set its fanout — the number of
-producers that declare each product — explicitly.
+producers that declare each product — explicitly. In M1 the gate SHALL admit the sparse-wide
+family only: the dense family SHALL stay buildable but SHALL NOT appear in the M1 world
+registry (design D10 note).
+
+#### Scenario: Dense world in the M1 registry
+- **WHEN** a registry that holds dense worlds is used for a real screen or report
+- **THEN** it is refused because dense is not a gate family in M1
+
+#### Scenario: Why dense does not gate in M1
+- **WHEN** EXP-0044's dense-12 worlds fail the headroom check (median best fill 0.954 > 0.95),
+  and capacity cuts to 0.8× leave them at 0.955–0.962
+- **THEN** dense is held out of M1, because its shortfall is mostly warm-up (62% of it in
+  cycles 1–20 at 12 producers, 86% at 42) while sparse-wide keeps headroom after warm-up; dense
+  is revisited later with a demand-side retune
 
 #### Scenario: Sparse-wide fanout
 - **WHEN** a sparse-wide world is built with fanout 2 at 42 producers
