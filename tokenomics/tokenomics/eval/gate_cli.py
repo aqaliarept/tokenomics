@@ -55,6 +55,7 @@ from .gate import (
     CALIBRATION_RULE,
     CANDIDATE,
     CSV_COLUMNS,
+    DEFAULT_PARAMS,
     DigestMismatch,
     EpisodeRow,
     GateReport,
@@ -1092,7 +1093,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--orderer-ckpt")
     ap.add_argument("--registry", default=str(DEFAULT_REGISTRY))
     ap.add_argument("--roster", default=str(DEFAULT_ROSTER))
-    ap.add_argument("--params", help="side-effect parameter file (X, Y, q, content hash)")
+    ap.add_argument("--params", default=str(DEFAULT_PARAMS),
+                    help="side-effect parameter file (X, Y, q, content hash); default: the "
+                         "packaged frozen file (task 11.1)")
     ap.add_argument("--split", choices=SPLITS, default="development")
     ap.add_argument("--preregistration", help="manifest required for the sealed split")
     ap.add_argument("--access-log", default=str(SEALED_ACCESS_LOG))

@@ -39,7 +39,8 @@ from tokenomics.eval.registry import (
     load_registry,
     save_registry,
 )
-from tokenomics.eval.roster import Roster, RosterMember, contract_for, load_roster, save_roster
+from tokenomics.eval.roster import (Roster, RosterMember, build_roster_v1, contract_for,
+                                    load_roster, save_roster)
 
 WORLDS = ("dev-dense-12-calm-00", "dev-sparse_wide-12-calm-00")
 MEMBERS = (("entity_planner", "proportional"), ("random", "even_split"),
@@ -109,7 +110,7 @@ def test_random_member_replicates_use_hash_seeds(report_dir: Path) -> None:
     rnd = [r for r in rows if r.subject == "random/even_split"]
     assert sorted(r.replicate for r in rnd) == [0, 0, 1, 1]
     jobs = build_jobs(select_worlds(load_registry(), "development", sizes=[12], max_worlds=1),
-                      load_roster(), SUBJECT, episodes_per_world=1)
+                      build_roster_v1(), SUBJECT, episodes_per_world=1)
     seeds = {(j["subject"], j["replicate"]): j["action_seed"] for j in jobs}
     assert seeds[("random/even_split", 0)] != seeds[("random/even_split", 1)]
     assert seeds[("always_restore/even_split", 0)] is None  # deterministic: default seeding

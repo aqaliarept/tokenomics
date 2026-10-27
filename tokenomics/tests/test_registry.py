@@ -60,9 +60,18 @@ def _entries_dict(reg: Registry) -> dict:
 # --- the draft ---
 
 
+DRAFT_V1 = "0f8b09b0130ecc3923acd6ed720c752af2817c36765bde06e4da06a886e4fa34"  # task 10.4
+
+
 def test_draft_is_reproduced_byte_for_byte(draft: Registry) -> None:
-    assert build_worlds_v1().to_json() == DEFAULT_REGISTRY.read_text()
-    assert load_registry() == build_worlds_v1()
+    """The generator reproduces the unscreened sparse-only draft that EXP-0044 attempt 2 screened
+    (its pinned registry_version); the packaged file is that draft, screened (task 11.1)."""
+    built = build_worlds_v1()
+    assert built.version == DRAFT_V1
+    shipped = load_registry()
+    assert shipped.screening is not None
+    assert [replace(e, status=GATE if e.status == REPLACED else e.status)
+            for e in shipped.entries] == list(built.entries)
 
 
 def test_draft_has_d7_defaults(draft: Registry) -> None:
@@ -545,27 +554,27 @@ def test_family_default_scale_reaches_only_its_family(monkeypatch: pytest.Monkey
     the neutral default keeps the shipped registry byte for byte."""
     from tokenomics.eval import families
 
-    assert build_worlds_v1().to_json() == DEFAULT_REGISTRY.read_text()
+    assert build_worlds_v1().version == DRAFT_V1
+    base = build_worlds_v1(SEED_ORDER)
     monkeypatch.setitem(families.FAMILIES, DENSE, replace(families.FAMILIES[DENSE],
                                                           capacity_scale=0.9))
-    reg = build_worlds_v1()
+    reg = build_worlds_v1(SEED_ORDER)
     for e in reg.entries:
         p = e.generator["params"]
         assert (p.get("capacity_scale") == 0.9) == (e.family == DENSE), e.id
-    shipped = load_registry()
     for e in reg.entries:
         if e.family == SPARSE_WIDE:
-            assert e == shipped.entry(e.id)
+            assert e == base.entry(e.id)
 
 
 # --- M1 gates on sparse-wide only (task 10.4) ---
 
 
 def test_m1_registry_is_sparse_wide_only_with_unmoved_worlds() -> None:
-    """The shipped registry holds no dense world, and each sparse-wide world is the same entry
+    """The M1 draft holds no dense world, and each sparse-wide world is the same entry
     (id, seeds, episode seeds, generator) as in the two-family draft that EXP-0044 screened:
     dense keeps its seed block reserved."""
-    shipped = load_registry()
+    shipped = build_worlds_v1()
     assert {e.family for e in shipped.entries} == {SPARSE_WIDE}
     both = build_worlds_v1(SEED_ORDER)
     assert all(both.entry(e.id) == e for e in shipped.entries)
@@ -578,3 +587,56 @@ def test_dense_in_the_registry_is_a_coverage_problem() -> None:
         "family dense is not a gate family in M1 (gate families: sparse_wide)"]
     with pytest.raises(ValueError, match="unknown families"):
         build_worlds_v1(("triangle",))
+
+
+# --- packaged frozen files (task 11.1) ---
+
+FROZEN_V1 = {  # EXP-0044 attempt 2 (`spec.json` "frozen"), commit 9f29d73
+    "worlds_v1.json": "566946fe0c0363ec888f9a58bfe7bd480bcc948e049c93e9923088e2cab911e3",
+    "roster_v1.json": "c2832dbb44d26601f279fc04c0c483c543c5a5fcdc8cb2231090fc03f76a3731",
+    "side_effect_params_v1.json": "e6651b2ebe541b18ade0a8904f27b0a08844e2a4f8ee0e231ca062514472f2c1",
+}
+EXP_0044_A2 = (Path(__file__).resolve().parents[2] / "experiments"
+               / "EXP-0044-gate-calibration-12-42" / "attempt-2")
+
+
+def test_packaged_frozen_files_are_exp0044_attempt2() -> None:
+    """The three packaged files are EXP-0044 attempt 2's frozen outputs: their content hashes
+    equal the pinned ones and the run's recorded ones, byte for byte where the EXP is present."""
+    from tokenomics.eval.gate import DEFAULT_PARAMS, load_side_effect_params
+    from tokenomics.eval.roster import DEFAULT_ROSTER, load_roster
+
+    reg, ros = load_registry(), load_roster()
+    params = load_side_effect_params()
+    assert (reg.version, ros.version, params.version) == tuple(FROZEN_V1.values())
+    assert reg.screening is not None and reg.admission_problems(DEVELOPMENT) == []
+    assert ros.frozen and len(ros.members) == 5
+    if (EXP_0044_A2 / "spec.json").exists():  # the EXP dir is not shipped to pods
+        spec = json.loads((EXP_0044_A2 / "spec.json").read_text())
+        assert spec["frozen"] == FROZEN_V1
+        assert spec["source"]["commit"].startswith("9f29d73")
+        for name, path in (("worlds_v1.json", DEFAULT_REGISTRY), ("roster_v1.json", DEFAULT_ROSTER),
+                           ("side_effect_params_v1.json", DEFAULT_PARAMS)):
+            assert path.read_bytes() == (EXP_0044_A2 / "frozen" / name).read_bytes(), name
+
+
+def test_packaged_defaults_pass_the_real_report_guard(tmp_path: Path) -> None:
+    """With the packaged files a real development report clears every input check (frozen
+    roster, screened and admitted registry, params present) and stops at the first job."""
+    from tokenomics.eval.gate import load_side_effect_params
+    from tokenomics.eval.gate_cli import run_report
+    from tokenomics.eval.roster import load_roster
+
+    class Stop(Exception):
+        pass
+
+    def stop(job: dict) -> dict:
+        raise Stop(job["world"])
+
+    with pytest.raises(Stop):
+        run_report(out_dir=tmp_path / "r", subject="baseline:entity_planner/blend_0.5",
+                   split=DEVELOPMENT, horizon=12, workers=1, registry=load_registry(),
+                   roster=load_roster(), params=load_side_effect_params(), params_payload={},
+                   prod_ckpt=None, orderer_ckpt=None, preregistration=None,
+                   access_log=tmp_path / "log", source_commit="a" * 40, run_job_fn=stop,
+                   log=lambda s: None)

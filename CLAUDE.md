@@ -145,7 +145,7 @@ python run_pod_training.py --create-pod --image <img-with-py3.11+torch+ssh> \
 - `signal_check` → runs a matrix of (producing × ordering) combos → prints comparison table.
 - **Metrics**: `cycles` (survival len), `dead%`, `cons✓` (consumer orders fulfilled = the goal), `return`, `capmin` (lowest capacity = collapse warning).
 - **Why it exists**: prove env poses a learning problem — a sensible policy must clearly beat do-nothing. Strongest baseline = the bar RL must clear (see plan for target numbers).
-- **Gate harness** (`eval/gate.py` pure arithmetic + verdict, `eval/gate_cli.py` driver; ARCHITECTURE.md §7.2). Inputs: world registry `eval/registry/worlds_v1.json` (`eval/registry.py`), roster `eval/registry/roster_v1.json` (`eval/roster.py`), side-effect params file (X, Y, q; content-hash version). Report (cloud for real runs; `--split sealed` needs `--preregistration`):
+- **Gate harness** (`eval/gate.py` pure arithmetic + verdict, `eval/gate_cli.py` driver; ARCHITECTURE.md §7.2). Inputs: world registry `eval/registry/worlds_v1.json` (`eval/registry.py`), roster `eval/registry/roster_v1.json` (`eval/roster.py`), side-effect params `eval/registry/side_effect_params_v1.json` (X, Y, q; content-hash version). Packaged = EXP-0044 attempt-2 frozen files (task 11.1): screened sparse-wide registry, 5-member `entity_planner` roster (frozen, R=5), X 0.7297 / Y 0.7681; the drafts come from `build_worlds_v1()` / `build_roster_v1()`. Report (cloud for real runs; `--split sealed` needs `--preregistration`):
   ```
   python -m tokenomics.eval.gate --mode report --subject portable --prod-ckpt P.pt --orderer-ckpt O.pt \
     --params side_effect_params_v1.json --split development --workers 16 \

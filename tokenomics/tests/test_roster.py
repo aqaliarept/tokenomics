@@ -55,7 +55,7 @@ def _both_sizes(roster: Roster, small: dict[str, float], large: dict[str, float]
 
 
 def test_roster_v1_is_producing_cross_ordering_40_with_12_random() -> None:
-    r = load_roster()
+    r = build_roster_v1()  # the draft definition; the packaged file is its pruned, frozen form
     assert len(r.members) == len(PRODUCING_BASELINES) * len(ORDERING_BASELINES) == 40
     assert sum(m.random for m in r.members) == 12
     assert {(m.producing, m.ordering) for m in r.members} == {
@@ -70,9 +70,13 @@ def test_blend_0_5_is_a_roster_member() -> None:
     assert any(m.ordering == "blend_0.5" for m in r.members)
 
 
-def test_committed_draft_equals_builder() -> None:
-    assert DEFAULT_ROSTER.read_text() == build_roster_v1().to_json()
-    assert load_roster().version == build_roster_v1().version
+def test_packaged_roster_is_the_frozen_pruning_of_the_draft() -> None:
+    """Task 11.1: the packaged roster is the EXP-0044 attempt-2 freeze of the 40-member draft:
+    frozen, carrying its pruning record, and holding a subset of the draft's members."""
+    r, draft = load_roster(), build_roster_v1()
+    assert r.frozen and r.pruning is not None
+    assert set(r.member_ids) < set(draft.member_ids)
+    assert r.replicates == draft.replicates
 
 
 def test_contract_rule() -> None:
@@ -83,12 +87,12 @@ def test_contract_rule() -> None:
     assert contract_for("obs_stock_aware", "random") == LEGACY
     assert contract_for("random", "random") == JOINT_STACK
     assert contract_for("entity_planner", "blend_0.5") == JOINT_STACK
-    r = load_roster()
+    r = build_roster_v1()
     assert sum(m.contract == LEGACY for m in r.members) == 12  # 8 x obs_price + 5 x obs_stock_aware - 1
 
 
 def test_replicates_only_for_random_members() -> None:
-    r = load_roster()
+    r = build_roster_v1()
     assert r.replicates_for(r.member("random/proportional")) == 5
     assert r.replicates_for(r.member("entity_planner/proportional")) == 1
 
@@ -104,7 +108,7 @@ def test_member_list_edit_without_new_hash_refused(tmp_path: Path) -> None:
         load_roster(p)
 
 
-@pytest.mark.parametrize("field,value", [("replicates", 3), ("frozen", True), ("name", "x")])
+@pytest.mark.parametrize("field,value", [("replicates", 3), ("frozen", False), ("name", "x")])
 def test_any_field_edit_without_new_hash_refused(tmp_path: Path, field: str, value: object) -> None:
     d = json.loads(DEFAULT_ROSTER.read_text())
     d[field] = value

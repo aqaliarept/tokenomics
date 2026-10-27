@@ -1,5 +1,5 @@
 {
- "content_hash": "0f8b09b0130ecc3923acd6ed720c752af2817c36765bde06e4da06a886e4fa34",
+ "content_hash": "566946fe0c0363ec888f9a58bfe7bd480bcc948e049c93e9923088e2cab911e3",
  "entries": [
   {
    "episode_seeds": [
@@ -2740,7 +2740,57 @@
  ],
  "name": "worlds-v1",
  "saturation_ceiling": 0.95,
- "screening": null,
+ "screening": {
+  "baseline_means": {
+   "dev-sparse_wide-12-calm-00": 556.0,
+   "dev-sparse_wide-12-calm-01": 507.0,
+   "dev-sparse_wide-12-calm-02": 452.0,
+   "dev-sparse_wide-12-calm-03": 572.0,
+   "dev-sparse_wide-12-calm-04": 564.0666666666666,
+   "dev-sparse_wide-12-calm-05": 541.6666666666666,
+   "dev-sparse_wide-12-calm-06": 473.0,
+   "dev-sparse_wide-12-calm-07": 603.0,
+   "dev-sparse_wide-12-shocked-00": 503.78000000000003,
+   "dev-sparse_wide-12-shocked-01": 520.54,
+   "dev-sparse_wide-12-shocked-02": 465.4,
+   "dev-sparse_wide-12-shocked-03": 498.58000000000004,
+   "dev-sparse_wide-42-calm-00": 1842.1333333333332,
+   "dev-sparse_wide-42-calm-01": 1609.2,
+   "dev-sparse_wide-42-calm-02": 1688.9333333333334,
+   "dev-sparse_wide-42-calm-03": 1797.0,
+   "dev-sparse_wide-42-calm-04": 1700.4666666666665,
+   "dev-sparse_wide-42-calm-05": 1686.6666666666667,
+   "dev-sparse_wide-42-calm-06": 1721.5333333333335,
+   "dev-sparse_wide-42-calm-07": 1829.6000000000001,
+   "dev-sparse_wide-42-shocked-00": 1648.86,
+   "dev-sparse_wide-42-shocked-01": 1744.2599999999998,
+   "dev-sparse_wide-42-shocked-02": 1673.64,
+   "dev-sparse_wide-42-shocked-03": 1742.3
+  },
+  "headroom": [
+   {
+    "ceiling": 0.95,
+    "family": "sparse_wide",
+    "median_fill": 0.9341784122207193,
+    "passed": true,
+    "size": 12,
+    "worlds": 12
+   },
+   {
+    "ceiling": 0.95,
+    "family": "sparse_wide",
+    "median_fill": 0.8855711648359057,
+    "passed": true,
+    "size": 42,
+    "worlds": 12
+   }
+  ],
+  "replacements": [],
+  "roster_version": "8791e24b2760a24bc2b40ef588578ee96b7e8e93502b76c50ef0d2fac6b83239",
+  "splits": [
+   "development"
+  ]
+ },
  "seed_ranges": {
   "development": [
    1000,

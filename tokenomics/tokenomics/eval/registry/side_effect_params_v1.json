@@ -1,0 +1,18 @@
+{
+  "content_hash": "e6651b2ebe541b18ade0a8904f27b0a08844e2a4f8ee0e231ca062514472f2c1",
+  "evidence": {
+    "bests_digest": "021ac2fe2aa93266a123173c1ac4bca1bd43dae24b199f585c3dcc0f2556659a",
+    "episodes": 128,
+    "fill_values": 896,
+    "registry_version": "566946fe0c0363ec888f9a58bfe7bd480bcc948e049c93e9923088e2cab911e3",
+    "roster_version": "c2832dbb44d26601f279fc04c0c483c543c5a5fcdc8cb2231090fc03f76a3731",
+    "rows_digest": "8ef4513c3a76a937df356c9b42f2aa2b8be17b64b8f1869155e1c0d2a4fa6bf1",
+    "run_down_values": 128
+  },
+  "method": "nearest-rank",
+  "name": "side-effect-params-v1",
+  "q": 0.05,
+  "rule": "D4: on every development episode take the roster member attaining the per-episode hindsight baseline (ties: smallest member id); X = q-quantile of its run-down ratio r_end/r_start, Y = q-quantile of its per-consumer fill rates (consumers that ordered nothing excluded); random members contribute replicate means.",
+  "x": 0.729674051435041,
+  "y": 0.768075117370892
+}
