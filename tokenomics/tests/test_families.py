@@ -5,6 +5,7 @@ demand")."""
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 
 import pytest
 
@@ -264,3 +265,66 @@ def test_families_replay_from_generator_ref(generator: str, params: dict) -> Non
     cfg = replay(TaskRecord.from_json_line(rec.to_json_line()))
     family = DENSE if generator == "dense_family" else SPARSE_WIDE
     assert cfg == build_family_config(1000, family=family, **params)
+
+
+# --- capacity scale (task 10.2, design D10) ---
+
+
+@pytest.mark.parametrize("family", FAMS)
+@pytest.mark.parametrize("producers", SIZES)
+def test_neutral_capacity_scale_is_the_unscaled_world(family: str, producers: int) -> None:
+    base = build_family_config(1004, family=family, producers=producers, regime=CALM)
+    assert build_family_config(1004, family=family, producers=producers, regime=CALM,
+                               capacity_scale=1.0) == base
+
+
+@pytest.mark.parametrize("producers", SIZES)
+def test_capacity_scale_changes_only_capacity_units(producers: int) -> None:
+    """Only capacities, `restores` and `increases` change: each is round-half-up(x · s), ≥ 1."""
+    base = build_family_config(1004, family=DENSE, producers=producers, regime=SHOCKED)
+    cut = build_family_config(1004, family=DENSE, producers=producers, regime=SHOCKED,
+                              capacity_scale=0.85)
+    assert (cut.process_sheets, cut.consumers, cut.cycle_emission) == (
+        base.process_sheets, base.consumers, base.cycle_emission)
+    half_up = lambda x: max(1, int(x * 0.85 + 0.5))
+    for a, b in zip(base.producer_configs, cut.producer_configs, strict=True):
+        assert b.capacities == {t: half_up(v) for t, v in a.capacities.items()}
+        assert b.restoration.restores == half_up(a.restoration.restores)
+        assert b.upgrade.increases == half_up(a.upgrade.increases)
+        assert replace(b, capacities=a.capacities,
+                       restoration=replace(b.restoration, restores=a.restoration.restores),
+                       upgrade=replace(b.upgrade, increases=a.upgrade.increases)) == a
+
+
+@pytest.mark.parametrize("bad", [0, -0.5, 2.5, True, "0.9"])
+def test_capacity_scale_out_of_range_refused(bad: object) -> None:
+    with pytest.raises(ValueError, match="capacity_scale"):
+        build_family_config(1000, family=DENSE, producers=12, regime=CALM,
+                            capacity_scale=bad)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("regime", (CALM, SHOCKED))
+def test_ratio_test_holds_at_a_non_default_scale(regime: str) -> None:
+    """The scale applies at both sizes, so the 12-vs-42 family ratio contract still holds."""
+    fam = FAMILIES[DENSE]
+    r12 = family_demand_ratio(DENSE, 12, regime, capacity_scale=0.85)
+    r42 = family_demand_ratio(DENSE, 42, regime, capacity_scale=0.85)
+    assert abs(r42 / r12 - 1) <= fam.ratio_tolerance
+    assert r12 > family_demand_ratio(DENSE, 12, regime)  # less capacity, more pressure
+
+
+@pytest.mark.parametrize("family", FAMS)
+@pytest.mark.parametrize("producers", SIZES)
+def test_tiny_capacity_scale_floors_every_unit_at_one(family: str, producers: int) -> None:
+    """Review concern 114: at an accepted tiny scale every capacity, `restores` and `increases`
+    is floored at 1 (never 0), the config still validates, and nothing else moves."""
+    base = build_family_config(1005, family=family, producers=producers, regime=CALM)
+    tiny = build_family_config(1005, family=family, producers=producers, regime=CALM,
+                               capacity_scale=0.001)
+    tiny.validate()
+    assert (tiny.process_sheets, tiny.consumers, tiny.cycle_emission) == (
+        base.process_sheets, base.consumers, base.cycle_emission)
+    for a, b in zip(base.producer_configs, tiny.producer_configs, strict=True):
+        assert set(b.capacities.values()) == {1}
+        assert (b.restoration.restores, b.upgrade.increases) == (1, 1)
+        assert (b.id, b.produces, b.degradation) == (a.id, a.produces, a.degradation)

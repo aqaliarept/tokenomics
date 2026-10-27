@@ -658,3 +658,125 @@ def test_plan_replacements_pending_order(reserve_registry: Registry) -> None:
 def test_cli_reserves_none_needs_dry_run(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
         main(["--mode", "screen", "--reserves", "none", "--out-dir", str(tmp_path / "x")])
+
+
+# --- dense-scale probe (task 10.2) ---
+
+
+def test_probe_writes_per_scale_headroom_and_touches_only_selected_family(
+        reserve_registry: Registry, tmp_path: Path) -> None:
+    """One session, several scales: one subdir per scale with its own rows and headroom, a
+    per-scale table, and job generator refs carrying the scale (omitted when neutral) on the
+    selected family only."""
+    from tokenomics.eval.gate_cli import run_probe
+
+    ran: list[dict] = []
+    table = run_probe(out_dir=tmp_path / "p", horizon=12, workers=1, registry=reserve_registry,
+                      roster=ROSTER, scales=[1.0, 0.9], families=[DENSE], episodes_per_world=1,
+                      run_job_fn=_zero_stub(set(), ran), log=lambda s: None)
+    assert [(h.family, h.size) for h in table] == [(DENSE, 12), (DENSE, 12)]
+    assert {j["world"] for j in ran} == {"dev-dense-12-calm-00"}  # gate worlds only, dense only
+    scales = [j["generator"]["params"].get("capacity_scale") for j in ran]
+    assert scales == [None] * len(ROSTER.members) + [0.9] * len(ROSTER.members)
+    lines = (tmp_path / "p" / "probe_headroom.csv").read_text().splitlines()
+    assert lines[0].startswith("capacity_scale,family,size,worlds,median_fill")
+    assert [ln.split(",")[0] for ln in lines[1:]] == ["1.0", "0.9"]
+    for sub in ("scale-1", "scale-0.9"):
+        assert (tmp_path / "p" / sub / "headroom.csv").exists()
+        spec = json.loads((tmp_path / "p" / sub / "spec.json").read_text())
+        assert spec["kind"] == "probe" and spec["status"] == "complete"
+    # rerun resumes: nothing left to run
+    again: list[dict] = []
+    run_probe(out_dir=tmp_path / "p", horizon=12, workers=1, registry=reserve_registry,
+              roster=ROSTER, scales=[1.0, 0.9], families=[DENSE], episodes_per_world=1,
+              run_job_fn=_zero_stub(set(), again), log=lambda s: None)
+    assert again == []
+
+
+@pytest.mark.parametrize("scales,match", [([], "non-empty"), ([0.9, 0.9], "distinct"),
+                                          ([0.0], "capacity_scale")])
+def test_probe_refuses_bad_scales(reserve_registry: Registry, tmp_path: Path, scales: list,
+                                  match: str) -> None:
+    from tokenomics.eval.gate_cli import run_probe
+
+    with pytest.raises(ValueError, match=match):
+        run_probe(out_dir=tmp_path / "x", horizon=12, workers=1, registry=reserve_registry,
+                  roster=ROSTER, scales=scales, run_job_fn=_zero_stub(set()), log=lambda s: None)
+
+
+def test_baseline_setters_are_the_argmax_members() -> None:
+    """Per family: the members that are the per-episode argmax somewhere, sorted."""
+    from tokenomics.eval.gate_cli import baseline_setters
+
+    rows = [_row("dev-dense-12-calm-00", 1000, A, 9.0), _row("dev-dense-12-calm-00", 1000, B, 3.0),
+            _row("dev-dense-12-calm-00", 1001, A, 2.0), _row("dev-dense-12-calm-00", 1001, B, 4.0),
+            _row("dev-sparse_wide-12-calm-00", 1000, A, 1.0),
+            _row("dev-sparse_wide-12-calm-00", 1000, B, 5.0)]
+    assert baseline_setters(rows, ROSTER, DENSE) == sorted([A, B])
+    assert baseline_setters(rows, ROSTER, SPARSE_WIDE) == [B]
+
+
+def test_cli_probe_needs_scales_and_known_members(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(["--mode", "probe", "--out-dir", str(tmp_path / "a")])
+    with pytest.raises(SystemExit):
+        main(["--mode", "probe", "--scales", "0.9", "--members", "nope/none",
+              "--out-dir", str(tmp_path / "b")])
+    with pytest.raises(SystemExit):
+        main(["--mode", "screen", "--members", A, "--out-dir", str(tmp_path / "c")])
+
+
+def _probe(reg: Registry, out: Path, ran: list[dict], **kw: object) -> list:
+    from tokenomics.eval.gate_cli import run_probe
+
+    args: dict = dict(out_dir=out, horizon=12, workers=1, registry=reg, roster=ROSTER,
+                      scales=[1.0, 0.9], families=[DENSE], episodes_per_world=1,
+                      run_job_fn=_zero_stub(set(), ran), log=lambda s: None)
+    args.update(kw)
+    return run_probe(**args)
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*"))
+            if p.is_file()}
+
+
+def test_probe_refuses_a_screen_root(reserve_registry: Registry, tmp_path: Path) -> None:
+    """Review concern 113: a probe never writes into a screen/report run directory."""
+    out = tmp_path / "screen"
+    _screen(reserve_registry, out, _zero_stub(set()), "on-demand")
+    before = _snapshot(out)
+    ran: list[dict] = []
+    with pytest.raises(ValueError, match="holds a screen/report run"):
+        _probe(reserve_registry, out, ran)
+    assert ran == [] and _snapshot(out) == before
+
+
+@pytest.mark.parametrize("change", [
+    {"scales": [0.8]},
+    {"roster": _roster(("always_restore", "even_split"))},
+    {"episodes_per_world": None},
+    {"horizon": 8},
+])
+def test_probe_root_is_bound_to_its_configuration(reserve_registry: Registry, tmp_path: Path,
+                                                  change: dict) -> None:
+    """A rerun with other scales, members, episodes or horizon is refused before any job runs,
+    so probe.json, probe_headroom.csv, RESULT.md and the scale subdirs never disagree."""
+    out = tmp_path / "p"
+    _probe(reserve_registry, out, [])
+    before = _snapshot(out)
+    ran: list[dict] = []
+    with pytest.raises(ValueError, match="different configuration"):
+        _probe(reserve_registry, out, ran, **change)
+    assert ran == [] and _snapshot(out) == before
+
+
+def test_probe_refuses_a_foreign_non_empty_root(reserve_registry: Registry,
+                                                tmp_path: Path) -> None:
+    out = tmp_path / "x"
+    out.mkdir()
+    (out / "notes.txt").write_text("keep")
+    ran: list[dict] = []
+    with pytest.raises(ValueError, match="not empty"):
+        _probe(reserve_registry, out, ran)
+    assert ran == [] and _snapshot(out) == {"notes.txt": b"keep"}

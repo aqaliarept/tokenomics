@@ -42,7 +42,8 @@ from pathlib import Path
 from typing import Collection, Iterable, Mapping, Sequence
 
 from ..domain.config import Configuration
-from .families import CALM, DENSE, REGIMES, SHOCKED, SPARSE_WIDE
+from .families import (CALM, DENSE, FAMILIES, NEUTRAL_CAPACITY_SCALE, REGIMES, SHOCKED,
+                       SPARSE_WIDE, check_capacity_scale)
 from .gate import CANDIDATE, EpisodeRow, Headroom, episode_baseline, world_baseline
 from .provenance import assert_inputs_match, sha256_file
 from .roster import GATE_SIZES, Roster, content_hash
@@ -256,9 +257,10 @@ class Registry:
     @staticmethod
     def _check_generator(e: WorldEntry) -> None:
         """Schema of the generator ref (cheap, on every construction): exactly {generator,
-        params}; the family's generator; params keys from the builder's signature, int-valued,
-        `fanout` only (and always) for sparse, `schedule_length` only (and always) for calm, and
-        producers/regime equal to the entry's. Value constraints the builder enforces (fanout
+        params}; the family's generator; params keys from the builder's signature, int-valued
+        except `capacity_scale`; `fanout` only (and always) for sparse, `schedule_length` only
+        (and always) for calm, an optional non-neutral `capacity_scale` (a number in (0, 2],
+        task 10.2), and producers/regime equal to the entry's. Value constraints the builder enforces (fanout
         range, producers a multiple of 3, schedule_length >= 1) are checked by replay on load
         (`check_replay`)."""
         g = e.generator
@@ -275,9 +277,15 @@ class Registry:
             keys.add("fanout")
         if e.regime == CALM:
             keys.add("schedule_length")
+        if "capacity_scale" in params:
+            # optional, and only in canonical form: absent means neutral (task 10.2)
+            v = params["capacity_scale"]
+            if check_capacity_scale(v) == NEUTRAL_CAPACITY_SCALE:
+                raise ValueError(f"{e.id}: a neutral capacity_scale is written by omission")
+            keys.add("capacity_scale")
         if set(params) != keys:
             raise ValueError(f"{e.id}: generator params {sorted(params)} != {sorted(keys)}")
-        for k in keys - {"regime"}:
+        for k in keys - {"regime", "capacity_scale"}:
             v = params[k]
             if isinstance(v, bool) or not isinstance(v, int):
                 raise ValueError(f"{e.id}: generator param {k} must be an int, got {v!r}")
@@ -421,12 +429,19 @@ def episode_seed(world_id: str, j: int) -> int:
     return int(hashlib.sha256(f"episode|{world_id}|{j}".encode()).hexdigest()[:8], 16) % 2**31
 
 
-def _generator_ref(family: str, size: int, regime: str) -> dict:
+def _generator_ref(family: str, size: int, regime: str,
+                   capacity_scale: float | None = None) -> dict:
+    """The family's generator ref. The capacity scale (default: the family's recorded one) is
+    written only when it is not neutral, so the ref alone fixes the world and an unscaled
+    registry keeps its bytes (task 10.2)."""
     params: dict = {"producers": size, "regime": regime}
     if family == SPARSE_WIDE:
         params["fanout"] = SPARSE_FANOUT
     if regime == CALM:
         params["schedule_length"] = CALM_SCHEDULE_LENGTH
+    scale = FAMILIES[family].capacity_scale if capacity_scale is None else capacity_scale
+    if check_capacity_scale(scale) != NEUTRAL_CAPACITY_SCALE:
+        params["capacity_scale"] = scale
     return {"generator": FAMILY_GENERATORS[family], "params": params}
 
 

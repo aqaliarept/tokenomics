@@ -39,6 +39,13 @@ producers, each strong (80-140) or marginal (8-20) by draw, so its own ratio can
 percent) from the family's; that world-to-world spread is kept on purpose, since development
 worlds should span headroom. Emission per producer is exact in every world.
 
+Capacity scale (task 10.2, design D10): a family may carry a `capacity_scale` that multiplies
+every capacity-unit quantity a producer draws (initial capacity, restoration `restores`, upgrade
+`increases`), rounded half up and floored at 1, after the draw, so the random stream and every
+other value are unchanged. It applies at every size, so the demand/throughput ratio test still
+compares like with like. The neutral value 1.0 skips the transform, so a 1.0 world is byte for
+byte the unscaled one. It is the retuning lever for a family that fails the headroom check.
+
 Regimes (design D8): **shocked** keeps the B9 seeded random demand (product uniform over the
 consumer's pool, quantity uniform in its range, drawn per episode from the episode seed).
 **calm** draws each consumer's cyclic `schedule` once here, from the world seed, within the same
@@ -72,6 +79,7 @@ DENSE_WIDTH = 4
 DEFAULT_SPARSE_FANOUT = 2
 DEFAULT_SCHEDULE_LENGTH = 7
 STRONG_EVERY_MAX = 4
+NEUTRAL_CAPACITY_SCALE = 1.0
 
 
 @dataclass(frozen=True)
@@ -81,13 +89,15 @@ class Family:
     default 10%), and the sampling protocol that ratio is computed under: per size, the world
     seeds `range(first, first + count)` as (size, first, count) triples. Each sample holds
     400–800 top-layer producers (100 × 4 at 12, 40 × 14 at 42, 20 × 40 at 120); the 120 sample
-    is kept for the future, non-gating size."""
+    is kept for the future, non-gating size. `capacity_scale` is the family default the
+    registry generator records in each world's ref (module docstring; neutral 1.0)."""
 
     name: str
     default_fanout: int | None  # None = the whole layer (dense)
     ratio_tolerance: float = 0.10
     ratio_sample: tuple[tuple[int, int, int], ...] = ((12, 1000, 100), (42, 1000, 40),
                                                       (120, 1000, 20))
+    capacity_scale: float = NEUTRAL_CAPACITY_SCALE
 
     def sample_seeds(self, producers: int) -> range:
         for size, first, count in self.ratio_sample:
@@ -128,6 +138,20 @@ def cycle_emission(producers: int) -> int:
     return BASE_EMISSION * producers // BASE_PRODUCERS
 
 
+def check_capacity_scale(scale: float) -> float:
+    """A capacity scale must be a finite number in (0, 2]; bools are refused."""
+    if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not 0 < scale <= 2:
+        raise ValueError(f"capacity_scale must be a number in (0, 2], got {scale!r}")
+    return float(scale)
+
+
+def _scaled(units: int, scale: float) -> int:
+    """`units` × `scale`, rounded half up, at least 1; untouched at the neutral scale."""
+    if scale == NEUTRAL_CAPACITY_SCALE:
+        return units
+    return max(1, int(units * scale + 0.5))
+
+
 def _declared(k: int, width: int, fanout: int, dense: bool) -> list[int]:
     """Within-layer product indices producer k declares."""
     if dense:
@@ -154,8 +178,11 @@ def build_family_config(
     regime: str,
     fanout: int | None = None,
     schedule_length: int = DEFAULT_SCHEDULE_LENGTH,
+    capacity_scale: float = NEUTRAL_CAPACITY_SCALE,
 ) -> Configuration:
-    """One family world (module docstring). `seed` is the world seed."""
+    """One family world (module docstring). `seed` is the world seed. `capacity_scale` is
+    explicit (neutral by default) so a generator ref alone fixes the world; the family default
+    enters through the registry generator, not here."""
     if family not in FAMILIES:
         raise ValueError(f"unknown family {family!r}; known: {sorted(FAMILIES)}")
     if regime not in REGIMES:
@@ -164,6 +191,7 @@ def build_family_config(
         raise ValueError(f"producers must be a positive multiple of {DEPTH}, got {producers}")
     if schedule_length < 1:
         raise ValueError(f"schedule_length must be >= 1, got {schedule_length}")
+    scale = check_capacity_scale(capacity_scale)
     fam = FAMILIES[family]
     dense = family == DENSE
     n = producers // DEPTH
@@ -191,15 +219,15 @@ def build_family_config(
         cap_type = f"capacity-{level}"
         for k in range(n):
             strong = (k % strong_every == 0) or rng.random() < 0.6
-            cap = rng.randint(80, 140) if strong else rng.randint(8, 20)
+            cap = _scaled(rng.randint(80, 140) if strong else rng.randint(8, 20), scale)
             maint = _pid(0, (level * n + k) % W, stride)
             common = dict(
                 id=f"p{level}_{k}",
                 capacities={cap_type: cap},
                 degradation=rng.randint(3, 7),
-                restoration=Restoration(require=maint, restores=rng.randint(40, 70),
+                restoration=Restoration(require=maint, restores=_scaled(rng.randint(40, 70), scale),
                                         type=cap_type, cost=rng.randint(20, 50)),
-                upgrade=Upgrade(require=maint, increases=rng.randint(30, 50),
+                upgrade=Upgrade(require=maint, increases=_scaled(rng.randint(30, 50), scale),
                                 type=cap_type, cost=rng.randint(20, 50)),
                 produces=frozenset(_pid(level, j, stride) for j in _declared(k, W, f, dense)),
             )
@@ -239,18 +267,22 @@ def build_family_config(
 
 def build_dense_config(seed: int, *, producers: int, regime: str,
                        fanout: int | None = None,
-                       schedule_length: int = DEFAULT_SCHEDULE_LENGTH) -> Configuration:
+                       schedule_length: int = DEFAULT_SCHEDULE_LENGTH,
+                       capacity_scale: float = NEUTRAL_CAPACITY_SCALE) -> Configuration:
     """Generator-ref target for the dense family (`task_archive.REPRODUCERS`)."""
     return build_family_config(seed, family=DENSE, producers=producers, regime=regime,
-                               fanout=fanout, schedule_length=schedule_length)
+                               fanout=fanout, schedule_length=schedule_length,
+                               capacity_scale=capacity_scale)
 
 
 def build_sparse_wide_config(seed: int, *, producers: int, regime: str,
                              fanout: int = DEFAULT_SPARSE_FANOUT,
-                             schedule_length: int = DEFAULT_SCHEDULE_LENGTH) -> Configuration:
+                             schedule_length: int = DEFAULT_SCHEDULE_LENGTH,
+                             capacity_scale: float = NEUTRAL_CAPACITY_SCALE) -> Configuration:
     """Generator-ref target for the sparse-wide family (`task_archive.REPRODUCERS`)."""
     return build_family_config(seed, family=SPARSE_WIDE, producers=producers, regime=regime,
-                               fanout=fanout, schedule_length=schedule_length)
+                               fanout=fanout, schedule_length=schedule_length,
+                               capacity_scale=capacity_scale)
 
 
 # --- economy ratios (gate-harness "Constant economy ratios across sizes") ---
@@ -294,12 +326,15 @@ def demand_throughput_ratio(cfgs: list[Configuration]) -> float:
 
 
 def family_demand_ratio(family: str, producers: int, regime: str,
-                        fanout: int | None = None) -> float:
-    """The family's demand ratio at one size, under its recorded sampling protocol."""
-    seeds = FAMILIES[family].sample_seeds(producers)
+                        fanout: int | None = None, capacity_scale: float | None = None) -> float:
+    """The family's demand ratio at one size, under its recorded sampling protocol and (unless
+    overridden) its recorded capacity scale."""
+    fam = FAMILIES[family]
+    scale = fam.capacity_scale if capacity_scale is None else capacity_scale
     return demand_throughput_ratio([
-        build_family_config(s, family=family, producers=producers, regime=regime, fanout=fanout)
-        for s in seeds
+        build_family_config(s, family=family, producers=producers, regime=regime, fanout=fanout,
+                            capacity_scale=scale)
+        for s in fam.sample_seeds(producers)
     ])
 
 

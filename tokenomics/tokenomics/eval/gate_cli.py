@@ -17,6 +17,10 @@ Modes:
   (`--prune`, roster.prune_roster) -> X/Y calibration (D4) over the final worlds' episodes with the
   (pruned) roster -> candidate frozen files `frozen/worlds_v1.json` (screened, headroom recorded),
   `frozen/roster_v1.json` (frozen), `frozen/side_effect_params_v1.json`, plus `screening.json`.
+- `probe` (task 10.2): baseline-only headroom of the development gate worlds of `--families`
+  (default dense) at each `--scales` capacity scale, with an optional `--members` subset; writes
+  `scale-<s>/` per scale and `probe_headroom.csv`. Calibration evidence for retuning a family
+  (D10), never an acceptance read.
 
 Jobs fan out over a spawn-context `ProcessPoolExecutor`, one process per worker, BLAS pinned to one
 thread: inference is batch-1 and rollouts are sequential Python (CLAUDE.md "Parallel work").
@@ -69,6 +73,7 @@ from .gate import (
     side_effect_params_json,
 )
 from .provenance import environment_manifest, sha256_file, source_fingerprint
+from .families import DENSE, NEUTRAL_CAPACITY_SCALE, check_capacity_scale
 from .registry import (
     DEFAULT_REGISTRY,
     DEVELOPMENT,
@@ -890,6 +895,164 @@ def run_screen(
     return outcome, (0 if outcome.passed else HEADROOM_FAILED)
 
 
+# --- dense-scale probe (task 10.2) ---
+
+
+def scaled_entry(e: WorldEntry, scale: float) -> WorldEntry:
+    """`e` with its generator ref rewritten to `scale` (canonical form: omitted when neutral)."""
+    params = {k: v for k, v in e.generator["params"].items() if k != "capacity_scale"}
+    if check_capacity_scale(scale) != NEUTRAL_CAPACITY_SCALE:
+        params["capacity_scale"] = scale
+    return replace(e, generator={"generator": e.generator["generator"], "params": params})
+
+
+def baseline_setters(rows: Sequence[EpisodeRow], roster: Roster, family: str) -> list[str]:
+    """Members that set the per-episode hindsight baseline on `family`'s worlds in a finished
+    screen (`episode_bests` argmax), sorted. 10.3 probes with exactly these members: on the
+    screen's own worlds and scale they reproduce its baseline, because the max over a subset that
+    holds every argmax member equals the max over the full roster."""
+    return sorted({b.member for b in episode_bests(rows, roster)
+                   if f"-{family}-" in b.world})
+
+
+def run_probe(
+    *,
+    out_dir: str | Path,
+    horizon: int,
+    workers: int,
+    registry: Registry,
+    roster: Roster,
+    scales: Sequence[float],
+    families: Sequence[str] = (DENSE,),
+    sizes: Sequence[int] | None = None,
+    max_worlds: int | None = None,
+    episodes_per_world: int | None = None,
+    source_commit: str = "",
+    run_job_fn: Callable[[Job], dict[str, str]] = run_job,
+    log: Callable[[str], None] = print,
+) -> list[Headroom]:
+    """Measure headroom at several capacity scales in one session (design D10, task 10.2): for
+    each scale, rewrite the selected development gate worlds' generator refs to that scale, run
+    the (sub)roster, and apply the headroom rule. Baseline-only calibration evidence, never an
+    acceptance read: no replacement, pruning, X/Y or frozen files. One subdir per scale
+    (`scale-<s>/`: spec.json, episodes.csv, headroom.csv) resumes on its own pins; the per-scale
+    table is `probe_headroom.csv`. A probe sees fewer members, replicates or episodes than the
+    gate, so its medians estimate the screen's; the rescreen stays the binding check."""
+    if not scales or len(set(scales)) != len(scales):
+        raise ValueError(f"scales must be non-empty and distinct, got {list(scales)}")
+    for sc in scales:
+        check_capacity_scale(sc)
+    gate = select_worlds(registry, DEVELOPMENT, sizes=sizes, families=families,
+                         max_worlds=max_worlds)
+    if not gate:
+        raise ValueError("no development gate worlds selected for the probe")
+    out = Path(out_dir)
+    source = source_fingerprint(source_commit or None)
+    config = {
+        "families": sorted({e.family for e in gate}), "sizes": sorted({e.size for e in gate}),
+        "worlds": [e.id for e in gate], "scales": list(scales),
+        "members": list(roster.member_ids), "replicates": roster.replicates,
+        "episodes_per_world": episodes_per_world, "horizon": horizon,
+        "registry_version": registry.version, "roster_version": roster.version,
+        "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
+    }
+    _bind_probe_root(out, config)
+    if not (out / "RESULT.md").exists():
+        (out / "RESULT.md").write_text(PROBE_SKELETON.format(
+            title=out.name, driver=DRIVER, members=", ".join(roster.member_ids),
+            replicates=roster.replicates,
+            episodes="all" if episodes_per_world is None else f"≤ {episodes_per_world}"))
+    table: list[Headroom] = []
+    rows_out: list[dict[str, object]] = []
+    for sc in scales:
+        worlds = [scaled_entry(e, sc) for e in gate]
+        scope = Registry(name=f"{registry.name}-probe", seed_ranges=registry.seed_ranges,
+                         entries=tuple(worlds), saturation_ceiling=registry.saturation_ceiling)
+        sub = out / f"scale-{sc:g}"
+        grid = job_grid(worlds, episodes_per_world)
+        expected = expected_keys(grid, roster, 0)
+        pins = {
+            "mode": "probe", "capacity_scale": sc, "horizon": horizon,
+            "registry_version": registry.version, "scope_version": scope.version,
+            "roster_version": roster.version,
+            "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
+            "candidate_replicates": 0, "grid": grid,
+        }
+        old_spec, done = _prepare_resume(sub, pins, grid, expected)
+        spec = _open_spec(sub, old_spec, workers, {
+            "experiment": out.name, "driver": DRIVER, "mode": "probe", "kind": "probe",
+            "pins": pins, "roster": roster.payload() | {"content_hash": roster.version},
+            "source": source,
+        })
+        log(f"[gate] probe capacity_scale={sc:g}")
+        _execute(sub, spec, done, build_jobs(worlds, roster, None,
+                                             episodes_per_world=episodes_per_world),
+                 expected, workers, (horizon, None, None), run_job_fn, log)
+        rows = read_rows(sub / "episodes.csv")
+        check_rows(rows, grid, expected, complete=True)
+        hr = headroom(episode_bests(rows, roster), {e.id: e.family for e in worlds},
+                      registry.saturation_ceiling)
+        _write_table(sub / "headroom.csv", [h.to_dict() for h in hr])
+        spec["status"] = "complete"
+        spec["result"] = [h.to_dict() for h in hr]
+        _write_spec(sub, spec)
+        table += hr
+        rows_out += [{"capacity_scale": sc, **h.to_dict()} for h in hr]
+        log("[gate] probe " + "; ".join(f"{h.family}-{h.size} median {h.median_fill:.4f}"
+                                        for h in hr))
+    _write_table(out / "probe_headroom.csv", rows_out)
+    return table
+
+
+RUN_ARTIFACTS = ("spec.json", "episodes.csv", "screening.json", "verdict.json", "frozen")
+
+
+def _bind_probe_root(out: Path, config: Mapping[str, object]) -> None:
+    """Before any write (review concern 113): refuse a root that holds a screen or report run,
+    so a probe can never add files to (or be mistaken for) one; and bind the root to its probe
+    configuration in `probe.json`, so a resume with other scales, members, R, episodes, worlds
+    or source is refused and the root summary, RESULT approximation and subdirs never disagree."""
+    clash = sorted(name for name in RUN_ARTIFACTS if (out / name).exists())
+    if clash:
+        raise ValueError(f"{out} holds a screen/report run ({', '.join(clash)}); a probe needs "
+                         "its own --out-dir")
+    probe_json = out / "probe.json"
+    if probe_json.exists():
+        recorded = json.loads(probe_json.read_text())
+        if recorded != json.loads(json.dumps(config)):
+            raise ValueError(f"{out} holds a probe with a different configuration; refusing to "
+                             f"resume:\n  recorded {recorded}\n  now      {dict(config)}")
+        return
+    if out.exists() and any(out.iterdir()):
+        raise ValueError(f"{out} is not empty and holds no probe.json; a probe needs a fresh "
+                         "--out-dir")
+    out.mkdir(parents=True, exist_ok=True)
+    probe_json.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
+
+
+PROBE_SKELETON = """# {title}
+
+> **PROBE — calibration evidence, not an acceptance read.** Baseline-only headroom at several
+> capacity scales (design D10); no frozen files.
+
+See `probe_headroom.csv` (one row per scale × family × size), `probe.json` and `scale-*/`.
+Produced by `python -m {driver} --mode probe` (see each `scale-*/spec.json`).
+
+**Approximation.** The hindsight baseline here is the per-episode best of only these members:
+{members}; random members ran R = {replicates} replicate(s), on {episodes} episodes per world.
+The gate screen uses the full roster, R = 5 and every registered episode, so these medians
+estimate the screen's; the rescreen is the binding check.
+
+## Result
+
+TODO
+
+## Conclusions
+
+TODO
+"""
+
+
 SCREEN_SKELETON = """# {title}
 
 {banner}**Screening: {status}** (see `screening.json`, `headroom.csv`, `frozen/`)
@@ -920,7 +1083,7 @@ def _csv_strs(s: str | None) -> list[str] | None:
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m tokenomics.eval.gate", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", choices=("report", "recompute", "screen"), required=True)
+    ap.add_argument("--mode", choices=("report", "recompute", "screen", "probe"), required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--subject", default=PORTABLE,
                     help="'portable' (needs --prod-ckpt, --orderer-ckpt) or "
@@ -948,6 +1111,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--reserves", choices=("on-demand", "eager", "none"), default="on-demand",
                     help="screen: run reserve worlds only when a gate world needs replacing "
                          "(default), all up front (eager), or not at all (dry runs only)")
+    ap.add_argument("--scales", help="probe: capacity scales, e.g. 1.0,0.95,0.9,0.85,0.8")
+    ap.add_argument("--members", help="probe or dry run: keep only these roster members "
+                                      "(comma list of member ids)")
     ap.add_argument("--dry-run", action="store_true",
                     help="smoke run: allows filters, an unfrozen roster, an unscreened registry and "
                          "no source commit; marked as not an acceptance read")
@@ -968,14 +1134,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .provenance import resolve_verified_commit
 
         source_commit = resolve_verified_commit()
-    if (args.max_members or args.replicates) and not args.dry_run:
-        ap.error("--max-members / --replicates change the roster: pass --dry-run")
+    probe = args.mode == "probe"
+    if (args.max_members or args.replicates or args.members) and not (args.dry_run or probe):
+        ap.error("--max-members / --replicates / --members change the roster: pass --dry-run")
+    if probe and not args.scales:
+        ap.error("--mode probe needs --scales")
     roster = load_roster(args.roster)
-    if args.max_members or args.replicates:
+    if args.max_members or args.replicates or args.members:
         members = roster.members[: args.max_members] if args.max_members else roster.members
-        roster = replace(roster, name=f"{roster.name}-dry-run", members=members,
+        if args.members:
+            want = _csv_strs(args.members) or []
+            unknown = sorted(set(want) - {m.id for m in roster.members})
+            if unknown:
+                ap.error(f"--members not in roster {roster.version[:12]}: {unknown}")
+            members = tuple(m for m in members if m.id in set(want))
+        roster = replace(roster, name=f"{roster.name}-{'probe' if probe else 'dry-run'}",
+                         members=members,
                          replicates=args.replicates or roster.replicates, frozen=False,
                          pruning=None)
+    if probe:
+        run_probe(out_dir=args.out_dir, horizon=args.horizon, workers=args.workers,
+                  registry=load_registry(args.registry), roster=roster,
+                  scales=[float(x) for x in args.scales.split(",")],
+                  families=_csv_strs(args.families) or [DENSE], sizes=_csv_ints(args.sizes),
+                  max_worlds=args.max_worlds, episodes_per_world=args.episodes_per_world,
+                  source_commit=source_commit)
+        return 0
     if args.mode == "screen":
         _, status = run_screen(
             out_dir=args.out_dir, horizon=args.horizon, workers=args.workers,

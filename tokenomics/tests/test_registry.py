@@ -182,6 +182,9 @@ def _with_params(draft: Registry, wid: str, **change: object) -> dict:
     ("dev-dense-12-shocked-00", {"schedule_length": 7}, "generator params"),
     ("dev-dense-12-calm-00", {"schedule_length": "7"}, "must be an int"),
     ("dev-dense-12-calm-00", {"producers": 13}, "generator producers"),
+    ("dev-dense-12-calm-00", {"capacity_scale": 1.0}, "written by omission"),
+    ("dev-dense-12-calm-00", {"capacity_scale": 0}, "capacity_scale must be"),
+    ("dev-dense-12-calm-00", {"capacity_scale": True}, "capacity_scale must be"),
 ])
 def test_malformed_generator_ref_refused_on_load(draft: Registry, wid: str, change: dict,
                                                  match: str) -> None:
@@ -517,3 +520,36 @@ def test_headroom_recorded_in_screened_registry(draft: Registry) -> None:
         record_headroom(rec, results)
     with pytest.raises(ValueError, match="pre-registers 0.95"):
         record_headroom(screened, [Headroom(DENSE, 12, 8, 0.6, 0.9, True)])
+
+
+# --- capacity scale in generator refs (task 10.2) ---
+
+
+def test_scaled_generator_ref_loads_and_replays_scaled(draft: Registry) -> None:
+    """A non-neutral capacity_scale is a valid ref param; the world replays scaled."""
+    d = _with_params(draft, "dev-dense-42-calm-00", capacity_scale=0.9)
+    reg = registry_from_dict(d)
+    e = reg.entry("dev-dense-42-calm-00")
+    assert e.generator["params"]["capacity_scale"] == 0.9
+    assert reg.version != draft.version
+    base = draft.entry("dev-dense-42-calm-00").config()
+    assert e.config() != base
+    assert e.config().consumers == base.consumers
+
+
+def test_family_default_scale_reaches_only_its_family(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-neutral dense default is written into dense refs only; sparse-wide is unchanged and
+    the neutral default keeps the shipped registry byte for byte."""
+    from tokenomics.eval import families
+
+    assert build_worlds_v1().to_json() == DEFAULT_REGISTRY.read_text()
+    monkeypatch.setitem(families.FAMILIES, DENSE, replace(families.FAMILIES[DENSE],
+                                                          capacity_scale=0.9))
+    reg = build_worlds_v1()
+    for e in reg.entries:
+        p = e.generator["params"]
+        assert (p.get("capacity_scale") == 0.9) == (e.family == DENSE), e.id
+    shipped = load_registry()
+    for e in reg.entries:
+        if e.family == SPARSE_WIDE:
+            assert e == shipped.entry(e.id)
