@@ -39,8 +39,8 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> list:
         return _Resp(json.dumps({"id": "pod123", "imageName": "img:1"}).encode())
 
     monkeypatch.setattr(rpt.urllib.request, "urlopen", fake_urlopen)
-    monkeypatch.setattr(rpt, "_runpod_api_key", lambda: "KEY")
-    monkeypatch.setattr(rpt, "log", lambda msg: None)
+    monkeypatch.setattr(rpt, "_runpod_api_key", lambda: "SECRET-KEY-123")
+    monkeypatch.setattr(rpt, "log", lambda msg: seen.append(("log", msg)))
     return seen
 
 
@@ -53,21 +53,29 @@ def test_every_rest_call_sends_the_explicit_user_agent(captured: list) -> None:
         rpt.fetch_pod_spec("pod123")
     except Exception:  # the stub body is not a full pod spec; only the request matters here
         pass
-    assert len(captured) == 3
-    for req in captured:
+    logs = [m for kind, m in (c for c in captured if isinstance(c, tuple))]
+    reqs = [c for c in captured if not isinstance(c, tuple)]
+    assert len(reqs) == 3
+    for req in reqs:
         assert req.get_header("User-agent") == rpt.RUNPOD_USER_AGENT
         assert "python-urllib" not in rpt.RUNPOD_USER_AGENT.lower()
-        assert req.get_header("Authorization") == "Bearer KEY"
-    assert captured[0].get_header("Content-type") == "application/json"
+        assert req.get_header("Authorization") == "Bearer SECRET-KEY-123"
+    assert reqs[0].get_header("Content-type") == "application/json"
+    assert logs and not any("SECRET-KEY-123" in m for m in logs)  # the key is never logged
 
 
-def _stub_run(monkeypatch: pytest.MonkeyPatch, outputs: dict[str, str]) -> list[list[str]]:
+def _stub_run(monkeypatch: pytest.MonkeyPatch,
+              outputs: dict[str, tuple[int, str, str]]) -> list[list[str]]:
+    """`run` stub: outputs maps "ssh info" / "pod get" to (returncode, stdout, stderr)."""
     calls: list[list[str]] = []
 
     def fake_run(cmd: list[str], *, check: bool = True,
                  capture: bool = False) -> subprocess.CompletedProcess[str]:
         calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout=outputs[" ".join(cmd[1:3])], stderr="")
+        code, out, err = outputs[" ".join(cmd[1:3])]
+        if check and code:
+            raise subprocess.CalledProcessError(code, cmd, out, err)
+        return subprocess.CompletedProcess(cmd, code, stdout=out, stderr=err)
 
     monkeypatch.setattr(rpt, "run", fake_run)
     return calls
@@ -76,27 +84,52 @@ def _stub_run(monkeypatch: pytest.MonkeyPatch, outputs: dict[str, str]) -> list[
 _SSH = {"ip": "1.2.3.4", "port": 2222, "ssh_key": {"path": "/k"}}
 _NOT_READY = {"error": "pod not ready: no container reported yet (image pull, container create "
                        "or boot)", "id": "p", "runtimeStatus": "initializing"}
+_GET = (0, json.dumps({"id": "p", "ssh": _SSH}), "")
 
 
-def test_resolve_ssh_uses_ssh_info_when_it_reports_an_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _stub_run(monkeypatch, {"ssh info": json.dumps(_SSH)})
+def test_resolve_ssh_uses_ssh_info_when_it_reports_an_endpoint(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _stub_run(monkeypatch, {"ssh info": (0, json.dumps(_SSH), ""), "pod get": _GET})
     ssh = rpt.resolve_ssh("p", None)
     assert (ssh.ip, ssh.port, ssh.key) == ("1.2.3.4", 2222, "/k")
     assert [c[1:3] for c in calls] == [["ssh", "info"]]
 
 
-def test_resolve_ssh_falls_back_to_pod_get(monkeypatch: pytest.MonkeyPatch) -> None:
-    """runpodctl 3.0.1 reports "no container reported yet" for a running CPU pod; `pod get`
-    already carries the same ssh block."""
-    calls = _stub_run(monkeypatch, {"ssh info": json.dumps(_NOT_READY),
-                                    "pod get": json.dumps({"id": "p", "ssh": _SSH})})
+@pytest.mark.parametrize("code", [0, 1])
+def test_resolve_ssh_falls_back_to_pod_get_only_when_not_ready(
+        monkeypatch: pytest.MonkeyPatch, code: int) -> None:
+    """runpodctl 3.0.1 reports "pod not ready: no container reported yet" for a running CPU
+    pod; `pod get` already carries the same ssh block (whatever ssh info's exit code)."""
+    calls = _stub_run(monkeypatch, {"ssh info": (code, json.dumps(_NOT_READY), ""),
+                                    "pod get": _GET})
     ssh = rpt.resolve_ssh("p", "/override")
     assert (ssh.ip, ssh.port, ssh.key) == ("1.2.3.4", 2222, "/override")
     assert [c[1:3] for c in calls] == [["ssh", "info"], ["pod", "get"]]
 
 
-def test_resolve_ssh_without_any_endpoint_is_not_ready(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No endpoint anywhere raises KeyError, which wait_for_ssh treats as "not ready yet"."""
-    _stub_run(monkeypatch, {"ssh info": json.dumps(_NOT_READY), "pod get": "not json"})
+def test_not_ready_without_any_endpoint_is_still_not_ready(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """No endpoint in `pod get` either raises KeyError: wait_for_ssh treats it as not ready."""
+    _stub_run(monkeypatch, {"ssh info": (0, json.dumps(_NOT_READY), ""),
+                            "pod get": (0, json.dumps({"id": "p"}), "")})
     with pytest.raises(KeyError):
         rpt.resolve_ssh("p", None)
+
+
+@pytest.mark.parametrize("ssh_info,raises", [
+    ((1, "", "Error: unauthorized: invalid api key"), subprocess.CalledProcessError),
+    ((2, "unknown flag: --bogus", ""), subprocess.CalledProcessError),
+    ((1, json.dumps({"error": "pod not found"}), ""), subprocess.CalledProcessError),
+    ((0, "garbled <html>", ""), json.JSONDecodeError),
+    ((0, json.dumps({"error": "rate limited"}), ""), KeyError),
+])
+def test_other_ssh_info_failures_are_not_masked(monkeypatch: pytest.MonkeyPatch,
+                                                ssh_info: tuple, raises: type) -> None:
+    """Review concern 122: authorization errors, bad arguments, unknown pods, malformed output
+    and unrecognised JSON errors fail as they did before the fallback, never via `pod get`."""
+    calls = _stub_run(monkeypatch, {"ssh info": ssh_info, "pod get": _GET})
+    with pytest.raises(raises) as err:
+        rpt.resolve_ssh("p", None)
+    assert [c[1:3] for c in calls] == [["ssh", "info"]]
+    if raises is subprocess.CalledProcessError:
+        assert (err.value.returncode, err.value.stderr) == (ssh_info[0], ssh_info[2])

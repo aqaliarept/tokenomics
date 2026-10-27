@@ -439,14 +439,17 @@ worlds, checks that the baselines leave headroom, and calibrates the side-effect
   set.
 - **EXP-0044 retune probe (10.3). Capacity scale does not work.** Dense capacity cut to
   0.95–0.8× left dense-12's probe median at 0.955–0.962; dense-42 fell only from 0.926 to
-  0.912. Diagnosed: the best baseline's shortfall is mostly warm-up loss while the depth-3 chain
-  fills. 62% of it falls in cycles 1–20 at 12 producers and 86% at 42; after cycle 20 the best
-  baseline serves a median 97.7% / 99.4% of orders. Capacity stays about 12× above demand even
-  at 0.8×. The retune lever has to change: what the headroom check measures, demand pressure,
+  0.912. On calm worlds (the only ones where the h = 20 vs h = 100 subtraction is matched;
+  post-hoc review) the best baseline's shortfall is mostly warm-up loss while the depth-3 chain
+  fills: 54% of it in cycles 1–20 at 12 producers and 85% at 42, with 97.5% / 99.5% served
+  after cycle 20. Capacity stays about 12× above demand even at 0.8×. Shocked worlds were not
+  diagnosed. The retune lever has to change: what the headroom check measures, demand pressure,
   or a much deeper cut. That is a user decision.
 - **EXP-0044 attempt 2 (10.5). Sparse-wide screen passed.** M1 now gates on sparse-wide only
-  (user decision after the probe; a warm-up diagnostic found sparse-wide keeps routing headroom
-  after warm-up, with only 30–34% of its shortfall in cycles 1–20). Headroom medians: 0.934 at
+  (user decision after the probe). The decision rests on the headroom statistic itself, which
+  sparse-wide passes and dense-12 fails. The warm-up split is only a side note: on calm worlds
+  sparse-42 keeps clear post-warm-up headroom (0.89 served after cycle 20), but at sparse-12 the
+  most frequent winner serves 0.99 after warm-up, so headroom there is weak. Headroom medians: 0.934 at
   12 producers, 0.886 at 42. No world needed a reserve. Pruning dropped 35 of 40 baselines:
   only the five `entity_planner` producers ever set the per-episode best. X = 0.7297, Y = 0.7681
   (q 0.05). The frozen world registry, roster and side-effect parameters are ready for 11.1 and

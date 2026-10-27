@@ -46,7 +46,8 @@ world, 10 per shocked world). That is 1,280 episodes at horizon 100.
 - *Deaths: none.* The economy survived every episode.
 - *Run-down: 8 failures*: 8 of the 10 episodes of one world, 12-shocked-00. There the candidate
   ends episodes at 63–70% of its starting capacity ratio, under X = 73%.
-- *Starvation: 22 failures*:
+- *Starvation: 22 consumer-level failure records in 19 episodes* (an episode fails once
+  for each starved consumer):
   - at 12 producers: all 3 episodes of calm-05;
   - at 42 producers: all 3 episodes of calm-00, -01, -03, -04 and -05, plus 1 of shocked-02.
   In each, some consumer gets under Y = 77% of its orders filled (e.g. 0.71 at 42-calm-00). The

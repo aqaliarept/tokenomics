@@ -135,9 +135,10 @@ registry (design D10 note).
 #### Scenario: Why dense does not gate in M1
 - **WHEN** EXP-0044's dense-12 worlds fail the headroom check (median best fill 0.954 > 0.95),
   and capacity cuts to 0.8× leave them at 0.955–0.962
-- **THEN** dense is held out of M1, because its shortfall is mostly warm-up (62% of it in
-  cycles 1–20 at 12 producers, 86% at 42) while sparse-wide keeps headroom after warm-up; dense
-  is revisited later with a demand-side retune
+- **THEN** dense is held out of M1 and sparse-wide, whose headroom medians are below the
+  ceiling, gates alone; on calm worlds dense's shortfall is mostly warm-up (54% of it in cycles
+  1–20 at 12 producers, 85% at 42), so capacity is not the lever; dense is revisited later with
+  a demand-side retune
 
 #### Scenario: Sparse-wide fanout
 - **WHEN** a sparse-wide world is built with fanout 2 at 42 producers

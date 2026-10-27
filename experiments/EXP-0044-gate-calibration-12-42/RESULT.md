@@ -169,6 +169,7 @@ the gate CLI arguments are exactly the reviewed ones.
 
 See [`retune/RESULT.md`](retune/RESULT.md). In short: dense capacity scales 0.95–0.8 leave
 dense-12's probe median at 0.955–0.962, so no scale in the approved grid passes. A follow-up
-diagnostic finds the best baseline's shortfall is mostly warm-up loss (62% of it in cycles 1–20
-at 12 producers, 86% at 42), with capacity about 12× above demand even at 0.8×. 10.4/10.5 wait
-for a decision on the lever.
+diagnostic, valid on calm worlds only (its horizon subtraction is unmatched on shocked ones),
+finds the best baseline's shortfall there is mostly warm-up loss (54% of it in cycles 1–20 at 12
+producers, 85% at 42). Capacity is about 12× above demand even at 0.8×. The user then gated M1
+on sparse-wide only (attempt 2).

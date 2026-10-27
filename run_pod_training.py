@@ -459,26 +459,37 @@ def create_pod(spec: PodSpec, name: str) -> str:
     return pod_id
 
 
+SSH_NOT_READY = "pod not ready"  # runpodctl `ssh info` readiness error prefix (EXP-0044)
+
+
 def resolve_ssh(pod_id: str, key_override: str | None) -> Ssh:
     """Resolve the pod's direct SSH endpoint via `runpodctl ssh info` (ip/port + key
     path). On this runpodctl that endpoint is already the direct `root@ip -p port`
-    target the driver connects to. runpodctl 3.0.1 can keep answering "pod not ready: no
-    container reported yet" for a running CPU pod that already accepts SSH (EXP-0044); then
-    the same fields are read from `runpodctl pod get <id>`'s `ssh` block (task 11.2). A pod
-    with no endpoint in either raises KeyError, which wait_for_ssh treats as not ready yet."""
-    out = run(["runpodctl", "ssh", "info", pod_id], check=False, capture=True).stdout
+    target the driver connects to.
+
+    runpodctl 3.0.1 can keep answering `{"error": "pod not ready: no container reported yet
+    ..."}` for a running CPU pod that already accepts SSH (EXP-0044). Only for that recognised
+    readiness answer are the same fields read from `runpodctl pod get <id>`'s `ssh` block
+    (task 11.2); a pod with no endpoint there either raises KeyError, which wait_for_ssh treats
+    as not ready yet. Any other outcome fails as before the fallback existed (post-hoc review
+    122): a non-zero exit raises CalledProcessError, malformed output raises JSONDecodeError,
+    and a JSON answer with neither an endpoint nor the readiness error raises KeyError."""
+    res = run(["runpodctl", "ssh", "info", pod_id], check=False, capture=True)
     try:
-        info = json.loads(out)
+        info = json.loads(res.stdout)
     except json.JSONDecodeError:
-        info = {}
-    if not (info.get("ip") and info.get("port")):
-        got = run(["runpodctl", "pod", "get", pod_id], check=False, capture=True).stdout
-        try:
-            info = json.loads(got).get("ssh") or {}
-        except json.JSONDecodeError:
-            info = {}
-    if not (info.get("ip") and info.get("port")):
-        raise KeyError("ssh endpoint not reported yet")
+        if res.returncode:
+            raise subprocess.CalledProcessError(res.returncode, res.args, res.stdout, res.stderr)
+        raise
+    not_ready = (isinstance(info, dict)
+                 and str(info.get("error", "")).startswith(SSH_NOT_READY))
+    if res.returncode and not not_ready:
+        raise subprocess.CalledProcessError(res.returncode, res.args, res.stdout, res.stderr)
+    if not_ready:
+        got = run(["runpodctl", "pod", "get", pod_id], capture=True).stdout
+        info = json.loads(got).get("ssh") or {}
+        if not (info.get("ip") and info.get("port")):
+            raise KeyError("ssh endpoint not reported yet")
     key = key_override or info["ssh_key"]["path"]
     return Ssh(ip=info["ip"], port=int(info["port"]), key=key)
 

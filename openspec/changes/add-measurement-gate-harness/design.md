@@ -223,11 +223,13 @@ rescreened on baseline evidence only. Each attempt is recorded in the calibratio
 **M1 outcome (tasks 10.1–10.4, user decision 2026-10-27).**
 - EXP-0044 attempt 1 failed headroom on dense-12 (0.954).
 - The capacity-scale probe (10.3) did not move it: 0.955–0.962 at 0.8×–1.0×.
-- The diagnostic (DIAGNOSTICS 18) found why. Dense's best-baseline shortfall is mostly warm-up:
-  62% of it in cycles 1–20 at 12 producers and 86% at 42, with ≥ 97.7% served afterwards.
-  Capacity is ≈ 12× above demand, so it is not the lever.
-- Sparse-wide's shortfall is only 30–34% warm-up, with 0.90–0.97 served afterwards, so it keeps
-  real routing headroom.
+- The diagnostic (DIAGNOSTICS 18), valid on calm worlds only (its h = 20 vs h = 100 subtraction
+  is unmatched on shocked ones), suggests why. On calm worlds dense's best-baseline shortfall is
+  mostly warm-up: 54% of it in cycles 1–20 at 12 producers and 85% at 42, with ≥ 97.5% served
+  afterwards. Capacity is ≈ 12× above demand, so it is not the lever.
+- The decision rests on the headroom statistic itself: sparse-wide passes (0.934 at 12, 0.886
+  at 42) and dense-12 fails. Post-warm-up headroom on sparse-wide is clear at 42 (0.89 served
+  after cycle 20 on calm worlds) but weak at 12 (0.99 for the most frequent 12-producer winner).
 M1 therefore gates on sparse-wide only; dense stays buildable and non-gating, to be revisited
 with a demand-side retune. The 0.95 ceiling is unchanged.
 

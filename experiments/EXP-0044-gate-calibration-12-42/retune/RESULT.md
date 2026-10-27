@@ -4,8 +4,9 @@
 > capacity scales (design D10); no frozen files.
 
 **Status: NO SCALE IN THE GRID WORKS.** Cutting dense capacity to 0.8× does not bring dense-12
-below the 0.95 ceiling (probe median 0.955–0.962 at every scale). A follow-up diagnostic finds
-why: the best baseline's shortfall is mostly a warm-up effect, and capacity is far from binding.
+below the 0.95 ceiling (probe median 0.955–0.962 at every scale). A follow-up diagnostic, valid
+on calm worlds only (post-hoc review 123), suggests why: there the best baseline's shortfall is
+mostly a warm-up effect, and capacity is far from binding.
 No scale is recommended; the next step is a decision for the supervisor and user (§ What
 changes). Run 2026-10-27 at commit `f5b87c63269524fbc2bcfc6b348641646174c744`.
 
@@ -45,22 +46,32 @@ Dense-12 does not move: it stays at 0.955–0.962 at every scale, with no downwa
 Dense-42 falls slowly, by 1.4 points over the whole grid. The target (both medians ≤ about
 0.93) is not met by any scale.
 
-**Why: what limits the fill (diagnosed).** A follow-up diagnostic checked where the undelivered
-units come from. It replayed the strongest baseline (`entity_planner/random`, 51 of 64 dense-12
-episode wins in EXP-0044) on all 24 dense development worlds at horizon 20 and horizon 100. The
-difference between the two runs gives the fill rate of cycles 21–100 alone. It used one episode
-per world, replicate 0, at scale 1.0.
+**Why: what limits the fill (calm worlds only).** A follow-up diagnostic checked where the
+undelivered units come from. It replayed the strongest baseline (`entity_planner/random`, 51 of
+64 dense-12 episode wins in EXP-0044) on the dense development worlds at horizon 20 and at
+horizon 100, and subtracted the two runs to get the fill rate of cycles 21–100 alone. It used one
+episode per world, replicate 0, at scale 1.0.
 
-| size | median fill (h = 100) | share of shortfall in cycles 1–20 | median fill rate, cycles 21–100 | lowest, cycles 21–100 |
-|---|---|---|---|---|
-| 12 | 0.952 | 62% (180 of 292 units) | 0.977 | 0.928 |
-| 42 | 0.904 | 86% (1,951 of 2,261 units) | 0.994 | 0.893 |
+**That subtraction is only valid on calm worlds** (post-hoc review 123). A calm world replays a
+fixed demand schedule, so its first 20 cycles are the same at both horizons. A shocked world
+draws each randomized consumer's whole horizon-length schedule from one shared random stream,
+consumer after consumer (`env/aec_env.py`, `_build_consumers`). Every consumer after the first
+therefore gets different demand at h = 20 than at h = 100. The shocked rows, and the all-world
+shares first written here (62% / 86% of the shortfall in cycles 1–20), compare unmatched demand
+and cannot support a split by time. An exact shocked split needs a future cloud trace: one h = 100
+run with a cycle-20 snapshot. The matched evidence, from the committed `warmup_share_{12,42}.jsonl`
+with 8 calm worlds per size:
 
-A single-world horizon sweep shows the same shape: on dense-12 calm-00 the best baseline
-delivers every ordered unit in cycles 21–50, and on dense-42 calm-00 it delivers 99.4–99.7%
-after cycle 20 (`horizon_sweep.out`).
+| size | median fill (h = 100) | share of shortfall in cycles 1–20 | median fill rate, cycles 21–100 |
+|---|---|---|---|
+| 12 | 0.958 | 54% (96 of 177 units) | 0.975 |
+| 42 | 0.904 | 85% (1,327 of 1,556 units) | 0.995 |
 
-So, in this sample:
+A single-world horizon sweep shows the same shape on its calm worlds: on dense-12 calm-00 the
+best baseline delivers every ordered unit in cycles 21–50, and on dense-42 calm-00 it delivers
+99.4–99.7% after cycle 20 (`horizon_sweep.out`; its shocked-00 rows are unmatched in the same way).
+
+So, on calm worlds in this sample:
 - Most of the shortfall that the headroom check sees is **warm-up**: the depth-3 supply chain
   needs its first cycles to fill, and orders placed then expire (TTL 2). The wider 42-producer
   economy warms up more slowly. That is why dense-42 shows more "headroom" than dense-12, not
@@ -70,9 +81,22 @@ So, in this sample:
   0.8× cut leaves the top layer roughly 12× over-provisioned, which matches the flat dense-12
   column.
 
-This diagnosis rests on one episode per world for the best member, at scale 1.0. Whether a much
-deeper cut (toward the demand/throughput ratio) would bind is expected from the ratio, but not
-measured.
+This diagnosis rests on one episode per calm world for the best member, at scale 1.0. Shocked
+worlds are not covered. Whether a much deeper cut (toward the demand/throughput ratio) would bind
+is expected from the ratio, but not measured.
+
+**The later sparse-wide comparison (task 10.4 decision input).**
+`warmup_share_family.py` → `warmup_share_sparse*.jsonl` was committed with 9f29d73. It has the
+same flaw, so only its calm worlds are matched:
+- sparse-12, `entity_planner/random`: 31% of the shortfall in cycles 1–20; served 0.921 after.
+- sparse-12, `entity_planner/blend_0.5` (the most frequent 12-producer winner): 34%; served
+  **0.990** after.
+- sparse-42, `entity_planner/random`: 29%; served 0.893 after.
+Post-warm-up headroom on sparse-wide is therefore clear at 42 producers but **weak at 12** (0.99
+for the 12-calm winner). The sparse-only M1 decision rests on the headroom statistic itself:
+sparse-wide medians 0.934 (12) and 0.886 (42) are below 0.95, while dense-12 is above it. It does
+not rest on this warm-up split, and the earlier all-world sparse figures (30–34%) are withdrawn
+as unmatched.
 
 **What changes.** A dense capacity scale in the approved range cannot fix the dense-12 headroom
 failure. It would have to be cut by an order of magnitude before capacity binds, and that is
@@ -106,10 +130,12 @@ The members are the per-episode argmax members on dense in EXP-0044's `episodes.
 - `scale-<s>/`: `spec.json`, `episodes.csv` (504 rows each: 24 worlds × ≤ 3 episodes × 7
   members), `headroom.csv`.
 
-**Diagnostics** (local, one-shot, at the same commit):
+**Diagnostics** (run locally at the same commit, against the compute rule; see the Compute-policy note):
 - `horizon_sweep.py` → `horizon_sweep.out`: three worlds, horizons 3–100.
 - `warmup_share.py` → `warmup_share_{12,42}.jsonl`: 24 worlds, horizons 20 and 100. No episode
-  died.
+  died. Only the 8 calm worlds per size are matched (see Why).
+- `warmup_share_family.py` → `warmup_share_sparse*.jsonl`: added in commit 9f29d73 (task 10.4),
+  same method, same calm-only validity.
 
 **Compute.** Runpod secure cloud, cpu5c, 8 vCPU / 16 GB, `runpod/base:0.7.0-ubuntu2004`, pod
 `4e49w7lmdwj727`.
@@ -118,11 +144,32 @@ The members are the per-episode argmax members on dense in EXP-0044's `episodes.
 - Setup took about 30 s; the launcher's SSH wait passed immediately with the shim.
 - `runpodctl pod list --all` returned `[]` afterwards.
 
+## Compute-policy note (post-hoc review, 2026-10-27)
+
+The follow-up diagnostics behind the "why" above ran **locally**, which breaks the CLAUDE.md
+compute rule ("Where training + experiments run": classify by compute profile and purpose, not
+label). Each command was single-process and under 2 minutes, but they spanned many worlds at the
+full horizon 100, and they were decision evidence:
+- `horizon_sweep.py`: 3 worlds × 7 horizons up to 100.
+- `warmup_share.py`: all 24 dense development worlds at horizons 20 and 100.
+- `warmup_share_family.py` (`warmup_share_sparse*.jsonl`): all 24 sparse-wide development
+  worlds at horizons 20 and 100. It ran at the supervisor's explicit request for a local
+  diagnostic, but it still decided the go/no-go on gating M1 on sparse-wide (task 10.4).
+Under that rule these were verification runs and belonged on a pod. Calling them "one-shot
+diagnostics" in this record does not make them compliant, and the local execution cannot be made
+compliant after the fact. The raw outputs stand as recorded: the runs are deterministic (fixed
+world seeds, episode seed, replicate 0) and reproducible from the scripts at their commits
+(`horizon_sweep.py`, `warmup_share.py` at 6818e8b; `warmup_share_family.py` at 9f29d73). Their
+interpretation is limited to calm worlds (see Why). No rerun was requested or done. Future
+decision-gating diagnostics of this shape go to the cloud, as a single h = 100 trace with a
+cycle-20 snapshot.
+
 ## Conclusions
 
 - No capacity scale in 0.8–1.0 brings dense-12 under the 0.95 ceiling; the approved retune
   lever, as sized, does not work.
-- Diagnosed cause, in this sample: the headroom statistic is dominated by warm-up loss (62% at
-  12, 86% at 42), and capacity is about 12× above demand even at 0.8×.
+- Cause, on calm worlds in this sample: the shortfall is dominated by warm-up loss (54% at 12,
+  85% at 42, with ≥ 97.5% served after cycle 20), and capacity is about 12× above demand even
+  at 0.8×. Shocked worlds are not diagnosed: the horizon subtraction is unmatched there.
 - 10.4/10.5 are blocked pending a decision on the lever: what the headroom check measures,
   demand pressure, or a much deeper capacity cut.

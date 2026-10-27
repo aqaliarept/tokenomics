@@ -97,17 +97,24 @@ about 0.955 from 1.0× down to 0.8× capacity. The competing explanations call f
   supply chain fills, or still in flight at the horizon, expire (TTL 2). Change what the check
   measures, or the demand pressure, not the capacity.
 
-**Discriminating check (local, about a minute per size):** replay the family's strongest
-baseline on every development gate world at horizon 20 and horizon 100 (one episode,
-replicate 0), and split the undelivered units into cycles 1–20 and 21–100:
-`python experiments/EXP-0044-gate-calibration-12-42/retune/warmup_share.py <size>` (from
-`tokenomics/`).
+**Discriminating check (pod, cheap):** replay the family's strongest baseline on every
+development gate world and split the undelivered units into cycles 1–20 and 21–100. It spans
+many worlds at the full horizon and gates a decision, so it runs on a pod (CLAUDE.md compute
+rule), not locally. Do it as **one h = 100 run per world with a snapshot of ordered and fulfilled
+units at cycle 20**. Do NOT subtract an h = 20 run from an h = 100 run: on shocked worlds each
+randomized consumer's horizon-length schedule comes from one shared random stream, so later
+consumers get different demand at the two horizons (post-hoc review of EXP-0044). The EXP-0044
+scripts used that subtraction and are valid on calm worlds only. They are kept as a record,
+not as the recipe: `experiments/EXP-0044-gate-calibration-12-42/retune/warmup_share.py <size>`
+and `warmup_share_family.py <family> <size> <member>`, run from `tokenomics/` as
+`../.venv/bin/python ../experiments/EXP-0044-gate-calibration-12-42/retune/<script>`.
 
 **Outcome branches:**
 - **(a) Most of the shortfall is in cycles 1–20, and the fill rate after cycle 20 is near 1.**
-  Warm-up dominates. This is the case found: dense-12 had 62% of its shortfall in cycles 1–20
-  and a 0.977 median fill after; dense-42 had 86% and 0.994. Capacity is not binding (demand ≈
-  6% of top-layer throughput), so a mild capacity cut cannot help.
+  Warm-up dominates. This is the case found on EXP-0044's calm dense worlds: dense-12 had 54%
+  of its shortfall in cycles 1–20 and a 0.975 median fill after; dense-42 had 85% and 0.995.
+  Capacity is not binding (demand ≈ 6% of top-layer throughput), so a mild capacity cut cannot
+  help. Shocked worlds were not diagnosed (unmatched subtraction).
 - **(b) The shortfall is spread over the whole episode and the late fill rate drops as capacity
   is cut.** Capacity binds; a capacity scale is the right lever. Find the size of the cut with
   `gate --mode probe`.

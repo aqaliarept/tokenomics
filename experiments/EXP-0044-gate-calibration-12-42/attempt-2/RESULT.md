@@ -8,8 +8,9 @@
 **The question.** Same as attempt 1: before the gate can judge an agent, it needs a fixed set of
 development worlds where the hand-written baselines leave room to improve, a fixed roster of
 baselines that set the bar, and fixed bounds X and Y for the side-effect checks. After attempt 1
-failed on the dense family, the user decided M1 gates on the sparse-wide family only (dense was
-diagnosed as warm-up-saturated; see `../retune/RESULT.md`). This run screens the sparse-wide
+failed on the dense family, the user decided M1 gates on the sparse-wide family only (dense-12 failed the
+headroom statistic and capacity cuts did not move it; on calm worlds its shortfall is mostly
+warm-up, see `../retune/RESULT.md`). This run screens the sparse-wide
 development worlds.
 
 **What was measured.** All 40 roster baselines (the 12 random ones 5 times each) played every
