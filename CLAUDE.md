@@ -253,6 +253,20 @@ _Avoid_: Repair, maintenance, recovery
 An investment that increases a producing agent's max capacity (and current capacity). Requires a specific product. Unlike restoration, permanently expands the ceiling.
 _Avoid_: Expansion, improvement, enhancement
 
+### Shocks
+
+**Shock:**
+An unannounced, scheduled disruption of the economy, with a kind, a target, a start cycle, a duration and a magnitude (ADR-0055). There are five kinds: capacity hit, producer outage, supply-link cut, demand surge and fund shock. Only the first two are implemented; a configuration scheduling any other kind is rejected at validation. The env draws an episode's shock schedule before the episode starts, from the world configuration and the episode seed only; the domain replays it and draws nothing. Agents never observe a shock in advance, only its consequences.
+_Avoid_: Event, disaster, perturbation, noise
+
+**Capacity Hit:**
+A shock that removes floor(m·c) units of a target producer's current capacity c of one or more owned capacity types, at the start of its cycle (magnitude m in (0, 1)). Max capacity is unchanged, and the producer recovers through normal restoration. A hit never empties a positive capacity.
+_Avoid_: Damage, capacity loss, degradation (degradation is the regular per-cycle decay)
+
+**Producer Outage:**
+A shock during which a target producing agent accepts no new bids and completes no production, including reserved production accepted before the outage, for its duration. Its capacity keeps degrading, and it keeps buying and receiving inputs and investments. It resumes in the cycle after the outage ends.
+_Avoid_: Downtime, shutdown, failure (failure is a failed bid or reservation)
+
 ### Exchange
 
 **Bid:**

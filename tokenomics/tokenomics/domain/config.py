@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .common import Capacity, CapacityType, Product, Tokens
+from .shocks import ProducerFacts, ShockModel, shock_model_from_dict, validate_shock_model
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,9 @@ class Configuration:
     process_sheets: list[ProcessSheet]
     producer_configs: list[ProducingAgentConfig]
     consumers: list[ConsumerConfig] = field(default_factory=list)
+    # Supply shocks (ADR-0055, add-shocks-i-drift D1): explicit events and/or seeded
+    # generators. None = no shocks; the fingerprint then omits the field (D5).
+    shocks: ShockModel | None = None
 
     def validate(self) -> None:
         """Port of Configuration.Validate."""
@@ -245,6 +249,13 @@ class Configuration:
             if c.id in producer_ids:
                 raise ValueError(f"consumer id {c.id} collides with producer id {c.id}")
 
+        # Shocks (design D1): kind table, start cycle >= 2, unbuilt kinds rejected by name.
+        if self.shocks is not None:
+            validate_shock_model(self.shocks, {
+                cfg.id: ProducerFacts(frozenset(cfg.capacities), cfg.produces)
+                for cfg in self.producer_configs
+            })
+
     def process_sheet(self, product: Product) -> ProcessSheet:
         for ps in self.process_sheets:
             if ps.product == product:
@@ -336,6 +347,8 @@ def load_config(path: str | Path) -> Configuration:
         process_sheets=sheets,
         producer_configs=producers,
         consumers=consumers,
+        # optional top-level `shocks` object (design D1); absent -> no shocks.
+        shocks=shock_model_from_dict(data["shocks"]) if "shocks" in data else None,
     )
     cfg.validate()
     return cfg

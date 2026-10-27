@@ -23,6 +23,7 @@ from typing import Sequence
 
 from ..domain.config import (Configuration, ConsumerConfig, InventoryExpansion,
                              ProcessSheet, ProducingAgentConfig, Restoration, Upgrade)
+from ..domain.shocks import shock_model_to_dict
 
 
 def config_to_dict(cfg: Configuration) -> dict:
@@ -60,7 +61,7 @@ def config_to_dict(cfg: Configuration) -> dict:
         ],
         "producerConfigs": producers,
         "consumers": [_consumer_to_dict(c) for c in cfg.consumers],
-    }
+    } | ({"shocks": shock_model_to_dict(cfg.shocks)} if cfg.shocks is not None else {})
 
 
 def _consumer_to_dict(c: ConsumerConfig) -> dict:

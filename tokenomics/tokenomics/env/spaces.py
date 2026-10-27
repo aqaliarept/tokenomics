@@ -315,13 +315,32 @@ class EnvSpec:
         )
 
 
+# Optional economy fields added after checkpoints were stamped (add-shocks-i-drift D5): when
+# unset they are left out, so every config without them keeps its fingerprint. The consumer
+# `schedule` (add-measurement-gate-harness 2.2) is included: hashing its empty default had
+# silently moved every fingerprint (EXP-0006B pins 548120bd72921234); omitting it restores the
+# pre-M1 values.
+_OMIT_WHEN_UNSET = ("shocks", "demand_drift")
+_OMIT_CONSUMER_WHEN_EMPTY = ("schedule",)
+
+
 def _canonical_economy(config: Configuration) -> str:
     """Deterministic JSON of every *economy-determining* field of a config — recipes,
-    capacities, degradation, investment/replenish costs, emission, and consumer demand
-    distribution. `dataclasses.asdict` recurses the frozen config; `sort_keys` + a
-    frozenset->sorted-list default make it order-independent and stable across loads."""
+    capacities, degradation, investment/replenish costs, emission, consumer demand
+    distribution and shocks. `dataclasses.asdict` recurses the frozen config; `sort_keys` + a
+    frozenset->sorted-list default make it order-independent and stable across loads.
+    Unset optional fields (`_OMIT_WHEN_UNSET`, an empty consumer `schedule`) are dropped so
+    legacy fingerprints hold."""
+    economy = asdict(config)
+    for key in _OMIT_WHEN_UNSET:
+        if key in economy and economy[key] is None:
+            del economy[key]
+    for consumer in economy.get("consumers", ()):
+        for key in _OMIT_CONSUMER_WHEN_EMPTY:
+            if key in consumer and not consumer[key]:
+                del consumer[key]
     return json.dumps(
-        asdict(config),
+        economy,
         sort_keys=True,
         default=lambda o: sorted(o) if isinstance(o, (set, frozenset)) else repr(o),
     )

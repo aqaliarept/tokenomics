@@ -157,10 +157,14 @@ N = 3, so j < 1/3 freezes demand. The profile therefore uses j = 0.34 (D7).
 
 ### D5. Legacy invariance and the fingerprint
 - With `shocks` and `demand_drift` unset, every code path is the one at base commit
-  `c9c7da2`. `test_legacy_invariance` goldens, the `build_scale_config` output and the v1
+  `c9c7da2` (the fingerprint, restored to pre-M1 values, is the one deliberate exception). `test_legacy_invariance` goldens, the `build_scale_config` output and the v1
   registry replay must not move.
 - `_canonical_economy` leaves out `shocks` and `demand_drift` when they are None, so every
-  existing config keeps its fingerprint (ADR-0035). A shocked config gets a different
+  existing config keeps its fingerprint (ADR-0035).
+- It also leaves out an empty consumer `schedule`. M1 task 2.2 (`55539bf`) had silently moved
+  every fingerprint by hashing that field's empty default: the EXP-0006B champion pins
+  `548120bd72921234`, which recomputed as `217bab1c778f7b07` at `c9c7da2`. Omitting it
+  restores the pre-M1 values (supervisor decision, task 1.1). A shocked config gets a different
   fingerprint by design. The resulting "fingerprint mismatch" warning on a shocked world is
   expected and is not a contract failure.
 - Observation and action spaces are built from topology only (ADR-0038: perturbations
