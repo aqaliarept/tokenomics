@@ -8,11 +8,14 @@ and cut-off price (ADR-0002). Here producer_infos is refreshed each cycle.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Protocol
 
 from .common import (
     Capacity,
+    CapacityType,
     ConsumerId,
     OrderId,
     OrderingAgentId,
@@ -28,6 +31,7 @@ from .common import (
     stream_id,
 )
 from .config import Configuration
+from .shocks import ProducerFacts, ShockEvent, ShockKind, ShockModel, validate_shock_model
 from .consumer import Consumer
 from .order import (
     ConsumerRequestCompleted,
@@ -108,6 +112,24 @@ class ProducerAuctionRecord:
     accepted_units: Capacity
 
 
+@dataclass(frozen=True)
+class CapacitySnapshot:
+    """One producer's (current, max) capacity at the end of a played cycle, taken before the
+    trailing `start_cycle` (add-shocks-i-drift D2), so a shock belonging to the next,
+    possibly unplayed, cycle never reaches end-of-cycle metrics such as `r_end`. Satisfies
+    the env's `HasCapacities` protocol."""
+
+    producer_id: ProducerId
+    capacities: dict[CapacityType, Capacity]
+    max_capacities: dict[CapacityType, Capacity]
+
+
+def capacity_hit_removal(capacity: Capacity, magnitude: float) -> Capacity:
+    """Units a capacity hit removes: floor(m * c), exact (D2). `Fraction(str(m))` reads the
+    magnitude as its decimal, so e.g. 0.29 * 100 removes 29, not the 28 a float product gives."""
+    return math.floor(Fraction(str(magnitude)) * capacity)
+
+
 @dataclass
 class CycleResult:
     score: Score  # Go penalty score (parity only)
@@ -128,6 +150,9 @@ class CycleResult:
     consumer_outcomes: tuple[ConsumerOrderOutcome, ...] = ()
     # One auction record per producer, in producer order (design D3); additive.
     producer_auctions: tuple[ProducerAuctionRecord, ...] = ()
+    # Every producer's capacity at the end of this played cycle, in producer order, taken
+    # before the next cycle's shocks apply (add-shocks-i-drift D2); additive.
+    end_capacities: tuple[CapacitySnapshot, ...] = ()
 
     @property
     def completed(self) -> int:
@@ -256,6 +281,7 @@ class System:
         config: Configuration,
         consumers: dict[ConsumerId, Consumer],
         product_stream_ordering: bool = False,
+        shock_schedule: tuple[ShockEvent, ...] = (),
     ) -> None:
         self.state = SystemState.ORDERS_PLACEMENT
         self.id_gen = id_gen
@@ -285,6 +311,15 @@ class System:
         self._stream_view_cache: StreamViewCache | None = None
 
         self.producer_infos: dict[ProducerId, ProducerInfo] = self._snapshot_producer_infos()
+        # Injected shock schedule (ADR-0055, add-shocks-i-drift D2): the env draws it, the
+        # domain only replays it and never mutates it. Private: no view reads it, so agents
+        # see a shock only through its consequences.
+        self._shock_schedule: tuple[ShockEvent, ...] = self._check_shock_schedule(
+            config, tuple(shock_schedule))
+        self._hits_by_cycle: dict[int, list[ShockEvent]] = {}
+        for e in self._shock_schedule:
+            if e.kind is ShockKind.CAPACITY_HIT:
+                self._hits_by_cycle.setdefault(e.start_cycle, []).append(e)
         # ADR-0052: product-stream mode keys ordering agents by (source, product) so
         # one agent never multiplexes products; legacy mode keys them by source.
         self.product_stream_ordering = product_stream_ordering
@@ -305,6 +340,38 @@ class System:
                 self.ordering_agents[aid] = OrderingAgent(aid)
 
         self.start_cycle()
+
+    @staticmethod
+    def _check_shock_schedule(
+        config: Configuration, schedule: tuple[ShockEvent, ...]
+    ) -> tuple[ShockEvent, ...]:
+        """Validate the injected schedule against the config with the config-level rules
+        (design D1). Outage mechanics land in task 2.2; until then an outage is refused
+        here rather than silently ignored."""
+        if not schedule:
+            return ()
+        validate_shock_model(ShockModel(events=schedule), {
+            p.id: ProducerFacts(frozenset(p.capacities), p.produces) for p in config.producer_configs
+        })
+        for e in schedule:
+            if e.kind is not ShockKind.CAPACITY_HIT:
+                raise ValueError(f"shock kind {e.kind.value!r} has no domain mechanics yet")
+        return schedule
+
+    def _apply_capacity_hits(self) -> None:
+        """Capacity hits starting this cycle (D2): after the previous cycle's degradation,
+        before this cycle's observations and auction. Max capacity is untouched; m < 1 keeps
+        a positive capacity positive, so a hit alone cannot cause system death."""
+        for e in self._hits_by_cycle.get(self.cycle_counter, ()):
+            p = must_get(self.producing_agents, e.target.producer)
+            for t in e.target.capacity_types:
+                p.capacities[t] -= capacity_hit_removal(p.capacities[t], e.magnitude)
+
+    def _snapshot_end_capacities(self) -> tuple[CapacitySnapshot, ...]:
+        return tuple(
+            CapacitySnapshot(pid, dict(p.capacities), dict(p.max_capacities))
+            for pid, p in self.producing_agents.items()
+        )
 
     def _snapshot_producer_infos(self) -> dict[ProducerId, ProducerInfo]:
         return {pid: p.info() for pid, p in self.producing_agents.items()}
@@ -418,6 +485,7 @@ class System:
         self._emit()
         self._place_consumer_orders()
         self.cycle_counter += 1
+        self._apply_capacity_hits()
 
     def start_ordering(self) -> None:
         if self.state != SystemState.ORDERS_PLACEMENT:
@@ -530,6 +598,7 @@ class System:
         # fold this cycle's telemetry accumulators into their EMAs (once per cycle).
         self.telemetry.end_cycle()
 
+        end_capacities = self._snapshot_end_capacities()  # before the next cycle's shocks
         self.start_cycle()
         return CycleResult(
             cycle_score, n_cons_done, n_inv_done, n_in_progress, n_cons_rej, n_inv_rej,
@@ -538,6 +607,7 @@ class System:
             consumer_rejected_units=units_cons_rej,
             consumer_outcomes=tuple(consumer_outcomes),
             producer_auctions=tuple(producer_auctions),
+            end_capacities=end_capacities,
         )
 
     def is_dead(self) -> bool:

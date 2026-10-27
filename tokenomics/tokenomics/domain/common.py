@@ -11,6 +11,7 @@ make it unsigned here.
 from __future__ import annotations
 
 import math
+import struct
 from typing import TypeVar
 
 _K = TypeVar("_K")
@@ -39,10 +40,15 @@ def is_nan(x: float) -> bool:
 
 def f32(x: float) -> float:
     """Round-trip through float32 to match Go's float32 arithmetic for prices
-    and fund distribution (parity-sensitive). See plan §"Float determinism"."""
-    import numpy as np
+    and fund distribution (parity-sensitive). See plan §"Float determinism".
 
-    return float(np.float32(x))
+    Stdlib only, so the domain imports no numpy (add-shocks-i-drift 2.1): `struct` packs
+    with the same round-to-nearest-even as `np.float32`. It raises where the rounded value
+    overflows float32; np.float32 gives ±inf there, and so does this."""
+    try:
+        return struct.unpack("f", struct.pack("f", x))[0]
+    except OverflowError:
+        return math.copysign(math.inf, x)
 
 
 def from_producer_id(pid: ProducerId) -> OrderingAgentId:

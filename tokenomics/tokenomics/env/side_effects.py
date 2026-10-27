@@ -10,7 +10,9 @@ nothing in this module emits a pass/fail.
 Hard-check inputs
 - `r_start` (float | None): capacity ratio `r` read right after `reset`.
 - `r_end` (float | None): `r` after the last played cycle (the death cycle on an
-  early-death episode, so death shows as run-down). None until a cycle is played.
+  early-death episode, so death shows as run-down), read from `CycleResult.end_capacities`,
+  the snapshot taken before the next cycle's shocks (add-shocks-i-drift D2). None until a
+  cycle is played.
 - `consumer_fill_rate` (dict consumer id -> float | None): fulfilled / ordered units over
   the played-cycle cohort (design D2). None for a consumer with 0 ordered units: it has
   no fill rate, and the starvation check only covers consumers with ordered > 0.
@@ -51,7 +53,8 @@ from ..domain.system import ConsumerOrderOutcome, CycleResult, ProducerAuctionRe
 
 
 class HasCapacities(Protocol):
-    """A producer as the capacity ratio sees it (`ProducingAgent` satisfies this)."""
+    """A producer as the capacity ratio sees it (`ProducingAgent` and the domain's
+    end-of-cycle `CapacitySnapshot` satisfy this)."""
 
     capacities: dict[CapacityType, Capacity]
     max_capacities: dict[CapacityType, Capacity]

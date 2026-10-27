@@ -302,8 +302,10 @@ class TokenomicsAECEnv(AECEnv):
         s["in_progress"] += result.in_progress
         s["holding_units"] += held
         s["return"] += reward
-        # mean total current capacity per producer (collapse warning trace)
-        caps = [sum(p.capacities.values()) for p in self.system.producing_agents.values()]
+        # mean total current capacity per producer (collapse warning trace), from the
+        # end-of-cycle snapshot taken before the next cycle's shocks (add-shocks-i-drift D2),
+        # so cap_final / cap_min never see an unplayed cycle; without shocks = live state.
+        caps = [sum(snap.capacities.values()) for snap in result.end_capacities]
         self.capacity_trace.append(sum(caps) / len(caps))
 
     def _producer_infos(self) -> dict[str, ProducerInfo]:
@@ -390,10 +392,10 @@ class TokenomicsAECEnv(AECEnv):
                 self.truncations = {a: True for a in self.agents}
             self.episode_stats["cycles"] = self.current_cycle
             # Post-cycle capacity (after degradation and investment completions), so the
-            # death cycle's collapse lands in r_end.
-            self._side_effects.observe_cycle(
-                result, capacity_ratio(self.system.producing_agents.values())
-            )
+            # death cycle's collapse lands in r_end. Read from the domain's end-of-cycle
+            # snapshot, taken before the next cycle's shocks (add-shocks-i-drift D2), so a hit
+            # in an unplayed cycle never reaches r_end; without shocks it equals live state.
+            self._side_effects.observe_cycle(result, capacity_ratio(result.end_capacities))
             self._side_effects.write(self.episode_stats)
             self.infos = {a: {"cycle": self.current_cycle} for a in self.agents}
         else:

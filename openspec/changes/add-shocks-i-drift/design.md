@@ -108,9 +108,9 @@ and never mutates it. The domain draws nothing.
   snapshots every producer's (current, max) capacity into `CycleResult.end_capacities`. The
   env computes `r` from that snapshot, so a hit belonging to an unplayed cycle never reaches
   `r_end`. Without shocks the snapshot equals today's read, because `start_cycle` moves no
-  capacity. `is_dead()` still reads live state, which is safe because a hit cannot empty a
-  capacity. `env.capacity_trace` keeps its current meaning: the state entering the next
-  cycle.
+  capacity. `env.capacity_trace` (behind the runner's `cap_final` / `cap_min`) reads the same
+  snapshot, so no episode statistic sees an unplayed cycle's shock. `is_dead()` still reads
+  live state, which is safe because a hit cannot empty a capacity.
 
 ### D3. Schedules are generated in the env, one derived stream per kind
 `env/shock_schedule.py`:
