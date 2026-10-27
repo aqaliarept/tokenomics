@@ -1,0 +1,24 @@
+dev-dense-12-calm-00
+  h=  3 ordered    14 fulfilled     2 fill 0.1429
+  h=  5 ordered    23 fulfilled    16 fill 0.6957  window 3->5: ordered 9 fulfilled 14 rate 1.556
+  h= 10 ordered    45 fulfilled    36 fill 0.8000  window 5->10: ordered 22 fulfilled 20 rate 0.909
+  h= 20 ordered    89 fulfilled    78 fill 0.8764  window 10->20: ordered 44 fulfilled 42 rate 0.955
+  h= 50 ordered   223 fulfilled   212 fill 0.9507  window 20->50: ordered 134 fulfilled 134 rate 1.000
+  h= 98 ordered   434 fulfilled   418 fill 0.9631  window 50->98: ordered 211 fulfilled 206 rate 0.976
+  h=100 ordered   443 fulfilled   426 fill 0.9616  window 98->100: ordered 9 fulfilled 8 rate 0.889
+dev-dense-12-shocked-00
+  h=  3 ordered    14 fulfilled     7 fill 0.5000
+  h=  5 ordered    27 fulfilled    18 fill 0.6667  window 3->5: ordered 13 fulfilled 11 rate 0.846
+  h= 10 ordered    52 fulfilled    34 fill 0.6538  window 5->10: ordered 25 fulfilled 16 rate 0.640
+  h= 20 ordered   109 fulfilled    99 fill 0.9083  window 10->20: ordered 57 fulfilled 65 rate 1.140
+  h= 50 ordered   257 fulfilled   240 fill 0.9339  window 20->50: ordered 148 fulfilled 141 rate 0.953
+  h= 98 ordered   495 fulfilled   478 fill 0.9657  window 50->98: ordered 238 fulfilled 238 rate 1.000
+  h=100 ordered   507 fulfilled   482 fill 0.9507  window 98->100: ordered 12 fulfilled 4 rate 0.333
+dev-dense-42-calm-00
+  h=  3 ordered    49 fulfilled    16 fill 0.3265
+  h=  5 ordered    80 fulfilled    29 fill 0.3625  window 3->5: ordered 31 fulfilled 13 rate 0.419
+  h= 10 ordered   162 fulfilled    87 fill 0.5370  window 5->10: ordered 82 fulfilled 58 rate 0.707
+  h= 20 ordered   324 fulfilled   210 fill 0.6481  window 10->20: ordered 162 fulfilled 123 rate 0.759
+  h= 50 ordered   807 fulfilled   690 fill 0.8550  window 20->50: ordered 483 fulfilled 480 rate 0.994
+  h= 98 ordered  1582 fulfilled  1463 fill 0.9248  window 50->98: ordered 775 fulfilled 773 rate 0.997
+  h=100 ordered  1613 fulfilled  1494 fill 0.9262  window 98->100: ordered 31 fulfilled 31 rate 1.000

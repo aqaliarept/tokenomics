@@ -158,3 +158,11 @@ the gate CLI arguments are exactly the reviewed ones.
   12 and 42 with one family-level scale (10.2 code, 10.3 probe at ≤ 3 vCPU-h, 10.4 default and
   registry), then rescreen (10.5, attempt 2 in this directory). Separately, a launcher fix: set a
   User-Agent in `create_pod`, and fall back to `pod get` for SSH discovery.
+
+## Retune probe (task 10.3)
+
+See [`retune/RESULT.md`](retune/RESULT.md). In short: dense capacity scales 0.95–0.8 leave
+dense-12's probe median at 0.955–0.962, so no scale in the approved grid passes. A follow-up
+diagnostic finds the best baseline's shortfall is mostly warm-up loss (62% of it in cycles 1–20
+at 12 producers, 86% at 42), with capacity about 12× above demand even at 0.8×. 10.4/10.5 wait
+for a decision on the lever.

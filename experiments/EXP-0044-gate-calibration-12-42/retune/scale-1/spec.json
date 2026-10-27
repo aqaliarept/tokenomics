@@ -1,0 +1,330 @@
+{
+  "blas_threads": 1,
+  "date": "2026-10-27",
+  "driver": "tokenomics.eval.gate",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": null,
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.14.1+cpu",
+    "torch_build": "452946f6ef64"
+  },
+  "experiment": "exp0044_retune",
+  "kind": "probe",
+  "mode": "probe",
+  "pins": {
+    "candidate_replicates": 0,
+    "capacity_scale": 1.0,
+    "grid": {
+      "dev-dense-12-calm-00": {
+        "episodes": [
+          1535777546,
+          1953872198,
+          610048034
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-dense-12-calm-01": {
+        "episodes": [
+          1829359734,
+          1010824239,
+          370118039
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-dense-12-calm-02": {
+        "episodes": [
+          24174983,
+          246880318,
+          1525996235
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-dense-12-calm-03": {
+        "episodes": [
+          237559170,
+          1097101902,
+          702926047
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-dense-12-calm-04": {
+        "episodes": [
+          1630037295,
+          1486684216,
+          1551147533
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-dense-12-calm-05": {
+        "episodes": [
+          1186654837,
+          1519673764,
+          2133411251
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-dense-12-calm-06": {
+        "episodes": [
+          2091916502,
+          1877593672,
+          1607119210
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-dense-12-calm-07": {
+        "episodes": [
+          2049181156,
+          1443856784,
+          1228036527
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "dev-dense-12-shocked-00": {
+        "episodes": [
+          786645359,
+          1093516654,
+          1678953676
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "dev-dense-12-shocked-01": {
+        "episodes": [
+          679865169,
+          1141088138,
+          770337389
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "dev-dense-12-shocked-02": {
+        "episodes": [
+          1934299904,
+          853674214,
+          434396876
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "dev-dense-12-shocked-03": {
+        "episodes": [
+          360106295,
+          1960496474,
+          2019260493
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "dev-dense-42-calm-00": {
+        "episodes": [
+          1878036582,
+          217314556,
+          764585794
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-dense-42-calm-01": {
+        "episodes": [
+          1276931321,
+          444158474,
+          1819754176
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-dense-42-calm-02": {
+        "episodes": [
+          1341519924,
+          1188261795,
+          2072381999
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-dense-42-calm-03": {
+        "episodes": [
+          1778375834,
+          1093836406,
+          824725672
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-dense-42-calm-04": {
+        "episodes": [
+          460501723,
+          2024328408,
+          822227304
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-dense-42-calm-05": {
+        "episodes": [
+          181101424,
+          1644450232,
+          521325136
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-dense-42-calm-06": {
+        "episodes": [
+          1642320711,
+          1474594808,
+          1169853677
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-dense-42-calm-07": {
+        "episodes": [
+          368031854,
+          785946798,
+          751778985
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "dev-dense-42-shocked-00": {
+        "episodes": [
+          1953808606,
+          1284697347,
+          443274200
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "dev-dense-42-shocked-01": {
+        "episodes": [
+          98827447,
+          1772747804,
+          1807451697
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "dev-dense-42-shocked-02": {
+        "episodes": [
+          417030051,
+          970379545,
+          931800114
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "dev-dense-42-shocked-03": {
+        "episodes": [
+          1731939089,
+          1103785451,
+          902406558
+        ],
+        "regime": "shocked",
+        "size": 42
+      }
+    },
+    "horizon": 100,
+    "mode": "probe",
+    "registry_version": "310673c3a344ceb6eb2c8c1cae21e700068cf1bf19a148ddb4b9375e4c0ebbd4",
+    "roster_version": "af309d383ba2183d7a9786c129cb0302135b146974e87e517106dcb2c8ce558c",
+    "scope_version": "afd311985d0e36c5275a0a68ec3ebd090edf92385104dab27a135ab1623683c5",
+    "source": {
+      "commit": "f5b87c63269524fbc2bcfc6b348641646174c744",
+      "tree_sha256": "f878910ed89b5bf2619d5cfba18287a836f0f3a376c93e9086a5991fe7414ccf"
+    }
+  },
+  "result": [
+    {
+      "ceiling": 0.95,
+      "family": "dense",
+      "median_fill": 0.9548073960070004,
+      "passed": false,
+      "size": 12,
+      "worlds": 12
+    },
+    {
+      "ceiling": 0.95,
+      "family": "dense",
+      "median_fill": 0.9259102679129141,
+      "passed": true,
+      "size": 42,
+      "worlds": 12
+    }
+  ],
+  "resumes": [],
+  "roster": {
+    "content_hash": "af309d383ba2183d7a9786c129cb0302135b146974e87e517106dcb2c8ce558c",
+    "frozen": false,
+    "members": [
+      {
+        "contract": "joint_stack",
+        "ordering": "blend_0.5",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "legacy",
+        "ordering": "obs_price",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "proportional",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "random",
+        "producing": "entity_planner",
+        "random": true
+      },
+      {
+        "contract": "legacy",
+        "ordering": "blend_0.5",
+        "producing": "obs_stock_aware",
+        "random": false
+      },
+      {
+        "contract": "legacy",
+        "ordering": "random",
+        "producing": "obs_stock_aware",
+        "random": true
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "random",
+        "producing": "stock_aware",
+        "random": true
+      }
+    ],
+    "name": "roster-v1-probe",
+    "pruning": null,
+    "replicates": 1
+  },
+  "source": {
+    "commit": "f5b87c63269524fbc2bcfc6b348641646174c744",
+    "n_files": 52,
+    "tree_sha256": "f878910ed89b5bf2619d5cfba18287a836f0f3a376c93e9086a5991fe7414ccf"
+  },
+  "started": "2026-10-27T15:59:34.529175+00:00",
+  "status": "complete",
+  "workers": 8
+}

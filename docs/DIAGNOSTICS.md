@@ -86,6 +86,36 @@ The portable subject at h = 8 went from 40.0 s to 4.6 s (sparse) and from 47.4 s
 
 ---
 
+## 18. A family fails (or passes) the headroom check, and capacity cuts do not move it
+
+**Problem (plain English):** the gate's headroom check (design D10) compares a world family's
+median best-baseline fill rate with the 0.95 ceiling. When a family is too close to the ceiling,
+the obvious retune is to give it less capacity. In EXP-0044 that did nothing: dense-12 stayed at
+about 0.955 from 1.0× down to 0.8× capacity. The competing explanations call for different levers:
+- capacity binds, but the cut was too small: probe deeper cuts;
+- the shortfall is not capacity at all but **warm-up / edge loss**: orders placed while the
+  supply chain fills, or still in flight at the horizon, expire (TTL 2). Change what the check
+  measures, or the demand pressure, not the capacity.
+
+**Discriminating check (local, about a minute per size):** replay the family's strongest
+baseline on every development gate world at horizon 20 and horizon 100 (one episode,
+replicate 0), and split the undelivered units into cycles 1–20 and 21–100:
+`python experiments/EXP-0044-gate-calibration-12-42/retune/warmup_share.py <size>` (from
+`tokenomics/`).
+
+**Outcome branches:**
+- **(a) Most of the shortfall is in cycles 1–20, and the fill rate after cycle 20 is near 1.**
+  Warm-up dominates. This is the case found: dense-12 had 62% of its shortfall in cycles 1–20
+  and a 0.977 median fill after; dense-42 had 86% and 0.994. Capacity is not binding (demand ≈
+  6% of top-layer throughput), so a mild capacity cut cannot help.
+- **(b) The shortfall is spread over the whole episode and the late fill rate drops as capacity
+  is cut.** Capacity binds; a capacity scale is the right lever. Find the size of the cut with
+  `gate --mode probe`.
+
+**Seen in.** EXP-0044 retune probe (task 10.3), `experiments/EXP-0044-gate-calibration-12-42/retune/`.
+
+---
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

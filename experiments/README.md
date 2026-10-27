@@ -11,7 +11,7 @@ only a lookup index into the per-experiment directories.
 
 | ID | Date | Result |
 |---|---|---|
-| [EXP-0044](EXP-0044-gate-calibration-12-42/RESULT.md) | 2026-10-27 | Gate calibration screen at 12/42 producers — **HEADROOM FAILED**: dense-12 saturated (median best fill 0.954 > 0.95); other 3 cells pass; no frozen files |
+| [EXP-0044](EXP-0044-gate-calibration-12-42/RESULT.md) | 2026-10-27 | Gate calibration screen at 12/42 producers — **HEADROOM FAILED**: dense-12 saturated (median best fill 0.954 > 0.95); other 3 cells pass; no frozen files. Retune probe: capacity scale 0.8–1.0 **does not fix it** (warm-up-dominated shortfall) |
 | [EXP-0043](EXP-0043-scenario-rollout-surrogate/RESULT.md) | 2026-08-27 | Scenario rollout surrogate — **CANCELLED, NOT RUN** (rejected by the baseline plan; code on `archive-1`) |
 | [EXP-0042](EXP-0042-bounded-online-rollout/RESULT.md) | 2026-08-24 | Confidence-bounded online rollout — **PASS**, depth 2 promoted (+15.3%, death-safe) |
 | [EXP-0041](EXP-0041-gnn-generalization-residual-router/RESULT.md) | 2026-08-09 | Pooled MPNN residual router — **CANCELLED BY EXP-0040**, not run |

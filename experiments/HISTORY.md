@@ -430,4 +430,10 @@ worlds, checks that the baselines leave headroom, and calibrates the side-effect
   family at both sizes with one family-level scale, probe candidate scales on baseline
   evidence only, then screen again. The champion report (12.1) waits for an admissible world
   set.
-
+- **EXP-0044 retune probe (10.3). Capacity scale does not work.** Dense capacity cut to
+  0.95–0.8× left dense-12's probe median at 0.955–0.962; dense-42 fell only from 0.926 to
+  0.912. Diagnosed: the best baseline's shortfall is mostly warm-up loss while the depth-3 chain
+  fills. 62% of it falls in cycles 1–20 at 12 producers and 86% at 42; after cycle 20 the best
+  baseline serves a median 97.7% / 99.4% of orders. Capacity stays about 12× above demand even
+  at 0.8×. The retune lever has to change: what the headroom check measures, demand pressure,
+  or a much deeper cut. That is a user decision.

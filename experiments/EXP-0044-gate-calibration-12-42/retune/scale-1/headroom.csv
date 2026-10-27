@@ -1,0 +1,3 @@
+family,size,worlds,median_fill,ceiling,passed
+dense,12,12,0.9548073960070004,0.95,False
+dense,42,12,0.9259102679129141,0.95,True

@@ -1,0 +1,60 @@
+{
+  "episodes_per_world": 3,
+  "families": [
+    "dense"
+  ],
+  "horizon": 100,
+  "members": [
+    "entity_planner/blend_0.5",
+    "entity_planner/obs_price",
+    "entity_planner/proportional",
+    "entity_planner/random",
+    "obs_stock_aware/blend_0.5",
+    "obs_stock_aware/random",
+    "stock_aware/random"
+  ],
+  "registry_version": "310673c3a344ceb6eb2c8c1cae21e700068cf1bf19a148ddb4b9375e4c0ebbd4",
+  "replicates": 1,
+  "roster_version": "af309d383ba2183d7a9786c129cb0302135b146974e87e517106dcb2c8ce558c",
+  "scales": [
+    1.0,
+    0.95,
+    0.9,
+    0.85,
+    0.8
+  ],
+  "sizes": [
+    12,
+    42
+  ],
+  "source": {
+    "commit": "f5b87c63269524fbc2bcfc6b348641646174c744",
+    "tree_sha256": "f878910ed89b5bf2619d5cfba18287a836f0f3a376c93e9086a5991fe7414ccf"
+  },
+  "worlds": [
+    "dev-dense-12-calm-00",
+    "dev-dense-12-calm-01",
+    "dev-dense-12-calm-02",
+    "dev-dense-12-calm-03",
+    "dev-dense-12-calm-04",
+    "dev-dense-12-calm-05",
+    "dev-dense-12-calm-06",
+    "dev-dense-12-calm-07",
+    "dev-dense-12-shocked-00",
+    "dev-dense-12-shocked-01",
+    "dev-dense-12-shocked-02",
+    "dev-dense-12-shocked-03",
+    "dev-dense-42-calm-00",
+    "dev-dense-42-calm-01",
+    "dev-dense-42-calm-02",
+    "dev-dense-42-calm-03",
+    "dev-dense-42-calm-04",
+    "dev-dense-42-calm-05",
+    "dev-dense-42-calm-06",
+    "dev-dense-42-calm-07",
+    "dev-dense-42-shocked-00",
+    "dev-dense-42-shocked-01",
+    "dev-dense-42-shocked-02",
+    "dev-dense-42-shocked-03"
+  ]
+}
