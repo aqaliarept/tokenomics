@@ -280,31 +280,33 @@ def test_regime_with_no_worlds_fails_its_margin() -> None:
 
 
 def test_margins_are_per_size() -> None:
-    """A 12-producer surplus does not cover a 120-producer shortfall."""
+    """A 12-producer surplus does not cover a 42-producer shortfall."""
     rows = (_passing()
-            + _world("c120", [100], [50], [101], size=120)
-            + _world("s120", [100], [50], [140], regime=SHOCKED, size=120))
+            + _world("c42", [100], [50], [101], size=42)
+            + _world("s42", [100], [50], [140], regime=SHOCKED, size=42))
     rep = _report(rows, gate_sizes=GATE_SIZES)
     (f,) = rep.clause(CALM_CLAUSE).failures
-    assert (f.size, f.value) == (120, 1.01)
+    assert (f.size, f.value) == (42, 1.01)
     assert [(r.size, r.regime) for r in rep.regimes] == [
-        (12, CALM), (12, SHOCKED), (120, CALM), (120, SHOCKED)]
+        (12, CALM), (12, SHOCKED), (42, CALM), (42, SHOCKED)]
 
 
 def test_missing_gate_size_rejects() -> None:
-    """With the default gate sizes (12, 120), a report holding only 12-producer worlds fails both
-    margins at 120: acceptance needs every margin at every gate size."""
+    """With the default gate sizes (12, 42), a report holding only 12-producer worlds fails both
+    margins at 42: acceptance needs every margin at every gate size."""
     rep = compute_report(_passing(), ROSTER_AB, PARAMS, REG)
     assert rep.overall == REJECT
     assert {(f.clause, f.size, f.value) for c in rep.clauses for f in c.failures} == {
-        (CALM_CLAUSE, 120, None), (SHOCKED_CLAUSE, 120, None)}
+        (CALM_CLAUSE, 42, None), (SHOCKED_CLAUSE, 42, None)}
 
 
-def test_future_scale_rows_refused() -> None:
-    """agent-acceptance "Future scale target": a 1000+ producer result SHALL NOT gate, so a row at
-    a non-gate size is refused instead of being judged (reported outside the verdict)."""
-    future = _world("future1000", [100], [50], [1], size=1200, dead=True, fill={"c0": 0.0})
-    with pytest.raises(ValueError, match="size 1200 is not a gate size"):
+@pytest.mark.parametrize("size", [120, 1200])
+def test_future_scale_rows_refused(size: int) -> None:
+    """agent-acceptance "Future scale target": a ~120 or 1000+ producer result SHALL NOT gate, so
+    a row at a non-gate size is refused instead of being judged (reported outside the verdict)."""
+    assert GATE_SIZES == (12, 42)
+    future = _world("future", [100], [50], [1], size=size, dead=True, fill={"c0": 0.0})
+    with pytest.raises(ValueError, match=f"size {size} is not a gate size"):
         compute_report(_passing() + future, ROSTER_AB, PARAMS, REG)
     with pytest.raises(ValueError, match="not a gate size"):
         recompute_from_csv(rows_to_csv(_passing() + future), ROSTER_AB, PARAMS, REG, SMALL)

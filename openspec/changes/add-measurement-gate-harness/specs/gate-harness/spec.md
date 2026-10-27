@@ -118,36 +118,36 @@ worlds.
 - **THEN** it is registered and scored in the shocked regime
 
 #### Scenario: Too few calm worlds
-- **WHEN** a registry holds 10 shocked and 15 calm worlds at 120 producers
+- **WHEN** a registry holds 10 shocked and 15 calm worlds at 42 producers
 - **THEN** registry validation fails
 
 ### Requirement: Scale families
 The harness SHALL provide sparse-wide and dense layered world families, each buildable at
-about 12 and about 120 producers. Each family SHALL set its fanout — the number of
+about 12 and about 42 producers. Each family SHALL set its fanout — the number of
 producers that declare each product — explicitly.
 
 #### Scenario: Sparse-wide fanout
-- **WHEN** a sparse-wide world is built with fanout 2 at 120 producers
+- **WHEN** a sparse-wide world is built with fanout 2 at 42 producers
 - **THEN** every product is declared by exactly 2 producers
 
 #### Scenario: Dense fanout
-- **WHEN** a dense world is built at 120 producers
+- **WHEN** a dense world is built at 42 producers
 - **THEN** every product is declared by every producer in its layer
 
 ### Requirement: Constant economy ratios across sizes
 For each family, demand units per unit of initial top-layer throughput SHALL be equal between
-its 12-producer and 120-producer worlds within a tolerance recorded in the family definition,
+its 12-producer and 42-producer worlds within a tolerance recorded in the family definition,
 computed over the family's worlds under a sampling protocol recorded there. Cycle emission
 per producer SHALL be equal between the two sizes in every world.
 
 #### Scenario: More producers, same pressure
-- **WHEN** a family's 120-producer worlds are built
+- **WHEN** a family's 42-producer worlds are built
 - **THEN** their consumer count and cycle emission are scaled so the family's demand ratio
   over its recorded sample matches the 12-producer sample within the recorded tolerance,
   and every world's emission per producer equals the 12-producer value
 
 #### Scenario: A single world deviates
-- **WHEN** one 12-producer world's own demand ratio differs from the 120-producer sample's
+- **WHEN** one 12-producer world's own demand ratio differs from the 42-producer sample's
   by more than the tolerance, because of its seeded strong or marginal capacity draws
 - **THEN** the requirement still holds if the family's ratios over the recorded samples
   (summed demand over summed throughput) agree within the tolerance
@@ -159,7 +159,7 @@ saturation ceiling recorded in the registry.
 
 #### Scenario: Saturated family rejected
 - **WHEN** the hindsight baseline already fulfils more ordered units than the saturation ceiling on a
-  family's development worlds at 120 producers
+  family's development worlds at 42 producers
 - **THEN** that family is not admitted to the registry
 
 ### Requirement: Side-effect parameter calibration

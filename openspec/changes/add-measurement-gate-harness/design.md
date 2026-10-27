@@ -22,8 +22,8 @@ shapes the approach:
   finite schedule cyclically, but nothing in the config can supply one.
 - **Scale generator**: `build_scale_config` (`eval/scale.py:87-189`) is dense by
   construction: every layer producer declares every layer product. It has 3 consumers and
-  emission `2000 + 200·depth·producers_per_layer`, so at 120 producers demand would not
-  grow with capacity.
+  emission `2000 + 200·depth·producers_per_layer`, so at 42 (or 120) producers demand would
+  not grow with capacity.
 - **Champion stack**: the flat `champion.json` checkpoints have fixed input and output
   widths (180-dim orderer action, `tests/test_champion_regression.py:56`). A flat model
   cannot be portable by construction (EXP-0022). The portable stack (`eval/joint_stack.py`,
@@ -41,8 +41,13 @@ shapes the approach:
   per-episode rows are separated from pure verdict arithmetic.
 - The roster, side-effect parameters and registry are frozen by baseline-only runs before
   any candidate touches them.
-- One champion report at 12 and 120 producers on development worlds, recording where the
+- One champion report at 12 and 42 producers on development worlds, recording where the
   champion stands with no pass expected.
+
+**Economy sizes (user decision 2026-10-27).** The gate sizes are 12 and **42** producers (14
+per layer). The goal is to beat the hand-written baselines at 42 first, then scale. About 120
+producers is a future, non-gating target (agent-acceptance "Future scale target"). Earlier
+drafts and the task 8.3–8.5 sizing used 120; evidence quoted here from those rounds says so.
 
 **Non-Goals:**
 - No sealed-world evaluation. The sealed path is built and tested on fixtures only; M5
@@ -61,7 +66,7 @@ shapes the approach:
 ### D1. Gate subject is the portable stack
 The report scores the portable stack: EXP-0012 orderer scorer and EXP-0035 producer, under
 the `joint_stack_env` contract. The flat `champion.json` stack is excluded: its fixed
-widths cannot run on the new families or at 120 producers, and the 120-producer clause
+widths cannot run on the new families or at 42 producers, and the 42-producer clause
 needs a policy that runs unretrained there. *Alternative:* report the flat stack at 12
 producers only. Rejected because it fits only the legacy depth-3 scale economy, which is not
 a registry family. HISTORY §0 is updated to say which stack the gate measures.
@@ -146,7 +151,9 @@ Defaults, pre-registered in the file:
 | Development | 1000–1999 | 8 worlds × 3 episode seeds | 4 worlds × 10 episode seeds |
 | Sealed | 5000–5999 | 16 worlds × 3 episode seeds | 8 worlds × 10 episode seeds |
 
-Each family × size also has a reserve list for zero-baseline replacement. Screening runs by
+Sizes are the gate sizes, 12 and 42 producers ("Economy sizes"; task 8.7 regenerated the draft
+from 120 to 42 without changing any seed rule). Each family × size also has a reserve list for
+zero-baseline replacement. Screening runs by
 split and records the splits it covered: M1 screens development only (no sealed evaluation in
 M1); the sealed split gets its own roster-only screen in M5, before any candidate touches a
 sealed world. The headroom ceiling (D10) is pre-registered in the registry file.
@@ -170,32 +177,41 @@ seed-independence the spec requires.
 ### D9. Families
 `eval/families.py` builds a layered economy: depth 3, with P/3 producers per layer. It
 keeps `build_scale_config`'s strong/marginal capacity draws and maintenance products, with
-two refinements so the economy pressure stays constant from 12 to 120 producers:
+two refinements so the economy pressure stays constant from 12 to the large size (42; the
+evidence below was measured at 120, where the effect is largest):
 - **Forced-strong every m-th producer**, m = min(fanout, 4), instead of only the first
   producer of a layer. At dense-12 this is the same rule. With first-only forcing, the dense
   family's demand ratio is 11.8% apart between 12 and 120 (forced fraction 1/4 → 1/40); with
-  every 4th it is 0.3% apart. For sparse, m = fanout gives every product a strong declarer.
+  every 4th it is 0.3% apart. At 42 the dense forced fraction is 4/14 (14 per layer is not a
+  multiple of 4), close to 1/4. For sparse, m = fanout gives every product a strong declarer.
 - **Maintenance round-robin over layer-0 products** instead of all on product 0. With
   product 0 only, a sparse-120 world loads all 120 producers' maintenance on its 2
-  declarers, 10× the per-maker load at 12; round-robin keeps the users per layer-0 product
-  the same at both sizes.
+  declarers, 10× the per-maker load at 12 (3.5× at 42); round-robin gives every sparse
+  layer-0 product exactly 3 users at any size (dense: 3 at 12, 10–11 at 42).
 - **Dense**: W = 4 products per layer, and every layer producer declares all of them
   (fanout = P/3).
 - **Sparse-wide**: W = P/3 products per layer, each declared by `fanout` producers
   (default 2, round-robin).
 
-Consumers scale as `round(3·P/12)`. Pools are the whole top layer for dense worlds and a
+Consumers scale as 3·P/12 **rounded half up** (3 at 12, 11 at 42, 30 at 120). At 42 the exact
+value is 10.5; Python's banker's `round` gives 10, which put the 42-producer demand ratio 7–9%
+under the 12-producer one, close to the tolerance, while 11 keeps it within 3% (task 8.7). Emission
+per consumer is therefore exact at 12 and 120 and 1400 instead of 1467 (−4.5%) at 42. Pools are the whole top layer for dense worlds and a
 contiguous window of top products for sparse worlds, so demand covers every chain.
 Emission scales linearly with P from the 12-producer value. A test asserts that demand per
-unit of initial top-layer throughput matches between 12 and 120 within the recorded
+unit of initial top-layer throughput matches between 12 and 42 within the recorded
 tolerance (default 10%) as a family-level ratio of sums over the sampling protocol recorded
 in the family definition (a single 12-producer world has 4 top producers and swings with
-its strong/marginal draw), and that emission per producer is equal in every world. Both families are registered in
+its strong/marginal draw), and that emission per producer is equal in every world. The protocol
+is 100 worlds at 12, 40 at 42 and 20 at 120 (400–800 top-layer producers each, seeds from
+1000). Measured gaps 42 vs 12 (task 8.7): dense calm +1.6%, dense shocked +2.8%, sparse-wide
+calm +2.3%, sparse-wide shocked +0.7%; at 120 (non-gating, still tested): −0.6%, +0.3%,
+−2.7%, −2.9%. Both families are registered in
 `task_archive.REPRODUCERS`. `build_scale_config` is untouched.
 
 ### D10. Headroom check
-A family × size is admitted only if the median hindsight baseline fill rate over its development
-worlds is below the saturation ceiling, default 0.95. EXP-0033 found over-capacitated
+A family × size (sizes 12 and 42) is admitted only if the median hindsight baseline fill rate over
+its development worlds is below the saturation ceiling, default 0.95. EXP-0033 found over-capacitated
 worlds with no headroom at 98.3%. A failing family is retuned with `capacity_scale` and
 rescreened on baseline evidence only. Each attempt is recorded in the calibration EXP.
 
@@ -215,7 +231,7 @@ failed pod run can resume. Output is the EXP-dir layout: `spec.json` with proven
 There are two experiments, in order:
 1. **EXP-0044, calibration** (baseline-only): screening, headroom, roster pruning and the
    X/Y freeze. It freezes roster v1, registry v1 and parameters v1.
-2. **EXP-0045, champion development report**: the portable stack at 12 and 120 producers
+2. **EXP-0045, champion development report**: the portable stack at 12 and 42 producers
    on development worlds.
 
 Each gets a `RESULT.md`, an index row and a HISTORY paragraph; EXP-0045 opens the
@@ -224,19 +240,22 @@ family × size are measured locally (a quick one-shot diagnostic).
 
 ## Risks / Trade-offs
 
-- **The portable contract fails on sparse-wide worlds** (E = 2, 40 products per layer). →
+- **The portable contract fails on sparse-wide worlds** (E = 2, 14 products per layer at 42
+  producers). →
   The report keeps contract failures separate from value, as EXP-0015 did. A contract
   failure is a reported finding, not a reason to drop the family.
-- **The roster is too costly at 120 producers.** There are 28 + 12R member runs per
-  world-episode; with R = 5 that is about 22k episodes in total. → Measure timings first,
-  then apply the development-only pruning rule. Scale pods; never the arithmetic.
+- **The roster is too costly at the large size.** There are 28 + 12R member runs per
+  world-episode (R = 5: 88). The 120-producer sizing made this real (task 8.3); the
+  observation speed-up (8.4), on-demand reserves (8.6) and the move to 42 producers (8.7)
+  answer it, re-sized in task 8.8 (`sizing.md`). → Measure timings first, then apply the
+  development-only pruning rule. Scale pods; never the arithmetic.
 - **Headroom retuning looks like tuning toward a result.** → Retuning uses baseline-only
   development evidence, happens before any candidate run, and every attempt is logged in
   EXP-0044.
 - **The q = 0.05 calibration is too strict or too lax.** → It is frozen before any candidate
   run. A change makes a new parameter version, and earlier reports keep the version they
   used.
-- **The champion is far below the bar at 120 producers.** → That is the expected result
+- **The champion is far below the bar at 42 producers.** → That is the expected result
   and it is the information M3 needs. The M1 exit is a complete, honest report, not a pass.
 - **The domain outcome record perturbs existing behaviour.** → Fields are added only. The
   byte-identical fixture test reruns every existing fixture and compares every legacy

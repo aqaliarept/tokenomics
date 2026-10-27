@@ -65,7 +65,7 @@ def test_draft_is_reproduced_byte_for_byte(draft: Registry) -> None:
 def test_draft_has_d7_defaults(draft: Registry) -> None:
     for split, calm, shocked in ((DEVELOPMENT, (8, 3), (4, 10)), (SEALED, (16, 3), (8, 10))):
         for family in (DENSE, SPARSE_WIDE):
-            for size in (12, 120):
+            for size in (12, 42):
                 group = [e for e in draft.gate_worlds(split)
                          if (e.family, e.size) == (family, size)]
                 for regime, (n, eps) in ((CALM, calm), (SHOCKED, shocked)):
@@ -107,10 +107,10 @@ def test_episode_seeds_unique_and_disjoint_from_world_seeds(draft: Registry) -> 
 
 
 def test_entry_gives_every_required_field(draft: Registry) -> None:
-    e = draft.entry("dev-sparse_wide-120-shocked-00")
-    assert (e.family, e.size, e.regime, e.split) == (SPARSE_WIDE, 120, SHOCKED, DEVELOPMENT)
+    e = draft.entry("dev-sparse_wide-42-shocked-00")
+    assert (e.family, e.size, e.regime, e.split) == (SPARSE_WIDE, 42, SHOCKED, DEVELOPMENT)
     assert e.generator == {"generator": "sparse_wide_family",
-                           "params": {"producers": 120, "regime": SHOCKED, "fanout": 2}}
+                           "params": {"producers": 42, "regime": SHOCKED, "fanout": 2}}
     assert e.world_seed and e.episode_seeds
 
 
@@ -118,13 +118,13 @@ def test_overlapping_seeds_rejected(draft: Registry) -> None:
     """gate-harness "Overlapping seeds rejected": the same family and world seed under both splits
     fails validation."""
     dev = draft.entry("dev-dense-12-calm-00")
-    sealed_twin = replace(draft.entry("sea-dense-120-calm-00"), world_seed=dev.world_seed)
+    sealed_twin = replace(draft.entry("sea-dense-42-calm-00"), world_seed=dev.world_seed)
     entries = tuple(sealed_twin if e.id == sealed_twin.id else e for e in draft.entries)
     with pytest.raises(ValueError, match="dense world seed 1000 is listed under both "
                                          "development and sealed"):
         Registry(name="x", seed_ranges=draft.seed_ranges, entries=entries)
     # a sealed seed in the development range that no dense world uses: caught by the range rule
-    stray = replace(draft.entry("sea-dense-120-calm-00"), world_seed=1999)
+    stray = replace(draft.entry("sea-dense-42-calm-00"), world_seed=1999)
     with pytest.raises(ValueError, match="outside sealed range"):
         Registry(name="x", seed_ranges=draft.seed_ranges,
                  entries=tuple(stray if e.id == stray.id else e for e in draft.entries))
@@ -205,7 +205,7 @@ def test_edited_registry_refused(draft: Registry) -> None:
 # --- Regimes ---
 
 
-def _world(i: int, regime: str, size: int = 120, split: str = DEVELOPMENT) -> WorldEntry:
+def _world(i: int, regime: str, size: int = 42, split: str = DEVELOPMENT) -> WorldEntry:
     wid = f"w-{regime}-{i}"
     params = {"producers": size, "regime": regime}
     if regime == CALM:
@@ -220,7 +220,7 @@ RANGES = (("development", 1000, 1999), ("sealed", 5000, 5999))
 
 
 def test_too_few_calm_worlds() -> None:
-    """gate-harness "Too few calm worlds": 10 shocked and 15 calm at 120 fails validation."""
+    """gate-harness "Too few calm worlds": 10 shocked and 15 calm at 42 fails validation."""
     entries = [_world(i, SHOCKED) for i in range(10)] + [_world(i, CALM) for i in range(15)]
     with pytest.raises(ValueError, match="15 calm worlds < 2x 10 shocked"):
         Registry(name="x", seed_ranges=RANGES, entries=tuple(entries))
@@ -290,19 +290,19 @@ def test_zero_world_replaced_by_next_reserve(draft: Registry) -> None:
     baseline, in reserve order; a zero reserve is skipped; the outcome is recorded and the
     registry gets a new version."""
     means = _all_gate(draft)
-    zero = "dev-sparse_wide-120-calm-03"
+    zero = "dev-sparse_wide-42-calm-03"
     means[zero] = (0.0, 0.0)
-    means["dev-sparse_wide-120-calm-r0"] = (0.0, 0.0)
-    means["dev-sparse_wide-120-calm-r1"] = (2.0, 3.0)
+    means["dev-sparse_wide-42-calm-r0"] = (0.0, 0.0)
+    means["dev-sparse_wide-42-calm-r1"] = (2.0, 3.0)
     screened = screen_zero_baselines(draft, ROSTER, _rows(draft, means))
     assert screened.version != draft.version
     assert screened.entry(zero).status == REPLACED
-    assert screened.entry("dev-sparse_wide-120-calm-r0").status == REPLACED
-    assert screened.entry("dev-sparse_wide-120-calm-r1").status == GATE
-    assert screened.entry("dev-sparse_wide-120-calm-r2").status == RESERVE
+    assert screened.entry("dev-sparse_wide-42-calm-r0").status == REPLACED
+    assert screened.entry("dev-sparse_wide-42-calm-r1").status == GATE
+    assert screened.entry("dev-sparse_wide-42-calm-r2").status == RESERVE
     (rep,) = screened.screening.replacements
     assert (rep.replaced, rep.by, rep.skipped) == (
-        zero, "dev-sparse_wide-120-calm-r1", ("dev-sparse_wide-120-calm-r0",))
+        zero, "dev-sparse_wide-42-calm-r1", ("dev-sparse_wide-42-calm-r0",))
     assert screened.screening.roster_version == ROSTER.version
     assert len(screened.gate_worlds()) == len(draft.gate_worlds())
     # the screened registry round-trips through its file form with the outcome recorded
@@ -331,7 +331,7 @@ def test_replacement_is_candidate_independent(draft: Registry) -> None:
 
 def test_screening_refuses_incomplete_evidence(draft: Registry) -> None:
     means = _all_gate(draft)
-    del means["dev-dense-120-calm-07"]
+    del means["dev-dense-42-calm-07"]
     with pytest.raises(ValueError, match="no baseline rows for gate worlds"):
         screen_zero_baselines(draft, ROSTER, _rows(draft, means))
     means = _all_gate(draft)
@@ -463,11 +463,11 @@ def test_sealed_access_appended_to_log(draft: Registry, tmp_path: Path) -> None:
     manifest = _manifest(tmp_path, draft, ckpts)
     prereg = load_preregistration(manifest)
     rec = _check(draft, tmp_path, prereg, ckpts,
-                 worlds=(SEALED_WORLD, "dev-dense-12-calm-00", "sea-sparse_wide-120-shocked-01"))
+                 worlds=(SEALED_WORLD, "dev-dense-12-calm-00", "sea-sparse_wide-42-shocked-01"))
     rec2 = _check(draft, tmp_path, prereg, ckpts)
     lines = (tmp_path / "SEALED_ACCESS.log").read_text().splitlines()
     assert [json.loads(x) for x in lines] == [rec, rec2]
-    assert rec["worlds"] == sorted([SEALED_WORLD, "sea-sparse_wide-120-shocked-01"])
+    assert rec["worlds"] == sorted([SEALED_WORLD, "sea-sparse_wide-42-shocked-01"])
     assert rec["registry_version"] == draft.version
     assert rec["checkpoints"] == dict(prereg.checkpoints)
     assert rec["time"] == NOW.isoformat() and rec["preregistration_sha256"] == prereg.sha256
@@ -505,7 +505,7 @@ def test_headroom_recorded_in_screened_registry(draft: Registry) -> None:
     from tokenomics.eval.registry import record_headroom
 
     screened = screen_zero_baselines(draft, ROSTER, _rows(draft, _all_gate(draft)))
-    results = [Headroom(DENSE, 12, 8, 0.6, 0.95, True), Headroom(SPARSE_WIDE, 120, 8, 0.97, 0.95,
+    results = [Headroom(DENSE, 12, 8, 0.6, 0.95, True), Headroom(SPARSE_WIDE, 42, 8, 0.97, 0.95,
                                                                  False)]
     with pytest.raises(ValueError, match="headroom is recorded on a screened registry"):
         record_headroom(draft, results)

@@ -39,15 +39,16 @@ competing explanations call for different responses:
 
 **Discriminating check (local, about a minute):** cProfile one joint-stack episode at a
 short horizon (h ≤ 4) on a dense-120 and a sparse-120 family world. BLAS pinned to 1
-thread, idle box (entry 16). Sort by cumulative time.
+thread, idle box (entry 16). Sort by cumulative time. The registry holds no 120-producer
+worlds since task 8.7 (gate sizes 12 and 42), so the check builds the world directly.
 ```
 python -c "import cProfile, pstats; \
-from tokenomics.eval.registry import load_registry; \
+from tokenomics.eval.families import build_family_config; \
 from tokenomics.eval.joint_stack import joint_stack_env; \
 from tokenomics.eval.runner import run_episode; \
 from tokenomics.eval.baselines import PRODUCING_BASELINES as P, ORDERING_BASELINES as O; \
-e = load_registry().entry('dev-dense-120-calm-00'); env = joint_stack_env(e.config(), 3); \
-cProfile.run('run_episode(env, P[\"entity_planner\"], O[\"proportional\"], e.episode_seeds[0])', '/tmp/p'); \
+env = joint_stack_env(build_family_config(1000, family='dense', producers=120, regime='calm'), 3); \
+cProfile.run('run_episode(env, P[\"entity_planner\"], O[\"proportional\"], 0)', '/tmp/p'); \
 pstats.Stats('/tmp/p').sort_stats('cumulative').print_stats(25)"
 ```
 

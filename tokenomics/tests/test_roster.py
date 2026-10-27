@@ -35,7 +35,7 @@ from tokenomics.eval.roster import (
 )
 from tokenomics.eval.runner import run_episode
 
-SIZES = (12, 120)
+SIZES = (12, 42)
 
 
 def _rows(roster: Roster, values: dict[str, float], *, world: str = "w", size: int = 12,
@@ -48,7 +48,7 @@ def _rows(roster: Roster, values: dict[str, float], *, world: str = "w", size: i
 
 
 def _both_sizes(roster: Roster, small: dict[str, float], large: dict[str, float]) -> list[DevRow]:
-    return _rows(roster, small, size=12) + _rows(roster, large, size=120, world="w2")
+    return _rows(roster, small, size=12) + _rows(roster, large, size=42, world="w2")
 
 
 # --- Frozen baseline roster ---
@@ -169,7 +169,7 @@ def test_never_winning_stack_dropped_with_record() -> None:
     assert rec is not None and rec.rule == NEVER_ARGMAX_RULE
     assert rec.parent_version == r.version
     assert set(rec.dropped) == set(r.member_ids) - {a, b}
-    assert rec.episodes == (EpisodeKey("w", 12, 1000), EpisodeKey("w2", 120, 1000))
+    assert rec.episodes == (EpisodeKey("w", 12, 1000), EpisodeKey("w2", 42, 1000))
     assert rec.rows_digest == rows_digest(rows)
     assert pruned.version != r.version and not pruned.frozen
     # the record survives the file round trip and is covered by the hash

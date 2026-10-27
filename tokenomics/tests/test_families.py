@@ -31,7 +31,8 @@ from tokenomics.eval.families import (
 from tokenomics.eval.scale import build_scale_config
 from tokenomics.eval.task_archive import REPRODUCERS, TaskRecord, replay
 
-SIZES = (12, 120)
+SIZES = (12, 42)  # gate sizes (task 8.7)
+BUILDABLE = (12, 42, 120)  # 120: future, non-gating, still built and checked
 FAMS = (DENSE, SPARSE_WIDE)
 
 
@@ -54,11 +55,13 @@ def _declarers(cfg: Configuration) -> dict[int, list[str]]:
 # --- Scale families ---
 
 
-def test_sparse_wide_fanout_2_at_120() -> None:
+@pytest.mark.parametrize("producers", (42, 120))
+def test_sparse_wide_fanout_2(producers: int) -> None:
     """gate-harness "Sparse-wide fanout": every product declared by exactly 2 producers."""
-    cfg = build_family_config(1000, family=SPARSE_WIDE, producers=120, regime=SHOCKED, fanout=2)
+    cfg = build_family_config(1000, family=SPARSE_WIDE, producers=producers, regime=SHOCKED,
+                              fanout=2)
     decl = _declarers(cfg)
-    assert len(decl) == 3 * 40  # W = P/3 products per layer
+    assert len(decl) == producers  # W = P/3 products per layer, 3 layers
     assert all(len(ps) == 2 for ps in decl.values())
     # each producer declares `fanout` products of its own layer only
     for p in cfg.producer_configs:
@@ -68,33 +71,53 @@ def test_sparse_wide_fanout_2_at_120() -> None:
 
 @pytest.mark.parametrize("fanout", [1, 3, 5])
 def test_sparse_wide_explicit_fanout(fanout: int) -> None:
-    cfg = build_sparse_wide_config(7, producers=120, regime=CALM, fanout=fanout)
+    cfg = build_sparse_wide_config(7, producers=42, regime=CALM, fanout=fanout)
     assert set(Counter(len(v) for v in _declarers(cfg).values())) == {fanout}
 
 
-def test_dense_at_120_every_layer_producer_declares_every_layer_product() -> None:
+@pytest.mark.parametrize("producers", (42, 120))
+def test_dense_every_layer_producer_declares_every_layer_product(producers: int) -> None:
     """gate-harness "Dense fanout"."""
-    cfg = build_family_config(1000, family=DENSE, producers=120, regime=SHOCKED)
+    cfg = build_family_config(1000, family=DENSE, producers=producers, regime=SHOCKED)
     decl = _declarers(cfg)
     assert len(decl) == 3 * DENSE_WIDTH
     for product, ps in decl.items():
         layer = _layer_of(cfg, product)
         assert sorted(ps) == sorted(p.id for p in cfg.producer_configs
                                     if _producer_layer(p.id) == layer)
-        assert len(ps) == 40
+        assert len(ps) == producers // 3
+
+
+@pytest.mark.parametrize("producers", BUILDABLE)
+def test_scaling_rules_at_every_size(producers: int) -> None:
+    """Module docstring rules at 12, 42 and 120: forced-strong every m-th producer (m =
+    min(fanout, 4)) and round-robin maintenance; a sparse layer-0 product carries exactly 3
+    producers' maintenance at every size."""
+    n = producers // 3
+    for family, m in ((DENSE, 4), (SPARSE_WIDE, 2)):
+        cfg = build_family_config(1000, family=family, producers=producers, regime=SHOCKED)
+        for p in cfg.producer_configs:
+            if int(p.id.split("_")[1]) % m == 0:
+                assert sum(p.capacities.values()) >= 80, p.id
+        load = Counter(p.restoration.require for p in cfg.producer_configs)
+        assert all(p.restoration.require == p.upgrade.require for p in cfg.producer_configs)
+        if family == SPARSE_WIDE:
+            assert len(load) == n and set(load.values()) == {3}
+        else:
+            assert len(load) == DENSE_WIDTH and max(load.values()) - min(load.values()) <= 1
 
 
 def test_family_fanout_is_explicit() -> None:
     assert FAMILIES[DENSE].fanout(40, None) == 40
     assert FAMILIES[SPARSE_WIDE].fanout(40, None) == 2
     with pytest.raises(ValueError, match="dense fanout"):
-        build_dense_config(0, producers=120, regime=CALM, fanout=2)
+        build_dense_config(0, producers=42, regime=CALM, fanout=2)
     with pytest.raises(ValueError, match="sparse fanout"):
         build_sparse_wide_config(0, producers=12, regime=CALM, fanout=5)
 
 
 @pytest.mark.parametrize("family", FAMS)
-@pytest.mark.parametrize("producers", SIZES)
+@pytest.mark.parametrize("producers", BUILDABLE)
 @pytest.mark.parametrize("regime", (CALM, SHOCKED))
 def test_worlds_validate_adr_0028(family: str, producers: int, regime: str) -> None:
     """Config validation passes and every declared product's recipe types are owned (ADR-0028)."""
@@ -126,26 +149,28 @@ def test_consumer_pools_cover_every_top_product(family: str, producers: int) -> 
 
 @pytest.mark.parametrize("family", FAMS)
 @pytest.mark.parametrize("regime", (CALM, SHOCKED))
-def test_economy_ratios_match_between_12_and_120(family: str, regime: str) -> None:
+def test_economy_ratios_match_between_12_and_42(family: str, regime: str) -> None:
     """gate-harness "More producers, same pressure" (family-level contract): the family's demand
     per unit of initial top-layer throughput, as a ratio of sums over its recorded sampling
-    protocol, agrees within the recorded tolerance; emission per producer and per consumer is
-    exact in every sampled world."""
+    protocol, agrees within the recorded tolerance between 12 and 42 (gating) and, as a
+    non-gating check, 120. Emission per producer is exact in every sampled world; emission per
+    consumer is exact where 3·P/12 is whole (12, 120) and 4400·42/12 / 11 = 1400 at 42."""
     fam = FAMILIES[family]
     assert fam.ratio_tolerance == 0.10
-    assert fam.ratio_sample == ((12, 1000, 100), (120, 1000, 20))
+    assert fam.ratio_sample == ((12, 1000, 100), (42, 1000, 40), (120, 1000, 20))
     r12 = family_demand_ratio(family, 12, regime)
-    r120 = family_demand_ratio(family, 120, regime)
-    assert abs(r120 / r12 - 1) <= fam.ratio_tolerance
+    for size in (42, 120):
+        assert abs(family_demand_ratio(family, size, regime) / r12 - 1) <= fam.ratio_tolerance
     assert r12 == demand_throughput_ratio([build_family_config(
         s, family=family, producers=12, regime=regime) for s in range(1000, 1100)])
-    for size in SIZES:
+    for size, per_consumer in ((12, 4400 / 3), (42, 1400), (120, 4400 / 3)):
         for s in fam.sample_seeds(size):
             cfg = build_family_config(s, family=family, producers=size, regime=regime)
             assert emission_per_producer(cfg) == 4400 / 12
-            assert cfg.cycle_emission / len(cfg.consumers) == 4400 / 3
-    assert (cycle_emission(12), cycle_emission(120)) == (4400, 44000)
-    assert (num_consumers(12), num_consumers(120)) == (3, 30)
+            assert cfg.cycle_emission / len(cfg.consumers) == per_consumer
+    assert (cycle_emission(12), cycle_emission(42), cycle_emission(120)) == (4400, 15400, 44000)
+    # 3·42/12 = 10.5 rounds half up to 11 (Python's round() would give 10; module docstring)
+    assert (num_consumers(12), num_consumers(42), num_consumers(120)) == (3, 11, 30)
 
 
 def test_sample_protocol_refuses_unrecorded_size() -> None:
@@ -180,8 +205,8 @@ def test_builder_is_deterministic(family: str, producers: int) -> None:
 @pytest.mark.parametrize("family", FAMS)
 def test_calm_and_shocked_share_topology(family: str) -> None:
     """Schedules are drawn last, so the regimes differ only in the consumers' schedules."""
-    calm = build_family_config(1000, family=family, producers=120, regime=CALM)
-    shocked = build_family_config(1000, family=family, producers=120, regime=SHOCKED)
+    calm = build_family_config(1000, family=family, producers=42, regime=CALM)
+    shocked = build_family_config(1000, family=family, producers=42, regime=SHOCKED)
     assert calm.producer_configs == shocked.producer_configs
     assert calm.process_sheets == shocked.process_sheets
     assert [c.products for c in calm.consumers] == [c.products for c in shocked.consumers]
@@ -228,8 +253,8 @@ def test_dense_12_shocked_keeps_build_scale_config_draws() -> None:
 
 
 @pytest.mark.parametrize("generator,params", [
-    ("dense_family", {"producers": 120, "regime": CALM}),
-    ("sparse_wide_family", {"producers": 120, "regime": SHOCKED, "fanout": 2}),
+    ("dense_family", {"producers": 42, "regime": CALM}),
+    ("sparse_wide_family", {"producers": 42, "regime": SHOCKED, "fanout": 2}),
 ])
 def test_families_replay_from_generator_ref(generator: str, params: dict) -> None:
     assert generator in REPRODUCERS

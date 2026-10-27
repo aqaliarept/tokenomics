@@ -7,10 +7,10 @@ in the tree can measure it. Today's hindsight baseline is a max over four baseli
 per-episode max over a frozen roster. `blend_0.5` is not in the baseline registry. There is
 no per-consumer accounting, no run-down or starvation metric, and no split between
 development and sealed worlds. The scale generator cannot build sparse economies or keep
-demand in step with capacity when the economy grows from 12 to 120 producers. So no
+demand in step with capacity when the economy grows from 12 to 42 producers. So no
 training spend can yet be judged honestly. This is milestone M1 of the agreed plan
 (`establish-project-baseline` design D1/D2), and every later milestone (shocks, the
-development audit, evolution strategies, the sealed 120-producer gate) reads its numbers
+development audit, evolution strategies, the sealed large-economy gate) reads its numbers
 from this harness.
 
 ## What Changes
@@ -40,7 +40,9 @@ from this harness.
   calm set has at least twice as many worlds as the shocked set.
 - **Scale families**: new sparse-wide and dense layered generators with an explicit
   `fanout` (eligible producers per product). Demand-to-capacity and fund-to-producer ratios
-  are held constant from 12 to 120 producers by co-scaling consumers and emission.
+  are held constant from 12 to 42 producers by co-scaling consumers and emission. The large
+  size is 42 (14 per layer) by user decision 2026-10-27: beat the hand-written baselines at
+  42 first, then scale; about 120 producers is a future, non-gating target.
   Development worlds must show headroom at both sizes. `build_scale_config` stays
   byte-identical.
 - **Gate driver + report**: a CLI that runs the subject stack and the roster on registry
@@ -48,13 +50,14 @@ from this harness.
   per-episode rows, per-world ratios, regime verdicts, side-effect and monitored metrics,
   and provenance for rules, policies, roster and registry.
 - **Exit deliverable**: an `EXP-NNNN` gate report for the portable champion stack
-  (EXP-0012 orderer scorer + EXP-0035 producer) on development families at 12 and 120
+  (EXP-0012 orderer scorer + EXP-0035 producer) on development families at 12 and 42
   producers, run on a CPU pod.
 - **Not in this change**: the rest of the deployed-path cost refactor (eligible-only
   rows, incremental telemetry, O(E) remainder; D2's last bullet) becomes its own change,
   because it carries its own byte-identical invariant. **Pulled in by user decision
   (2026-10-27, task 8.4):** the observation-cost part. The task 8.3 sizing put the M1
-  runs at ≈1,600 + 900 vCPU-hours, almost all of it the 120-producer joint-stack orderer
+  runs, then sized at 120 producers, at ≈1,600 + 900 vCPU-hours, almost all of it the
+  120-producer joint-stack orderer
   observation, and there is no budget for that. Task 8.4 therefore memoizes producer rows
   across streams and indexes the per-producer telemetry totals, with byte-identical
   observations (docs/DIAGNOSTICS.md entry 17). Still deferred: eligible-only rows (the

@@ -13,8 +13,8 @@ Decisions this module fixes (ARCHITECTURE.md §7.2):
   a baseline's death or starvation is not a gate failure.
 - Thresholds are inclusive: a ratio, `r_end` or fill rate exactly at its bar passes.
 - Margins are judged per (economy size, regime): "train small, play large" requires every margin
-  at each size, so a 12-producer surplus cannot hide a 120-producer shortfall. Every gate size
-  (`roster.GATE_SIZES`, 12 and 120) must have both a calm and a shocked group; a group with no
+  at each size, so a 12-producer surplus cannot hide a 42-producer shortfall. Every gate size
+  (`roster.GATE_SIZES`, 12 and 42) must have both a calm and a shocked group; a group with no
   gating world FAILS its margin (no evidence is not a pass), so a report missing a size rejects.
 - The input is the gate set only. A row at any other size (e.g. the 1000+ producer "future scale
   target", which agent-acceptance says SHALL NOT gate) is refused, not silently judged: such

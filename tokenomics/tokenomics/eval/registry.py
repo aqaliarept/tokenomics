@@ -61,7 +61,7 @@ REPLACED = "replaced"
 STATUSES = (GATE, RESERVE, REPLACED)
 
 FAMILY_GENERATORS = {DENSE: "dense_family", SPARSE_WIDE: "sparse_wide_family"}
-SIZES = (12, 120)
+SIZES = GATE_SIZES  # the registry holds worlds at exactly the gate sizes
 CALM_PER_SHOCKED = 2  # gate-harness "Regimes": calm >= 2x shocked at each size
 
 # D7 defaults: split -> (seed range, {regime: (worlds, episode seeds per world)}).

@@ -39,8 +39,9 @@ CONTRACTS = (JOINT_STACK, LEGACY)
 RANDOM_POLICY = "random"
 DEFAULT_REPLICATES = 5  # R, tasks.md 10.1 sizing
 DEVELOPMENT = "development"
-# Economy sizes the gate measures (producers; design "12 and 120 producers").
-GATE_SIZES = (12, 120)
+# Economy sizes the gate measures (producers; design "Economy sizes": 12 and 42, user decision
+# 2026-10-27). About 120 producers is a future, non-gating target.
+GATE_SIZES = (12, 42)
 
 NEVER_ARGMAX_RULE = "never-argmax-v1"
 NEVER_ARGMAX_TEXT = (

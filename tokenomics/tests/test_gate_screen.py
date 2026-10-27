@@ -204,7 +204,7 @@ def test_saturated_family_rejected() -> None:
     rows = []
     family = {}
     for i, f in enumerate([0.97, 0.98, 0.99]):
-        rows += _headroom_rows(f"sat-{i}", f, size=120)
+        rows += _headroom_rows(f"sat-{i}", f, size=42)
         family[f"sat-{i}"] = SPARSE_WIDE
     for i, f in enumerate([0.50, 0.95, 0.70]):
         rows += _headroom_rows(f"ok-{i}", f)
@@ -213,8 +213,8 @@ def test_saturated_family_rejected() -> None:
         rows += _headroom_rows(f"edge-{i}", f)
         family[f"edge-{i}"] = SPARSE_WIDE
     res = {(h.family, h.size): h for h in headroom(episode_bests(rows, ROSTER), family, 0.95)}
-    assert res[(SPARSE_WIDE, 120)].median_fill == pytest.approx(0.98)
-    assert not res[(SPARSE_WIDE, 120)].passed
+    assert res[(SPARSE_WIDE, 42)].median_fill == pytest.approx(0.98)
+    assert not res[(SPARSE_WIDE, 42)].passed
     assert res[(DENSE, 12)].median_fill == pytest.approx(0.70) and res[(DENSE, 12)].passed
     assert not res[(SPARSE_WIDE, 12)].passed  # median exactly 0.95
 
@@ -242,13 +242,13 @@ def _dev_rows(reg: Registry, *, zero: set[str] = frozenset(), fill: float = 0.5,
 
 def test_zero_baseline_world_replaced_by_its_reserve() -> None:
     reg = build_worlds_v1()
-    zero = "dev-dense-120-shocked-02"
+    zero = "dev-dense-42-shocked-02"
     out = screen_outcome(reg, ROSTER, _dev_rows(reg, zero={zero}), q=0.05, prune=False)
     assert out.passed
     assert out.registry.entry(zero).status == REPLACED
-    assert out.registry.entry("dev-dense-120-shocked-r0").status == GATE
+    assert out.registry.entry("dev-dense-42-shocked-r0").status == GATE
     assert [(r.replaced, r.by) for r in out.registry.screening.replacements] == [
-        (zero, "dev-dense-120-shocked-r0")]
+        (zero, "dev-dense-42-shocked-r0")]
     assert out.registry.screening.splits == (DEVELOPMENT,)
     assert out.registry.screening.headroom is not None
 
@@ -368,7 +368,7 @@ def test_real_screen_requires_commit_and_no_filters(fixture_inputs: dict[str, Pa
     """Also refused: a registry whose families lack development worlds at a gate size (the
     fixture has 12 producers only; D10 admits a family on evidence at both sizes)."""
     with pytest.raises(ValueError, match=r"source commit.*filters are set.*"
-                                         r"no development gate worlds for dense/120"):
+                                         r"no development gate worlds for dense/42"):
         run_screen(out_dir=tmp_path / "r", horizon=12, workers=1,
                    registry=load_registry(fixture_inputs["registry"]),
                    roster=load_roster(fixture_inputs["roster"]), episodes_per_world=1)
@@ -402,7 +402,7 @@ def test_admission_requires_screened_split_and_passing_headroom() -> None:
     groups = sorted({(e.family, e.size) for e in dev.gate_worlds(DEVELOPMENT)})
     ok = [Headroom(f, z, 8, 0.5, 0.95, True) for f, z in groups]
     assert record_headroom(dev, ok).admission_problems(DEVELOPMENT) == []
-    assert "no headroom result for ('sparse_wide', 120)" in record_headroom(
+    assert "no headroom result for ('sparse_wide', 42)" in record_headroom(
         dev, ok[:-1]).admission_problems(DEVELOPMENT)[0]
     failing = ok[:-1] + [Headroom(*groups[-1], 8, 0.96, 0.95, False)]
     assert "headroom failed" in record_headroom(dev, failing).admission_problems(DEVELOPMENT)[0]
@@ -418,13 +418,13 @@ def test_admission_requires_screened_split_and_passing_headroom() -> None:
     assert "has not screened the development split" in sealed_only.admission_problems(
         DEVELOPMENT)[0]
     assert "has not screened the development split" in sealed_only.admission_problems(SEALED)[0]
-    # a registry without 120-producer development worlds is never admitted
+    # a registry without 42-producer development worlds is never admitted
     small = Registry(name="small", seed_ranges=reg.seed_ranges,
                      entries=tuple(e for e in reg.entries if e.size == 12))
     small_dev = screen_zero_baselines(small, ROSTER, [r for r in rows if r.size == 12])
     small_ok = record_headroom(small_dev, [h for h in ok if h.size == 12])
     assert small_ok.admission_problems(DEVELOPMENT) == [
-        "no development gate worlds for dense/120", "no development gate worlds for sparse_wide/120"]
+        "no development gate worlds for dense/42", "no development gate worlds for sparse_wide/42"]
     # a family present only in the sealed split has no development evidence at all
     sealed_family = Registry(name="sf", seed_ranges=reg.seed_ranges, entries=tuple(
         e for e in reg.entries if e.family == DENSE or e.split == SEALED))
@@ -433,7 +433,7 @@ def test_admission_requires_screened_split_and_passing_headroom() -> None:
     sf_ok = record_headroom(sf, [h for h in ok if h.family == DENSE])
     assert sf_ok.admission_problems(DEVELOPMENT) == [
         "no development gate worlds for sparse_wide/12",
-        "no development gate worlds for sparse_wide/120"]
+        "no development gate worlds for sparse_wide/42"]
 
 
 def test_inconsistent_headroom_refused() -> None:

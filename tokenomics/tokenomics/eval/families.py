@@ -1,6 +1,7 @@
-"""Gate world families: dense and sparse-wide layered economies at ~12 and ~120 producers
-(design D8, D9, add-measurement-gate-harness; gate-harness "Scale families", "Constant economy
-ratios across sizes"; stochastic-environment "Deterministic cyclic demand").
+"""Gate world families: dense and sparse-wide layered economies at the gate sizes, ~12 and ~42
+producers (design D8, D9, "Economy sizes", add-measurement-gate-harness; gate-harness "Scale
+families", "Constant economy ratios across sizes"; stochastic-environment "Deterministic cyclic
+demand"). Any positive multiple of 3 builds; ~120 is a future, non-gating size.
 
 A family world is a depth-3 layered supply chain with P/3 producers per layer, built from the
 same draws as `scale.build_scale_config` (recipe requirements, strong/marginal capacities,
@@ -13,18 +14,23 @@ What differs is how wide a layer is and who declares what (ADR-0028: `produces` 
   round-robin: producer k declares products k, k+1, ..., k+fanout-1 (mod W), so product j is
   declared by a contiguous window of `fanout` producers.
 
-Scaling rules, chosen so a 120-producer world puts the same pressure on its economy as a
-12-producer one (the ratios `family_demand_ratio` and `emission_per_producer` measure). Both
+Scaling rules, chosen so a 42-producer (or 120-producer) world puts the same pressure on its
+economy as a 12-producer one (the ratios `family_demand_ratio` and `emission_per_producer` measure). Both
 refinements of `build_scale_config` below are recorded in design D9:
-- consumers = round(3·P/12); emission = 4400·P/12 (4400 = `build_scale_config`'s 12-producer
-  emission), so emission per producer and per consumer stay constant;
+- consumers = 3·P/12 rounded half up; emission = 4400·P/12 (4400 = `build_scale_config`'s
+  12-producer emission), so emission per producer is exact and, when 3·P/12 is whole (12, 120),
+  emission per consumer too. At 42, 3·P/12 = 10.5: half up gives 11 consumers, not Python's
+  banker's 10, because 10 leaves the 42-producer demand ratio 7–9% under the 12-producer one
+  (close to the 10% tolerance) while 11 keeps it within ±3% (task 8.7);
 - the forced-strong producers (the "first producer is always strong" rule of
   `build_scale_config`) become every m-th producer of a layer, m = min(fanout, 4): with m =
   fanout every sparse product has a strong declarer, and for dense m = 4 reproduces the
-  12-producer rule while keeping the strong fraction the same at 120;
+  12-producer rule while keeping the forced fraction near 1/4 (4/14 at 42, 10/40 at 120);
 - maintenance (restoration / upgrade / inventory-expansion input) is spread round-robin over the
-  layer-0 products instead of all on product 0: at 120 producers a single maintenance product
-  made by 2 sparse declarers would carry 10x the 12-producer load.
+  layer-0 products instead of all on product 0: at 42 (120) producers a single maintenance
+  product made by 2 sparse declarers would carry 3.5x (10x) the 12-producer load. Round-robin
+  gives every sparse layer-0 product the maintenance of exactly 3 producers (P / W = 3) at any
+  size; dense spreads P producers over its 4 layer-0 products (3 each at 12; 10-11 at 42).
 
 The demand ratio is a FAMILY quantity (gate-harness "Constant economy ratios across sizes"): it
 is compared as summed demand / summed throughput over the sampling protocol recorded in the
@@ -71,14 +77,17 @@ STRONG_EVERY_MAX = 4
 @dataclass(frozen=True)
 class Family:
     """A family definition: its declaration rule, the tolerance within which its 12- and
-    120-producer demand ratios must agree (gate-harness "Constant economy ratios across sizes",
+    42-producer demand ratios must agree (gate-harness "Constant economy ratios across sizes",
     default 10%), and the sampling protocol that ratio is computed under: per size, the world
-    seeds `range(first, first + count)` as (size, first, count) triples."""
+    seeds `range(first, first + count)` as (size, first, count) triples. Each sample holds
+    400–800 top-layer producers (100 × 4 at 12, 40 × 14 at 42, 20 × 40 at 120); the 120 sample
+    is kept for the future, non-gating size."""
 
     name: str
     default_fanout: int | None  # None = the whole layer (dense)
     ratio_tolerance: float = 0.10
-    ratio_sample: tuple[tuple[int, int, int], ...] = ((12, 1000, 100), (120, 1000, 20))
+    ratio_sample: tuple[tuple[int, int, int], ...] = ((12, 1000, 100), (42, 1000, 40),
+                                                      (120, 1000, 20))
 
     def sample_seeds(self, producers: int) -> range:
         for size, first, count in self.ratio_sample:
@@ -110,7 +119,8 @@ FAMILIES: dict[str, Family] = {
 
 
 def num_consumers(producers: int) -> int:
-    return round(3 * producers / BASE_PRODUCERS)
+    """3·P/12 rounded half up (module docstring): 3 at 12, 11 at 42, 30 at 120."""
+    return (6 * producers + BASE_PRODUCERS) // (2 * BASE_PRODUCERS)
 
 
 def cycle_emission(producers: int) -> int:

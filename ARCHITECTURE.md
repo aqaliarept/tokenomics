@@ -479,10 +479,10 @@ that ordered something). X and Y come from a versioned side-effect parameter
 file; monitored metrics (inversion, edge margin, crowd-out, holding) are
 reported per world and never gate. Rules the code fixes: bars are inclusive
 (exactly 1.05 passes); only candidate episodes are judged, roster rows only set
-the bar; margins hold separately at each gate size (12 and 120 producers),
+the bar; margins hold separately at each gate size (12 and 42 producers),
 and a gate size with no gating world in a regime fails that margin; rows at any
-other size (the 1000+ producer future target) are refused, since they must not
-gate; a world whose baseline is 0 has no
+other size (the ~120 and 1000+ producer future targets) are refused, since they
+must not gate; a world whose baseline is 0 has no
 finite ratio, so it is excluded from every clause and listed as non-gating;
 run-down with an unmeasured `r_start`/`r_end` fails. Any failing clause rejects,
 and the failure names the clause, size/regime or world, episode and consumer.
