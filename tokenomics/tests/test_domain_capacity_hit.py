@@ -221,14 +221,18 @@ def test_f32_matches_numpy_float32() -> None:
 def _episode(monkeypatch: pytest.MonkeyPatch, schedule: tuple[ShockEvent, ...], horizon: int,
              producing: str = "stock_aware", config: Configuration | None = None,
              live: list[dict] | None = None) -> tuple[dict, dict, list[float]]:
-    """Run one env episode with `schedule` injected into the domain; return the runner's
-    result dict, `env.episode_stats` and `env.capacity_trace` (and append the live
-    end-of-episode capacities to `live` when given). The env wiring of schedules lands in
-    task 3.1; here `build_system` is wrapped to inject it."""
+    """Run one env episode with `schedule` injected straight into the domain; return the
+    runner's result dict, `env.episode_stats` and `env.capacity_trace` (and append the live
+    end-of-episode capacities to `live` when given).
+
+    `build_system` is wrapped to override the env's own schedule, because the env cuts
+    events after the horizon (task 3.1) and this test needs an H + 1 event to reach the
+    domain. The schedule-pinning stats are left out: they describe the env's schedule."""
     real = aec_env.build_system
 
     def with_schedule(*args: object, **kwargs: object) -> System:
-        return real(*args, **kwargs, shock_schedule=schedule)
+        kwargs["shock_schedule"] = schedule
+        return real(*args, **kwargs)
 
     monkeypatch.setattr(aec_env, "build_system", with_schedule)
     env = TokenomicsAECEnv(config=config or _phase1(), horizon=horizon)

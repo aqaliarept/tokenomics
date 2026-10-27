@@ -37,6 +37,7 @@ from .encode import (
     encode_producing_entity,
 )
 from .demand_digest import demand_digest
+from .shock_schedule import build_schedule, shock_digest
 from .side_effects import SideEffectTracker, capacity_ratio
 from .spaces import build_spec
 
@@ -211,9 +212,14 @@ class TokenomicsAECEnv(AECEnv):
         return consumers
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> None:
+        # Shock schedule (ADR-0055, add-shocks-i-drift D3): drawn here, before any action,
+        # from config + episode seed only, on per-kind streams that never touch the demand
+        # RNG; the domain replays it. Private: no observation reads it (unannounced).
+        self._shock_schedule = build_schedule(self.config, seed, self.horizon)
         self.system = build_system(
             self.config, self._build_consumers(seed),
             product_stream_ordering=self.product_stream_ordering,
+            shock_schedule=self._shock_schedule,
         )
         self.current_cycle = 0
         self.agents = self.possible_agents[:]
@@ -253,6 +259,9 @@ class TokenomicsAECEnv(AECEnv):
                 f"episode consumers are {sorted(self.system.consumers)}"
             )
         self.episode_stats["demand_digest"] = demand_digest(self._demand_schedules)
+        # Shock-schedule digest + event count (D3): fixed at reset, compared across subjects.
+        self.episode_stats["shock_digest"] = shock_digest(self._shock_schedule)
+        self.episode_stats["shock_events"] = len(self._shock_schedule)
         # Side-effect metrics (design D3): raw quantities only, no X/Y verdict. The key
         # list and every edge case (None on a zero denominator) are documented in
         # env/side_effects.py; written now so they exist before the first cycle.
