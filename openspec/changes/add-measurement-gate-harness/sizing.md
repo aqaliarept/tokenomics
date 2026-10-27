@@ -1,25 +1,217 @@
-# Sizing for tasks 10.1 and 12.1 (tasks 8.3 and 8.5)
+# Sizing for tasks 10.1 and 12.1 (task 8.8; history: tasks 8.3 and 8.5)
+
+**Headline (gate sizes 12 and 42 producers, reference scenario, h = 100, R = 5):
+10.1 ≈ 17 vCPU-h (≈ 0.5 h on cpu32, ≈ 1.1 h on cpu16); 12.1 ≈ 18 vCPU-h (≈ 0.55 h on cpu32,
+≈ 1.1 h on cpu16).** Scenario range 13.6–22.4 vCPU-h for 10.1 and 14.2–23.1 for 12.1. Pod setup
+(start, code sync, install) and pod CPU speed are not included (§A5). The 12.1 figure assumes the
+full 40-member roster_v1 survives the screen unpruned; the frozen roster 12.1 actually runs comes
+out of 10.1/11.1, and pruning can only lower it (§A3).
+
+Part A (task 8.8) sizes the plan as it now stands: gate sizes 12 and 42 (task 8.7), on-demand
+reserves in 10.1 (task 8.6), R = 5. Measured 2026-10-27 on the local box (AMD EPYC-Rome, 2 vCPU,
+1 thread per core) at commit af192e8: single process, BLAS pinned to 1 thread, one run at a time,
+every run at the real horizon h = 100, 1-minute load average recorded per run (0.52–1.53).
+
+**History.** Parts HA and HB are the earlier rounds, which sized the large economy at **120
+producers** before the user moved it to 42 (2026-10-27). They are kept unchanged except for their
+section labels (A → HA, B → HB) and no longer describe the plan.
+
+## Plain-English summary
+
+The two pod runs this sizes are the development screen (task 10.1: every roster baseline on every
+development gate world, to pick reserves, check headroom and calibrate X and Y) and the champion
+development report (task 12.1: the same roster runs plus the portable champion). With the large
+economy at 42 producers instead of 120, every episode now runs in seconds at the real horizon,
+so this round **measures h = 100 directly** for every case instead of extrapolating.
+
+One 42-producer episode takes 4–6 s of one CPU under the joint-stack contract
+(`entity_planner/proportional`), 2–2.4 s under the legacy contract, and 12–17 s for the
+portable champion; 12-producer episodes take 0.4–1.1 s (2.5–3.6 s portable). Across all 40 roster
+members the most expensive single episode is 8.8 s (dense-42, `random/random`). Each
+development gate world-episode needs 88 roster jobs (68 joint-stack + 20 legacy with R = 5),
+and there are 256 of them (64 per family × size).
+
+The **reference scenario** charges every roster job the measured `entity_planner/proportional`
+(joint) or `obs_stock_aware/obs_price` (legacy) cost:
+- **10.1 ≈ 16.9 vCPU-hours**: ≈ 0.53 h wall on a cpu32 pod, ≈ 1.06 h on cpu16. This is the
+  on-demand screen with no replacement. None is expected: `entity_planner/proportional` alone
+  delivered 327–1,663 units on each of the 8 timed worlds. If replacements are needed, every
+  reserve the screen consults costs 0.05–1.5 vCPU-hours. Reserves run in extra waves after
+  the first. One wave covers every zero gate world at once, and a further wave is needed only
+  when a consulted reserve is itself zero (§A4).
+- **12.1 ≈ 17.6 vCPU-hours**: ≈ 0.55 h on cpu32, ≈ 1.1 h on cpu16. This assumes 12.1 runs the
+  full 40-member roster. 12.1 really runs the roster frozen by 10.1 and installed by 11.1; if
+  10.1 prunes members that never win (`--prune`), there are fewer jobs and the cost drops.
+
+The other scenarios (§A4) span 13.6–22.4 vCPU-hours for 10.1 and 14.2–23.1 for 12.1. They are
+conditional scenarios, not bounds: each holds only if its assumption holds. The
+lowest is the actual roster measured member by member: weaker members die early, 13–22 of 40
+per world, which makes it cheaper than the reference. The highest charges every job the most
+expensive member's cost and adds the shocked-regime effect. 42-producer jobs are 86% of the
+cost. For comparison, the same plan at 120 producers was ≈ 90 vCPU-hours each (Part HA).
+
+## How to read the numbers
+
+- "vCPU-hours" = one worker process per vCPU × wall hours. Wall time assumes the jobs keep every
+  worker busy; with 22,528 roster jobs of ≤ 17 s each, the packing tail is minutes.
+- Not covered: pod single-thread speed relative to this box (every row scales with it),
+  contention among 16–32 concurrent workers (single-process timings can only understate), pod
+  setup time, and the spread over worlds and episode seeds (one calm and one shocked world per
+  family × size were timed).
+
+# Part A. Gate sizes 12 and 42 (task 8.8, commit af192e8)
+
+## A1. Per-episode timing at h = 100 (calm-00 world, episode seed 0)
+
+Joint = `entity_planner/proportional` under the joint-stack contract; legacy =
+`obs_stock_aware/obs_price` under the legacy contract; portable = the EXP-0012 orderer scorer +
+EXP-0035 producer (the 12.1 subject). Seconds of one CPU.
+
+| family | P | joint h = 25 / 50 / 100 | legacy h = 25 / 50 / 100 | portable h = 100 | shocked-00 joint h = 100 (ratio to calm) |
+|---|---|---|---|---|---|
+| dense | 12 | 0.33 / 0.58 / 1.08 | 0.11 / 0.22 / 0.43 | 3.55 | 1.25 (1.155) |
+| dense | 42 | 1.71 / 3.33 / 6.41 | 0.52 / 1.03 / 2.07 | 17.03 | 7.20 (1.122) |
+| sparse_wide | 12 | 0.19 / 0.37 / 0.70 | 0.09 / 0.19 / 0.37 | 2.52 | 0.70 (1.000) |
+| sparse_wide | 42 | 1.05 / 2.13 / 4.28 | 0.62 / 1.16 / 2.37 | 12.28 | 4.16 (0.974) |
+
+Cost is roughly linear in the horizon: doubling h multiplied the time by 1.76–2.09 over the 16
+doublings above (h = 25 → 50 and 50 → 100; the lowest, 1.76, is dense-12 joint 25 → 50). The
+totals use the h = 100 column, which is measured directly, so nothing is extrapolated.
+Repeatability: three repeats of the sparse-42 joint and legacy episodes at load 0.52–0.63 gave
+4.10–4.33 s and 2.31–2.41 s (`repeat.jsonl`), i.e. −4.1% to +1.1% and −2.4% to +1.7% of the
+table's 4.28 s and 2.37 s.
+
+## A2. Member spread at h = 100 (all 40 roster_v1 members, calm-00, replicate 0)
+
+| family | P | members dead before h = 100 | measured roster s per world-episode (Σ replicates × time) | reference s per world-episode (68 joint + 20 legacy) | costliest joint member | costliest legacy member |
+|---|---|---|---|---|---|---|
+| dense | 12 | 13 | 77.3 | 82.1 | 1.49 s (`random/random`) | 0.51 s (`random/obs_price`) |
+| dense | 42 | 16 | 402.6 | 477.4 | 8.84 s (`random/random`) | 2.28 s (`entity_planner/obs_price`) |
+| sparse_wide | 12 | 17 | 47.1 | 55.1 | 0.83 s (`entity_planner/random`) | 0.45 s (`entity_planner/obs_price`) |
+| sparse_wide | 42 | 22 | 236.2 | 338.2 | 4.73 s (`entity_planner/blend_0.5`) | 3.11 s (`obs_stock_aware/obs_price`) |
+
+The sparse-42 legacy maximum (3.11 s) was taken at load 1.53 on this 2-core box. The same member
+re-timed at load 0.68 and 0.71 took 2.31 and 2.29 s (`repeat_members.jsonl`), so that cell of the high
+scenario includes contention and errs high. The 42-producer member runs were taken at load
+1.01–1.53; the reference subjects inside them agree with the standalone timings (e.g. sparse-42
+`entity_planner/proportional` 4.24 s vs 4.10–4.33 s).
+
+## A3. Job counts (`eval/registry/worlds_v1.json` 310673c3…, `eval/registry/roster_v1.json` 8791e24b…)
+
+- Roster: 40 members, 28 joint-stack and 12 legacy; the 12 random members run R = 5 replicates.
+  Per world-episode: 68 joint-stack + 20 legacy = 88 roster jobs.
+- Development gate worlds per family × size: 8 calm × 3 episode seeds + 4 shocked × 10 = 64
+  world-episodes (shocked share 62.5%); 4 family × size cells → 256 world-episodes.
+- 10.1 (on-demand, wave 1): 256 × 88 = 22,528 roster jobs, over the draft roster_v1 (the
+  screen always starts from it).
+- 12.1: **planning assumption: no pruning**, i.e. the frozen roster equals roster_v1, giving the
+  same 22,528 roster jobs plus 256 portable jobs. The real counts depend on what 10.1 freezes and
+  11.1 installs; `gate --mode report` runs the loaded frozen roster. Pruning (`screen_outcome` →
+  `prune_roster`, only with `--prune`) can only remove members, so it can only lower the 12.1
+  counts and cost; the figure here is the full-roster value. Zero-baseline replacements do not
+  change the counts: a reserve comes from the same (split, family, size, regime) group and has
+  the same number of episode seeds as the gate world it replaces. Its per-episode cost may
+  differ; that difference is unmeasured (only calm-00 and shocked-00 were timed).
+- Reserves: 4 per (family, size, regime); a calm reserve has 3 episodes and a shocked one 10.
+
+## A4. Scenarios: vCPU-hours and wall time (h = 100, one worker per vCPU, BLAS 1 thread)
+
+Each row is a **conditional scenario, not a bound**: the vCPU-hours that follow if its
+assumption holds. Computed by `/tmp/gate_timing/s88/size88.py`; output in `size88.out`. 12.1
+columns assume the full, unpruned roster (§A3). The regime factor is
+1 + (shocked/calm − 1) × 62.5%, from the joint ratios in §A1, applied to every job of the cell
+(and to the portable subject in 12.1).
+
+| scenario | assumption | 10.1 vCPU-h | 12.1 vCPU-h |
+|---|---|---|---|
+| low: measured roster | every world-episode costs what the 40 members measured on calm-00 (§A2), deaths included | 13.6 | 14.2 |
+| **reference** | every joint job costs `entity_planner/proportional`, every legacy job `obs_stock_aware/obs_price`, full horizon | **16.9** | **17.6** |
+| regime | reference × regime factor | 17.6 | 18.3 |
+| high | every job costs the costliest member of its contract (§A2) × regime factor | 22.4 | 23.1 |
+
+| scenario | 10.1 cpu16 / cpu32 wall | 12.1 cpu16 / cpu32 wall |
+|---|---|---|
+| low | 0.85 h / 0.42 h | 0.89 h / 0.44 h |
+| **reference** | **1.06 h / 0.53 h** | **1.10 h / 0.55 h** |
+| regime | 1.10 h / 0.55 h | 1.14 h / 0.57 h |
+| high | 1.40 h / 0.70 h | 1.44 h / 0.72 h |
+
+Reference split: the 42-producer cells are 86% of either total. The portable subject adds ≈ 0.63
+vCPU-hours to 12.1 (the 0.7 gap between the rounded 16.9 and 17.6 is rounding).
+
+**10.1 replacements (on-demand reserves, task 8.6).** The rows above are wave 1 only: no
+replacement. A gate world needs replacing only if all 40 members deliver 0 units on every
+episode. `entity_planner/proportional` delivered 438 / 327 (dense-12 calm / shocked), 1,331 /
+1,036 (dense-42), 524 / 460 (sparse-12) and 1,663 / 1,531 (sparse-42) units on the 8 timed
+worlds. Those are 8 of the 64 gate worlds, so a zero world elsewhere cannot be excluded. Each
+consulted reserve costs (reference, vCPU-h): dense-12 calm 0.07 / shocked 0.26, dense-42 0.40 /
+1.49, sparse-12 0.05 / 0.15, sparse-42 0.28 / 0.92. The cost is per **consulted reserve**, not
+per successful replacement: a replacement whose first reserve is also zero consults two or more.
+
+How waves are scheduled (`registry.plan_replacements`, `gate_cli.run_screen`): after each wave,
+the plan lists one pending reserve for every zero gate world still unresolved, across all
+groups, and the next wave runs that whole list in parallel. So several zero gate worlds whose
+first reserves are usable cost one extra wave in total. A further wave is needed only when a
+consulted reserve is itself zero. Waves run one after another.
+
+| sensitivity | vCPU-h | cpu16 / cpu32 wall |
+|---|---|---|
+| reference + 1 consulted reserve at the costliest (dense-42 shocked, 1.49) | 18.4 | 1.15 h / 0.58 h, plus one extra wave |
+| reference + 4 such consulted reserves | 22.9 | 1.43 h / 0.72 h, plus 1–4 extra waves (1 if all four are first reserves of different zero worlds; 4 if one world consults a chain of 3 zero reserves before a usable one) |
+
+A dense-42 shocked reserve is 10 episodes × 88 jobs of ≤ 9 s, so a wave holding it fills 16–32
+workers for a few minutes. For the record, an eager screen (every reserve up front) would be 31.4
+vCPU-hours.
+
+## A5. Not covered, and memory
+
+- **Pod CPU speed**: every row scales by the pod's single-thread speed relative to this box.
+  Pod vCPUs may be hyperthreads; this box runs 1 thread per core.
+- **Worker contention**: 16–32 concurrent workers plus the driver's per-row append and fsync.
+  Single-process timings can only understate it.
+- **Pod setup**: start, code sync and `pip install` happen once per run and are not in the rows.
+  At ≈ 0.5 h of compute on cpu32 they are not negligible in wall time.
+- **Per-job and driver overhead**: each timing starts after the env is built and stops when
+  `run_episode` returns. It leaves out building the world config from its generator ref, env
+  and policy construction, the per-worker setup (BLAS pinning, the torch checkpoint load for the
+  portable subject), process-pool dispatch, and the driver's row append. None of these was
+  measured here.
+- **World and seed spread**: one calm and one shocked world per family × size were timed.
+- **Memory**: measured at 120 producers in Part HB (about 49 MB per baseline worker, about
+  627 MB with torch, about 617 MB for the driver). 42-producer worlds are smaller, so 16 or 32
+  workers fit a cpu16 (32 GB) or cpu32 pod.
+
+## A6. Raw data for Part A
+
+All throwaway, not committed: `/tmp/gate_timing/s88/`.
+- Per-run JSON lines with load averages: `t12.jsonl`, `t42.jsonl` (joint + legacy, h = 25/50/100),
+  `tport.jsonl` (portable), `tshocked.jsonl`, `m12d.jsonl`, `m12s.jsonl`, `m42d_*.jsonl`,
+  `m42s_*.jsonl` (members), `repeat.jsonl`, `repeat_members.jsonl`, `probe.jsonl`.
+- `size88.py` and its output `size88.out`; `member_chunks.txt`.
+- Timing scripts: `/tmp/gate_timing/time_ep.py` and `/tmp/gate_timing/members.py` (from task
+  8.3), run on commit af192e8.
+
+# History: 120-producer sizing (tasks 8.3 and 8.5)
+
+Everything below sized the large economy at 120 producers. It is superseded by Part A and kept
+as the record of those rounds.
+
+## H0. Setup and summary at task 8.5 (120 producers)
 
 Two measurement rounds, both on the local box (AMD EPYC-Rome, 2 vCPU, 1 thread per core), single
 process, BLAS pinned to 1 thread, one run at a time, with the 1-minute load average recorded per
 run in the raw logs. Horizon of the real runs: 100 (the `python -m tokenomics.eval.gate` default;
 neither 10.1 nor 12.1 overrides it).
 
-- **After** (Part A, task 8.5): code at commit c31e1a7, which includes the byte-identical
+- **After** (Part HA, task 8.5): code at commit c31e1a7, which includes the byte-identical
   joint-stack observation speed-up of task 8.4 (docs/DIAGNOSTICS.md entry 17). Measured
   2026-10-27. The recorded 1-minute load average ranged 0.30–1.52 over 134 runs (99 above 1.0) on
   this 2-core box. Two runs exceeded 1.5, both at 1.52: the sparse-120 h = 12 member-spread runs of
   `random/obs_price` and `random/even_split`. The sparse-120 member-spread runs as a whole were
   taken at 1.04–1.52. Other agent sessions share this box, so background load cannot be ruled out.
   Each run's load is in its JSON line.
-- **Before** (Part B, task 8.3): code at commit 0da8ce8. Measured 2026-10-26 and re-measured
+- **Before** (Part HB, task 8.3): code at commit 0da8ce8. Measured 2026-10-26 and re-measured
   2026-10-27; maximum load 1.23. Kept unchanged below for comparison.
-
-## Plain-English summary
-
-> **Interim (2026-10-27).** These numbers size the large economy at 120 producers. The user has
-> since moved the large size to 42 producers (task 8.7). Task 8.8 re-sizes 10.1 and 12.1 at
-> 12/42, and its Part A replaces the figures below; this round then becomes history.
 
 The task 8.4 speed-up cut the dominant cost, a 120-producer episode under the joint-stack
 contract, **8.6× (sparse-wide) to 9.9× (dense)**. That is measured old vs new code at the same
@@ -32,11 +224,11 @@ an unverified extrapolation, and should not be read as the speed-up. Joint-stack
 2–3× a legacy-contract episode at 120 producers, down from 18–38×. Twelve-producer episodes cost
 about 1 s, against 1.6–2.5 s before (2.0–2.3×, measured at h = 100 on both codes).
 
-Totals are **conditional scenarios, not bounds** (§A4). The **reference scenario**, where every
+Totals are **conditional scenarios, not bounds** (§HA4). The **reference scenario**, where every
 roster job costs as much as the measured `entity_planner/proportional` episode, puts:
 - **10.1 (screen) at ≈90 CPU-hours**, about 5.6 h wall on a cpu16 pod or 2.8 h on cpu32. This
   uses on-demand reserves, the user's choice on 2026-10-27, implemented in task 8.6: reserve
-  worlds run only when a gate world has a zero hindsight baseline. None is expected (§A4); each
+  worlds run only when a gate world has a zero hindsight baseline. None is expected (§HA4); each
   one that occurs adds 0.05–7.7 CPU-hours.
 - **12.1 (report) at ≈90 CPU-hours**, about 6 h on cpu16 or 3 h on cpu32.
 
@@ -57,8 +249,8 @@ The following estimates hold only if those profiled h = 12 shares carry over to 
 roster jobs (not shown; profiling inflates Python-call-heavy code). On that condition, removing
 the encode cost entirely would save about 47 of 10.1's 162 reference CPU-hours. Removing encode and
 view together would save about 80, which is roughly the deferred eligible-only-rows refactor, and
-that refactor changes the observation (§A5); these figures are on the eager basis (162). Of
-the two plan-level levers in §A6, the user chose on-demand reserves (now the default). R stays at
+that refactor changes the observation (§HA5); these figures are on the eager basis (162). Of
+the two plan-level levers in §HA6, the user chose on-demand reserves (now the default). R stays at
 5. For the record, a smaller R would give, for an eager 10.1:
 
 | R | 10.1 CPU-hours |
@@ -70,11 +262,11 @@ the two plan-level levers in §A6, the user chose on-demand reserves (now the de
 
 The user kept R = 5 (2026-10-27).
 
-# Part A. After the task 8.4 optimization (commit c31e1a7)
+# Part HA. After the task 8.4 optimization (commit c31e1a7)
 
-## A1. Per-episode timing at h = 12, before → after (one episode per family × size × contract)
+## HA1. Per-episode timing at h = 12, before → after (one episode per family × size × contract)
 
-Same worlds, members and method as §B1: `dev-<family>-<P>-calm-00`, its first episode seed.
+Same worlds, members and method as §HB1: `dev-<family>-<P>-calm-00`, its first episode seed.
 "joint" = `entity_planner/proportional` under `joint_stack_env`; "legacy" =
 `obs_stock_aware/obs_price` under the flat env; "portable" = the 12.1 subject (EXP-0035 producer +
 EXP-0012 orderer). Delivered units are identical before and after at every horizon measured, as
@@ -89,7 +281,7 @@ the byte-identity requirement demands.
 
 Legacy is unchanged within noise: the speed-up touches only the joint-stack orderer view.
 
-## A2. Horizon scaling, after (fit of t = c·h^b, least squares in log-log)
+## HA2. Horizon scaling, after (fit of t = c·h^b, least squares in log-log)
 
 Every series now reaches h = 100, so **no h = 100 number below is an extrapolation**. At 120
 producers each horizon is a separate run under 2 min.
@@ -111,7 +303,7 @@ producers each horizon is a separate run under 2 min.
 
 Reading: on the new code, cost is linear in horizon (b = 0.92–1.01) over the full 12–100 range
 at both sizes. The "± se" is the standard error of the fitted slope on these points (fit
-quality), not a prediction interval. The horizon caveat of §B2 no longer applies to the new
+quality), not a prediction interval. The horizon caveat of §HB2 no longer applies to the new
 numbers, because the planning horizon is measured.
 
 The last column is not a speed-up. At 120 producers the 8.3 values are extrapolations of the old
@@ -147,35 +339,35 @@ Member spread at 120 producers. All 40 roster v1 members were run at h = 12 on b
 Weak members do die early at 120 producers. On sparse-120, `noop/even_split` and
 `always_restore/proportional` die at cycles 13 and 14. On dense-120, `noop/proportional` and
 `always_both/blend_0.5` die at cycles 27 and 35 (`after85/members120{s,d}_weak_h100.jsonl`). That
-covers two members per family; the other weak members (the 12-producer list in §B2) are assumed to
+covers two members per family; the other weak members (the 12-producer list in §HB2) are assumed to
 behave alike.
 
-## A3. Job counts (unchanged; see §B3)
+## HA3. Job counts (unchanged; see §HB3)
 
 10.1: 80 worlds (development gate + reserves), 464 world-episodes, 40,832 jobs. 12.1: 48 worlds,
 256 world-episodes, 22,784 jobs (roster v1, R = 5: 68 joint + 20 legacy jobs per world-episode,
 plus 1 subject job for 12.1).
 
-## A4. Scenarios: CPU-hours and wall time (h = 100, one worker per vCPU, BLAS 1 thread)
+## HA4. Scenarios: CPU-hours and wall time (h = 100, one worker per vCPU, BLAS 1 thread)
 
 Each row is a conditional scenario: the CPU-hours that follow if its assumption holds, from the
-measured h = 100 costs of §A2. Multipliers apply only to the 120-producer joint-stack jobs: 87% of
+measured h = 100 costs of §HA2. Multipliers apply only to the 120-producer joint-stack jobs: 87% of
 10.1's reference total and 85% of 12.1's. All 120-producer jobs, legacy included, are 97%. Computed
 by `/tmp/gate_timing/after85/size85.py`; output in `after85/size85.out`.
 
 The low row's death factor per 120-producer joint job is (55 + 13·c/100) / 68. Of the 68 joint
-jobs per world-episode, 13 belong to members that died early at 12 producers (§B2: always_both/blend_0.5,
+jobs per world-episode, 13 belong to members that died early at 12 producers (§HB2: always_both/blend_0.5,
 always_both/proportional, always_restore/{blend_0.5, even_split, proportional},
 noop/{blend_0.5, even_split, proportional}, and noop/random × 5 replicates). Those 13 are assumed to
 die at cycle c and the other 55 to run all 100 cycles. c = 14 (sparse) and c = 31 (dense) are
 representative values from two members per family measured at 120 producers (sparse 13 and 14,
 dense 27 and 35). The other weak members are assumed to die at the same cycle; that assumption is
-not measured. The 12-producer joint factor of 0.885 is inherited from §B2, measured on the old code
+not measured. The 12-producer joint factor of 0.885 is inherited from §HB2, measured on the old code
 at h = 50, and it moves the totals by under 1%.
 
 | scenario | assumption | 10.1 CPU-h | 12.1 CPU-h |
 |---|---|---|---|
-| low | member mix (measured at 120 producers, h = 12) × early deaths (formula above, from two members per family) (sparse 0.992 × 0.836, dense 0.927 × 0.868; 12-producer joint 0.885 from §B2) | 135.7 | 77.4 |
+| low | member mix (measured at 120 producers, h = 12) × early deaths (formula above, from two members per family) (sparse 0.992 × 0.836, dense 0.927 × 0.868; 12-producer joint 0.885 from §HB2) | 135.7 | 77.4 |
 | **reference** | every job runs the full horizon at the `entity_planner/proportional` cost | **162.4** | **92.1** |
 | member mix | every 120-producer joint job costs 1.18× (the most expensive measured member) | 187.8 | 106.1 |
 | regime | shocked share (69% / 62.5%) × measured 120-producer shocked/calm ratio | 165.9 | 93.9 |
@@ -206,9 +398,9 @@ deliver 0 units on every episode. One member alone, `entity_planner/proportional
 327–4,283 units at h = 100 (shocked at h = 50 for 120 producers) on each of the 8 development
 worlds timed: calm-00 and shocked-00 for each family × size, in `after85/` and `evidence/`. The
 zero baselines seen in the 8.3 dry runs came from a 3-member subset of only `always_both/*`
-members at h ≤ 12 (§B6), which the full roster at h = 100 does not reproduce. Those 8 worlds are
+members at h ≤ 12 (§HB6), which the full roster at h = 100 does not reproduce. Those 8 worlds are
 8 of the 64 gate worlds, so a zero world elsewhere cannot be excluded. Each one adds the cost of
-the reserves it consults (§A6(a) table), and waves run one after another:
+the reserves it consults (§HA6(a) table), and waves run one after another:
 
 | sensitivity | CPU-h | cpu16 / cpu32 wall |
 |---|---|---|
@@ -220,21 +412,21 @@ about 7.7 CPU-hours, so ≈0.5 h on cpu16 if its jobs keep all workers busy.
 
 Reference split for 10.1 by family × size: dense-120 89.6, sparse-120 68.2, dense-12 2.7,
 sparse-12 1.9 CPU-hours. Within the 120-producer part, the joint-stack jobs are 141 of the 158
-CPU-hours and legacy is 17. The subject in 12.1 now costs ≈2.5 CPU-hours (≈28 in §B2): 128
+CPU-hours and legacy is 17. The subject in 12.1 now costs ≈2.5 CPU-hours (≈28 in §HB2): 128
 120-producer jobs at 56–79 s each, plus 128 small ones. The 8.3 reference totals were 1,604 and 913
-CPU-hours (§B4).
+CPU-hours (§HB4).
 
-The horizon-growth scenario of §B4 is gone: h = 100 is now measured. Not covered by any row:
+The horizon-growth scenario of §HB4 is gone: h = 100 is now measured. Not covered by any row:
 - **Pod CPU speed**: every row scales by the pod's single-thread speed relative to this box.
 - **Worker contention**: 16–32 concurrent workers sharing caches and memory bandwidth, plus the
   driver's per-row append and fsync. All timings here are single process; contention can only
   add time.
 - **World and seed spread at 120 producers**: one world per family × size was timed.
 
-Memory is as in §B2: about 49 MB per baseline worker, about 627 MB with torch (portable subject),
+Memory is as in §HB2: about 49 MB per baseline worker, about 627 MB with torch (portable subject),
 and about 617 MB for the driver. 16 or 32 workers fit a cpu16 (32 GB) or cpu32 pod.
 
-## A5. Where the time goes now, and what a further optimization could save
+## HA5. Where the time goes now, and what a further optimization could save
 
 cProfile of one 120-producer joint episode (`entity_planner/proportional`, h = 12), bucketed by
 cumulative time. Script: `/tmp/gate_timing/after85/prof_buckets.py`; output:
@@ -279,10 +471,10 @@ differently. Applied to the reference scenario, where the 120-producer joint job
 Nothing here is implemented. Per the root-cause rule the supervisor and the user decide whether
 any of it is worth doing.
 
-## A6. Plan-level levers (arithmetic only, reference scenario)
+## HA6. Plan-level levers (arithmetic only, reference scenario)
 
 **(a) On-demand reserves in 10.1. Chosen by the user on 2026-10-27 and implemented in task 8.6**
-(`--mode screen --reserves on-demand`, the default; the 10.1 plan in §A4). The eager screen runs
+(`--mode screen --reserves on-demand`, the default; the 10.1 plan in §HA4). The eager screen runs
 every reserve world up front: 208 of its 464 world-episodes, 72.8 of its 162.4 CPU-hours (44.8%).
 Screening gate worlds only costs 89.6 CPU-hours. Each reserve actually consulted adds its own
 cost:
@@ -311,7 +503,7 @@ previous one completes, from the rows alone, so the waves are deterministic (tas
 R is a pre-registered design default (D5): changing it changes how the hindsight baseline averages
 random members. The user kept R = 5 (2026-10-27).
 
-## A7. Raw data for Part A
+## HA7. Raw data for Part HA
 
 All of the following are throwaway and not committed.
 - `/tmp/gate_timing/after85/`: per-run JSON lines with load averages (`t12`, `t120j`, `t120l`,
@@ -322,9 +514,9 @@ All of the following are throwaway and not committed.
   commit c31e1a7.
 - The 8.4 before/after profiles are `/tmp/gate_perf/prof_{before,after}_*.txt`.
 
-# Part B. Before the optimization: task 8.3 measurements (commit 0da8ce8)
+# Part HB. Before the optimization: task 8.3 measurements (commit 0da8ce8)
 
-## B0. Summary at task 8.3 (before the optimization)
+## HB0. Summary at task 8.3 (before the optimization)
 
 Almost all of the cost is 120-producer episodes under the joint-stack contract, the env that 28 of
 the 40 roster members and the candidate run in. Measured up to 12–16 cycles and extrapolated to
@@ -332,7 +524,7 @@ horizon 100, one such episode takes about **4 minutes (sparse-wide) to 7.5 minut
 CPU. Twelve-producer episodes take seconds. At 120 producers, legacy-contract episodes are 18–38
 times cheaper than joint-stack ones. Within the measured range, cost grows linearly with horizon
 (fitted exponent 0.97–1.04). The h = 100 figures at 120 producers are an extrapolation, not a
-measurement (§B2). The per-cycle cost of the joint-stack orderer observation grows with the
+measurement (§HB2). The per-cycle cost of the joint-stack orderer observation grows with the
 number of producers.
 
 These totals are **scenarios, not bounds**: each one fixes a cost per job and multiplies it by the
@@ -340,11 +532,11 @@ job counts. The **reference scenario** gives every job the measured cost of
 `entity_planner/proportional` over the full horizon. It puts **10.1 (screen) at ≈1,600 CPU-hours**
 (about 100 h wall on a cpu16 pod, 50 h on cpu32) and **12.1 (report) at ≈910 CPU-hours** (57 h /
 28 h). Varying the member mix, the regime and the horizon extrapolation within what the data
-supports gives **≈1,420–2,690 CPU-hours for 10.1** and **≈810–1,500 for 12.1** (§B4).
+supports gives **≈1,420–2,690 CPU-hours for 10.1** and **≈810–1,500 for 12.1** (§HB4).
 Pod CPU speed and contention between workers are not measured and come on top of that range. Both
 runs are feasible but expensive. 120-producer joint-stack jobs are 95–98% of the cost.
 
-## B1. Per-episode timing at h = 12 (one episode per family × size × contract)
+## HB1. Per-episode timing at h = 12 (one episode per family × size × contract)
 
 World `dev-<family>-<P>-calm-00` from the draft registry, its first episode seed. "joint" =
 `entity_planner/proportional` under `joint_stack_env`; "legacy" = `obs_stock_aware/obs_price`
@@ -360,10 +552,10 @@ pulled with git-lfs: sha256 8b51b77c… and d25388bf…, matching the LFS oids).
 
 The 120-producer portable runs were stopped at h = 8 to keep each command under 2 min. Their h = 12
 values are computed two ways. Linear from h = 8: 47.41 / 8 × 12 = 71.1 s (dense) and 40.00 / 8 × 12
-= 60.0 s (sparse). The two-point power fit of §B2: 47.41 × 1.5^1.156 = 75.8 s and
+= 60.0 s (sparse). The two-point power fit of §HB2: 47.41 × 1.5^1.156 = 75.8 s and
 40.00 × 1.5^1.131 = 63.3 s.
 
-## B2. Horizon scaling (fit of t = c·h^b, least squares in log-log)
+## HB2. Horizon scaling (fit of t = c·h^b, least squares in log-log)
 
 | contract | family | P | measured (h: seconds) | b ± se | episode at h = 100: fit / linear from longest run |
 |---|---|---|---|---|---|
@@ -395,12 +587,12 @@ taken from the same deterministic episode prefix run to successive horizons, is
 | dense-120 joint | 4.323 s | 4.307 s | 4.684 s | — |
 
 Sparse is flat after the first block. Dense rises 9% in its last block, and three blocks cannot
-tell whether that is a trend or noise. The code bounds the hot loop: §B5 shows it scans the
+tell whether that is a trend or noise. The code bounds the hot loop: §HB5 shows it scans the
 telemetry's EMA keys, one per (producer, product) pair that has seen an event, not the cycle
 history. That finite key universe guarantees per-cycle cost eventually stops growing. It does not
 show *when*: key counts were not measured, so it cannot be claimed that the plateau is reached
 within the measured cycles. This **corrects my task-6.1 note**, which said cost grew with the cycle
-history; it grows with the key set, which is bounded. To expose the uncertainty, §B4
+history; it grows with the key set, which is bounded. To expose the uncertainty, §HB4
 includes a **horizon-growth scenario**. In it, the marginal per-cycle cost keeps rising after the
 last measured block at the slope from the first block to the last (dense +0.045 s per cycle per
 cycle, sparse +0.012). That gives 648 s (dense) and 286 s (sparse) per h = 100 episode, ×1.41 and
@@ -435,7 +627,7 @@ peaks at 627 MB. The driver process (`--mode report --dry-run`, 12 producers) pe
 because `environment_manifest` imports torch to record its version. 16 workers × 627 MB ≈ 10 GB, and
 32 × 627 MB ≈ 20 GB. Both fit a cpu16 (32 GB) or cpu32 pod; roster-only workers need far less.
 
-## B3. Job counts (from `eval/registry/worlds_v1.json` 9ec52c4d… and `eval/registry/roster_v1.json` 8791e24b…)
+## HB3. Job counts (from `eval/registry/worlds_v1.json` 9ec52c4d… and `eval/registry/roster_v1.json` 8791e24b…)
 
 Roster v1: 40 members, R = 5. Each world-episode has **68 joint-stack jobs** (18 deterministic +
 10 random × 5) and **20 legacy jobs** (10 deterministic + 2 random × 5). For 12.1 these job counts
@@ -465,7 +657,7 @@ The 256 world-episodes for 12.1 match the tasks.md estimate. The tasks.md figure
 (≈22.5k = 256 × (28 + 12·R)) counts development gate world-episodes only. 10.1 also runs the
 reserves (208 more world-episodes), so the files give 464 × 88 = 40,832 jobs.
 
-## B4. Extrapolated wall time and vCPU-hours (h = 100, one worker per vCPU, BLAS 1 thread)
+## HB4. Extrapolated wall time and vCPU-hours (h = 100, one worker per vCPU, BLAS 1 thread)
 
 Each row is a conditional scenario: the CPU-hours that follow if its assumption holds. None of
 them is a bound. Multipliers apply to the 120-producer joint-stack jobs, which are 95–98% of the
@@ -478,7 +670,7 @@ Computed by `/tmp/gate_timing/sens2.py`; output in `evidence/scenarios.txt`.
 | **reference** | every job runs the full horizon at the `entity_planner/proportional` cost | **1,604** | **913** |
 | member mix | every 120-producer joint job costs 1.18× (the most expensive sampled member) | 1,888 | 1,070 |
 | regime | shocked share × 12-producer shocked/calm ratio (dense +20%, sparse +3%) | 1,755 | 988 |
-| horizon growth | marginal per-cycle cost keeps rising (§B2; dense ×1.41, sparse ×1.10) | 2,072 | 1,171 |
+| horizon growth | marginal per-cycle cost keeps rising (§HB2; dense ×1.41, sparse ×1.10) | 2,072 | 1,171 |
 | high | member mix × regime × horizon growth | 2,687 | 1,498 |
 
 | scenario | 10.1 cpu16 / cpu32 wall | 12.1 cpu16 / cpu32 wall |
@@ -501,10 +693,10 @@ row:
   process), and both can only add time.
 - **World and seed spread at 120 producers.** One world per family × size was timed.
 
-## B5. Feasibility verdict and cause
+## HB5. Feasibility verdict and cause
 
 **Both runs are feasible but expensive.** 10.1 is ≈1,600 vCPU-hours in the reference scenario
-(≈1,420–2,690 across §B4's scenarios): about 3.7–7 days on cpu16 or 1.9–3.5 days on cpu32. 12.1 is
+(≈1,420–2,690 across §HB4's scenarios): about 3.7–7 days on cpu16 or 1.9–3.5 days on cpu32. 12.1 is
 ≈910 (≈810–1,500). Pod CPU speed and contention are not included. The 12-producer half of either run
 costs under 10 CPU-hours.
 
@@ -534,7 +726,7 @@ for 10× the producers. The legacy contract does not build this view and grows o
 Per the root-cause rule, no fix is proposed or implemented here. The supervisor and the user choose
 the next step: run as sized, change the run plan, or open a separate performance task in `domain/`.
 
-## B6. Dry runs (`--dry-run`, baseline subject, single worker, temp dirs under `/tmp/gate_dry/`)
+## HB6. Dry runs (`--dry-run`, baseline subject, single worker, temp dirs under `/tmp/gate_dry/`)
 
 | run | command shape | run time (retained) | output |
 |---|---|---|---|
@@ -552,7 +744,7 @@ the retained artifacts: 68.0 s, plus about 4 s of startup. My session's `/usr/bi
 Deviations:
 
 1. **120-producer dry runs use h = 4, not 12.** At h = 12, three joint-stack members plus the
-   candidate on `dev-dense-120-calm-00` take more than 2 min per command (about 53 s each, §B1).
+   candidate on `dev-dense-120-calm-00` take more than 2 min per command (about 53 s each, §HB1).
 2. **The screen dry runs use a 3-member roster** (`entity_planner/proportional`,
    `stock_aware/blend_0.5`, `obs_stock_aware/obs_price`), still with `--max-members 3`. With the
    literal roster v1 and `--max-members 3`, the first three members in id order are
@@ -565,7 +757,7 @@ Deviations:
 3. The report dry run at 120 producers also has a zero baseline (the `always_both/*` members
    deliver nothing in 4 cycles). That world is reported as non-gating, as designed.
 
-## B7. Raw data for Part B
+## HB7. Raw data for Part HB
 
 All of the following are throwaway and not committed.
 
