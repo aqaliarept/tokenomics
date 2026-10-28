@@ -306,9 +306,21 @@ def _jsonable(o: object) -> object:
     return repr(o)
 
 
+# Optional top-level Configuration fields added after `config_digest` was first pinned
+# (EXP-0050), dropped from the hash when unset so every earlier pin still reproduces. A new
+# optional field joins this tuple. `shocks` / `demand_drift` predate the pins and stay hashed
+# as null (task 4.4 review; tests/test_world_space.py pins EXP-0050's hashes).
+DIGEST_OMIT_WHEN_UNSET = ("demand_pattern",)
+
+
 def config_digest(cfg: object) -> str:
-    """sha256 of a configuration's full content (canonical JSON of the dataclass tree)."""
-    blob = json.dumps(asdict(cfg), sort_keys=True, default=_jsonable, separators=(",", ":"))
+    """sha256 of a configuration's full content (canonical JSON of the dataclass tree), with
+    the unset fields of `DIGEST_OMIT_WHEN_UNSET` left out."""
+    tree = asdict(cfg)
+    for key in DIGEST_OMIT_WHEN_UNSET:
+        if key in tree and tree[key] is None:
+            del tree[key]
+    blob = json.dumps(tree, sort_keys=True, default=_jsonable, separators=(",", ":"))
     return hashlib.sha256(blob.encode()).hexdigest()
 
 

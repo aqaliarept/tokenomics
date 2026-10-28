@@ -328,3 +328,7 @@ _Avoid_: Game, session, run
 **System Death:**
 The irrecoverable state where some product becomes permanently unmakeable — no producer that **declares** it (`produces`) still holds every capacity type its recipe requires (ADR-0030). Because `produces` is authoritative, capacity is not interchangeable across owners: a type held by a producer that does not declare the product cannot supply it. Triggers immediate episode termination. Can cascade due to circular dependencies between producers.
 _Avoid_: Collapse, failure, game over
+
+**World Space:**
+The set of worlds described as points on named axes: size (12 or 42 producers), choice (producers per product), capacity tightness, order size against capacity, producer heterogeneity, shocks and demand pattern (add-m3-development-audit D10, ADR-0057). A world is built from a world seed and one value per lever (consumer and quantity multipliers, capacity scale, heterogeneity spreads, shock rate, magnitude and duration, pattern kind and parameters), and is described by its measured coordinates (tightness ρ, order size σ, heterogeneity spreads, shock intensity, demand concentration and volatility), which depend on its draws. With every lever at its neutral value it is exactly an existing family world. Used to sample the headroom atlas; never the gate's registry.
+_Avoid_: Scenario space, parameter grid, curriculum

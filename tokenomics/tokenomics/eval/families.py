@@ -57,20 +57,52 @@ Shock profile (add-shocks-i-drift D7): a shocked world may name a profile from
 and demand drift after every other value is drawn, so topology and B9 bounds are unchanged.
 Without one, a world is byte for byte what it was before profiles existed.
 
+World-space levers (add-m3-development-audit design D10, ADR-0057; the atlas generator
+`eval/world_space.py` sets them): a consumer multiplier, a quantity multiplier, three
+heterogeneity spreads, a consumer-pool width for product patterns and a shock profile object.
+Each runs after every draw above, on values already drawn, so the main stream, the recipes and
+the `produces` sets never move when a lever moves, and each neutral value skips its transform,
+so an all-neutral world is byte for byte the world without levers. In order:
+- heterogeneity h_cap / h_deg / h_cost: each drawn capacity, degradation, restoration cost and
+  upgrade cost v becomes med + h·(v − med), med the median of that draw over the world's layer,
+  rounded half up and clamped to its valid range (capacity and cost ≥ 1, degradation in
+  [0, 100]); h = 0 gives every producer of a layer the same value;
+- consumer multiplier k_c: consumers = max(1, round_half_up(k_c · 3P/12)). Fewer keeps the
+  first ones as drawn; extra consumer i draws its quantity bound (and, calm, its schedule) on a
+  stream of its own derived from the world seed and i, with the family's pool rule at the base
+  consumer count (the pool of consumer i mod C), so per-product load stays balanced and an
+  extra consumer's draws do not depend on how many others exist;
+- pool width (product patterns, design D11): every B9 consumer's pool becomes the window of
+  max(its length, `pool_width`) consecutive top-layer products from its start;
+- quantity multiplier m_q: quantity range [1, q_max] becomes [round_half_up(m_q),
+  round_half_up(m_q · q_max)], and every calm schedule quantity q becomes round_half_up(m_q · q);
+- shocks: a `ShockProfile` object (`shock_profile_from_levers`: the `shocks-i` kinds and window
+  with counts × r, hit magnitudes centred at m, outage durations [d, d + 3]) adds its generators
+  in either regime and never its drift, which the atlas sets as one value of its demand-pattern
+  axis; `shock_profiles_v1.json` is not read or changed.
+
 Pure and deterministic in (family, producers, world seed, regime, fanout, schedule_length,
-capacity_scale, shock_profile).
+capacity_scale, shock_profile, the world-space levers).
 `build_scale_config` is not touched.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 import random
-from dataclasses import dataclass
+import statistics
+from dataclasses import dataclass, replace
+from fractions import Fraction
+from typing import TYPE_CHECKING
 
 from ..domain.config import (Configuration, ConsumerConfig, InventoryExpansion, ProcessSheet,
                              ProducingAgentConfig, Restoration, Upgrade)
+from ..domain.shocks import ShockKind, ShockModel
 from .scale import _pid, _stride_for_width
+
+if TYPE_CHECKING:
+    from .shock_profiles import ShockProfile
 
 DENSE = "dense"
 SPARSE_WIDE = "sparse_wide"
@@ -86,6 +118,18 @@ DEFAULT_SPARSE_FANOUT = 2
 DEFAULT_SCHEDULE_LENGTH = 7
 STRONG_EVERY_MAX = 4
 NEUTRAL_CAPACITY_SCALE = 1.0
+NEUTRAL_MULTIPLIER = 1.0  # k_c, m_q (module docstring "World-space levers")
+NEUTRAL_SPREAD = 1.0  # h_cap, h_deg, h_cost
+DEGRADATION_RANGE = (0, 100)  # percent of max capacity per cycle
+# The shocks-i values a lever-built profile shifts (add-shocks-i-drift D7; ADR-0057). r = 1,
+# m = 0.45, d = 3 reproduce shock_profiles_v1.json's shocks-i kinds exactly.
+SHOCKS_I_WINDOW = (21, 90)
+SHOCKS_I_HIT_RATE = (1, 6)
+SHOCKS_I_OUTAGE_RATE = (1, 12)
+SHOCKS_I_HIT_WIDTH = 0.3
+SHOCKS_I_OUTAGE_SPAN = 3
+SHOCKS_I_DRIFT_J = 0.34
+SHOCKS_I_RESILIENCE = (5, 0.05)  # window, tolerance
 
 
 @dataclass(frozen=True)
@@ -176,6 +220,106 @@ def _pool(i: int, consumers: int, width: int, dense: bool) -> list[int]:
     return [(start + t) % width for t in range(length)]
 
 
+def _round_half_up(x: float) -> int:
+    return math.floor(x + 0.5)
+
+
+def _lever_seed(seed: int, *parts: object) -> int:
+    """A process-independent stream seed derived from the world seed (sha256)."""
+    digest = hashlib.sha256("|".join(str(p) for p in (seed, *parts)).encode()).hexdigest()
+    return int(digest[:16], 16)
+
+
+def check_multiplier(name: str, value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 64:
+        raise ValueError(f"{name} must be a number in (0, 64], got {value!r}")
+    return float(value)
+
+
+def check_spread(name: str, value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 4:
+        raise ValueError(f"{name} must be a number in [0, 4], got {value!r}")
+    return float(value)
+
+
+def consumers_for(producers: int, multiplier: float) -> int:
+    """max(1, round_half_up(k_c · 3P/12)); `num_consumers(P)` at k_c = 1."""
+    if multiplier == NEUTRAL_MULTIPLIER:
+        return num_consumers(producers)
+    return max(1, _round_half_up(multiplier * 3 * producers / BASE_PRODUCERS))
+
+
+def _spread(values: list[int], h: float, lo: int, hi: int | None) -> list[int]:
+    """med + h·(v − med) per value, med the median of `values`, rounded half up, clamped."""
+    med = statistics.median(values)
+    out = []
+    for v in values:
+        x = _round_half_up(med + h * (v - med))
+        out.append(max(lo, x if hi is None else min(hi, x)))
+    return out
+
+
+def _apply_heterogeneity(configs: list[ProducingAgentConfig], per_layer: int, h_cap: float,
+                         h_deg: float, h_cost: float) -> list[ProducingAgentConfig]:
+    """The heterogeneity transforms, layer by layer (module docstring)."""
+    out: list[ProducingAgentConfig] = []
+    for level in range(DEPTH):
+        layer = configs[level * per_layer:(level + 1) * per_layer]
+        cap_type = f"capacity-{level}"
+        caps = [p.capacities[cap_type] for p in layer]
+        degs = [p.degradation for p in layer]
+        r_costs = [p.restoration.cost for p in layer]
+        u_costs = [p.upgrade.cost for p in layer]
+        if h_cap != NEUTRAL_SPREAD:
+            caps = _spread(caps, h_cap, 1, None)
+        if h_deg != NEUTRAL_SPREAD:
+            degs = _spread(degs, h_deg, *DEGRADATION_RANGE)
+        if h_cost != NEUTRAL_SPREAD:
+            r_costs = _spread(r_costs, h_cost, 1, None)
+            u_costs = _spread(u_costs, h_cost, 1, None)
+        out += [replace(p, capacities={cap_type: c}, degradation=d,
+                        restoration=replace(p.restoration, cost=rc),
+                        upgrade=replace(p.upgrade, cost=uc))
+                for p, c, d, rc, uc in zip(layer, caps, degs, r_costs, u_costs)]
+    return out
+
+
+def shock_profile_from_levers(rate: float = 1.0, hit_magnitude: float = 0.45,
+                              outage_duration: int = 3,
+                              start_window: tuple[int, int] = SHOCKS_I_WINDOW,
+                              name: str = "shocks-i-levers") -> ShockProfile:
+    """The parametric shock profile of design D10, built in code: the `shocks-i` kinds with
+    counts × `rate` (kept exact as a fraction), hit magnitudes [m − 0.15, m + 0.15] and outage
+    durations [d, d + 3]. Its drift_j is `shocks-i`'s, carried but never applied by
+    `build_family_config(shocks=...)`. At (1, 0.45, 3) its kinds equal the file's `shocks-i`."""
+    from .resilience import ResilienceParams
+    from .shock_profiles import KindProfile, ShockProfile
+
+    if isinstance(outage_duration, bool) or not isinstance(outage_duration, int) \
+            or outage_duration < 1:
+        raise ValueError(f"outage_duration must be an integer >= 1, got {outage_duration!r}")
+    half = SHOCKS_I_HIT_WIDTH / 2
+    lo, hi = round(hit_magnitude - half, 9), round(hit_magnitude + half, 9)
+    if not 0 < lo <= hi < 1:
+        raise ValueError(f"hit magnitude range [{lo}, {hi}] must lie in (0, 1)")
+    r = Fraction(rate).limit_denominator(10_000)
+    if r <= 0:
+        raise ValueError(f"shock rate must be positive, got {rate!r}")
+
+    def scaled(base: tuple[int, int]) -> tuple[int, int]:
+        f = r * Fraction(*base)
+        return (f.numerator, f.denominator)
+
+    window, resilience = SHOCKS_I_RESILIENCE
+    return ShockProfile(
+        name=name,
+        kinds=(KindProfile(ShockKind.CAPACITY_HIT, scaled(SHOCKS_I_HIT_RATE), start_window,
+                           (1, 1), (lo, hi)),
+               KindProfile(ShockKind.PRODUCER_OUTAGE, scaled(SHOCKS_I_OUTAGE_RATE), start_window,
+                           (outage_duration, outage_duration + SHOCKS_I_OUTAGE_SPAN), (1.0, 1.0))),
+        drift_j=SHOCKS_I_DRIFT_J, resilience=ResilienceParams(window=window, tolerance=resilience))
+
+
 def build_family_config(
     seed: int,
     *,
@@ -186,13 +330,22 @@ def build_family_config(
     schedule_length: int = DEFAULT_SCHEDULE_LENGTH,
     capacity_scale: float = NEUTRAL_CAPACITY_SCALE,
     shock_profile: str | None = None,
+    consumer_multiplier: float = NEUTRAL_MULTIPLIER,
+    quantity_multiplier: float = NEUTRAL_MULTIPLIER,
+    h_cap: float = NEUTRAL_SPREAD,
+    h_deg: float = NEUTRAL_SPREAD,
+    h_cost: float = NEUTRAL_SPREAD,
+    pool_width: int | None = None,
+    shocks: ShockProfile | None = None,
 ) -> Configuration:
     """One family world (module docstring). `seed` is the world seed. `capacity_scale` is
     explicit (neutral by default) so a generator ref alone fixes the world; the family default
     enters through the registry generator, not here. `shock_profile` (shocked regime only,
     add-shocks-i-drift D7) names a profile in `eval/registry/shock_profiles_v1.json` that adds
     seeded shocks and drift after every other value is drawn; None leaves the world exactly as
-    before."""
+    before. The keywords after it are the world-space levers (module docstring, ADR-0057), each
+    neutral by default; `shocks` is a profile object whose generators are added in either
+    regime, without its drift, and excludes `shock_profile`."""
     if family not in FAMILIES:
         raise ValueError(f"unknown family {family!r}; known: {sorted(FAMILIES)}")
     if regime not in REGIMES:
@@ -203,7 +356,18 @@ def build_family_config(
         raise ValueError(f"schedule_length must be >= 1, got {schedule_length}")
     if shock_profile is not None and regime != SHOCKED:
         raise ValueError(f"a {regime} world carries no shock profile, got {shock_profile!r}")
+    if shock_profile is not None and shocks is not None:
+        raise ValueError("pass a named shock_profile or a shocks object, not both")
+    if pool_width is not None and (isinstance(pool_width, bool) or not isinstance(pool_width, int)
+                                   or pool_width < 1):
+        raise ValueError(f"pool_width must be an integer >= 1, got {pool_width!r}")
     scale = check_capacity_scale(capacity_scale)
+    k_c = check_multiplier("consumer_multiplier", consumer_multiplier)
+    m_q = check_multiplier("quantity_multiplier", quantity_multiplier)
+    if m_q < 1:
+        raise ValueError(f"quantity_multiplier must be >= 1, got {quantity_multiplier!r}")
+    spreads = [check_spread(n, v) for n, v in (("h_cap", h_cap), ("h_deg", h_deg),
+                                                ("h_cost", h_cost))]
     fam = FAMILIES[family]
     dense = family == DENSE
     n = producers // DEPTH
@@ -271,6 +435,27 @@ def build_family_config(
         consumers.append(ConsumerConfig(id=f"c{i}", product=pool[0], products=pool,
                                         quantity_min=1, quantity_max=qmax, schedule=schedule))
 
+    # --- world-space levers: after every draw above (module docstring) ---
+    if spreads != [NEUTRAL_SPREAD] * 3:
+        configs = _apply_heterogeneity(configs, n, *spreads)
+    target = consumers_for(producers, k_c)
+    if target < C:
+        consumers = consumers[:target]
+    for i in range(C, target):
+        extra = random.Random(_lever_seed(seed, "extra-consumer", i))
+        pool = tuple(_pid(top, j, stride) for j in _pool(i % C, C, W, dense))
+        qmax = extra.randint(2, 3)
+        schedule = ()
+        if regime == CALM:
+            schedule = tuple((extra.choice(pool), extra.randint(1, qmax))
+                             for _ in range(schedule_length))
+        consumers.append(ConsumerConfig(id=f"c{i}", product=pool[0], products=pool,
+                                        quantity_min=1, quantity_max=qmax, schedule=schedule))
+    if pool_width is not None:
+        consumers = [_widened(c, pool_width, W, stride) for c in consumers]
+    if m_q != NEUTRAL_MULTIPLIER:
+        consumers = [_multiplied(c, m_q) for c in consumers]
+
     cfg = Configuration(cycle_emission=cycle_emission(producers), process_sheets=sheets,
                         producer_configs=configs, consumers=consumers)
     cfg.validate()
@@ -278,7 +463,31 @@ def build_family_config(
         from .shock_profiles import apply_shock_profile, load_shock_profile
 
         cfg = apply_shock_profile(cfg, load_shock_profile(shock_profile), producers)
+    if shocks is not None:
+        cfg = replace(cfg, shocks=ShockModel(
+            generators=tuple(k.generator(producers) for k in shocks.kinds)))
+        cfg.validate()
     return cfg
+
+
+def _widened(c: ConsumerConfig, width: int, layer_width: int, stride: int) -> ConsumerConfig:
+    """A B9 consumer's pool as the window of max(len, `width`) consecutive top products from
+    its start (capped at the layer); a scheduled consumer is never patterned, so unchanged."""
+    if c.schedule:
+        return c
+    top = DEPTH - 1
+    index = {_pid(top, j, stride): j for j in range(layer_width)}
+    start = index[c.products[0]]
+    length = min(layer_width, max(len(c.products), width))
+    pool = tuple(_pid(top, (start + t) % layer_width, stride) for t in range(length))
+    return replace(c, product=pool[0], products=pool)
+
+
+def _multiplied(c: ConsumerConfig, m_q: float) -> ConsumerConfig:
+    """Quantity range and schedule quantities × m_q, rounded half up (module docstring)."""
+    return replace(c, quantity_min=_round_half_up(m_q * c.quantity_min),
+                   quantity_max=_round_half_up(m_q * c.quantity_max),
+                   schedule=tuple((p, _round_half_up(m_q * q)) for p, q in c.schedule))
 
 
 def build_dense_config(seed: int, *, producers: int, regime: str,
