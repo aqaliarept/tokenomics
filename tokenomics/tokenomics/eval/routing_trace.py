@@ -14,7 +14,11 @@ Per episode, it aggregates how the ordering agents' routing played out in the au
 - Herfindahl concentration of routed units per product and cycle;
 - the share of quantity-1 orders sent to their lowest-index eligible producer;
 - routes to producers that cannot make one unit, and orders beyond the `k_stream` slot bound;
-- each producer's investment-fund share and cut-off price;
+- each producer's investment-fund share and cut-off price, and two concentrations of the granted
+  fund (reference 1/N for N producers): `fund_share_herfindahl_episode`, the Herfindahl of each
+  producer's total grants over the episode (is a producer starved of investment? D2 (d) reads
+  this one), and `fund_share_herfindahl`, the per-cycle Herfindahl of that cycle's grants averaged
+  over cycles with grants (reported; it mostly tracks how many producers are granted per cycle);
 - the capacity-ratio trace and the investment rejection rate.
 
 White-box, like the baselines: the tracer wraps `system.complete_cycle` to snapshot the placed
@@ -82,6 +86,9 @@ class _Counts:
     zero_throughput_routes: int = 0
     overflow_orders: int = 0
     fund_share: dict[ProducerId, float] = field(default_factory=lambda: defaultdict(float))
+    fund_hhi_sum: float = 0.0
+    fund_hhi_n: int = 0
+    fund_granted: dict[ProducerId, int] = field(default_factory=lambda: defaultdict(int))
     cut_off_sum: dict[ProducerId, float] = field(default_factory=lambda: defaultdict(float))
     cut_off_n: dict[ProducerId, int] = field(default_factory=lambda: defaultdict(int))
     cycles: int = 0
@@ -179,10 +186,16 @@ class RoutingTracer:
             c.overflow_orders += max(0, len(oa.incoming) - self._k_stream)
 
         fund = system.investment_fund
+        granted: dict[ProducerId, int] = defaultdict(int)
         for order in system.orders.values():
             pid = order.producer_id()
             if pid is not None and order.funded and order.cycle_counter == 0 and fund > 0:
                 c.fund_share[pid] += order.tokens / fund
+                granted[pid] += order.tokens
+                c.fund_granted[pid] += order.tokens
+        if sum(granted.values()) > 0:  # a cycle without grants has no concentration
+            c.fund_hhi_sum += herfindahl(list(granted.values()))
+            c.fund_hhi_n += 1
         for pid, p in system.producing_agents.items():
             if not is_nan(p.cut_off_price):
                 c.cut_off_sum[pid] += p.cut_off_price
@@ -238,14 +251,17 @@ class RoutingTracer:
         out["q1_orders"] = float(c.q1_orders)
         out["zero_throughput_route_share"] = c.zero_throughput_routes / c.routes if c.routes else 0.0
         out["overflow_orders"] = float(c.overflow_orders)
-        shares = self.fund_shares()
-        out["fund_share_herfindahl"] = sum(s * s for s in shares.values())
+        # Concentrations of what was granted (module docstring), never of shares of the whole
+        # fund: only ~3% of it is granted per cycle, so those squares are ~0 for every router
+        # (task 2.1 routing_trace.md; fixed in task 2.2).
+        out["fund_share_herfindahl"] = c.fund_hhi_sum / c.fund_hhi_n if c.fund_hhi_n else 0.0
+        out["fund_share_herfindahl_episode"] = herfindahl(list(c.fund_granted.values()))
         out["investment_rejection_rate"] = (
             c.investment_rejected / c.investment_resolved if c.investment_resolved else 0.0)
         return out
 
     def fund_shares(self) -> dict[ProducerId, float]:
-        """Each producer's mean per-cycle share of the investment fund."""
+        """Each producer's mean per-cycle share of the whole investment fund (granted or not)."""
         c = self._c
         return {pid: s / c.cycles for pid, s in c.fund_share.items()} if c.cycles else {}
 

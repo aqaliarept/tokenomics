@@ -110,6 +110,22 @@ normalisation. Not changed here (task 1.1 code, outside this task's scope): the 
 scheduled the fix as task 2.2, before EXP-0048 runs (normalise over the fund granted in each
 cycle, skip cycles without grants, keep the raw per-producer series).
 
+*After task 2.2* (rerun of the 18 cells with the fixed tracer,
+`/srv/research/tokenomics/openspec/changes/add-m3-development-audit/probes/fund_hhi_22.py`, run
+from `/srv/research/tokenomics/tokenomics` with `../.venv/bin/python`, 47 s; units unchanged in
+every cell). The tracer now reports two concentrations of the granted fund, both against the
+reference 1/N (0.024 at 42 producers, 0.083 at 12):
+- `fund_share_herfindahl_episode`, the Herfindahl of each producer's total grants over the
+  episode: whether some producers are starved of investment. Design D2 (d) reads this one. It
+  equals the normalised values quoted above: 0.039–0.047 on 42-shocked (`random` 0.039 …
+  `proportional_whole` 0.047; all 42 producers granted at some point) and 0.13–0.22 on 12-calm
+  (`round_robin`, `random_whole` 0.133 … `proportional_whole` 0.218, the one router that leaves
+  2 of the 12 producers never granted).
+- `fund_share_herfindahl`, the per-cycle Herfindahl of each cycle's grants averaged over the
+  100 cycles (all had grants): 0.090–0.099 on 42-shocked and 0.26–0.39 on 12-calm. It is about
+  twice 1/k for k producers granted in a cycle, so it mostly tracks how many producer orders
+  are funded per cycle, which itself depends on the router; reported, not read for (d).
+
 ## Per-router aggregates and per-order excerpts
 
 ### dev-sparse_wide-42-shocked-00 (episode 81752346)

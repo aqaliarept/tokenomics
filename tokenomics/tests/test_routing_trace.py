@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 
 import numpy as np
+import pytest
 
 from tokenomics.domain.config import ProcessSheet, ProducingAgentConfig, Restoration, Upgrade
 from tokenomics.domain.producing_agent import (FAIL_DROPPED, FAIL_TTL, REJECT_DISPLACED,
@@ -294,7 +295,8 @@ def test_tracer_metrics_exact_on_a_hand_fixture() -> None:
     assert s["zero_throughput_route_share"] == 2 / 8
     assert s["overflow_orders"] == 1  # 3 incoming vs k_stream 2, once
     assert tracer.fund_shares() == {"pb": 0.25 / 2}
-    assert s["fund_share_herfindahl"] == (0.25 / 2) ** 2
+    # one cycle with grants (pb alone holds them: 1.0); cycle 2 grants nothing and is skipped
+    assert s["fund_share_herfindahl"] == 1.0
     # bid-units count retries; true loss counts each resolved order once
     assert s["rejected_bid_units_consumer_no_fit"] == 2 and s["lost_units_consumer_no_fit"] == 1
     assert s["rejected_bid_units_consumer_displaced"] == 1 and s["lost_units_consumer_displaced"] == 1
@@ -303,3 +305,69 @@ def test_tracer_metrics_exact_on_a_hand_fixture() -> None:
     assert s["lost_units_producer_never_bid"] == 1
     assert s["wasted_orders_consumer"] == 1 and s["wasted_units_consumer"] == 1
     assert s["investment_rejection_rate"] == 0.5
+
+
+def _fund_tracer(cycles: list[dict[str, int]], fund: int = 200) -> RoutingTracer:
+    """Trace a stub system whose producers are granted `cycles[t][pid]` tokens in cycle t + 1
+    (one funded replenishment order each, new in that cycle)."""
+    from types import SimpleNamespace
+
+    from tokenomics.domain.order import Order
+    from tokenomics.domain.requests import ReplenishmentRequest
+    from tokenomics.domain.system import CycleResult
+
+    sheets = {1: ProcessSheet(1, {CAP: 2})}
+
+    def producer(pid: str) -> ProducingAgent:
+        return ProducingAgent(ProducingAgentConfig(
+            id=pid, capacities={CAP: 10}, degradation=0,
+            restoration=Restoration(require=1, restores=1, type=CAP),
+            upgrade=Upgrade(require=1, increases=1, type=CAP),
+            produces=frozenset({1}), inventory_limit=10,
+        ), dict(sheets))
+
+    pids = sorted({p for grants in cycles for p in grants})
+    system = SimpleNamespace(
+        cycle_counter=1, _outages_by_cycle={}, producing_agents={p: producer(p) for p in pids},
+        orders={}, ordering_agents={}, investment_fund=fund)
+    system.complete_cycle = lambda: CycleResult(score=0)
+    tracer = RoutingTracer()
+    tracer.attach_system(system, pids, k_stream=2)  # type: ignore[arg-type]
+    for t, grants in enumerate(cycles, start=1):
+        orders = {}
+        for pid, tokens in grants.items():
+            o = Order.new_replenishment_order(f"o{t}{pid}", sheets[1],
+                                              ReplenishmentRequest(pid, 1, 1, 1.0))
+            o.fund(tokens)
+            orders[f"o{t}{pid}"] = o
+        system.orders = orders
+        system.cycle_counter = t
+        system.complete_cycle()
+    return tracer
+
+
+def test_fund_share_herfindahl_is_over_the_granted_fund() -> None:
+    """Task 2.2: the per-cycle fund concentration is a Herfindahl over each producer's share of
+    what was granted in a cycle, averaged over cycles with grants. pa is granted 3 and pb 1
+    tokens of a 200-token fund in cycle 1 -> 0.75^2 + 0.25^2 = 0.625; cycle 2 grants nothing and
+    is ignored. The old metric (squared mean shares of the whole fund) gives
+    (3/400)^2 + (1/400)^2 = 6.25e-5."""
+    tracer = _fund_tracer([{"pa": 3, "pb": 1}, {}])
+    s = tracer.summary()
+    assert s["fund_share_herfindahl"] == 0.625
+    assert s["fund_share_herfindahl_episode"] == 0.625  # one grant cycle: both coincide
+    shares = tracer.fund_shares()  # the raw per-producer series is unchanged: whole-fund shares
+    assert shares == {"pa": 3 / 200 / 2, "pb": 1 / 200 / 2}
+    old = sum(v * v for v in shares.values())
+    assert old == pytest.approx(6.25e-5) and old != s["fund_share_herfindahl"]
+
+
+def test_fund_share_herfindahl_per_cycle_versus_episode() -> None:
+    """Two grant cycles to different producers: each cycle has one grantee (per-cycle mean
+    1.0), but over the episode the grants are split evenly (episode value 0.5 = 1/N): the
+    per-cycle value tracks grantees per cycle, the episode value starvation (D2 (d))."""
+    s = _fund_tracer([{"pa": 3}, {"pb": 3}]).summary()
+    assert s["fund_share_herfindahl"] == 1.0
+    assert s["fund_share_herfindahl_episode"] == 0.5
+    starved = _fund_tracer([{"pa": 3}, {"pa": 3}, {"pb": 1}]).summary()
+    assert starved["fund_share_herfindahl_episode"] == pytest.approx((6 / 7) ** 2 + (1 / 7) ** 2)

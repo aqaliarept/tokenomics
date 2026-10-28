@@ -186,7 +186,12 @@ tracer (`eval/routing_trace.py`) collects per-episode aggregates:
 - the quantity-1 lowest-index share;
 - routes to zero-throughput producers;
 - overflow orders;
-- per-producer fund share and cut-off price;
+- per-producer fund share and cut-off price, and two concentrations of the granted fund (task
+  2.2; reference 1/N for N producers; shares of the whole fund square to about 0, since only
+  about 3% of it is granted per cycle): the episode Herfindahl of each producer's total grants,
+  which (d) reads for investment starvation, and the per-cycle Herfindahl of each cycle's
+  grants averaged over cycles with grants, reported but confounded with how many producers are
+  granted per cycle;
 - the capacity ratio trace;
 - the investment rejection rate.
 
