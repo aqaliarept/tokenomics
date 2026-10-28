@@ -156,3 +156,74 @@ makes every reference row a reproduction check against EXP-0048.
 mix slightly (§EXP-0048: 12-calm 0.79 s against 12-shocked 0.82 s here). The trained subjects'
 time depends on how many stream decisions an episode has; one episode per size was timed. The
 0.646 factor comes from EXP-0047's job mix (§EXP-0048).
+
+## §EXP-0050 (task 3.4)
+
+**Question.** How long will EXP-0050 take on a `cpu16` pod: `routing_audit --plan exp0050`,
+8 cell types (sparse_wide 12 × fanout 2 / 4, sparse_wide 42 × fanout 2 / 4 / 7 / 14, dense 12
+and 42) × calm / shocked, 31 runs per world-episode (29 router runs: the six roster members
+with `random` × 5, `round_robin`, `random_whole` × 5, `proportional_whole`,
+`even_split_rotating`, `two_choice_spare` × 5, `spare_weighted_whole` × 5,
+`spare_rotating_whole`; plus `entity_planner/trained_orderer` and `portable` once each)?
+
+**Local box.** As for §EXP-0048; one process, `--workers 1`; load average 0.20 before the first
+command, 1.13 after the last.
+
+**Per-episode times.** `/srv/research/tokenomics/openspec/changes/add-m3-development-audit/probes/timing_34.py`, run from
+`/srv/research/tokenomics/tokenomics` (e.g. `../.venv/bin/python
+../openspec/changes/add-m3-development-audit/probes/timing_34.py --cell sparse_wide,42,14,shocked --routers
+round_robin,two_choice_spare,trained_orderer,portable`): the driver's own job (tracer and
+contract monitor on), one horizon-100 episode per arm on world 0 of each cell, shocked
+(`shocks-i`), first episode seed, replicate 0; checkpoint load (1.3–1.4 s per process) timed
+apart. 8 commands of 8–119 s (the slowest, sparse_wide 42 f14, at 118.9 s), all under 2 min;
+every episode survived to horizon 100, 0 contract failures. Seconds per episode:
+
+| cell | `round_robin` | `two_choice_spare` | `trained_orderer` | `portable` | per world-episode (local s) | per cell, 12 world-episodes |
+|---|---|---|---|---|---|---|
+| sparse_wide 12 f2 | 0.83 | 0.82 | 1.72 | 2.61 | 29 × 0.825 + 1.72 + 2.61 = 28.2 | 339 |
+| sparse_wide 12 f4 | 1.16 | 1.18 | 2.59 | 3.63 | 29 × 1.173 + 2.59 + 3.63 = 40.2 | 483 |
+| dense 12 (f4) | 1.27 | 1.30 | 2.90 | 3.87 | 29 × 1.281 + 2.90 + 3.87 = 43.9 | 527 |
+| sparse_wide 42 f2 | 4.54 | 4.54 | 8.70 | 11.44 | 29 × 4.544 + 8.70 + 11.44 = 151.9 | 1,823 |
+| sparse_wide 42 f4 | 6.76 | 6.61 | 13.12 | 17.21 | 29 × 6.688 + 13.12 + 17.21 = 224.3 | 2,691 |
+| sparse_wide 42 f7 | 9.67 | 9.84 | 19.55 | 23.89 | 29 × 9.755 + 19.55 + 23.89 = 326.3 | 3,916 |
+| sparse_wide 42 f14 | 18.11 | 18.89 | 36.12 | 43.73 | 29 × 18.502 + 36.12 + 43.73 = 616.4 | 7,397 |
+| dense 42 (f14) | 7.00 | 7.19 | 14.51 | 18.45 | 29 × 7.095 + 14.51 + 18.45 = 238.7 | 2,864 |
+
+The router-run time is the mean of `round_robin` and `two_choice_spare` (the other routers and
+roster members do the same work per decision; §EXP-0048's traced times for nine of them span
+0.71–0.86 s at 12 and 4.28–4.87 s at 42 producers).
+Episode cost grows with fanout at 42 producers (sparse_wide f2 → f14: 4.5 → 18.5 s; not
+profiled, presumably because each routing decision sees more eligible producers); dense 42,
+with 4 products per layer instead of 14, costs 7.1 s.
+
+**Grid choice and extrapolation.** The first sizing, 2 worlds × (3 calm + 5 shocked episodes)
+per cell (16 world-episodes), extrapolates to 26,721 local s = 7.42 vCPU-h × 0.646 = **4.79 pod
+vCPU-h**: under the 6 vCPU-h stop but above the 2–4 target. Calm episodes of one world are
+redundant for deterministic arms (calm demand is fixed per world: EXP-0049, 176 of 240 calm
+subject-world pairs give identical units and digests across their 3 episodes, and every
+differing pair is a stochastic arm, which has its own 5 replicates). So the grid keeps the
+budget for more worlds instead: **4 worlds per cell × regime, 1 calm + 2 shocked episodes per
+world** = 12 world-episodes per cell, 96 in all, 2,976 episodes.
+
+| estimate | local s | local vCPU-h | pod vCPU-h (× 0.646) | `cpu16` wall |
+|---|---|---|---|---|
+| 4 worlds × (1 calm + 2 shocked) per cell | 20,040 | 5.57 | **3.60** | **13.5 min** |
+
+Billed, with pod start-up, install and pull (EXP-0049: 2.50 billed for 2.25 executed): about
+4.0 vCPU-h. Inside the 2–4 vCPU-h target and under the **6 vCPU-h hard stop**: task 3.5 can
+launch (`cpu16`, `--workers 16`). The longest single job (sparse_wide 42 f14 `portable`, ≈ 28 s
+on the pod) is far below the run's wall, so the pool's tail stays short.
+
+**Power of this grid** (design D2 "Routing versus producers per product", *Power and
+limitations*). With 4 worlds per cell × regime the minimum detectable paired difference (80%
+power, two-sided 5%, 4.16 × the world-clustered SE estimated from EXP-0049's episodes
+subsampled to 4 worlds and 1 calm / 2 shocked episodes) is, for `round_robin` − `random`, 45 /
+18 / 38 / 30 units (12-calm / 12-shocked / 42-calm / 42-shocked), and for `spare_rotating_whole`
+− `round_robin` 14 / 3 / 37 / 25. Calm cells are underpowered for EXP-0049-sized effects (+26 /
++31 on calm worlds); doubling the calm worlds (8 per cell, 1 episode each) would cost about
++1.2 pod vCPU-h (to ≈ 4.8) and cut the calm SE by about √2. Not done: it is above the 2–4 vCPU-h
+target, and the shocked cells carry the comparison; the supervisor may choose it.
+
+**Uncertainties.** Only shocked worlds were timed; calm worlds have no shocks and fixed demand
+and may cost a little differently. One world per cell, one episode per arm. The 0.646 factor
+comes from EXP-0047's job mix at fanout 2; wider worlds may scale differently on the pod's CPUs.

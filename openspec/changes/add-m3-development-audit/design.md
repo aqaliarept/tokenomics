@@ -115,9 +115,10 @@ Facts from the code and the record that shape the plan:
 
 ```
 routing diagnosis (1-3, EXP-0048) --> informed routing + trained trace (3.2-3.3, EXP-0049)
+        --> routing versus producers per product (3.4-3.5, EXP-0050)
         --> [user: roster v3? only if a rule defect, D3]
-        --> PoC-A (4-5, EXP-0050) --> PoC-C (6-7, EXP-0051)
-PoC-B (8-9, EXP-0052): depends only on its own code; runs in any order after its probe
+        --> PoC-A (4-5, EXP-0051) --> PoC-C (6-7, EXP-0052)
+PoC-B (8-9, EXP-0053): depends only on its own code; runs in any order after its probe
 M3 exit record (10)
 ```
 
@@ -290,6 +291,69 @@ units exceed the counterpart's in at least 2 of the 3 random-dominated cells.
   distillation target is the thing to change for M4. Near `random`'s / `round_robin`'s: it
   learned to spread whole orders.
 
+**Routing versus producers per product (EXP-0050, tasks 3.4–3.5).** Inserted after EXP-0049 on
+the user's request ("we have only 2 factories to choose from — increase the number"). Registry
+v2 is sparse_wide with fanout 2 everywhere (`families.DEFAULT_SPARSE_FANOUT`): every product
+has exactly two eligible producers, so a routing choice is nearly binary, `two_choice_spare`
+reduces to an argmax and EXP-0048/0049's findings may not hold when the choice widens.
+
+*Grid (`routing_audit --plan exp0050`, `fanout_worlds`).* Family worlds built with
+`families.build_family_config(fanout=...)`, never added to the gate registry, roster or
+parameter files: sparse_wide at 12 producers with fanout 2 and 4 (4 = the whole layer) and at
+42 with 2, 4, 7 and 14 (14 = the whole layer); dense at 12 and 42 (4 products per layer, each
+declared by the whole layer) as a reference. EXP-0044 found dense-12 saturated (no headroom),
+so every cell reports consumer fill and a saturated cell is read as such. Both regimes, shocked
+with `shocks-i`. Per cell × regime 4 worlds; 1 calm episode per world, because calm demand is
+fixed per world and a deterministic arm then replays the same episode for every episode seed
+(EXP-0049: 176 of 240 calm subject-world pairs identical, every differing one stochastic), and
+2 shocked episodes per world. Seeds are sha256 of (plan, family, size, fanout, world index), so a
+cell's calm and shocked worlds share their topology, and episode seeds hash the world id.
+`spec.json` pins every world with its measured declarers per product and its config sha256.
+96 world-episodes.
+
+*Arms.* As EXP-0049: the six roster v2 members (`random` R = 5, the deterministic five set the
+best deterministic member), `round_robin`, `random_whole` (R = 5), `proportional_whole`,
+`even_split_rotating`, the three informed routers (stochastic R = 5) and the two trained
+subjects. 31 runs per world-episode, 2,976 episodes, tracer on.
+
+*Outputs and reading.* `routing_metrics.csv` per (family, size, fanout, regime) with fill and
+every tracer scalar, and `fanout_summary.csv` with each arm's gain over the best deterministic
+member, `random`, `round_robin` and `random_whole`, and each informed arm's gain over its blind
+counterpart. No `edge.csv`: the D2 edge rule is defined on the v2 development cells. Reported,
+with no new pre-registered threshold: whether `round_robin`'s gain over `random` and over the
+best deterministic member holds as fanout grows, and in which cells an informed arm beats its
+blind counterpart (same "more units in the cell" reading as EXP-0049, with the paired
+world-clustered spread). New worlds, so no row reproduces an earlier run; the fanout-2
+sparse_wide cells link the run to EXP-0049.
+
+*Power and limitations.*
+- Detectable differences at 4 worlds per cell × regime (80% power, two-sided 5%, paired
+  world-clustered standard error with 3 degrees of freedom, so the minimum detectable difference
+  is 4.16 × SE; SE from EXP-0049's episodes subsampled to this design: 4 worlds, 1 calm / 2
+  shocked episodes per world), in units per episode for 12-calm / 12-shocked / 42-calm /
+  42-shocked: `spare_rotating_whole` − `round_robin` 14 / 3 / 37 / 25 (0.6–2.6% of units);
+  `two_choice_spare` − `random_whole` 67 / 13 / 100 / 51; `spare_weighted_whole` −
+  `random_whole` 19 / 7 / 38 / 29; `round_robin` − `random` 45 / 18 / 38 / 30;
+  `round_robin` − best deterministic member 82 / 42 / 108 / 71; trained orderer −
+  `round_robin` 39 / 21 / 62 / 32. Calm cells are underpowered for effects of EXP-0049's size:
+  its `round_robin` − `random` gains on calm worlds (+26 at 12, +31 at 42) are below the calm
+  detectable differences (45, 38), so a calm fanout cell may not even reproduce that edge; the
+  shocked cells resolve it. Every "more units" reading is reported with its paired
+  world-clustered SE; the spread among fanout worlds may differ from v2's.
+- Cross-fanout comparisons are not paired. The world seed hashes the fanout, and
+  `build_family_config` uses `strong_every = min(fanout, 4)`, which changes the forced-strong
+  producers and shifts the random stream. The share of strong producers (capacity ≥ 80) in the
+  grid's worlds differs by cell: sparse_wide fanout 2 0.74–1.00, 4 0.67–0.92, 7 0.64–0.76, 14
+  0.60–0.83, dense-12 0.42–0.67. Only within-cell arm contrasts are paired; a trend of any gain
+  with fanout mixes the fanout with the capacity mix and the topology draws, and EXP-0050's
+  RESULT reads fanout trends with that caveat.
+- One calm episode per world: sound for deterministic arms (EXP-0049: no calm world's demand
+  digest differs across its episodes, no deterministic arm's units differ), but calm cells rest
+  on 4 world draws only, and stochastic arms there get their 5 replicates on one demand
+  schedule.
+- The fanout worlds are unscreened: no zero-baseline replacement and no headroom screen as for
+  registry v2; consumer fill is the only saturation read.
+
 ### D3. What a found rule defect does to the gate
 
 - A defective hand-written rule is never edited in place. Frozen roster v1/v2 name it, and their
@@ -392,7 +456,7 @@ Alternatives considered:
   `shocks-i` profile (≈ 3e-4 acceptance per observed hit), so the unresolved fallback would
   swallow the shocked episodes.
 
-### D5. PoC-A, the teacher against the hindsight baseline (EXP-0050)
+### D5. PoC-A, the teacher against the hindsight baseline (EXP-0051)
 
 - **Arms.** All arms use the `entity_planner` producer and the joint-stack contract.
   - floor: `blend_0.5`, a roster member;
@@ -469,7 +533,7 @@ Alternatives considered:
     shocked d2 episode. The 42 part is therefore **likely to exceed the stop**: the expected
     outcome of task 4.3 at 42 is step 4 above (12 first; 42 after a profile-and-optimize task).
 
-### D6. PoC-C, role attribution under shocks (EXP-0051)
+### D6. PoC-C, role attribution under shocks (EXP-0052)
 
 - **Arms**, on PoC-A's 24 shocked world-episodes at both sizes:
   - S: the portable gate subject, EXP-0035 `producer_candidate.pt` + EXP-0012
@@ -478,9 +542,9 @@ Alternatives considered:
     cheaper than depth 3;
   - B: `entity_planner` + portable orderer;
   - T: `entity_planner` + teacher at depth 2.
-- **T rows.** T is reused from EXP-0050 only when the run commit's source fingerprint over the
+- **T rows.** T is reused from EXP-0051 only when the run commit's source fingerprint over the
   teacher path (`eval/bounded_rollout_orderer.py`, `eval/teacher_audit.py`,
-  `env/shock_posterior.py`, `env/future_fork.py`, `domain/`) equals EXP-0050's. Otherwise T is
+  `env/shock_posterior.py`, `env/future_fork.py`, `domain/`) equals EXP-0051's. Otherwise T is
   rerun.
 - **Arithmetic, per size.**
   - Gap: G = Σ_w (T_w − S_w), over world mean units.
@@ -498,7 +562,7 @@ Alternatives considered:
   T when it is not reused) at 12 producers ≈ 12 shocked world-episodes × (0.07–0.4) vCPU-h
   ≈ 1–5 vCPU-h. The 42 part is likely above the stop, as for PoC-A.
 
-### D7. PoC-B, deployed-path cost (EXP-0052)
+### D7. PoC-B, deployed-path cost (EXP-0053)
 
 - **Path.** The portable stack under `joint_stack_env`, calm `sparse_wide` family worlds.
 - **Per-decision wall time per stage**, from `perf_counter` wrappers in the driver
@@ -529,12 +593,13 @@ Alternatives considered:
 |---|---|---|---|---|---|
 | 0048 | 2.1 | cpu16 | 2.5–4 vCPU-h | 8 | EXP-0047 rate × 8,832 episodes × tracer overhead |
 | 0049 | 3.2 | cpu16 | ≈ 2.2 executed, 2.5–3 billed | 6 | task 3.2 probe × 3,968 episodes × EXP-0048's local-to-pod factor 0.646 |
-| 0050 | 4.3 | cpu16 (cpu32 if > 4 h wall) | 12-producer part ≈ 6–30 (a priori, D5); 42 part unknown until the probe and likely above the stop | 40 | EXP-0042 per-stream cost × D5 arithmetic; replaced by the task 4.3 measurement |
-| 0051 | 6.2 | cpu16 | 12-producer part ≈ 1–5 (a priori, D6); 42 part as for 0050 | 20 | the same per-stream cost |
-| 0052 | 8.2 | cpu8 | ≤ 0.5 | 2 | DIAGNOSTICS 17 timings |
+| 0050 | 3.4 | cpu16 | ≈ 3.6 executed, ≈ 4 billed | 6 | task 3.4 probe per cell type × 2,976 episodes × 0.646 |
+| 0051 | 4.3 | cpu16 (cpu32 if > 4 h wall) | 12-producer part ≈ 6–30 (a priori, D5); 42 part unknown until the probe and likely above the stop | 40 | EXP-0042 per-stream cost × D5 arithmetic; replaced by the task 4.3 measurement |
+| 0052 | 6.2 | cpu16 | 12-producer part ≈ 1–5 (a priori, D6); 42 part as for 0051 | 20 | the same per-stream cost |
+| 0053 | 8.2 | cpu8 | ≤ 0.5 | 2 | DIAGNOSTICS 17 timings |
 
-Expected spend for the parts with a grounded estimate (EXP-0048, EXP-0049, EXP-0052, and the 12-producer
-parts of EXP-0050/0051) is about 10–40 vCPU-h. The 42-producer teacher parts are unknown until
+Expected spend for the parts with a grounded estimate (EXP-0048, EXP-0049, EXP-0050, EXP-0053, and the 12-producer
+parts of EXP-0051/0052) is about 10–40 vCPU-h. The 42-producer teacher parts are unknown until
 their probes. Their likely outcome is a stop, then a profile-and-optimize code task before they
 launch, each under its own stop. The hard ceiling for the whole change is 70 vCPU-h. Every run
 uses a fresh pod (`--create-pod`) and `--verify-source-commit`. A run whose probe extrapolates

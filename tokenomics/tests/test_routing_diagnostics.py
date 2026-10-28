@@ -894,7 +894,8 @@ def _fanout4_config() -> Configuration:
 
 
 def _replayed(name: str, expected: Callable[[np.random.Generator, list[int]], int],
-              starve: str | None = None) -> list[tuple[list[int], int]]:
+              starve: str | None = None, cfg: Configuration | None = None,
+              ) -> list[tuple[list[int], int]]:
     """Run `name` on the fanout-4 fixture; before each decision save the agent's RNG state,
     replay `expected(rng, spares)` on a copy for the first slot, and check the router chose
     exactly that producer. `starve` holds that producer at 1 capacity (0 spare units) before
@@ -927,21 +928,22 @@ def _replayed(name: str, expected: Callable[[np.random.Generator, list[int]], in
         seen.append((spares, got))
         return act
 
-    env = joint_stack_env(_fanout4_config(), HORIZON)
+    env = joint_stack_env(cfg or _fanout4_config(), HORIZON)
     run_episode(env, PRODUCING_BASELINES["entity_planner"], checked, seed=0,
                 action_seed=replicate_seed("w", 1, 0))
     return seen
+
+
+def _pair_draw(rng: np.random.Generator, spares: list[int]) -> int:
+    a, b = (int(j) for j in rng.choice(len(spares), size=2, replace=False))
+    return b if spares[b] > spares[a] else a
 
 
 def test_two_choice_spare_chooses_within_the_drawn_pair() -> None:
     """Fanout 4: the router takes the larger-spare producer of the two it drew (replayed draw),
     so the overall largest-spare producer is not always chosen and the smallest never is."""
 
-    def pair(rng: np.random.Generator, spares: list[int]) -> int:
-        a, b = (int(j) for j in rng.choice(len(spares), size=2, replace=False))
-        return b if spares[b] > spares[a] else a
-
-    seen = _replayed("two_choice_spare", pair)
+    seen = _replayed("two_choice_spare", _pair_draw)
     assert len(seen) >= HORIZON
     distinct = [(s, g) for s, g in seen if len(set(s)) == len(s)]
     assert distinct
@@ -1000,3 +1002,219 @@ def test_herding_counts_only_groups_with_two_orders() -> None:
     sizes = [len(v) for v in orders.values()]
     assert 1 in sizes and any(n >= 2 for n in sizes)
     assert tracer.summary()["herding_groups"] == sum(1 for n in sizes if n >= 2)
+
+
+# --- EXP-0050: routing versus producers per product (task 3.4) ---
+
+
+def test_fanout_grid_declares_the_requested_fanout() -> None:
+    """Every cell's built world declares each product by exactly `fanout` producers; dense is
+    the whole layer (P/3); spec.json's `declarers_per_product` records it from the config."""
+    from tokenomics.eval.routing_audit import FANOUT_CELLS, fanout_world, world_record
+
+    assert {(f, p, k) for f, p, k in FANOUT_CELLS} == {
+        ("sparse_wide", 12, 2), ("sparse_wide", 12, 4), ("sparse_wide", 42, 2),
+        ("sparse_wide", 42, 4), ("sparse_wide", 42, 7), ("sparse_wide", 42, 14),
+        ("dense", 12, 4), ("dense", 42, 14)}
+    for family, producers, fanout in FANOUT_CELLS:
+        for regime in ("calm", "shocked"):
+            w = fanout_world(family, producers, fanout, regime, 0, 1)
+            cfg = w.config()
+            declarers: dict[int, int] = defaultdict(int)
+            for pc in cfg.producer_configs:
+                for x in pc.produces:
+                    declarers[x] += 1
+            assert set(declarers.values()) == {fanout}, (w.id, set(declarers.values()))
+            assert len(cfg.producer_configs) == producers
+            if family == "dense":
+                assert fanout == producers // 3
+            assert (cfg.shocks is not None) == (regime == "shocked")
+            assert world_record(w)["declarers_per_product"] == [fanout]
+
+
+@pytest.mark.parametrize("family,producers,fanout", [
+    ("sparse_wide", 12, 5), ("sparse_wide", 42, 15), ("sparse_wide", 12, 0), ("dense", 42, 7)])
+def test_fanout_grid_refuses_fanout_outside_the_layer(family: str, producers: int,
+                                                      fanout: int) -> None:
+    from tokenomics.eval.routing_audit import fanout_world
+
+    with pytest.raises(ValueError, match="fanout"):
+        fanout_world(family, producers, fanout, "calm", 0, 1)
+
+
+def test_fanout_grid_is_deterministic_and_sized() -> None:
+    """Same seeds and configs on every build; a cell's calm and shocked worlds share the world
+    seed (same topology); unique ids; 4 worlds per cell x regime, 1 calm + 2 shocked episodes
+    per world, 96 world-episodes, 31 runs each at R = 5 (the six roster members, 7 diagnostic
+    arms, 2 trained subjects)."""
+    from tokenomics.eval.routing_audit import EXP0050, config_digest, fanout_worlds
+
+    a, b = fanout_worlds(), fanout_worlds()
+    assert [w.to_dict() for w in a] == [w.to_dict() for w in b]
+    assert [config_digest(w.config()) for w in a[:4]] == [config_digest(w.config()) for w in b[:4]]
+    assert len({w.id for w in a}) == len(a) == 8 * 2 * 4
+    by_seed: dict[int, set[str]] = defaultdict(set)
+    for w in a:
+        by_seed[w.world_seed].add(w.regime)
+    assert all(v == {"calm", "shocked"} for v in by_seed.values()) and len(by_seed) == 32
+    assert sum(len(w.episode_seeds) for w in a) == 96
+    table = router_table(load_roster(ROSTER_V2), plan=EXP0050)
+    jobs = build_jobs(a, table, 5, 100, None, {"producer": {"path": "p", "sha256": "a"},
+                                              "orderer": {"path": "o", "sha256": "b"}})
+    assert len(jobs) == 96 * 31
+
+
+def test_two_choice_spare_samples_two_of_four_on_a_family_world() -> None:
+    """On the fanout-4 sparse_wide world, two_choice_spare takes the larger-spare producer of the
+    pair it drew (replayed), and that is not always the overall largest: it is not an argmax."""
+    from tokenomics.eval.routing_audit import fanout_world
+
+    cfg = fanout_world("sparse_wide", 12, 4, "calm", 0, 1).config()
+    seen = _replayed("two_choice_spare", _pair_draw, cfg=cfg)
+    distinct = [(sp, g) for sp, g in seen if len(set(sp)) == len(sp)]
+    assert len(seen) >= HORIZON and distinct
+    assert {len(sp) for sp, _ in seen} == {4}
+    assert any(sp[g] != max(sp) for sp, g in distinct)
+
+
+def test_exp0050_dry_run_writes_the_layout(tmp_path: Path) -> None:
+    """One fanout-4 shocked cell, 1 world, 1 episode, horizon 12, `shocks-i-smoke`: the layout
+    (`routing_metrics.csv` per cell, `fanout_summary.csv`, no `edge.csv`), every arm on one
+    demand + shock digest pair, the world pinned with its fanout and config digest; a real run
+    with filters is refused; the fanout filters are refused for the registry plans."""
+    import csv
+
+    from tokenomics.eval.routing_audit import EXP0049, EXP0050, read_episode_dicts
+
+    kw: dict = dict(registry=load_registry(REGISTRY_V2), roster=load_roster(ROSTER_V2),
+                    horizon=12, replicates=1, sizes=[12], fanouts=[4], families=["sparse_wide"],
+                    regimes=["shocked"], max_worlds=1, episodes_per_world=1,
+                    routers=["even_split", "proportional", "random", "round_robin",
+                             "random_whole", "two_choice_spare"],
+                    shock_profile=SHOCKS_I_SMOKE, plan=EXP0050)
+    out = tmp_path / "exp"
+    start = time.perf_counter()
+    assert run_audit(out_dir=out, dry_run=True, log=lambda s: None, **kw) == 0
+    assert time.perf_counter() - start < 120
+    for name in ("spec.json", "episodes.csv", "routing_metrics.csv", "fanout_summary.csv",
+                 "contract_failures.csv", "RESULT.md"):
+        assert (out / name).exists(), name
+    assert not (out / "edge.csv").exists() and read_failures(out) == []
+    rows = read_episode_dicts(out / "episodes.csv")
+    assert len(rows) == 6 and len({(r["demand_digest"], r["shock_digest"]) for r in rows}) == 1
+    spec = json.loads((out / "spec.json").read_text())
+    (world,) = spec["pins"]["worlds"]
+    assert world["id"] == "fan-sparse_wide-12-f4-shocked-00" and world["fanout"] == 4
+    assert world["declarers_per_product"] == [4] and len(world["config_sha256"]) == 64
+    summary = {r["router"]: r for r in csv.DictReader((out / "fanout_summary.csv").open())}
+    assert summary["two_choice_spare"]["counterpart"] == "random_whole"
+    assert summary["two_choice_spare"]["gain_vs_counterpart"] != ""
+    assert (summary["two_choice_spare"]["family"], summary["two_choice_spare"]["fanout"]) == (
+        "sparse_wide", "4")
+    with pytest.raises(ValueError, match="not a valid EXP-0050 run"):
+        run_audit(out_dir=tmp_path / "real", dry_run=False, log=lambda s: None, **kw)
+    with pytest.raises(ValueError, match="exp0050's grid only"):
+        run_audit(out_dir=tmp_path / "x", dry_run=True, log=lambda s: None,
+                  **{**kw, "plan": EXP0049})
+
+
+def test_fanout_summary_and_cell_metrics_on_a_hand_fixture() -> None:
+    """Every gain column on synthetic rows: two worlds of one cell with 2 and 1 episodes (world
+    means differ from pooled means), stochastic arms with 2 replicates, `random` above every
+    deterministic member on one episode (the best deterministic member excludes it), both
+    counterpart pairs, and fill = fulfilled / ordered units."""
+    from tokenomics.eval.routing_audit import EXP0050, cell_metrics_table, fanout_summary_table
+
+    names = ["even_split", "proportional", "random", "round_robin", "random_whole",
+             "two_choice_spare", "spare_rotating_whole"]
+    table = router_table(load_roster(ROSTER_V2), names, plan=EXP0050)
+    units = {  # (world, episode) -> router -> units per replicate
+        ("A", 1): {"even_split": [10], "proportional": [6], "random": [20, 16],
+                   "round_robin": [15], "random_whole": [12, 14], "two_choice_spare": [11, 9],
+                   "spare_rotating_whole": [17]},
+        ("A", 2): {"even_split": [20], "proportional": [22], "random": [22, 22],
+                   "round_robin": [30], "random_whole": [25, 23], "two_choice_spare": [30, 28],
+                   "spare_rotating_whole": [28]},
+        ("B", 1): {"even_split": [5], "proportional": [7], "random": [5, 5],
+                   "round_robin": [9], "random_whole": [6, 6], "two_choice_spare": [8, 8],
+                   "spare_rotating_whole": [7]}}
+    rows = []
+    for (world, ep), per in units.items():
+        for name, reps in per.items():
+            for k, u in enumerate(reps):
+                d = _row(world, 12, "shocked", ep, name, k, u)
+                d.update(ordered_units="100.0", fulfilled_units=repr(float(u)))
+                rows.append(d)
+    cells = {w: {"family": "sparse_wide", "size": 12, "fanout": 4, "regime": "shocked"}
+             for w in ("A", "B")}
+    s = {r["router"]: r for r in fanout_summary_table(rows, table, cells)}
+    tc, sr, rr = s["two_choice_spare"], s["spare_rotating_whole"], s["round_robin"]
+    # world means: A = mean of its 2 episodes, B = its 1; cell = mean of A and B
+    assert tc["units"] == pytest.approx(((10 + 29) / 2 + 8) / 2)          # 13.75, pooled 15.67
+    assert tc["fill"] == pytest.approx(((0.10 + 0.29) / 2 + 0.08) / 2)
+    assert tc["counterpart"] == "random_whole"
+    assert tc["gain_vs_counterpart"] == pytest.approx(((-3 + 5) / 2 + 2) / 2)  # 1.5
+    assert tc["beats_counterpart"] is True
+    assert tc["gain_vs_random_whole"] == pytest.approx(1.5)
+    assert tc["gain_vs_round_robin"] == pytest.approx(((-5 - 1) / 2 - 1) / 2)  # -2
+    assert sr["counterpart"] == "round_robin"
+    assert sr["gain_vs_counterpart"] == pytest.approx(((2 - 2) / 2 - 2) / 2)  # -1
+    assert sr["beats_counterpart"] is False
+    # best deterministic member per episode: 10, 22, 7 (random's 18 on A1 is not one)
+    assert rr["best_det_units"] == pytest.approx(((10 + 22) / 2 + 7) / 2)
+    assert rr["gain_vs_best_det"] == pytest.approx(((5 + 8) / 2 + 2) / 2)    # 4.25
+    assert rr["gain_vs_random"] == pytest.approx(((-3 + 8) / 2 + 4) / 2)     # 3.25
+    assert rr["counterpart"] is None and rr["beats_counterpart"] is None
+    assert (rr["n_worlds"], rr["n_episodes"]) == (2, 3)
+    m = {r["router"]: r for r in cell_metrics_table(rows, table, cells)}
+    assert m["two_choice_spare"]["units"] == pytest.approx(13.75)
+    assert m["two_choice_spare"]["fill"] == pytest.approx(tc["fill"])
+    assert (m["two_choice_spare"]["family"], m["two_choice_spare"]["fanout"]) == ("sparse_wide", 4)
+
+
+def test_world_record_pins_the_measured_declarers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`declarers_per_product` is counted from the built config, not copied from the request: a
+    world asking for fanout 4 whose config declares products by 1 and 2 producers records
+    [1, 2]."""
+    from tokenomics.eval.registry import WorldEntry
+    from tokenomics.eval.routing_audit import config_digest, fanout_world, world_record
+
+    w = fanout_world("sparse_wide", 12, 4, "calm", 0, 1)
+    fixture = _config(3, composite=True)  # p1, p2 declare 10; p3 declares 20
+    monkeypatch.setattr(WorldEntry, "config", lambda self: fixture)
+    rec = world_record(w)
+    assert rec["fanout"] == 4 and rec["declarers_per_product"] == [1, 2]
+    assert rec["config_sha256"] == config_digest(fixture)
+
+
+@pytest.mark.parametrize("change,needle", [
+    ("fanouts", "--fanouts is set"), ("families", "--families is set"),
+    ("commit", "40-hex source commit"), ("unfrozen", "is not frozen")])
+def test_exp0050_real_run_guard(change: str, needle: str) -> None:
+    """The exp0050 real-run guard, one problem at a time: a dry-run filter, a missing commit or
+    an unfrozen roster refuses the run; the full grid with a frozen roster and a commit has no
+    problem (the registry's screening is not asked for: exp0050 does not run its worlds)."""
+    import dataclasses
+
+    from tokenomics.eval.routing_audit import EXP0050, fanout_worlds
+
+    roster, registry = load_roster(ROSTER_V2), load_registry(REGISTRY_V2)
+    filters = {k: None for k in ("sizes", "regimes", "max_worlds", "episodes_per_world",
+                                 "routers", "shock_profile", "fanouts", "families")}
+    assert real_run_problems(registry=registry, roster=roster, worlds=fanout_worlds(),
+                             horizon=100, replicates=5, source_commit="a" * 40,
+                             filters=filters, plan=EXP0050) == []
+    kw: dict = dict(out_dir="/nonexistent", registry=registry, roster=roster, plan=EXP0050,
+                    prod_ckpt="p", orderer_ckpt="o", source_commit="a" * 40, dry_run=False,
+                    log=lambda s: None)
+    if change == "fanouts":
+        kw["fanouts"] = [4]
+    elif change == "families":
+        kw["families"] = ["dense"]
+    elif change == "commit":
+        kw["source_commit"] = "abc123"
+    else:
+        kw["roster"] = dataclasses.replace(roster, frozen=False, screened_on=None, pruning=None)
+    with pytest.raises(ValueError, match="not a valid EXP-0050 run") as err:
+        run_audit(**kw)
+    assert needle in str(err.value)

@@ -11,7 +11,13 @@ portable orderer scorer with the routers' producer) and `portable` (the full por
 its own producer). Both trained subjects are deterministic (scorer logits, decoded without
 sampling), so they run once, like the deterministic routers. Their checkpoints are hashed and
 trial-loaded before any job (a failure is a `run` row, as in the gate) and every worker checks
-the hash of the file it loads.
+the hash of the file it loads. `exp0050` (task 3.4, D2 "Routing versus producers per product"):
+the exp0049 arms plus `proportional_whole` / `even_split_rotating` references, on a diagnostic
+grid of family worlds with more producers per product (`fanout_worlds`: sparse_wide at 12 with
+fanout 2 / 4 and at 42 with 2 / 4 / 7 / 14, dense at 12 and 42; calm and `shocks-i` shocked),
+built from `families.build_family_config`, never from the gate registry. It writes
+`routing_metrics.csv` per (family, size, fanout, regime) and `fanout_summary.csv` instead of the
+v2 `edge.csv`.
 
 EXP-0048's question: why does the `random` ordering baseline set the hindsight baseline on most v2
 development world-episodes? Every router runs with the `entity_planner` producer (the producer
@@ -55,7 +61,8 @@ import os
 import sys
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import replace
+import hashlib
+from dataclasses import asdict, replace
 from multiprocessing import get_context
 from pathlib import Path
 from statistics import fmean
@@ -93,11 +100,13 @@ from .gate_cli import (
     test_only_problem,
 )
 from .provenance import resolve_verified_commit, sha256_file, source_fingerprint
+from .families import CALM, DENSE, DEPTH, SHOCKED, SPARSE_WIDE
 from .registry import DEFAULT_REGISTRY, DEVELOPMENT, Registry, WorldEntry, load_registry
 from .roster import DEFAULT_ROSTER, JOINT_STACK, RANDOM_POLICY, Roster, load_roster, member_id
 from .routing_diagnostics import DETERMINISTIC, DIAGNOSTIC_ROUTERS, ROUTER_KIND, STOCHASTIC
 from .routing_trace import RoutingTracer
 from .seeding import replicate_seed
+from .shock_profiles import SHOCKS_I
 
 DRIVER = "tokenomics.eval.routing_audit"
 PRODUCER = "entity_planner"  # the producer of every roster v2 member (D2)
@@ -125,6 +134,7 @@ MATCHED_SPLIT_TOLERANCE = 0.05
 # taken from DIAGNOSTIC_ROUTERS, so routers added later never change that grid.
 EXP0048 = "exp0048"
 EXP0049 = "exp0049"
+EXP0050 = "exp0050"
 TRAINED_ORDERER = "trained_orderer"
 PORTABLE = "portable"
 PLANS: dict[str, dict[str, tuple[str, ...]]] = {
@@ -138,8 +148,32 @@ PLANS: dict[str, dict[str, tuple[str, ...]]] = {
         "round_robin", "even_split_rotating", "proportional_whole", "random_whole",
         "two_choice_spare", "spare_weighted_whole", "spare_rotating_whole"),
         "trained": (TRAINED_ORDERER, PORTABLE)},
+    EXP0050: {"diagnostic": (
+        "round_robin", "random_whole", "proportional_whole", "even_split_rotating",
+        "two_choice_spare", "spare_weighted_whole", "spare_rotating_whole"),
+        "trained": (TRAINED_ORDERER, PORTABLE)},
 }
-PLAN_EXPERIMENT = {EXP0048: "EXP-0048", EXP0049: "EXP-0049"}
+PLAN_EXPERIMENT = {EXP0048: "EXP-0048", EXP0049: "EXP-0049", EXP0050: "EXP-0050"}
+# Plans run on the registry v2 development worlds; exp0050 runs on its own fanout grid.
+REGISTRY_PLANS = (EXP0048, EXP0049)
+
+# --- exp0050 fanout grid (D2 "Routing versus producers per product") ---
+# (family, producers, fanout): sparse_wide fanouts up to the whole layer (P/3), dense = whole
+# layer (its 4 products per layer are each declared by every layer producer).
+FANOUT_CELLS: tuple[tuple[str, int, int], ...] = (
+    (SPARSE_WIDE, 12, 2), (SPARSE_WIDE, 12, 4),
+    (SPARSE_WIDE, 42, 2), (SPARSE_WIDE, 42, 4), (SPARSE_WIDE, 42, 7), (SPARSE_WIDE, 42, 14),
+    (DENSE, 12, 4), (DENSE, 42, 14))
+# Sized by task 3.4 (sizing.md §EXP-0050): 4 worlds per cell x regime; 1 calm episode per world
+# (calm demand is fixed per world, so a deterministic arm replays the same episode for every
+# seed: EXP-0049, 176 of 240 calm subject-world pairs identical, every differing one
+# stochastic) and 2 shocked ones. 8 cells x 12 world-episodes = 96.
+FANOUT_WORLDS_PER_CELL = 4
+FANOUT_EPISODES = {CALM: 1, SHOCKED: 2}
+FANOUT_SPLIT = "fanout-diagnostic"  # WorldEntry.split: not a registry split
+# Informed arm -> its blind counterpart (EXP-0049).
+COUNTERPART = {"two_choice_spare": "random_whole", "spare_weighted_whole": "random_whole",
+               "spare_rotating_whole": "round_robin"}
 DEFAULT_PLAN = EXP0048
 
 TRACE_PREFIX = "trace_"
@@ -209,6 +243,86 @@ def select_worlds(registry: Registry, *, sizes: Sequence[int] | None = None,
                                       "params": {**params, "shock_profile": shock_profile}})
         out.append(e)
     return out
+
+
+def grid_seed(*parts: object) -> int:
+    """A process-independent 31-bit seed from `parts` (sha256)."""
+    digest = hashlib.sha256("|".join(str(p) for p in parts).encode()).hexdigest()
+    return int(digest[:8], 16) & 0x7FFFFFFF
+
+
+def fanout_world(family: str, producers: int, fanout: int, regime: str, index: int,
+                 episodes: int, shock_profile: str = SHOCKS_I) -> WorldEntry:
+    """World `index` of one fanout cell. The world seed depends on (family, producers, fanout,
+    index) only, so a cell's calm and shocked worlds share their topology (families docstring);
+    episode seeds depend on the world id. Refuses a fanout outside [1, P/3] (sparse_wide) or
+    other than P/3 (dense)."""
+    layer = producers // DEPTH
+    if family == DENSE and fanout != layer:
+        raise ValueError(f"dense fanout is the whole layer ({layer}), got {fanout}")
+    if family == SPARSE_WIDE and not 1 <= fanout <= layer:
+        raise ValueError(f"sparse_wide fanout must be in [1, {layer}] at {producers} producers, "
+                         f"got {fanout}")
+    params: dict = {"producers": producers, "regime": regime, "fanout": fanout}
+    if regime == SHOCKED:
+        params["shock_profile"] = shock_profile
+    else:
+        params["schedule_length"] = 7
+    wid = f"fan-{family}-{producers}-f{fanout}-{regime}-{index:02d}"
+    return WorldEntry(
+        id=wid, split=FANOUT_SPLIT, family=family, size=producers, regime=regime,
+        world_seed=grid_seed(EXP0050, family, producers, fanout, index),
+        episode_seeds=tuple(grid_seed(EXP0050, wid, j) for j in range(episodes)),
+        generator={"generator": f"{family}_family", "params": params})
+
+
+def fanout_worlds(*, cells: Sequence[tuple[str, int, int]] = FANOUT_CELLS,
+                  worlds_per_cell: int = FANOUT_WORLDS_PER_CELL,
+                  episodes: Mapping[str, int] = FANOUT_EPISODES,
+                  sizes: Sequence[int] | None = None, regimes: Sequence[str] | None = None,
+                  fanouts: Sequence[int] | None = None, families: Sequence[str] | None = None,
+                  max_worlds: int | None = None,
+                  shock_profile: str | None = None) -> list[WorldEntry]:
+    """The exp0050 grid in cell order (calm, then shocked), with the dry-run filters;
+    `max_worlds` keeps the first N worlds of each cell x regime, `shock_profile` replaces
+    `shocks-i` (a dry run's `shocks-i-smoke`)."""
+    out: list[WorldEntry] = []
+    for family, producers, fanout in cells:
+        if ((sizes and producers not in sizes) or (fanouts and fanout not in fanouts)
+                or (families and family not in families)):
+            continue
+        for regime in (CALM, SHOCKED):
+            if regimes and regime not in regimes:
+                continue
+            n = worlds_per_cell if max_worlds is None else min(worlds_per_cell, max_worlds)
+            out += [fanout_world(family, producers, fanout, regime, i, episodes[regime],
+                                 shock_profile or SHOCKS_I) for i in range(n)]
+    return out
+
+
+def _jsonable(o: object) -> object:
+    if isinstance(o, (set, frozenset)):
+        return sorted(o)
+    return repr(o)
+
+
+def config_digest(cfg: object) -> str:
+    """sha256 of a configuration's full content (canonical JSON of the dataclass tree)."""
+    blob = json.dumps(asdict(cfg), sort_keys=True, default=_jsonable, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def world_record(e: WorldEntry) -> dict:
+    """What spec.json pins for a fanout-grid world: the entry, its measured fanout (declarers
+    per product, from the built config) and the config's content digest."""
+    cfg = e.config()
+    declarers: dict = defaultdict(int)
+    for p in cfg.producer_configs:
+        for x in p.produces:
+            declarers[x] += 1
+    fanout = sorted(set(declarers.values()))
+    return {**e.to_dict(), "fanout": e.generator["params"]["fanout"],
+            "declarers_per_product": fanout, "config_sha256": config_digest(cfg)}
 
 
 def replicates_of(router: Mapping[str, object], replicates: int) -> int:
@@ -482,9 +596,12 @@ def _episode_values(rows: Sequence[Mapping[str, str]], routers: Sequence[Mapping
         for name, ds in per_router.items():
             ds = sorted(ds, key=lambda d: int(d["replicate"]))
             metrics = {k: fmean(float(d[TRACE_PREFIX + k]) for d in ds) for k in TRACE_SCALARS}
+            fills = [float(d["fulfilled_units"]) / float(d["ordered_units"]) for d in ds
+                     if _num(d.get("ordered_units", "")) and float(d["ordered_units"]) > 0]
             out[key][name] = {
                 "size": int(ds[0]["size"]), "regime": ds[0]["regime"],
                 "units": fmean(float(d["units"]) for d in ds),
+                "fill": fmean(fills) if fills else None,
                 "replicates": [float(d["units"]) for d in ds],
                 "dead": fmean(1.0 if d["dead"] == "true" else 0.0 for d in ds),
                 "metrics": metrics}
@@ -651,6 +768,106 @@ def metrics_table(rows: Sequence[Mapping[str, str]], routers: Sequence[Mapping[s
     return out
 
 
+CELL_KEYS = ("family", "size", "fanout", "regime")
+CELL_METRIC_COLUMNS = CELL_KEYS + ("router", "kind", "contract", "n_worlds", "n_episodes",
+                                   "units", "fill", "dead_rate") + TRACE_SCALARS
+SUMMARY_METRICS = ("split_share_consumer", "receiver_change_share_consumer",
+                   "receiver_change_share_producer", "herding_hhi", "wasted_units_consumer",
+                   "lost_units_consumer_ttl")
+FANOUT_SUMMARY_COLUMNS = CELL_KEYS + (
+    "router", "kind", "n_worlds", "n_episodes", "units", "fill", "best_det_units",
+    "gain_vs_best_det", "gain_vs_random", "gain_vs_round_robin", "gain_vs_random_whole",
+    "counterpart", "gain_vs_counterpart", "beats_counterpart") + SUMMARY_METRICS
+
+
+def _by_cell(rows: Sequence[Mapping[str, str]], routers: Sequence[Mapping[str, object]],
+             cells: Mapping[str, Mapping[str, object]]) -> dict:
+    """cell (family, size, fanout, regime) -> router -> quantity -> world -> per-episode values
+    (replicate means first). Quantities: units, fill, dead, every trace scalar, and `gain_vs_*`
+    against the best deterministic roster member, `random`, `round_robin` and `random_whole`
+    when those ran on the episode."""
+    det = [r["router"] for r in routers if r["roster"] and not r["random"]]
+    acc: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
+    for (world, _), per in _episode_values(rows, routers).items():
+        c = cells[world]
+        cell = tuple(c[k] for k in CELL_KEYS)
+        best = max((per[m]["units"] for m in det if m in per), default=None)
+        for name, v in per.items():
+            a = acc[cell][name]
+            a["units"][world].append(v["units"])
+            a["dead"][world].append(v["dead"])
+            if v["fill"] is not None:
+                a["fill"][world].append(v["fill"])
+            for k, x in v["metrics"].items():
+                a[k][world].append(x)
+            if best is not None:
+                a["best_det_units"][world].append(best)
+                a["gain_vs_best_det"][world].append(v["units"] - best)
+            for ref in (RANDOM_POLICY, "round_robin", "random_whole"):
+                if ref in per:
+                    a[f"gain_vs_{ref}"][world].append(v["units"] - per[ref]["units"])
+            cp = COUNTERPART.get(str(name))
+            if cp in per:
+                a["gain_vs_counterpart"][world].append(v["units"] - per[cp]["units"])
+    return acc
+
+
+def _mean_or_none(by_world: Mapping[str, Sequence[float]]) -> float | None:
+    return _world_mean(by_world) if by_world else None
+
+
+def cell_metrics_table(rows: Sequence[Mapping[str, str]], routers: Sequence[Mapping[str, object]],
+                       cells: Mapping[str, Mapping[str, object]]) -> list[dict[str, object]]:
+    """exp0050 `routing_metrics.csv`: per (family, size, fanout, regime) and router, equal-weight
+    world means of units, consumer fill (fulfilled / ordered units, so saturation shows), death
+    rate and every tracer scalar."""
+    acc = _by_cell(rows, routers, cells)
+    out = []
+    for cell in sorted(acc):
+        for r in routers:
+            a = acc[cell].get(r["router"])
+            if a is None:
+                continue
+            out.append({**dict(zip(CELL_KEYS, cell)), "router": r["router"], "kind": r["kind"],
+                        "contract": r["contract"], "n_worlds": len(a["units"]),
+                        "n_episodes": sum(len(v) for v in a["units"].values()),
+                        "units": _world_mean(a["units"]), "fill": _mean_or_none(a["fill"]),
+                        "dead_rate": _world_mean(a["dead"]),
+                        **{k: _world_mean(a[k]) for k in TRACE_SCALARS}})
+    return out
+
+
+def fanout_summary_table(rows: Sequence[Mapping[str, str]],
+                         routers: Sequence[Mapping[str, object]],
+                         cells: Mapping[str, Mapping[str, object]]) -> list[dict[str, object]]:
+    """exp0050 `fanout_summary.csv`: per (family, size, fanout, regime) and router, units, fill,
+    gains (equal-weight world means of per-episode differences) over the best deterministic
+    roster member, `random`, `round_robin` and `random_whole`, and for each informed arm its
+    gain over its blind counterpart (`COUNTERPART`) and whether it is positive."""
+    acc = _by_cell(rows, routers, cells)
+    out = []
+    for cell in sorted(acc):
+        for r in routers:
+            a = acc[cell].get(r["router"])
+            if a is None:
+                continue
+            cp_gain = _mean_or_none(a["gain_vs_counterpart"])
+            out.append({
+                **dict(zip(CELL_KEYS, cell)), "router": r["router"], "kind": r["kind"],
+                "n_worlds": len(a["units"]), "n_episodes": sum(len(v) for v in a["units"].values()),
+                "units": _world_mean(a["units"]), "fill": _mean_or_none(a["fill"]),
+                "best_det_units": _mean_or_none(a["best_det_units"]),
+                "gain_vs_best_det": _mean_or_none(a["gain_vs_best_det"]),
+                "gain_vs_random": _mean_or_none(a[f"gain_vs_{RANDOM_POLICY}"]),
+                "gain_vs_round_robin": _mean_or_none(a["gain_vs_round_robin"]),
+                "gain_vs_random_whole": _mean_or_none(a["gain_vs_random_whole"]),
+                "counterpart": COUNTERPART.get(str(r["router"])),
+                "gain_vs_counterpart": cp_gain,
+                "beats_counterpart": None if cp_gain is None else cp_gain > 0,
+                **{k: _world_mean(a[k]) for k in SUMMARY_METRICS}})
+    return out
+
+
 def _cell(v: object) -> str:
     if v is None:
         return ""
@@ -683,6 +900,12 @@ Can a router that reads producer data (spare capacity) spread whole orders bette
 blind `round_robin` / `random_whole`, and did the trained portable orderer learn random's trick
 (whole orders, a receiver that varies over time, no herding) or `proportional`'s (design D2,
 "Informed spreading routers and trained-agent trace")?""",
+    EXP0050: """\
+Does routing matter more when each product can be made by more producers? The EXP-0049 arms on
+family worlds with 2, 4, 7 or 14 producers per product (sparse_wide) and the dense family, calm
+and shocked: does `round_robin`'s edge hold, and do the spare-capacity routers start to beat
+their blind counterparts as the choice widens (design D2, "Routing versus producers per
+product")?""",
 }
 
 RESULT_SKELETON = """# {title}
@@ -735,10 +958,13 @@ def version_pair_problem(registry: Registry, roster: Roster) -> str | None:
 
 def real_run_problems(*, registry: Registry, roster: Roster, worlds: Sequence[WorldEntry],
                       horizon: int, replicates: int, source_commit: str,
-                      filters: Mapping[str, object]) -> list[str]:
+                      filters: Mapping[str, object], plan: str = DEFAULT_PLAN) -> list[str]:
+    """Why this is not a valid recorded run (empty = valid). The registry's screening is checked
+    only for plans that run its worlds; exp0050 builds its own grid."""
+    on_registry = plan in REGISTRY_PLANS
     problems = [msg for bad, msg in (
         (not roster.frozen, f"roster {roster.version[:12]} is not frozen"),
-        (bool(registry.admission_problems(DEVELOPMENT)),
+        (on_registry and bool(registry.admission_problems(DEVELOPMENT)),
          "; ".join(registry.admission_problems(DEVELOPMENT))),
         (not _is_commit(source_commit),
          "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
@@ -749,7 +975,7 @@ def real_run_problems(*, registry: Registry, roster: Roster, worlds: Sequence[Wo
     smoke = test_only_problem(worlds)
     if smoke:
         problems.append(smoke)
-    mixed = version_pair_problem(registry, roster)
+    mixed = version_pair_problem(registry, roster) if on_registry else None
     if mixed:
         problems.append(mixed)
     return problems
@@ -762,16 +988,22 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
               routers: Sequence[str] | None = None, shock_profile: str | None = None,
               source_commit: str = "", dry_run: bool = False, plan: str = DEFAULT_PLAN,
               prod_ckpt: str | None = None, orderer_ckpt: str | None = None,
+              fanouts: Sequence[int] | None = None, families: Sequence[str] | None = None,
               run_job_fn: Callable[[Job], dict[str, str]] = run_job,
               log: Callable[[str], None] = print) -> int:
-    """Run (or resume) the plan's experiment (EXP-0048 / EXP-0049) into `out_dir`; return the
+    """Run (or resume) the plan's experiment (EXP-0048 / 0049 / 0050) into `out_dir`; return the
     exit status (0, or `CONTRACT_INVALID` when contract failures were recorded or rows are
     missing)."""
     replicates = roster.replicates if replicates is None else replicates
-    worlds = select_worlds(registry, sizes=sizes, regimes=regimes, max_worlds=max_worlds,
-                           shock_profile=shock_profile)
+    on_registry = plan in REGISTRY_PLANS
+    if on_registry and (fanouts or families):
+        raise ValueError("--fanouts / --families select exp0050's grid only")
+    worlds = (select_worlds(registry, sizes=sizes, regimes=regimes, max_worlds=max_worlds,
+                            shock_profile=shock_profile) if on_registry else
+              fanout_worlds(sizes=sizes, regimes=regimes, fanouts=fanouts, families=families,
+                            max_worlds=max_worlds, shock_profile=shock_profile))
     if not worlds:
-        raise ValueError("no development gate worlds selected")
+        raise ValueError("no worlds selected")
     table = router_table(roster, routers, plan)
     trained = any(r["trained"] for r in table)
     if trained and not (prod_ckpt and orderer_ckpt):
@@ -782,7 +1014,8 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
             replicates=replicates, source_commit=source_commit,
             filters={"sizes": sizes, "regimes": regimes, "max_worlds": max_worlds,
                      "episodes_per_world": episodes_per_world, "routers": routers,
-                     "shock_profile": shock_profile})
+                     "shock_profile": shock_profile, "fanouts": fanouts,
+                     "families": families}, plan=plan)
         if problems:
             raise ValueError(f"not a valid {PLAN_EXPERIMENT[plan]} run (" + "; ".join(problems)
                              + "); pass --dry-run for a smoke run")
@@ -797,6 +1030,7 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
         "registry_name": registry.name, "roster_name": roster.name,
         "registry_screened_on": registry.screened_on, "roster_screened_on": roster.screened_on,
         "plan": plan, "checkpoints": {k: v["sha256"] for k, v in checkpoints.items()},
+        "worlds": None if on_registry else [world_record(w) for w in worlds],
         "producer": PRODUCER, "routers": table, "replicates": replicates,
         "shock_profile_override": shock_profile,
         "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
@@ -838,17 +1072,26 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
         code = CONTRACT_INVALID
     else:
         dicts = read_episode_dicts(episodes)
-        write_csv(out / "routing_metrics.csv", METRIC_COLUMNS, metrics_table(dicts, table))
-        has_edge = any(r["router"] == RANDOM_POLICY for r in table) and any(
-            r["roster"] and not r["random"] for r in table)
-        edge = edge_table(dicts, table) if has_edge else []
-        write_csv(out / "edge.csv", EDGE_COLUMNS, edge)
+        if on_registry:
+            write_csv(out / "routing_metrics.csv", METRIC_COLUMNS, metrics_table(dicts, table))
+            has_edge = any(r["router"] == RANDOM_POLICY for r in table) and any(
+                r["roster"] and not r["random"] for r in table)
+            edge = edge_table(dicts, table) if has_edge else []
+            write_csv(out / "edge.csv", EDGE_COLUMNS, edge)
+            spec["result"] = {"status": "complete", "rows": len(rows), "contract_failures": 0,
+                              "edge_rows": len(edge),
+                              "edge_note": None if has_edge else
+                              "edge.csv is header-only: the router subset lacks random or a "
+                              "deterministic roster member"}
+        else:
+            cells = {w["id"]: w for w in pins["worlds"]}
+            write_csv(out / "routing_metrics.csv", CELL_METRIC_COLUMNS,
+                      cell_metrics_table(dicts, table, cells))
+            summary = fanout_summary_table(dicts, table, cells)
+            write_csv(out / "fanout_summary.csv", FANOUT_SUMMARY_COLUMNS, summary)
+            spec["result"] = {"status": "complete", "rows": len(rows), "contract_failures": 0,
+                              "summary_rows": len(summary)}
         spec["status"] = "complete"
-        spec["result"] = {"status": "complete", "rows": len(rows), "contract_failures": 0,
-                          "edge_rows": len(edge),
-                          "edge_note": None if has_edge else
-                          "edge.csv is header-only: the router subset lacks random or a "
-                          "deterministic roster member"}
         _write_spec(out, spec)
         status = "complete"
         code = 0
@@ -886,12 +1129,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     help="dry run: the first N worlds of each size x regime cell")
     ap.add_argument("--episodes-per-world", type=int, help="dry run")
     ap.add_argument("--plan", choices=sorted(PLANS), default=DEFAULT_PLAN,
-                    help="router set: exp0048 (default) or exp0049 (needs the checkpoints)")
+                    help="exp0048 (default), exp0049 or exp0050 (the last two need the "
+                         "checkpoints; exp0050 runs its own fanout grid)")
     ap.add_argument("--prod-ckpt", help="exp0049: portable producer checkpoint "
                                         "(EXP-0035 producer_candidate.pt)")
     ap.add_argument("--orderer-ckpt", help="exp0049: portable orderer checkpoint "
                                            "(EXP-0012 orderer_scorer.pt)")
     ap.add_argument("--routers", help="dry run: comma list of router names")
+    ap.add_argument("--fanouts", help="dry run, exp0050: e.g. 4,14")
+    ap.add_argument("--families", help="dry run, exp0050: sparse_wide and/or dense")
     ap.add_argument("--shock-profile", help="dry run: rewrite shocked worlds' profile, e.g. "
                                             "shocks-i-smoke")
     ap.add_argument("--source-commit", default="")
@@ -911,7 +1157,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             episodes_per_world=args.episodes_per_world, routers=_csv_strs(args.routers),
             shock_profile=args.shock_profile, source_commit=source_commit,
             dry_run=args.dry_run, plan=args.plan, prod_ckpt=args.prod_ckpt,
-            orderer_ckpt=args.orderer_ckpt)
+            orderer_ckpt=args.orderer_ckpt, fanouts=_csv_ints(args.fanouts),
+            families=_csv_strs(args.families))
     except (DigestMismatch, ContractRunError) as exc:
         print(f"[routing_audit] INVALID run: {exc}", file=sys.stderr)
         return CONTRACT_INVALID

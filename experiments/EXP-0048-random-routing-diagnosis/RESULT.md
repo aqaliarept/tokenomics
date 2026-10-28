@@ -286,7 +286,7 @@ metric.
   the user's decision. M3 stops here until the user decides. M4 does not need stochastic
   deployment to get this edge: a deterministic rule gets it. M4's residual context must be able
   to route an order whole and to rotate the receiving producer over time.
-- **For PoC-A (EXP-0050, D5; renumbered from EXP-0049 when the EXP-0049 follow-up was inserted).** On v2 the hindsight baseline is mostly `random`, which a rotating
+- **For PoC-A (EXP-0051, D5; renumbered from EXP-0049 when the EXP-0049 and EXP-0050 follow-ups were inserted).** On v2 the hindsight baseline is mostly `random`, which a rotating
   rule beats. Read the teacher against v2 and, if the user opens it, against v3.
 
 ## Details
