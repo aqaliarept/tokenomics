@@ -492,3 +492,37 @@ worlds, checks that the baselines leave headroom, and calibrates the side-effect
   - X 0.7516 (v1 0.7297), Y 0.7302 (v1 0.7681); the change comes from the shocked worlds.
   The frozen v2 registry, roster and parameters share `screened_on` and wait for task 10.1.
   ≈ 4.0 vCPU-h billed.
+
+## 13. The development audit (M3)
+
+M3 (OpenSpec change `add-m3-development-audit`) audits the development bar before any teacher
+is read against it. Its first question is why the `random` ordering baseline sets the hindsight
+baseline on most registry v2 development episodes (95 of 128 in EXP-0047, all 40 on
+42-producer shocked worlds).
+
+- **EXP-0048 — random-routing diagnosis. Diagnosed: rotation plus whole orders, not
+  randomness.**
+  21 ordering routers, each with the `entity_planner` producer: the six roster v2 members and
+  15 diagnostic routers that change one thing at a time. They ran on all 128 development
+  world-episodes with R = 5 and the routing tracer on. A deterministic rotation,
+  `round_robin` (whole order to a producer that rotates with the cycle), recovers random's edge
+  in all three random-dominated cells (12-shocked, 42-calm, 42-shocked: 4.72 / 2.51 / 1.62 of
+  it, +52 to +125 units). It beats `random` on all 104 of their episodes. Fixed random weights
+  held for the episode (`random_fixed_episode`) are among the worst routers and lose 89–241
+  units to it; the pre-registered whole-order control `proportional_whole` recovers in none but
+  also herds every orderer onto one producer, so it mixes rotation with herding. Random
+  variation over time helps too; rotation helps somewhat more. Not separated: alternation over
+  time against the balance of a fixed assignment (no balanced fixed assignment was run).
+  Routing whole is the second factor: at the same kind of variation, whole instead of split is
+  worth 0.78–4.04 of the edge, and split orders waste completed units. The two combine:
+  rotating whole orders is best. Inside the rotation factor is a rule defect: `even_split`
+  always gives the odd unit to the lowest-index producer, and rotating that unit
+  (`even_split_rotating`) recovers the edge in 2 of 3 cells; a random leftover gains most of
+  the same units but stays under the bar, because the order is still split.
+  Packing (load-aware netting), the investment-fund channel (one-class random routers) and
+  replicate averaging (R = 1 gives the same edge) are ruled out by their checks. The tracer reproduces EXP-0047's
+  roster units exactly (1,280 rows). Design D3 now applies: a rotating, whole-order rule
+  would enter a roster v3 under a new name, through a re-screen that raises the bar. That is the user's
+  decision; M3 stops for it. The mechanism behind rotation's gain (fewer reservations expiring
+  while they wait for inputs: 228.7 against 397.2 lost units per 42-shocked episode) is not yet
+  traced. ≈ 4.4 vCPU-h billed.
