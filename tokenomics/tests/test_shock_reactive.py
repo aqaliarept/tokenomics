@@ -34,9 +34,9 @@ from tokenomics.eval.baselines import (
 from tokenomics.eval.contract import ContractMonitor
 from tokenomics.eval.registry import REGISTRY_V2, load_registry
 from tokenomics.eval.roster import (
-    DEFAULT_ROSTER,
     JOINT_STACK,
     LEGACY,
+    ROSTER_V1,
     ROSTER_V1_ORDERING,
     ROSTER_V2,
     SHOCK_REACTIVE,
@@ -67,7 +67,7 @@ def test_shock_reactive_is_an_ordering_baseline() -> None:
 def test_shock_reactive_baseline_in_roster_v2() -> None:
     # Scenario "Shock-reactive baseline in roster v2": the draft, before pruning, pairs every
     # producing baseline with the shock-reactive router.
-    r = load_roster(ROSTER_V2)
+    r = build_roster_v2()
     assert (r.name, r.frozen, r.pruning, r.replicates) == ("roster-v2", False, None, 5)
     paired = {m.producing for m in r.members if m.ordering == SHOCK_REACTIVE}
     assert paired == set(PRODUCING_BASELINES) and len(paired) == 8
@@ -95,12 +95,15 @@ def test_roster_v2_is_v1_draft_plus_shock_reactive_pairs() -> None:
     assert sum(m.contract == LEGACY for m in v2.members) == 13
 
 
-def test_packaged_roster_v2_is_the_unfrozen_draft() -> None:
-    """The packaged file is exactly `build_roster_v2()` (unscreened, unpruned), pinned by its
-    content hash; the v2 screen (task 9.1) prunes and freezes it."""
-    assert ROSTER_V2.read_text() == build_roster_v2().to_json()
-    assert load_roster(ROSTER_V2).version == (
-        "a050c99e4960eb422b9eda34fd4a0de56d259629c934ccf28e4ffcb33da816fe")
+def test_packaged_roster_v2_is_the_frozen_pruning_of_the_draft() -> None:
+    """`build_roster_v2()` (unscreened, unpruned) is the draft EXP-0047 screened, pinned by its
+    content hash. Since task 10.1 the packaged file is that screen's freeze: frozen, pruned to
+    a subset of the draft's members that keeps `entity_planner/shock_reactive`."""
+    draft, frozen = build_roster_v2(), load_roster(ROSTER_V2)
+    assert draft.version == "a050c99e4960eb422b9eda34fd4a0de56d259629c934ccf28e4ffcb33da816fe"
+    assert frozen.frozen and frozen.pruning is not None and frozen.replicates == draft.replicates
+    assert set(frozen.member_ids) < set(draft.member_ids)
+    assert f"entity_planner/{SHOCK_REACTIVE}" in frozen.member_ids
 
 
 # --- the smoke world ---
@@ -432,7 +435,7 @@ def test_every_eligible_producer_excluded_keeps_the_base_logits() -> None:
 def test_roster_v1_file_and_draft_unchanged() -> None:
     """Adding shock_reactive to ORDERING_BASELINES leaves roster v1 alone: the frozen file's
     bytes and the v1 draft's version are those of base commit 669cf75."""
-    assert hashlib.sha256(DEFAULT_ROSTER.read_bytes()).hexdigest() == (
+    assert hashlib.sha256(ROSTER_V1.read_bytes()).hexdigest() == (
         "b1640571197d2680e97337699f04b42ae5acc122089a75d0bde0829fe57e70fc")
     assert build_roster_v1().version == (
         "8791e24b2760a24bc2b40ef588578ee96b7e8e93502b76c50ef0d2fac6b83239")

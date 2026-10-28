@@ -52,7 +52,7 @@ Remote profiles: `cpu8` = `--create-pod --cpu --python python3.12 --vcpu 8 --mem
 
 ## 10. Install frozen v2
 
-- [ ] 10.1 [code][local-exclusive] Copy the three frozen files from `/srv/research/tokenomics/experiments/EXP-0047-<title>/frozen/` into `/srv/research/tokenomics/tokenomics/tokenomics/eval/registry/`, replacing the v2 drafts, and make the v2 set the gate CLI default (v1 stays selectable; D8). After 9.1. Verify: a new test asserts their content hashes equal those in the EXP-0047 `spec.json`; the v1 files keep their hashes; registry v2 validates and replays; `--mode recompute` on EXP-0045 still gives MATCH; the full suite is green.
+- [x] 10.1 [code][local-exclusive] Copy the three frozen files from `/srv/research/tokenomics/experiments/EXP-0047-<title>/frozen/` into `/srv/research/tokenomics/tokenomics/tokenomics/eval/registry/`, replacing the v2 drafts, and make the v2 set the gate CLI default (v1 stays selectable; D8). After 9.1. Verify: a new test asserts their content hashes equal those in the EXP-0047 `spec.json`; the v1 files keep their hashes; registry v2 validates and replays; `--mode recompute` on EXP-0045 still gives MATCH; the full suite is green.
 
 ## Scenario coverage
 

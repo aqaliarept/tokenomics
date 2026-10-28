@@ -140,10 +140,13 @@ class SideEffectParams:
             check_screened_on(self.screened_on, f"side-effect parameters {self.name!r}")
 
 
-# Side-effect parameter file (design D4; frozen by 8.2/10.1 as side_effect_params_v1.json). Same
-# versioning as roster/registry: the version is a sha256 content hash over every field but the
-# hash, re-checked on load, so a report naming the version names exactly its X and Y.
-DEFAULT_PARAMS = Path(__file__).parent / "registry" / "side_effect_params_v1.json"
+# Side-effect parameter files (design D4; v1 frozen by EXP-0044 attempt 2, v2 by EXP-0047 and
+# the default since add-shocks-i-drift task 10.1, D8). Same versioning as roster/registry: the
+# version is a sha256 content hash over every field but the hash, re-checked on load, so a report
+# naming the version names exactly its X and Y.
+PARAMS_V1 = Path(__file__).parent / "registry" / "side_effect_params_v1.json"
+PARAMS_V2 = Path(__file__).parent / "registry" / "side_effect_params_v2.json"
+DEFAULT_PARAMS = PARAMS_V2
 
 
 PARAMS_FIELDS = {"name", "x", "y", "q", "rule", "method", "evidence"}

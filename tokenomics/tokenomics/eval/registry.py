@@ -52,8 +52,11 @@ from .roster import GATE_SIZES, Roster, check_screened_on, content_hash, name_ve
 from .seeding import replicate_mean
 from .task_archive import REPRODUCERS
 
-DEFAULT_REGISTRY = Path(__file__).parent / "registry" / "worlds_v1.json"
+REGISTRY_V1 = Path(__file__).parent / "registry" / "worlds_v1.json"
 REGISTRY_V2 = Path(__file__).parent / "registry" / "worlds_v2.json"
+# The default is the frozen v2 set since task 10.1 (add-shocks-i-drift D8); v1 stays selectable
+# by path. Both packaged files are screens: the drafts come from build_worlds_v1/v2.
+DEFAULT_REGISTRY = REGISTRY_V2
 V2_SHOCK_PROFILE = "shocks-i"  # add-shocks-i-drift D8: the profile every v2 shocked world names
 SEALED_ACCESS_LOG = Path(__file__).resolve().parents[3] / "experiments" / "SEALED_ACCESS.log"
 
@@ -874,9 +877,13 @@ def main() -> None:
     ap.add_argument("--write-draft", action="store_true",
                     help="regenerate a draft registry (v1: build_worlds_v1, v2: build_worlds_v2)")
     ap.add_argument("--draft-version", type=int, choices=(1, 2), default=1)
-    ap.add_argument("--out", default=None, help="default: worlds_v1.json / worlds_v2.json")
+    ap.add_argument("--out", default=None, help="default: worlds_v1.json / worlds_v2.json; "
+                    "--write-draft needs it")
     args = ap.parse_args()
-    out = args.out or str(REGISTRY_V2 if args.draft_version == 2 else DEFAULT_REGISTRY)
+    if args.write_draft and args.out is None:
+        ap.error("the packaged worlds_v1.json / worlds_v2.json are frozen screens; "
+                 "pass --out for a draft")
+    out = args.out or str(REGISTRY_V2 if args.draft_version == 2 else REGISTRY_V1)
     if not args.write_draft:
         reg = load_registry(out)
         print(f"{out}: {len(reg.entries)} entries, version {reg.version}")

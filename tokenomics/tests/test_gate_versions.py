@@ -9,13 +9,14 @@ injected-row dry runs: a stub returns synthetic roster rows, no episode is playe
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 from pathlib import Path
 
 import pytest
 
 from tokenomics.eval.gate import (
-    DEFAULT_PARAMS,
+    PARAMS_V1,
     EpisodeRow,
     SideEffectParams,
     load_side_effect_params,
@@ -30,18 +31,20 @@ from tokenomics.eval.gate_cli import (
     version_set_problem,
 )
 from tokenomics.eval.registry import (
-    DEFAULT_REGISTRY,
     DEVELOPMENT,
+    REGISTRY_V1,
     REGISTRY_V2,
     Registry,
+    build_worlds_v2,
     load_registry,
     registry_from_dict,
 )
 from tokenomics.eval.roster import (
-    DEFAULT_ROSTER,
+    ROSTER_V1,
     ROSTER_V2,
     Roster,
     build_roster_v1,
+    build_roster_v2,
     content_hash,
     freeze_roster,
     load_roster,
@@ -49,12 +52,23 @@ from tokenomics.eval.roster import (
     roster_from_dict,
 )
 
-# The packaged registry v2 draft (task 5.1) the screen reads; its hash is every v2 file's
-# `screened_on`.
+# The registry v2 draft (task 5.1) the screen reads; its hash is every v2 file's `screened_on`.
+# Since task 10.1 the packaged worlds_v2.json / roster_v2.json are EXP-0047's frozen screen of the
+# drafts, so the drafts are regenerated here from their builders.
 DRAFT_V2 = "3032147f1f17233703f486c66e4c56e006c026399364dd1cbaead5b46bcfceb5"
 NAMES = ("worlds_v2.json", "roster_v2.json", "side_effect_params_v2.json")
 SUBJECT = "baseline:entity_planner/blend_0.5"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
+@functools.cache
+def _draft_registry() -> Registry:
+    return build_worlds_v2()
+
+
+@functools.cache
+def _draft_roster() -> Roster:
+    return build_roster_v2()
 
 
 def _stub(roster: Roster):  # -> Callable[[Job], dict[str, str]]
@@ -73,7 +87,7 @@ def _stub(roster: Roster):  # -> Callable[[Job], dict[str, str]]
 
 
 def _v2_screen(registry: Registry, out: Path) -> Path:
-    roster = load_roster(ROSTER_V2)
+    roster = _draft_roster()
     _, status = run_screen(out_dir=out, horizon=12, workers=1, registry=registry, roster=roster,
                            episodes_per_world=1, dry_run=True, run_job_fn=_stub(roster),
                            log=lambda s: None)
@@ -84,14 +98,14 @@ def _v2_screen(registry: Registry, out: Path) -> Path:
 @pytest.fixture(scope="module")
 def v2_screen(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """One injected-row v2 screen of the packaged registry v2 / roster v2 drafts."""
-    return _v2_screen(load_registry(REGISTRY_V2), tmp_path_factory.mktemp("v2") / "screen")
+    return _v2_screen(_draft_registry(), tmp_path_factory.mktemp("v2") / "screen")
 
 
 @pytest.fixture(scope="module")
 def other_screen(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A second v2 screen of a different draft: same worlds, another saturation ceiling, hence
     another draft hash (`screened_on`)."""
-    draft = dataclasses.replace(load_registry(REGISTRY_V2), saturation_ceiling=0.94)
+    draft = dataclasses.replace(_draft_registry(), saturation_ceiling=0.94)
     assert draft.version != DRAFT_V2
     return _v2_screen(draft, tmp_path_factory.mktemp("v2b") / "screen")
 
@@ -105,11 +119,13 @@ def _frozen_set(frozen: Path) -> tuple[Registry, Roster, SideEffectParams]:
 
 
 def test_drafts_record_no_screened_on() -> None:
-    for path in (REGISTRY_V2, ROSTER_V2):
-        assert "screened_on" not in json.loads(path.read_text()), path
-    assert load_registry(REGISTRY_V2).version == DRAFT_V2
-    assert load_registry(REGISTRY_V2).screened_on is None
-    assert load_roster(ROSTER_V2).screened_on is None
+    for draft in (_draft_registry(), _draft_roster()):
+        assert "screened_on" not in json.loads(draft.to_json()), draft.name
+    assert _draft_registry().version == DRAFT_V2
+    assert _draft_registry().screened_on is None
+    assert _draft_roster().screened_on is None
+    # the packaged v2 files are a screen of exactly this draft (task 10.1)
+    assert load_registry(REGISTRY_V2).screened_on == load_roster(ROSTER_V2).screened_on == DRAFT_V2
 
 
 def test_v2_screen_writes_v2_files_with_screened_on(v2_screen: Path) -> None:
@@ -136,9 +152,9 @@ def test_v2_screen_writes_v2_files_with_screened_on(v2_screen: Path) -> None:
 def test_v2_screen_names_an_untagged_roster_roster_v2(tmp_path: Path) -> None:
     """The frozen roster of a v2 screen is named `roster-v2` whatever the input roster's name (a
     dry run may screen an ad-hoc roster), so it can carry `screened_on`."""
-    roster = Roster(name="t", replicates=1, members=load_roster(ROSTER_V2).members[:2])
+    roster = Roster(name="t", replicates=1, members=_draft_roster().members[:2])
     out = tmp_path / "s"
-    _, status = run_screen(out_dir=out, horizon=12, workers=1, registry=load_registry(REGISTRY_V2),
+    _, status = run_screen(out_dir=out, horizon=12, workers=1, registry=_draft_registry(),
                            roster=roster, episodes_per_world=1, dry_run=True,
                            run_job_fn=_stub(roster), log=lambda s: None)
     assert status == 0
@@ -149,17 +165,17 @@ def test_v2_screen_names_an_untagged_roster_roster_v2(tmp_path: Path) -> None:
 
 def test_screen_outcome_records_screened_on_exactly_from_v2() -> None:
     with pytest.raises(ValueError, match="screened_on is recorded from tag v2 on"):
-        screen_outcome(load_registry(REGISTRY_V2), load_roster(ROSTER_V2), [], q=0.05,
+        screen_outcome(_draft_registry(), _draft_roster(), [], q=0.05,
                        prune=False, tag=2)
     with pytest.raises(ValueError, match="screened_on is recorded from tag v2 on"):
-        screen_outcome(load_registry(), load_roster(), [], q=0.05, prune=False,
+        screen_outcome(load_registry(REGISTRY_V1), load_roster(ROSTER_V1), [], q=0.05, prune=False,
                        screened_on=DRAFT_V2)
 
 
 def test_real_v2_screen_refuses_a_v1_roster(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="registry 'worlds-v2' is v2 but roster 'roster-v1' is v1"):
         run_screen(out_dir=tmp_path / "s", horizon=12, workers=1,
-                   registry=load_registry(REGISTRY_V2), roster=build_roster_v1(),
+                   registry=_draft_registry(), roster=build_roster_v1(),
                    source_commit=COMMIT, run_job_fn=_stub(build_roster_v1()), log=lambda s: None)
     assert not (tmp_path / "s").exists()
 
@@ -191,8 +207,8 @@ def test_real_report_admits_the_set_one_v2_screen_wrote(v2_screen: Path, tmp_pat
 
 
 def test_v1_set_still_pairs() -> None:
-    assert version_set_problem(load_registry(DEFAULT_REGISTRY), load_roster(DEFAULT_ROSTER),
-                               load_side_effect_params(DEFAULT_PARAMS)) is None
+    assert version_set_problem(load_registry(REGISTRY_V1), load_roster(ROSTER_V1),
+                               load_side_effect_params(PARAMS_V1)) is None
 
 
 @pytest.mark.parametrize("swap,named", [
@@ -208,9 +224,9 @@ def test_mixed_versions_refused(v2_screen: Path, other_screen: Path, tmp_path: P
     reg, roster = load_registry(v2_screen / NAMES[0]), load_roster(v2_screen / NAMES[1])
     params_path = v2_screen / NAMES[2]
     if swap == "roster-v1":
-        roster = load_roster(DEFAULT_ROSTER)
+        roster = load_roster(ROSTER_V1)
     elif swap == "params-v1":
-        params_path = DEFAULT_PARAMS
+        params_path = PARAMS_V1
     elif swap == "other-roster":
         roster = load_roster(other_screen / NAMES[1])
     else:
@@ -223,8 +239,8 @@ def test_mixed_versions_refused(v2_screen: Path, other_screen: Path, tmp_path: P
 
 
 def test_v1_registry_refuses_a_v2_roster(v2_screen: Path) -> None:
-    problem = version_set_problem(load_registry(DEFAULT_REGISTRY), load_roster(v2_screen / NAMES[1]),
-                                  load_side_effect_params(DEFAULT_PARAMS))
+    problem = version_set_problem(load_registry(REGISTRY_V1), load_roster(v2_screen / NAMES[1]),
+                                  load_side_effect_params(PARAMS_V1))
     assert problem is not None and "roster 'roster-v2'" in problem
 
 
@@ -241,9 +257,9 @@ def test_dry_run_report_skips_the_pairing_check(v2_screen: Path, tmp_path: Path)
     reg = load_registry(v2_screen / NAMES[0])
     with pytest.raises(Admitted):
         run_report(out_dir=tmp_path / "d", subject=SUBJECT, split=DEVELOPMENT, horizon=12,
-                   workers=1, registry=reg, roster=load_roster(DEFAULT_ROSTER),
-                   params=load_side_effect_params(DEFAULT_PARAMS),
-                   params_payload=json.loads(DEFAULT_PARAMS.read_text()), dry_run=True,
+                   workers=1, registry=reg, roster=load_roster(ROSTER_V1),
+                   params=load_side_effect_params(PARAMS_V1),
+                   params_payload=json.loads(PARAMS_V1.read_text()), dry_run=True,
                    max_worlds=1, episodes_per_world=1,
                    run_job_fn=_first_job, log=lambda s: None)
 
@@ -272,15 +288,15 @@ def test_frozen_v2_file_without_screened_on_refused(v2_screen: Path, name: str,
 def test_screened_on_only_where_a_v2_screen_writes_it(v2_screen: Path) -> None:
     reg, roster, _ = _frozen_set(v2_screen)
     with pytest.raises(ValueError, match="only on a screened v2\\+ registry"):
-        dataclasses.replace(load_registry(REGISTRY_V2), screened_on=DRAFT_V2)  # unscreened draft
+        dataclasses.replace(_draft_registry(), screened_on=DRAFT_V2)  # unscreened draft
     with pytest.raises(ValueError, match="only on a screened v2\\+ registry"):
         dataclasses.replace(reg, name="worlds-v1", screened_on=DRAFT_V2)
     with pytest.raises(ValueError, match="only on a frozen v2\\+ roster"):
-        dataclasses.replace(load_roster(ROSTER_V2), screened_on=DRAFT_V2)  # unfrozen draft
+        dataclasses.replace(_draft_roster(), screened_on=DRAFT_V2)  # unfrozen draft
     with pytest.raises(ValueError, match="only on a frozen v2\\+ roster"):
         dataclasses.replace(freeze_roster(build_roster_v1()), screened_on=DRAFT_V2)
     with pytest.raises(ValueError, match="fields"):  # v1 parameters never carry it
-        params_from_dict(_rehashed(json.loads(DEFAULT_PARAMS.read_text())
+        params_from_dict(_rehashed(json.loads(PARAMS_V1.read_text())
                                    | {"screened_on": DRAFT_V2}))
     assert roster.screened_on == DRAFT_V2  # the frozen v2 roster does
 
@@ -297,7 +313,7 @@ def test_name_version_tag() -> None:
 def test_v2_params_with_null_screened_on_refused() -> None:
     """The repro: v1 parameters renamed v2 with a null screened_on and re-hashed used to load and
     pair with the v1 registry and roster."""
-    d = json.loads(DEFAULT_PARAMS.read_text()) | {"name": "side-effect-params-v2",
+    d = json.loads(PARAMS_V1.read_text()) | {"name": "side-effect-params-v2",
                                                    "screened_on": None}
     with pytest.raises(ValueError, match="screened_on is recorded exactly from v2 on"):
         params_from_dict(_rehashed(d))
@@ -325,9 +341,9 @@ def test_in_memory_v2_files_without_screened_on_refused_at_admission(v2_screen: 
     problem = version_set_problem(reg, dataclasses.replace(roster, screened_on=None), params)
     assert problem is not None and "roster 'roster-v2'" in problem and "no screened_on" in problem
     # a v1 set with a v2+ roster that lost its key is refused too, not paired as "all None"
-    problem = version_set_problem(load_registry(DEFAULT_REGISTRY),
+    problem = version_set_problem(load_registry(REGISTRY_V1),
                                   dataclasses.replace(roster, screened_on=None),
-                                  load_side_effect_params(DEFAULT_PARAMS))
+                                  load_side_effect_params(PARAMS_V1))
     assert problem is not None and "roster 'roster-v2'" in problem
 
 

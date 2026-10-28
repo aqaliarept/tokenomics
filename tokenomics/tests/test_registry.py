@@ -13,7 +13,7 @@ import pytest
 from tokenomics.eval.families import CALM, DENSE, SHOCKED, SPARSE_WIDE
 from tokenomics.eval.gate import CANDIDATE, EpisodeRow
 from tokenomics.eval.registry import (
-    DEFAULT_REGISTRY,
+    REGISTRY_V1,
     DEVELOPMENT,
     GATE,
     REPLACED,
@@ -68,7 +68,7 @@ def test_draft_is_reproduced_byte_for_byte(draft: Registry) -> None:
     (its pinned registry_version); the packaged file is that draft, screened (task 11.1)."""
     built = build_worlds_v1()
     assert built.version == DRAFT_V1
-    shipped = load_registry()
+    shipped = load_registry(REGISTRY_V1)
     assert shipped.screening is not None
     assert [replace(e, status=GATE if e.status == REPLACED else e.status)
             for e in shipped.entries] == list(built.entries)
@@ -510,7 +510,7 @@ def test_screening_covers_development_only_by_default(draft: Registry) -> None:
 
 def test_draft_preregisters_saturation_ceiling(draft: Registry) -> None:
     assert draft.saturation_ceiling == 0.95
-    assert json.loads(DEFAULT_REGISTRY.read_text())["saturation_ceiling"] == 0.95
+    assert json.loads(REGISTRY_V1.read_text())["saturation_ceiling"] == 0.95
     with pytest.raises(ValueError, match="saturation ceiling"):
         replace(draft, saturation_ceiling=1.5)
 
@@ -603,11 +603,11 @@ EXP_0044_A2 = (Path(__file__).resolve().parents[2] / "experiments"
 def test_packaged_frozen_files_are_exp0044_attempt2() -> None:
     """The three packaged files are EXP-0044 attempt 2's frozen outputs: their content hashes
     equal the pinned ones and the run's recorded ones, byte for byte where the EXP is present."""
-    from tokenomics.eval.gate import DEFAULT_PARAMS, load_side_effect_params
-    from tokenomics.eval.roster import DEFAULT_ROSTER, load_roster
+    from tokenomics.eval.gate import PARAMS_V1, load_side_effect_params
+    from tokenomics.eval.roster import ROSTER_V1, load_roster
 
-    reg, ros = load_registry(), load_roster()
-    params = load_side_effect_params()
+    reg, ros = load_registry(REGISTRY_V1), load_roster(ROSTER_V1)
+    params = load_side_effect_params(PARAMS_V1)
     assert (reg.version, ros.version, params.version) == tuple(FROZEN_V1.values())
     assert reg.screening is not None and reg.admission_problems(DEVELOPMENT) == []
     assert ros.frozen and len(ros.members) == 5
@@ -615,14 +615,15 @@ def test_packaged_frozen_files_are_exp0044_attempt2() -> None:
         spec = json.loads((EXP_0044_A2 / "spec.json").read_text())
         assert spec["frozen"] == FROZEN_V1
         assert spec["source"]["commit"].startswith("9f29d73")
-        for name, path in (("worlds_v1.json", DEFAULT_REGISTRY), ("roster_v1.json", DEFAULT_ROSTER),
-                           ("side_effect_params_v1.json", DEFAULT_PARAMS)):
+        for name, path in (("worlds_v1.json", REGISTRY_V1), ("roster_v1.json", ROSTER_V1),
+                           ("side_effect_params_v1.json", PARAMS_V1)):
             assert path.read_bytes() == (EXP_0044_A2 / "frozen" / name).read_bytes(), name
 
 
 def test_packaged_defaults_pass_the_real_report_guard(tmp_path: Path) -> None:
-    """With the packaged files a real development report clears every input check (frozen
-    roster, screened and admitted registry, params present) and stops at the first job."""
+    """With the packaged default files (the frozen v2 set since task 10.1) a real development
+    report clears every input check (frozen roster, screened and admitted registry, params
+    present, one screen's set) and stops at the first job."""
     from tokenomics.eval.gate import load_side_effect_params
     from tokenomics.eval.gate_cli import run_report
     from tokenomics.eval.roster import load_roster

@@ -29,8 +29,9 @@ from ..env import TokenomicsAECEnv
 from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from .joint_stack import joint_stack_env
 
-DEFAULT_ROSTER = Path(__file__).parent / "registry" / "roster_v1.json"
+ROSTER_V1 = Path(__file__).parent / "registry" / "roster_v1.json"
 ROSTER_V2 = Path(__file__).parent / "registry" / "roster_v2.json"
+DEFAULT_ROSTER = ROSTER_V2  # the frozen v2 roster since task 10.1 (add-shocks-i-drift D8)
 
 # Ordering baselines each draft roster crosses with every producing baseline. Explicit, so a
 # baseline added to `ORDERING_BASELINES` later never changes an existing version's draft.

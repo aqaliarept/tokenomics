@@ -14,7 +14,7 @@ from tokenomics.domain.shocks import ShockKind
 from tokenomics.env.shock_schedule import build_schedule
 from tokenomics.eval.families import (CALM, FAMILIES, SHOCKED, SPARSE_WIDE, build_family_config,
                                       family_demand_ratio)
-from tokenomics.eval.registry import (DEFAULT_REGISTRY, REGISTRY_V2, Registry, WorldEntry,
+from tokenomics.eval.registry import (REGISTRY_V1, REGISTRY_V2, Registry, WorldEntry,
                                       build_worlds_v1, build_worlds_v2, load_registry,
                                       registry_from_dict)
 from tokenomics.eval.roster import load_roster
@@ -23,7 +23,7 @@ from tokenomics.eval.shock_profiles import (DEFAULT_SHOCK_PROFILES, SHOCKS_I,
                                             ShockProfileHashMismatch, _write_v1,
                                             load_shock_profile, shock_profiles_from_dict)
 
-REGISTRY_DIR = DEFAULT_REGISTRY.parent
+REGISTRY_DIR = REGISTRY_V1.parent
 V1_HASHES = {  # EXP-0044 attempt-2 frozen files (task 11.1 of add-measurement-gate-harness)
     "worlds_v1.json": "566946fe0c0363ec888f9a58bfe7bd480bcc948e049c93e9923088e2cab911e3",
     "roster_v1.json": "c2832dbb44d26601f279fc04c0c483c543c5a5fcdc8cb2231090fc03f76a3731",
@@ -33,12 +33,14 @@ V1_HASHES = {  # EXP-0044 attempt-2 frozen files (task 11.1 of add-measurement-g
 
 @pytest.fixture(scope="module")
 def v2() -> Registry:
-    return load_registry(REGISTRY_V2)
+    """The registry v2 draft. Since task 10.1 the packaged worlds_v2.json is EXP-0047's frozen
+    screen of it, so the draft is regenerated from its builder."""
+    return build_worlds_v2()
 
 
 @pytest.fixture(scope="module")
 def v1() -> Registry:
-    return load_registry(DEFAULT_REGISTRY)
+    return load_registry(REGISTRY_V1)
 
 
 # --- v1 untouched ---
@@ -65,7 +67,12 @@ def test_v1_untouched(v1: Registry) -> None:
 
 
 def test_v2_draft_reproduces_byte_for_byte(tmp_path: Path) -> None:
-    assert build_worlds_v2().to_json() == REGISTRY_V2.read_text()
+    """The generator reproduces the draft EXP-0047 screened: its hash is the packaged frozen
+    file's `screened_on`, and the screen kept every entry (no replacement)."""
+    draft, frozen = build_worlds_v2(), load_registry(REGISTRY_V2)
+    assert build_worlds_v2().to_json() == draft.to_json()
+    assert draft.version == frozen.screened_on
+    assert frozen.entries == draft.entries and frozen.screening is not None
     out = tmp_path / "profiles.json"
     _write_v1(out)
     assert out.read_bytes() == DEFAULT_SHOCK_PROFILES.read_bytes()
@@ -201,7 +208,7 @@ def test_edited_profile_file_refused() -> None:
 
 
 def test_registry_bound_to_another_profile_file_refused() -> None:
-    d = json.loads(REGISTRY_V2.read_text())
+    d = json.loads(build_worlds_v2().to_json())
     d["shock_profiles"] = "0" * 64
     d.pop("content_hash")
     from tokenomics.eval.roster import content_hash

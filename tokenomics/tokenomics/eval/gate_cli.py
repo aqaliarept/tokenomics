@@ -1445,11 +1445,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                          "'baseline:<producing>/<ordering>'")
     ap.add_argument("--prod-ckpt")
     ap.add_argument("--orderer-ckpt")
-    ap.add_argument("--registry", default=str(DEFAULT_REGISTRY))
-    ap.add_argument("--roster", default=str(DEFAULT_ROSTER))
+    # Defaults: the frozen v2 set (add-shocks-i-drift D8, task 10.1). The v1 set stays
+    # selectable by passing all three v1 paths; recompute reads only spec.json.
+    ap.add_argument("--registry", default=str(DEFAULT_REGISTRY),
+                    help="default: the packaged frozen worlds_v2.json; a screen needs a draft")
+    ap.add_argument("--roster", default=str(DEFAULT_ROSTER),
+                    help="default: the packaged frozen roster_v2.json; a screen needs a draft")
     ap.add_argument("--params", default=str(DEFAULT_PARAMS),
                     help="side-effect parameter file (X, Y, q, content hash); default: the "
-                         "packaged frozen file (task 11.1)")
+                         "packaged frozen side_effect_params_v2.json")
     ap.add_argument("--split", choices=SPLITS, default="development")
     ap.add_argument("--preregistration", help="manifest required for the sealed split")
     ap.add_argument("--access-log", default=str(SEALED_ACCESS_LOG))

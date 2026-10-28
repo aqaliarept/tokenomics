@@ -439,13 +439,17 @@ Hand-written strategies (`eval/baselines.py`) serve as floors and bars:
 | Role | Baselines |
 |---|---|
 | Producer | `noop`, `random`, `always_restore`, `always_both`, `restore_when_low`, `stock_aware`, `obs_stock_aware`, `entity_planner` |
-| Orderer | `random`, `even_split`, `blend_0.5`, `proportional`, `obs_price` |
+| Orderer | `random`, `even_split`, `blend_0.5`, `proportional`, `obs_price`; `shock_reactive` (roster v2 only) |
 
 The **hindsight baseline** is the best any baseline stack achieves, taken
-*per episode* over a frozen **roster**: gate roster v1 (`eval/roster.py`,
-`eval/registry/roster_v1.json`) is every producer above × every orderer above,
-40 stacks including the random ones and `blend_0.5` (the midpoint of
-`even_split` and `proportional`). A roster's version is the content hash of its
+*per episode* over a frozen **roster** (`eval/roster.py`). The roster v1 draft
+(`build_roster_v1()`) is every producer above × every v1 orderer above, 40
+stacks including the random ones and `blend_0.5` (the midpoint of `even_split`
+and `proportional`). The roster v2 draft (`build_roster_v2()`) adds
+`shock_reactive` for 48 stacks. A screen prunes a draft to the stacks that ever
+set the per-episode best and freezes it. The packaged frozen rosters are
+`eval/registry/roster_v1.json` (5 stacks) and `roster_v2.json` (6 stacks, the
+default; see "Gate sets" below). A roster's version is the content hash of its
 file; every gate report names it, and an edited roster without a new hash is
 refused. A random stack runs R replicates with hash-derived action seeds and
 counts as their **mean** (a max over replicates would reward luck and grow
@@ -488,6 +492,19 @@ run-down with an unmeasured `r_start`/`r_end` fails. Any failing clause rejects,
 and the failure names the clause, size/regime or world, episode and consumer.
 The report records the roster, registry and parameter versions, and
 `recompute_from_csv` rebuilds a byte-identical verdict from the episode CSV.
+
+**Gate sets** (`add-shocks-i-drift` D8). Registry, roster and side-effect
+parameters come as a versioned set that one roster-only screen freezes from
+the drafts. Set v1 (EXP-0044 attempt 2) is the sparse-wide registry, the five
+`entity_planner` members and X 0.7297 / Y 0.7681. Set v2 (EXP-0047) keeps the same
+worlds but puts the `shocks-i` profile on the shocked ones. Its roster draft
+adds the `shock_reactive` orderer (48 stacks) and prunes to six members: v1's
+five plus `entity_planner/shock_reactive`. X is 0.7516 and Y 0.7302. All three
+v2 files record `screened_on` = the draft registry's hash, and a real report
+admits a v2+ set only when the three agree. The packaged v2 set is the gate CLI
+default since task 10.1. v1 stays packaged and is selected by passing its three
+paths. `--mode recompute` reads only the run's `spec.json`, so a v1 report
+(EXP-0045) still recomputes to MATCH.
 
 **Shocks in the gate** (`add-shocks-i-drift` D10, ADR-0055). Every row carries
 the episode's `shock_digest` and `shock_events`; the pairing check that already

@@ -13,7 +13,7 @@ from tokenomics.domain import load_config
 from tokenomics.env.aec_env import DEFAULT_CONFIG
 from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
 from tokenomics.eval.roster import (
-    DEFAULT_ROSTER,
+    ROSTER_V1,
     DEVELOPMENT,
     JOINT_STACK,
     LEGACY,
@@ -69,14 +69,14 @@ def test_roster_v1_is_producing_cross_ordering_40_with_12_random() -> None:
 
 def test_blend_0_5_is_a_roster_member() -> None:
     # Scenario "blend_0.5 is a roster member".
-    r = load_roster()
+    r = load_roster(ROSTER_V1)
     assert any(m.ordering == "blend_0.5" for m in r.members)
 
 
 def test_packaged_roster_is_the_frozen_pruning_of_the_draft() -> None:
     """Task 11.1: the packaged roster is the EXP-0044 attempt-2 freeze of the 40-member draft:
     frozen, carrying its pruning record, and holding a subset of the draft's members."""
-    r, draft = load_roster(), build_roster_v1()
+    r, draft = load_roster(ROSTER_V1), build_roster_v1()
     assert r.frozen and r.pruning is not None
     assert set(r.member_ids) < set(draft.member_ids)
     assert r.replicates == draft.replicates
@@ -103,7 +103,7 @@ def test_replicates_only_for_random_members() -> None:
 def test_member_list_edit_without_new_hash_refused(tmp_path: Path) -> None:
     # Scenario "Roster edited without a new version": load raises, so the gate (which only gets
     # rosters through load_roster) cannot compute a hindsight baseline from it.
-    d = json.loads(DEFAULT_ROSTER.read_text())
+    d = json.loads(ROSTER_V1.read_text())
     d["members"] = d["members"][1:]
     p = tmp_path / "edited.json"
     p.write_text(json.dumps(d))
@@ -113,7 +113,7 @@ def test_member_list_edit_without_new_hash_refused(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("field,value", [("replicates", 3), ("frozen", False), ("name", "x")])
 def test_any_field_edit_without_new_hash_refused(tmp_path: Path, field: str, value: object) -> None:
-    d = json.loads(DEFAULT_ROSTER.read_text())
+    d = json.loads(ROSTER_V1.read_text())
     d[field] = value
     p = tmp_path / "edited.json"
     p.write_text(json.dumps(d))
@@ -122,7 +122,7 @@ def test_any_field_edit_without_new_hash_refused(tmp_path: Path, field: str, val
 
 
 def test_missing_hash_refused(tmp_path: Path) -> None:
-    d = json.loads(DEFAULT_ROSTER.read_text())
+    d = json.loads(ROSTER_V1.read_text())
     del d["content_hash"]
     p = tmp_path / "nohash.json"
     p.write_text(json.dumps(d))
@@ -155,7 +155,7 @@ def test_flag_inconsistent_with_policies_rejected() -> None:
 def test_every_member_runs_under_its_contract() -> None:
     # Smoke (horizon 2, one seed): each member's policies act in its contract's env.
     cfg = load_config(DEFAULT_CONFIG)
-    for m in load_roster().members:
+    for m in load_roster(ROSTER_V1).members:
         prod, order = member_policies(m)
         stats = run_episode(member_env(m, cfg, horizon=2), prod, order, seed=0)
         assert stats["cycles"] > 0, m.id
