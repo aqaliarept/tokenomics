@@ -383,15 +383,24 @@ driver reuses the gate's job runner and row format for the portable stack.
 ### D13. Compute
 - Reference: EXP-0045 ran 1,280 horizon-100 episodes in ≈ 5.5 min on 8 vCPU (≈ 0.8 vCPU-h
   billed).
-- EXP-0046 is ≈ 240 episodes, expected ≤ 1 vCPU-h.
-- EXP-0047 is the size of EXP-0044 attempt 2 (≈ 11 vCPU-h billed) × 100/88 runs per
-  world-episode, so ≈ 12.5 vCPU-h. The v1 draft roster's 40 stacks are 28 deterministic + 12
+- EXP-0046 is 240 jobs (120 episodes + 120 twins): ≈ 0.23 vCPU-h of execution, ≈ 0.6–0.8
+  vCPU-h billed on cpu8 (task 6.2, `sizing.md`).
+- EXP-0047 is the size of EXP-0044 attempt 2 (3.3 vCPU-h of execution, 4.1 billed on cpu16)
+  × 100/88 runs per world-episode: ≈ 3.7–4.0 vCPU-h of execution, ≈ 4.5–5 billed when the
+  on-demand screen replaces no gate world. Reserves add cost only when consulted (up to 104
+  more world-episodes); `sizing.md` §5 gives every conditional scenario, and its all-reserves
+  pessimistic case (≈ 21 billed) crosses the 20 vCPU-h line, so the launch decision goes to the
+  supervisor (§6). (An earlier draft of this item took ≈ 11
+  vCPU-h for attempt 2, which is attempt 1's dense + sparse-wide screen, and so expected ≈ 12.5.)
+  The v1 draft roster's 40 stacks are 28 deterministic + 12
   random, i.e. 28 + 12·R = 88 runs at R = 5. `shock_reactive` adds 8 stacks: 7 deterministic
   and `random/shock_reactive`, which runs R = 5 replicates. That is 12 more runs, 100 in
   total.
-- A local timing probe (horizon 12, one seed) confirms both estimates before launch. If it
-  extrapolates either run above 20 vCPU-h, the implementer stops and reports to the
-  supervisor instead of launching.
+- A local timing probe (horizon 12, one seed; task 6.2, `sizing.md`) checks both estimates
+  before launch. Its figures extrapolate cycles 1–12 linearly to 100 and convert to pod time with
+  the factor of two past runs; both are assumptions (`sizing.md` §3, §4), so every figure above
+  is conditional. If it extrapolates either run above 20 vCPU-h, the implementer stops and
+  reports to the supervisor instead of launching.
 
 ## Risks / Trade-offs
 
