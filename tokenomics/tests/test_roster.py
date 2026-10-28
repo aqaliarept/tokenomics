@@ -18,6 +18,7 @@ from tokenomics.eval.roster import (
     JOINT_STACK,
     LEGACY,
     NEVER_ARGMAX_RULE,
+    ROSTER_V1_ORDERING,
     DevRow,
     EpisodeKey,
     Roster,
@@ -56,11 +57,13 @@ def _both_sizes(roster: Roster, small: dict[str, float], large: dict[str, float]
 
 def test_roster_v1_is_producing_cross_ordering_40_with_12_random() -> None:
     r = build_roster_v1()  # the draft definition; the packaged file is its pruned, frozen form
-    assert len(r.members) == len(PRODUCING_BASELINES) * len(ORDERING_BASELINES) == 40
+    assert len(r.members) == len(PRODUCING_BASELINES) * len(ROSTER_V1_ORDERING) == 40
     assert sum(m.random for m in r.members) == 12
     assert {(m.producing, m.ordering) for m in r.members} == {
-        (p, o) for p in PRODUCING_BASELINES for o in ORDERING_BASELINES
+        (p, o) for p in PRODUCING_BASELINES for o in ROSTER_V1_ORDERING
     }
+    # roster v2's shock-reactive router (add-shocks-i-drift D9) is not a v1 member
+    assert set(ROSTER_V1_ORDERING) == set(ORDERING_BASELINES) - {"shock_reactive"}
     assert r.replicates == 5 and not r.frozen and r.pruning is None
 
 

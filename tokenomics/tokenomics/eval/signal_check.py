@@ -23,6 +23,7 @@ COMBOS = [
     ("stock_aware", "even_split"),
     ("stock_aware", "proportional"),
     ("stock_aware", "blend_0.5"),  # gate roster v1 router (design D5)
+    ("stock_aware", "shock_reactive"),  # gate roster v2 router (add-shocks-i-drift D9)
     # observation-compatible bar (NEXT STEPS stage 1): obs-only, the fair bar for RL.
     ("obs_stock_aware", "even_split"),
     ("obs_stock_aware", "obs_price"),

@@ -269,6 +269,18 @@ order, the order keeps the base logits.
   under the legacy and the joint-stack contract, so roster v2's mandatory pair
   `obs_stock_aware/shock_reactive`, which `eval/roster.py:contract_for` sends to LEGACY
   (`product_stream_ordering=False`), runs as well as the joint-stack pairs.
+- **Re-admission (decayed-routes floor).** A producer is excluded only while its evidence is
+  fresh: its `routed_ema(pid, product)` must also be at least `(1 − α)^6` (α = the telemetry's
+  EMA rate, 0.3, so about 0.118) of the summed `routed_ema` of the order's eligible producers.
+  Without the floor an excluded producer is never re-admitted. It then gets almost no units,
+  so its routed and rejected EMAs decay at the same rate and their ratio stays over the half
+  threshold for the rest of the episode, after an outage and after any ordinary overload
+  rejection alike (found in task 5.4: an outage in cycles 2–4 left the producer excluded through
+  cycle 8). That weak a bar would recreate the benchmark artifact this baseline exists to rule
+  out. n cycles after its last routing, the producer's share is at most `(1 − α)^n` while the
+  product's routed flow does not shrink. The floor therefore re-admits it as a probe within 6
+  cycles, the longest D7 outage. It is excluded again only if the new routing is again mostly
+  rejected or failed.
 - **No peeking.** It never reads the product-stream-only view or any shock state, so it can
   react only to observed consequences.
 - `eval/signal_check.py` uses a hardcoded `COMBOS` list (`:20-31`), so the task adds

@@ -327,6 +327,70 @@ def ordering_blend(alpha: float) -> Policy:
     return policy
 
 
+_blend_half = ordering_blend(0.5)
+
+# A producer whose recent rejected-or-failed quantity of a product exceeds this fraction of its
+# recent routed quantity is excluded from that product's orders (add-shocks-i-drift D9).
+SHOCK_REACTIVE_REJECT_FRACTION = 0.5
+# Longest producer outage in the "shocks-i" profile (D7: duration U{3..6}): an excluded
+# producer must be re-admitted within this many cycles of its last routing.
+SHOCK_REACTIVE_READMIT_CYCLES = 6
+
+
+def shock_reactive_fresh_floor(alpha: float) -> float:
+    """Minimum share of a product's recent routed flow (`routed_ema(pid, x)` over the sum across
+    the order's eligible producers) for a producer's rejection record to count as fresh evidence
+    (add-shocks-i-drift D9, the decayed-routes floor).
+
+    Without it an excluded producer is never re-admitted: it gets ~no units, so its routed and
+    rejected EMAs decay by the same (1 - alpha) per cycle and their ratio stays above the
+    threshold. With it: n cycles after its last routing the producer's routed EMA is at most
+    (1 - alpha)^n of its level then, which is at most the product's routed flow then; while that
+    flow does not shrink (the others absorb it), its share is at most (1 - alpha)^n. A floor of
+    (1 - alpha)^READMIT_CYCLES therefore re-admits it within READMIT_CYCLES cycles (telemetry
+    alpha 0.3: floor 0.7^6 ~ 0.118). A shrinking flow can take longer."""
+    return (1.0 - alpha) ** SHOCK_REACTIVE_READMIT_CYCLES
+
+
+def ordering_shock_reactive(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """Roster v2's reactive router (add-shocks-i-drift D9, ADR-0055): `blend_0.5`'s logits, with
+    every eligible producer of an order set to -BOUND while it has fresh evidence of failing:
+    its `rejected_or_failed_ema(pid, product)` exceeds half its `routed_ema(pid, product)`, and
+    its share of the product's routed flow is at least `shock_reactive_fresh_floor`. Once an
+    excluded producer's share decays below the floor it is re-admitted as a probe, and excluded
+    again only if the new routing is again mostly rejected or failed. An order whose every
+    eligible producer is excluded keeps the base logits, so it is still routed.
+
+    It reads only the legacy ordering-agent view (as `blend_0.5` does) and the domain-owned
+    telemetry, both present under the legacy and the joint-stack contract, and never any shock
+    state: it can react only to a shock's observed consequences, so it is a fair bar."""
+    sp = env.spec_
+    _, aid = env._role[agent]
+    mat = _blend_half(env, agent).reshape(sp.k_stream, sp.num_producers)
+    view = env.system.ordering_agents[aid].view(env.system.producer_infos)
+    telemetry = env.system.telemetry
+    floor = shock_reactive_fresh_floor(telemetry._alpha)  # white-box: the EMA rate (no public field)
+    for k, oid in enumerate(sorted(view.incoming)):
+        if k >= sp.k_stream:
+            break
+        product = view.incoming[oid].product
+        eligible = view.eligible[oid]
+        routed = {pid: telemetry.routed_ema(pid, product) for pid in eligible}
+        flow = sum(routed.values())
+        excluded = [
+            pid for pid in eligible
+            if flow > 0
+            and routed[pid] >= floor * flow
+            and telemetry.rejected_or_failed_ema(pid, product)
+            > SHOCK_REACTIVE_REJECT_FRACTION * routed[pid]
+        ]
+        if len(excluded) == len(eligible):
+            continue  # nobody left to route to: keep the base logits
+        for pid in excluded:
+            mat[k, sp.producer_ids.index(pid)] = -ACTION_LOGIT_BOUND
+    return mat.flatten()
+
+
 def random_action(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     return env.action_space(agent).sample()
 
@@ -350,5 +414,8 @@ ORDERING_BASELINES: dict[str, Policy] = {
     # gate roster v1 member (design D5, add-measurement-gate-harness): the midpoint of the
     # even_split..proportional family, so the hindsight baseline covers a tempered router too.
     "blend_0.5": ordering_blend(0.5),
+    # gate roster v2 member (add-shocks-i-drift D9): blend_0.5 that stops routing to producers
+    # whose recent sub-orders were mostly rejected or failed.
+    "shock_reactive": ordering_shock_reactive,
     "random": random_action,
 }

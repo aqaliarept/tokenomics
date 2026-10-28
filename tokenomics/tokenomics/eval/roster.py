@@ -29,6 +29,15 @@ from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from .joint_stack import joint_stack_env
 
 DEFAULT_ROSTER = Path(__file__).parent / "registry" / "roster_v1.json"
+ROSTER_V2 = Path(__file__).parent / "registry" / "roster_v2.json"
+
+# Ordering baselines each draft roster crosses with every producing baseline. Explicit, so a
+# baseline added to `ORDERING_BASELINES` later never changes an existing version's draft.
+# v1 (D5, add-measurement-gate-harness): the hand-written routers plus `blend_0.5`. v2
+# (add-shocks-i-drift D8/D9): v1 plus the shock-reactive router.
+ROSTER_V1_ORDERING = ("even_split", "proportional", "obs_price", "blend_0.5", "random")
+SHOCK_REACTIVE = "shock_reactive"
+ROSTER_V2_ORDERING = ROSTER_V1_ORDERING + (SHOCK_REACTIVE,)
 
 # Env contracts (D5). JOINT_STACK = `joint_stack_env`, the ordering mechanics the candidate runs
 # under. LEGACY = the default flat-observation env the `obs_*` baselines decode.
@@ -266,15 +275,27 @@ def save_roster(roster: Roster, path: str | Path) -> None:
     Path(path).write_text(roster.to_json())
 
 
-def build_roster_v1(replicates: int = DEFAULT_REPLICATES) -> Roster:
-    """Draft roster v1 (D5): every producing baseline × every ordering baseline. `blend_0.5` is in
-    `ORDERING_BASELINES`, so it is paired with every producing baseline like the rest."""
-    members = tuple(
+def _cross(ordering: Iterable[str]) -> tuple[RosterMember, ...]:
+    """Every producing baseline paired with each of `ordering`."""
+    return tuple(
         RosterMember(p, o, contract_for(p, o), RANDOM_POLICY in (p, o))
         for p in PRODUCING_BASELINES
-        for o in ORDERING_BASELINES
+        for o in ordering
     )
-    return Roster(name="roster-v1", replicates=replicates, members=members)
+
+
+def build_roster_v1(replicates: int = DEFAULT_REPLICATES) -> Roster:
+    """Draft roster v1 (D5): every producing baseline × every v1 ordering baseline, `blend_0.5`
+    included."""
+    return Roster(name="roster-v1", replicates=replicates, members=_cross(ROSTER_V1_ORDERING))
+
+
+def build_roster_v2(replicates: int = DEFAULT_REPLICATES) -> Roster:
+    """Draft roster v2 (add-shocks-i-drift D8): roster v1's draft plus every producing baseline
+    paired with `shock_reactive` (D9), unfrozen and unpruned. `contract_for` sends
+    `obs_stock_aware/shock_reactive` to LEGACY; the router reads only state both contracts have.
+    The baseline-only screen on registry v2 prunes and freezes it."""
+    return Roster(name="roster-v2", replicates=replicates, members=_cross(ROSTER_V2_ORDERING))
 
 
 def member_policies(m: RosterMember) -> tuple[Policy, Policy]:
