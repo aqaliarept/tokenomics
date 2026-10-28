@@ -210,6 +210,22 @@ but splits 29–40% of consumer orders; it beats `random` and loses to `round_ro
 worlds. Caveat: at
 fanout 2, "pick two, take the roomier" is an argmax; testing it needs worlds with fanout ≥ 3.
 
+**Seen in EXP-0050** (`experiments/EXP-0050-routing-vs-fanout/`, the same routers on worlds with
+2–14 possible makers per product; registry v2 has 2): the diagnosis at fanout 2 understates how
+much routing matters. Check: `routing_audit --plan exp0050` and its `fanout_summary.csv` /
+`routing_metrics.csv` (split degree, `wasted_units_consumer`, `lost_units_consumer_ttl`,
+`lost_units_consumer_no_fit` per cell). Outcome: at 42 producers `round_robin` beats the best
+hand-written rule by +116 / +150 units at fanout 2 and +335 / +421 at fanout 7; routers that
+split lose more with more makers (losses are TTL expiries, no-fit ≈ 0): `random` splits more at
+fanout 14 and falls 268–296 units below `round_robin`, and `random_whole` recovers it
+(`even_split`'s fanout-7 collapse comes mostly from its lowest-index tie-break). The spare-capacity routers still lose to blind choice. The trained portable orderer splits
+as much as the failing rules but its split orders complete, and it clearly leads at 42
+producers with fanout 4 and 14.
+Open: why its parts complete. Its distillation target is input-aware (log of
+`makeable_qty_now`, capacity and inputs in stock; `proportional` weighs capacity only). Check:
+the teacher as a router (split by `makeable_qty_now`), its whole-order version, and a trace of
+expired reservations by producer input stock.
+
 ---
 
 ## Unverified problems (plain-English inbox)

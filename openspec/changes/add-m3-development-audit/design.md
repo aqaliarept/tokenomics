@@ -251,8 +251,9 @@ help in EXP-0048.
 *Trained subjects.* The portable stack is EXP-0035 `producer_candidate.pt` + EXP-0012
 `orderer_scorer.pt`. It runs as `entity_planner/trained_orderer` (the routers' producer, so its
 routing compares with theirs) and as `portable` (its own producer). The orderer is a scorer
-distilled from `proportional`'s target, log(makeable units now) (`train/orderer_scorer.py`
-`teacher_logits`). Its policy emits deterministic logits and the decode does not sample, so both
+distilled from log(makeable units now) (`train/orderer_scorer.py` `teacher_logits`:
+`makeable_qty_now`, capacity and inputs in stock; corrected after EXP-0050's review, an earlier
+version called this `proportional`'s target, but `proportional` weighs capacity only). Its policy emits deterministic logits and the decode does not sample, so both
 subjects are deterministic and run once (R = 1). They are not EXP-0006B's sampled policy.
 
 *Tracer additions.* Receiver variation: a stream is one ordering agent's orders of one product;

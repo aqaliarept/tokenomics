@@ -1,0 +1,3255 @@
+{
+  "blas_threads": 1,
+  "date": "2026-10-28",
+  "driver": "tokenomics.eval.routing_audit",
+  "driver_choices": {
+    "float_tolerance": 1e-09,
+    "matched_split_tolerance": 0.05
+  },
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "exp0050",
+  "inputs": {
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "producer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/producer_candidate.pt",
+      "sha256": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    }
+  },
+  "kind": "audit",
+  "pins": {
+    "checkpoints": {
+      "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+      "producer": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    },
+    "driver": "tokenomics.eval.routing_audit",
+    "dry_run": false,
+    "grid": {
+      "fan-dense-12-f4-calm-00": {
+        "episodes": [
+          362959117
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-dense-12-f4-calm-01": {
+        "episodes": [
+          692508566
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-dense-12-f4-calm-02": {
+        "episodes": [
+          1467879906
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-dense-12-f4-calm-03": {
+        "episodes": [
+          1208078824
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-dense-12-f4-shocked-00": {
+        "episodes": [
+          944285640,
+          1073941793
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-dense-12-f4-shocked-01": {
+        "episodes": [
+          311271882,
+          2006196054
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-dense-12-f4-shocked-02": {
+        "episodes": [
+          1793941474,
+          251959553
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-dense-12-f4-shocked-03": {
+        "episodes": [
+          235844045,
+          225226785
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-dense-42-f14-calm-00": {
+        "episodes": [
+          350710623
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-dense-42-f14-calm-01": {
+        "episodes": [
+          1033763571
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-dense-42-f14-calm-02": {
+        "episodes": [
+          677717517
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-dense-42-f14-calm-03": {
+        "episodes": [
+          1235312802
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-dense-42-f14-shocked-00": {
+        "episodes": [
+          956304177,
+          1331718756
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-dense-42-f14-shocked-01": {
+        "episodes": [
+          338663573,
+          1337015743
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-dense-42-f14-shocked-02": {
+        "episodes": [
+          1874177856,
+          446901451
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-dense-42-f14-shocked-03": {
+        "episodes": [
+          1577590080,
+          1973327651
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-12-f2-calm-00": {
+        "episodes": [
+          518044963
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f2-calm-01": {
+        "episodes": [
+          656049598
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f2-calm-02": {
+        "episodes": [
+          665256908
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f2-calm-03": {
+        "episodes": [
+          633190062
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f2-shocked-00": {
+        "episodes": [
+          113409169,
+          2122845364
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f2-shocked-01": {
+        "episodes": [
+          683410593,
+          337914092
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f2-shocked-02": {
+        "episodes": [
+          1467854765,
+          1267802011
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f2-shocked-03": {
+        "episodes": [
+          1330164213,
+          820539727
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f4-calm-00": {
+        "episodes": [
+          541671348
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f4-calm-01": {
+        "episodes": [
+          637123928
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f4-calm-02": {
+        "episodes": [
+          735468774
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f4-calm-03": {
+        "episodes": [
+          1503877604
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f4-shocked-00": {
+        "episodes": [
+          1779677196,
+          1287476883
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f4-shocked-01": {
+        "episodes": [
+          830076831,
+          1835442434
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f4-shocked-02": {
+        "episodes": [
+          1952700523,
+          1696232685
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-sparse_wide-12-f4-shocked-03": {
+        "episodes": [
+          373651629,
+          1179047478
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "fan-sparse_wide-42-f14-calm-00": {
+        "episodes": [
+          331047815
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f14-calm-01": {
+        "episodes": [
+          2064406704
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f14-calm-02": {
+        "episodes": [
+          652300480
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f14-calm-03": {
+        "episodes": [
+          1339103004
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f14-shocked-00": {
+        "episodes": [
+          1045386075,
+          347454311
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f14-shocked-01": {
+        "episodes": [
+          841763705,
+          1756179402
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f14-shocked-02": {
+        "episodes": [
+          1144286218,
+          1582208268
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f14-shocked-03": {
+        "episodes": [
+          652143472,
+          1156047292
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f2-calm-00": {
+        "episodes": [
+          723082501
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f2-calm-01": {
+        "episodes": [
+          581201112
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f2-calm-02": {
+        "episodes": [
+          1972938289
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f2-calm-03": {
+        "episodes": [
+          18844682
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f2-shocked-00": {
+        "episodes": [
+          585890140,
+          1209074846
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f2-shocked-01": {
+        "episodes": [
+          1151095713,
+          1957360197
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f2-shocked-02": {
+        "episodes": [
+          742870106,
+          24778288
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f2-shocked-03": {
+        "episodes": [
+          522518548,
+          107142040
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f4-calm-00": {
+        "episodes": [
+          1390085781
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f4-calm-01": {
+        "episodes": [
+          1257020791
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f4-calm-02": {
+        "episodes": [
+          1091338848
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f4-calm-03": {
+        "episodes": [
+          1796494259
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f4-shocked-00": {
+        "episodes": [
+          397855633,
+          317459013
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f4-shocked-01": {
+        "episodes": [
+          1478732297,
+          330524322
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f4-shocked-02": {
+        "episodes": [
+          1226626330,
+          2140763931
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f4-shocked-03": {
+        "episodes": [
+          1990318370,
+          1644285016
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f7-calm-00": {
+        "episodes": [
+          732009692
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f7-calm-01": {
+        "episodes": [
+          373338070
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f7-calm-02": {
+        "episodes": [
+          1983176127
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f7-calm-03": {
+        "episodes": [
+          1325526324
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f7-shocked-00": {
+        "episodes": [
+          604535990,
+          1700510350
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f7-shocked-01": {
+        "episodes": [
+          1893482697,
+          2062940683
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f7-shocked-02": {
+        "episodes": [
+          291907499,
+          739686787
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "fan-sparse_wide-42-f7-shocked-03": {
+        "episodes": [
+          1571735126,
+          16529814
+        ],
+        "regime": "shocked",
+        "size": 42
+      }
+    },
+    "horizon": 100,
+    "plan": "exp0050",
+    "producer": "entity_planner",
+    "registry_name": "worlds-v2",
+    "registry_screened_on": "3032147f1f17233703f486c66e4c56e006c026399364dd1cbaead5b46bcfceb5",
+    "registry_version": "7b09f536e9880bc31370694f80eaca828587621eb5daa16fdf64e80ed05ee7ff",
+    "replicates": 5,
+    "roster_name": "roster-v2",
+    "roster_screened_on": "3032147f1f17233703f486c66e4c56e006c026399364dd1cbaead5b46bcfceb5",
+    "roster_version": "5050508ecb25f0eda0ae0a61b0dde4ba948a6e9b0d901cd14cde28e0db161f38",
+    "routers": [
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "blend_0.5",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "blend_0.5",
+        "subject": "entity_planner/blend_0.5",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "even_split",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "even_split",
+        "subject": "entity_planner/even_split",
+        "trained": false
+      },
+      {
+        "contract": "legacy",
+        "kind": "deterministic",
+        "ordering": "obs_price",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "obs_price",
+        "subject": "entity_planner/obs_price",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "proportional",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "proportional",
+        "subject": "entity_planner/proportional",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "random",
+        "producing": "entity_planner",
+        "random": true,
+        "roster": true,
+        "router": "random",
+        "subject": "entity_planner/random",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "shock_reactive",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "shock_reactive",
+        "subject": "entity_planner/shock_reactive",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "round_robin",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "round_robin",
+        "subject": "entity_planner/round_robin",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "random_whole",
+        "producing": "entity_planner",
+        "random": true,
+        "roster": false,
+        "router": "random_whole",
+        "subject": "entity_planner/random_whole",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "proportional_whole",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "proportional_whole",
+        "subject": "entity_planner/proportional_whole",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "even_split_rotating",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "even_split_rotating",
+        "subject": "entity_planner/even_split_rotating",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "two_choice_spare",
+        "producing": "entity_planner",
+        "random": true,
+        "roster": false,
+        "router": "two_choice_spare",
+        "subject": "entity_planner/two_choice_spare",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "spare_weighted_whole",
+        "producing": "entity_planner",
+        "random": true,
+        "roster": false,
+        "router": "spare_weighted_whole",
+        "subject": "entity_planner/spare_weighted_whole",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "spare_rotating_whole",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "spare_rotating_whole",
+        "subject": "entity_planner/spare_rotating_whole",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "trained_orderer",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "trained_orderer",
+        "subject": "entity_planner/trained_orderer",
+        "trained": true
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "trained_orderer",
+        "producing": "portable",
+        "random": false,
+        "roster": false,
+        "router": "portable",
+        "subject": "portable",
+        "trained": true
+      }
+    ],
+    "shock_profile_override": null,
+    "source": {
+      "commit": "2ef010ff9e860b46e1c23f21b5d71d925d33299b",
+      "tree_sha256": "18f3a3034443e430183672337308652609c3cc578b0a17d023d9e1badbc8cb8a"
+    },
+    "split": "development",
+    "worlds": [
+      {
+        "config_sha256": "48a4ac7412efaa8cb6688a2632c41fe91165a002c07f285dd324494312050d44",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          518044963
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-12-f2-calm-00",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1194150781
+      },
+      {
+        "config_sha256": "34e78acafb1045274b32b780152de6ea4ad08d6f869388ce61556b2c86b38852",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          656049598
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-12-f2-calm-01",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1088745299
+      },
+      {
+        "config_sha256": "171d16255abf229fac7e126ffa5c3bdced8473be9d3aa15c06e5e2bf88a26bdd",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          665256908
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-12-f2-calm-02",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 423926407
+      },
+      {
+        "config_sha256": "bf85912b43b7b52e1ea22ad5dcd75f5819f634db1a0c1cd6db763f6b485dabc9",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          633190062
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-12-f2-calm-03",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 414612281
+      },
+      {
+        "config_sha256": "5fa886c92be11e4b86fc820dd4d497f130992a9af8934a8a8c46b61732020d3a",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          113409169,
+          2122845364
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-12-f2-shocked-00",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1194150781
+      },
+      {
+        "config_sha256": "1b0406f4914c33de194a72282a22aa52d0cfeb759f736d9f0e42bb1ffaca202f",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          683410593,
+          337914092
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-12-f2-shocked-01",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1088745299
+      },
+      {
+        "config_sha256": "c73ed5ad1627654fc8ddb811bfea004d688d5aaf9f9d97d38c795b5c9490ff0b",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          1467854765,
+          1267802011
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-12-f2-shocked-02",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 423926407
+      },
+      {
+        "config_sha256": "7d0083fa5e9bbfa27b861730e68fd37f0968debef065d02154cd49aea0165ef1",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          1330164213,
+          820539727
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-12-f2-shocked-03",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 414612281
+      },
+      {
+        "config_sha256": "3336727835618a32c55f82b75fd1e07be5fc8a910259b7a613a3d6751e8d027e",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          541671348
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-12-f4-calm-00",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1957037468
+      },
+      {
+        "config_sha256": "fce38ef2db5e81649f43e728539301cb4bc958beb7e5af26458e9f03d65eaa91",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          637123928
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-12-f4-calm-01",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1675013438
+      },
+      {
+        "config_sha256": "e00a011e1754df4d64ef467b89910517192f7ff830258436f5254d24ca55a7ec",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          735468774
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-12-f4-calm-02",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 2085951551
+      },
+      {
+        "config_sha256": "9ce5a0046c4f621a96a67a9c056b6dc33c73726b1731d4ea27857c2a3a00e0b1",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1503877604
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-12-f4-calm-03",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1143472459
+      },
+      {
+        "config_sha256": "89de62f94f2b54ccf87ec13f21c6ae81a5ef5bb7c267064ed0f26d2b06b52982",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1779677196,
+          1287476883
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-12-f4-shocked-00",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1957037468
+      },
+      {
+        "config_sha256": "06e25d764b90d98998ebe8ea8d116cb7ed5800e86edf66ad64d80769d7df3a51",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          830076831,
+          1835442434
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-12-f4-shocked-01",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1675013438
+      },
+      {
+        "config_sha256": "9d998fee5d03c8c72fcfe3e7d458886362eeab964ec639457097aefbd45676fb",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1952700523,
+          1696232685
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-12-f4-shocked-02",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 2085951551
+      },
+      {
+        "config_sha256": "7127cff4f59bda8ccad6abc150f5ebe5410dabb4f5a26e7f92cad04c0d0fe0ff",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          373651629,
+          1179047478
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-12-f4-shocked-03",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1143472459
+      },
+      {
+        "config_sha256": "1b06749861e11b97a57d5af364a581a50d44efa976d3602bd93f3a183b1100ef",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          723082501
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f2-calm-00",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 454741205
+      },
+      {
+        "config_sha256": "811f26f4ff6f89e480be4ea698d4bcd8eb28779317f1fab6d148821ca629145a",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          581201112
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f2-calm-01",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1220510762
+      },
+      {
+        "config_sha256": "2fb410c4f8cd4a320b9901ad49812103d2f6d64e0de612567703359c5bfe6584",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          1972938289
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f2-calm-02",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 809324136
+      },
+      {
+        "config_sha256": "7e81a3acf48388d0eddbdb0f6e6d744bbb891785e4d89da24ce90fa2cea6f0bf",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          18844682
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f2-calm-03",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 2011823234
+      },
+      {
+        "config_sha256": "d23ddd7341e10e2af08a7b2318a63ae181c2f2e86d1bc635995414d07f93a3b5",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          585890140,
+          1209074846
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f2-shocked-00",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 454741205
+      },
+      {
+        "config_sha256": "6c8fcee493c1c21819d1eb4b3935a7694e4ea25644878c65295c6e7f8fae93ce",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          1151095713,
+          1957360197
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f2-shocked-01",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1220510762
+      },
+      {
+        "config_sha256": "324d8861ad654083183d2937700548cdacc439fb67fe5913627917ee294d6e3b",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          742870106,
+          24778288
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f2-shocked-02",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 809324136
+      },
+      {
+        "config_sha256": "27a31354b8b3cd560eb17aa96fd4e795d7a3c82335f4cc89189f65b846a04561",
+        "declarers_per_product": [
+          2
+        ],
+        "episode_seeds": [
+          522518548,
+          107142040
+        ],
+        "family": "sparse_wide",
+        "fanout": 2,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 2,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f2-shocked-03",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 2011823234
+      },
+      {
+        "config_sha256": "67907390accaa3163829ff589f69eeb50dd0dc8e060dbc9cf5d836acf87bcb9a",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1390085781
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f4-calm-00",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 771272501
+      },
+      {
+        "config_sha256": "6d00b23011805dda9be98547217edf104e5287de44e73323244f729a6882eca6",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1257020791
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f4-calm-01",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1462042149
+      },
+      {
+        "config_sha256": "53c4b90869631a6c13db8dc0b89fd77ff152f86ac016e2d78481356ad30b77f0",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1091338848
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f4-calm-02",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1738474436
+      },
+      {
+        "config_sha256": "0d3b6c6449240e35c1ca2bf18013f28249b005a0a4ee365113e87170ad63cb4a",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1796494259
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f4-calm-03",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1617278735
+      },
+      {
+        "config_sha256": "447b573683e7eef05f6555e3630a3b084daf14810e36552809cb0ca6b1a5b6ea",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          397855633,
+          317459013
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f4-shocked-00",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 771272501
+      },
+      {
+        "config_sha256": "51f16a65d646366b02195248d0902466827f6f0e1e79efc320fa064c0d0b6605",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1478732297,
+          330524322
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f4-shocked-01",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1462042149
+      },
+      {
+        "config_sha256": "cd3813728c9a2185fefd1ee367e0d089142b1ac7ff4c207ad2d642db32f99e85",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1226626330,
+          2140763931
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f4-shocked-02",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1738474436
+      },
+      {
+        "config_sha256": "3fd08bcfd39d85650dffa6ddda2d7307213587081eab620b23ea09df5abcb8c2",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1990318370,
+          1644285016
+        ],
+        "family": "sparse_wide",
+        "fanout": 4,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 4,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f4-shocked-03",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1617278735
+      },
+      {
+        "config_sha256": "4c075e60f577496c11f7eeec378413faf1468b77a04c4299737f96622fe13cb2",
+        "declarers_per_product": [
+          7
+        ],
+        "episode_seeds": [
+          732009692
+        ],
+        "family": "sparse_wide",
+        "fanout": 7,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 7,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f7-calm-00",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 788761834
+      },
+      {
+        "config_sha256": "2620149a1c16cc04f81062c5f6332fec5e654ac7a7c9192c692af8fe41ab35d5",
+        "declarers_per_product": [
+          7
+        ],
+        "episode_seeds": [
+          373338070
+        ],
+        "family": "sparse_wide",
+        "fanout": 7,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 7,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f7-calm-01",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1365559886
+      },
+      {
+        "config_sha256": "583ab92ba8fff8290ea9e662bfe7c6dc776ab86ae3484de4ad00387bd51c2925",
+        "declarers_per_product": [
+          7
+        ],
+        "episode_seeds": [
+          1983176127
+        ],
+        "family": "sparse_wide",
+        "fanout": 7,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 7,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f7-calm-02",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 879675786
+      },
+      {
+        "config_sha256": "23d63f364d008ca4ecf78a38bd493a0c56ebe9facc8d467169be586f5b68c48f",
+        "declarers_per_product": [
+          7
+        ],
+        "episode_seeds": [
+          1325526324
+        ],
+        "family": "sparse_wide",
+        "fanout": 7,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 7,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f7-calm-03",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 704335971
+      },
+      {
+        "config_sha256": "9db4582cc79c6d6d93f14958bbf6cdc385f1375eefa11a2cc2d2b32580e7d2ac",
+        "declarers_per_product": [
+          7
+        ],
+        "episode_seeds": [
+          604535990,
+          1700510350
+        ],
+        "family": "sparse_wide",
+        "fanout": 7,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 7,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f7-shocked-00",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 788761834
+      },
+      {
+        "config_sha256": "dcdaff14abbbdd6bfcf8f540865bcb7d4c4eb374234e1c9cbd423237ee591d16",
+        "declarers_per_product": [
+          7
+        ],
+        "episode_seeds": [
+          1893482697,
+          2062940683
+        ],
+        "family": "sparse_wide",
+        "fanout": 7,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 7,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f7-shocked-01",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1365559886
+      },
+      {
+        "config_sha256": "f0d93fb8f1e785696632605178dd61acfa60167313fca625e32c90da27ee7027",
+        "declarers_per_product": [
+          7
+        ],
+        "episode_seeds": [
+          291907499,
+          739686787
+        ],
+        "family": "sparse_wide",
+        "fanout": 7,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 7,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f7-shocked-02",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 879675786
+      },
+      {
+        "config_sha256": "60747ca284be1145c15ce88bcae5180f51065f49a3cbc015cb2116cb834b7596",
+        "declarers_per_product": [
+          7
+        ],
+        "episode_seeds": [
+          1571735126,
+          16529814
+        ],
+        "family": "sparse_wide",
+        "fanout": 7,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 7,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f7-shocked-03",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 704335971
+      },
+      {
+        "config_sha256": "ad7833266d544271910575cb7cd87f60a7478d417f7cc6b8ce9568624cfa7f97",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          331047815
+        ],
+        "family": "sparse_wide",
+        "fanout": 14,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f14-calm-00",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 919398144
+      },
+      {
+        "config_sha256": "3d2196039130c2255f6574dd1191d71fc65d7b8ba93dbf679f1cc45af0030906",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          2064406704
+        ],
+        "family": "sparse_wide",
+        "fanout": 14,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f14-calm-01",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 252526775
+      },
+      {
+        "config_sha256": "f86b6ec37eb231ad8c9fe235608161418c5415e33d09ce991385db5781694f1b",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          652300480
+        ],
+        "family": "sparse_wide",
+        "fanout": 14,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f14-calm-02",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1418040933
+      },
+      {
+        "config_sha256": "6c1433f41f6c72ed51f3a2fe80fc0d8718b10ad7d94e45db0c4b532c383048f4",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          1339103004
+        ],
+        "family": "sparse_wide",
+        "fanout": 14,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-sparse_wide-42-f14-calm-03",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 686555128
+      },
+      {
+        "config_sha256": "99601e4616851de1dff00386f9660d13f5f558108e056edbc846b91e8e7a7a56",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          1045386075,
+          347454311
+        ],
+        "family": "sparse_wide",
+        "fanout": 14,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f14-shocked-00",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 919398144
+      },
+      {
+        "config_sha256": "524b022880d791841ffa8d99a7e3b2ebd33367581f6397a95558d72ed37537d0",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          841763705,
+          1756179402
+        ],
+        "family": "sparse_wide",
+        "fanout": 14,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f14-shocked-01",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 252526775
+      },
+      {
+        "config_sha256": "e99ab38d9c18b3cee60b746584bbb9db6730e6fcdb8b2fcafbdc21d4e16bcff3",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          1144286218,
+          1582208268
+        ],
+        "family": "sparse_wide",
+        "fanout": 14,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f14-shocked-02",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1418040933
+      },
+      {
+        "config_sha256": "3ac2014fdd9f1d349ed7f42b90b1c10ec923c70ec1c56c526fcef7408f3194d9",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          652143472,
+          1156047292
+        ],
+        "family": "sparse_wide",
+        "fanout": 14,
+        "generator": {
+          "generator": "sparse_wide_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-sparse_wide-42-f14-shocked-03",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 686555128
+      },
+      {
+        "config_sha256": "1af38c371c35ed5839ef91f668169b1608969e1e29f3d4b7ab8e70ddc29700c9",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          362959117
+        ],
+        "family": "dense",
+        "fanout": 4,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-dense-12-f4-calm-00",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 2064805154
+      },
+      {
+        "config_sha256": "be5b5d3c54add2bb2276df58d23e040f2f0cbffe0a47b72d13960978012acb80",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          692508566
+        ],
+        "family": "dense",
+        "fanout": 4,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-dense-12-f4-calm-01",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 712940825
+      },
+      {
+        "config_sha256": "b59dc5cc5ad84633fe7ae86c2d0d5d046988feee427c5bbfffbfdd36dfbe2c1b",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1467879906
+        ],
+        "family": "dense",
+        "fanout": 4,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-dense-12-f4-calm-02",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 217164734
+      },
+      {
+        "config_sha256": "5a8ba5296ac80c3b01f6f3123fafdff2c810d8893cacfe6dd166136433343404",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1208078824
+        ],
+        "family": "dense",
+        "fanout": 4,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-dense-12-f4-calm-03",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1162186878
+      },
+      {
+        "config_sha256": "99902e92470ca8c4612edec9b67b2d3f3d9b7c9c62e5cab36eb027342cfe8aca",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          944285640,
+          1073941793
+        ],
+        "family": "dense",
+        "fanout": 4,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-dense-12-f4-shocked-00",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 2064805154
+      },
+      {
+        "config_sha256": "be51146981d2106dd0db81fb510ca129a0145e42020fa93676b776b7e25f46df",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          311271882,
+          2006196054
+        ],
+        "family": "dense",
+        "fanout": 4,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-dense-12-f4-shocked-01",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 712940825
+      },
+      {
+        "config_sha256": "a939f9e8c498f53d92091cae7aa1873e0f5d61e267af0c638361fa57a2ce6f8e",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          1793941474,
+          251959553
+        ],
+        "family": "dense",
+        "fanout": 4,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-dense-12-f4-shocked-02",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 217164734
+      },
+      {
+        "config_sha256": "291e7864d7aa2b4465aaa3ed30a85d36348ff12261678fa767d526e5ae9ac593",
+        "declarers_per_product": [
+          4
+        ],
+        "episode_seeds": [
+          235844045,
+          225226785
+        ],
+        "family": "dense",
+        "fanout": 4,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 4,
+            "producers": 12,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-dense-12-f4-shocked-03",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 12,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1162186878
+      },
+      {
+        "config_sha256": "8a8b512958226e7a8660982ba37bc67f869e73e21348ea62a11489d634c60098",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          350710623
+        ],
+        "family": "dense",
+        "fanout": 14,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-dense-42-f14-calm-00",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 44459413
+      },
+      {
+        "config_sha256": "e2660c7fe4c04b1b80fd662f9a58f585a183f08e559320f20c111c18ef40114d",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          1033763571
+        ],
+        "family": "dense",
+        "fanout": 14,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-dense-42-f14-calm-01",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 749015349
+      },
+      {
+        "config_sha256": "5e8c19badd13f3e5c365b0e093efbc5b4d863d247303dd5139c67e982788ed43",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          677717517
+        ],
+        "family": "dense",
+        "fanout": 14,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-dense-42-f14-calm-02",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 2042415781
+      },
+      {
+        "config_sha256": "b5dcc730664ee590ebf59e4b08e6be4d9b0d3060be1ff8749d2aa0e688bc0063",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          1235312802
+        ],
+        "family": "dense",
+        "fanout": 14,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "calm",
+            "schedule_length": 7
+          }
+        },
+        "id": "fan-dense-42-f14-calm-03",
+        "regime": "calm",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1029307354
+      },
+      {
+        "config_sha256": "8792790472bf6b92c5c8a338302fbb403d84035e0da6daf900ec49d78f502b14",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          956304177,
+          1331718756
+        ],
+        "family": "dense",
+        "fanout": 14,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-dense-42-f14-shocked-00",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 44459413
+      },
+      {
+        "config_sha256": "c79f4a49764fbcc957c47697cf07a580fccac6baea6fa724c938f04fddc38d7f",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          338663573,
+          1337015743
+        ],
+        "family": "dense",
+        "fanout": 14,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-dense-42-f14-shocked-01",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 749015349
+      },
+      {
+        "config_sha256": "fb29986a85a115ce1f387c3c242fa2ad09cf46b2152c2add049fea2e5339fc98",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          1874177856,
+          446901451
+        ],
+        "family": "dense",
+        "fanout": 14,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-dense-42-f14-shocked-02",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 2042415781
+      },
+      {
+        "config_sha256": "312d126e78b03d34fc9f5d3887b3f6535211547c02b832746a17a2160332056b",
+        "declarers_per_product": [
+          14
+        ],
+        "episode_seeds": [
+          1577590080,
+          1973327651
+        ],
+        "family": "dense",
+        "fanout": 14,
+        "generator": {
+          "generator": "dense_family",
+          "params": {
+            "fanout": 14,
+            "producers": 42,
+            "regime": "shocked",
+            "shock_profile": "shocks-i"
+          }
+        },
+        "id": "fan-dense-42-f14-shocked-03",
+        "regime": "shocked",
+        "reserve_position": null,
+        "size": 42,
+        "split": "fanout-diagnostic",
+        "status": "gate",
+        "world_seed": 1029307354
+      }
+    ]
+  },
+  "pre_registered": {
+    "dominant_cells": [
+      [
+        12,
+        "shocked"
+      ],
+      [
+        42,
+        "calm"
+      ],
+      [
+        42,
+        "shocked"
+      ]
+    ],
+    "most_cells": 2,
+    "recovery_threshold": 0.8,
+    "split_classes": {
+      "split/deterministic": [
+        "even_split",
+        "even_split_rotating"
+      ],
+      "split/stochastic": [
+        "even_split_random_leftover"
+      ],
+      "whole/deterministic": [
+        "proportional_whole",
+        "round_robin"
+      ],
+      "whole/stochastic": [
+        "random_whole"
+      ]
+    }
+  },
+  "result": {
+    "contract_failures": 0,
+    "rows": 2976,
+    "status": "complete",
+    "summary_rows": 240
+  },
+  "resumes": [],
+  "roster": {
+    "content_hash": "5050508ecb25f0eda0ae0a61b0dde4ba948a6e9b0d901cd14cde28e0db161f38",
+    "frozen": true,
+    "members": [
+      {
+        "contract": "joint_stack",
+        "ordering": "blend_0.5",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "even_split",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "legacy",
+        "ordering": "obs_price",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "proportional",
+        "producing": "entity_planner",
+        "random": false
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "random",
+        "producing": "entity_planner",
+        "random": true
+      },
+      {
+        "contract": "joint_stack",
+        "ordering": "shock_reactive",
+        "producing": "entity_planner",
+        "random": false
+      }
+    ],
+    "name": "roster-v2",
+    "pruning": {
+      "dropped": [
+        "always_both/blend_0.5",
+        "always_both/even_split",
+        "always_both/obs_price",
+        "always_both/proportional",
+        "always_both/random",
+        "always_both/shock_reactive",
+        "always_restore/blend_0.5",
+        "always_restore/even_split",
+        "always_restore/obs_price",
+        "always_restore/proportional",
+        "always_restore/random",
+        "always_restore/shock_reactive",
+        "noop/blend_0.5",
+        "noop/even_split",
+        "noop/obs_price",
+        "noop/proportional",
+        "noop/random",
+        "noop/shock_reactive",
+        "obs_stock_aware/blend_0.5",
+        "obs_stock_aware/even_split",
+        "obs_stock_aware/obs_price",
+        "obs_stock_aware/proportional",
+        "obs_stock_aware/random",
+        "obs_stock_aware/shock_reactive",
+        "random/blend_0.5",
+        "random/even_split",
+        "random/obs_price",
+        "random/proportional",
+        "random/random",
+        "random/shock_reactive",
+        "restore_when_low/blend_0.5",
+        "restore_when_low/even_split",
+        "restore_when_low/obs_price",
+        "restore_when_low/proportional",
+        "restore_when_low/random",
+        "restore_when_low/shock_reactive",
+        "stock_aware/blend_0.5",
+        "stock_aware/even_split",
+        "stock_aware/obs_price",
+        "stock_aware/proportional",
+        "stock_aware/random",
+        "stock_aware/shock_reactive"
+      ],
+      "episodes": [
+        {
+          "episode": 573722738,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-00"
+        },
+        {
+          "episode": 853180902,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-00"
+        },
+        {
+          "episode": 1263959127,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-00"
+        },
+        {
+          "episode": 4173060,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-01"
+        },
+        {
+          "episode": 1404012444,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-01"
+        },
+        {
+          "episode": 1548830927,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-01"
+        },
+        {
+          "episode": 156449616,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-02"
+        },
+        {
+          "episode": 1450220932,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-02"
+        },
+        {
+          "episode": 1626927891,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-02"
+        },
+        {
+          "episode": 1142209014,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-03"
+        },
+        {
+          "episode": 1312845591,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-03"
+        },
+        {
+          "episode": 1429071718,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-03"
+        },
+        {
+          "episode": 561383371,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-04"
+        },
+        {
+          "episode": 839488060,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-04"
+        },
+        {
+          "episode": 2062681473,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-04"
+        },
+        {
+          "episode": 341127217,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "episode": 825691700,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "episode": 998580260,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-05"
+        },
+        {
+          "episode": 807440443,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-06"
+        },
+        {
+          "episode": 934409798,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-06"
+        },
+        {
+          "episode": 1583800300,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-06"
+        },
+        {
+          "episode": 302957182,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-07"
+        },
+        {
+          "episode": 684142130,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-07"
+        },
+        {
+          "episode": 1215385322,
+          "size": 12,
+          "world": "dev-sparse_wide-12-calm-07"
+        },
+        {
+          "episode": 403330798,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 403593754,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 411733136,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 469180525,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 780216897,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1202186258,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1344356697,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1523693189,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1648273883,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 1678546418,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-00"
+        },
+        {
+          "episode": 144403646,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 480920748,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 797901344,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1113839877,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1379500898,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1390414481,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1552390792,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1763938669,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1906499098,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 1962673112,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-01"
+        },
+        {
+          "episode": 137742314,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 280198481,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 952913334,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1385045357,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1512164500,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1546132854,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1596453724,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 1868313768,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 2019752305,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 2129989729,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-02"
+        },
+        {
+          "episode": 64327752,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 299142319,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 309898481,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 605789734,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 800294722,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 825435124,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 1173714013,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 1744692017,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 1853533776,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 1918321488,
+          "size": 12,
+          "world": "dev-sparse_wide-12-shocked-03"
+        },
+        {
+          "episode": 106209185,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "episode": 983659392,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "episode": 2003491298,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-00"
+        },
+        {
+          "episode": 531048667,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "episode": 1111343407,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "episode": 1631157762,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-01"
+        },
+        {
+          "episode": 366535258,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-02"
+        },
+        {
+          "episode": 1578575598,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-02"
+        },
+        {
+          "episode": 1638545673,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-02"
+        },
+        {
+          "episode": 1113418926,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "episode": 1696937165,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "episode": 1765041017,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-03"
+        },
+        {
+          "episode": 470157921,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "episode": 1242615372,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "episode": 1700741941,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-04"
+        },
+        {
+          "episode": 282982125,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "episode": 1531763135,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "episode": 2018346833,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-05"
+        },
+        {
+          "episode": 96307357,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-06"
+        },
+        {
+          "episode": 204797563,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-06"
+        },
+        {
+          "episode": 912946811,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-06"
+        },
+        {
+          "episode": 118315526,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-07"
+        },
+        {
+          "episode": 353177905,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-07"
+        },
+        {
+          "episode": 837907461,
+          "size": 42,
+          "world": "dev-sparse_wide-42-calm-07"
+        },
+        {
+          "episode": 4145884,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 7743056,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 81752346,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 369292162,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 435219139,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 463618645,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 685085498,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 1060101985,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 1637931849,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 1907655396,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-00"
+        },
+        {
+          "episode": 317210345,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 746805083,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 764460543,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 902957230,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1226954377,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1466441995,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1674663210,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1776585508,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1824585025,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 1968127071,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-01"
+        },
+        {
+          "episode": 94719794,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 160778965,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 376871033,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 417658043,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 438669130,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 911855958,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 1164095001,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 1430791609,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 1491523540,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 1547671687,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-02"
+        },
+        {
+          "episode": 567075104,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 845870970,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 869067812,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 872925809,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1028298466,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1076392355,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1446351067,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1740889567,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1745165639,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        },
+        {
+          "episode": 1925847396,
+          "size": 42,
+          "world": "dev-sparse_wide-42-shocked-03"
+        }
+      ],
+      "parent_version": "a050c99e4960eb422b9eda34fd4a0de56d259629c934ccf28e4ffcb33da816fe",
+      "rows_digest": "0da62bbfe672cee99225568f8c7bcc1a5fcfd1d0b4fcaaefcfd7868132d45040",
+      "rule": "never-argmax-v1",
+      "rule_text": "Drop a member that is never the per-episode argmax on any development episode at any measured economy size. Every member attaining an episode's max value counts as its argmax (ties never prune a co-winner). The evidence must cover every member on every episode."
+    },
+    "replicates": 5,
+    "screened_on": "3032147f1f17233703f486c66e4c56e006c026399364dd1cbaead5b46bcfceb5"
+  },
+  "source": {
+    "commit": "2ef010ff9e860b46e1c23f21b5d71d925d33299b",
+    "n_files": 62,
+    "tree_sha256": "18f3a3034443e430183672337308652609c3cc578b0a17d023d9e1badbc8cb8a"
+  },
+  "started": "2026-10-28T17:31:26.427016+00:00",
+  "status": "complete",
+  "workers": 16
+}

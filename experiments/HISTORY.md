@@ -543,10 +543,38 @@ baseline on most registry v2 development episodes (95 of 128 in EXP-0047, all 40
   not (`round_robin` herds at 0.89–0.90 on 12-producer worlds and wins).
   Second, did the trained portable orderer learn random's trick? Partly: it changes the
   receiving producer as often as `round_robin` (0.64–0.67), with no sampling, but still splits
-  29–40% of consumer orders (`proportional`, the rule it was distilled from: 45–59%). It
+  29–40% of consumer orders (`proportional`: 45–59%; the scorer was distilled from an
+  input-aware target, log of the units a maker can finish now, not from `proportional`). It
   beats `random` on 126 of 128 episodes and every roster v2 member in every cell, but loses to
   `round_robin` on the shocked worlds (−28 and −14 units). So the roster v3 candidates stay
   `round_robin` and `even_split_rotating`, and M4 needs whole-order routing, not spare capacity
   or sampling. The power-of-two-choices idea stays untested (needs fanout ≥ 3). The reference
   rows reproduce EXP-0048 (2,304 rows) and `portable` reproduces EXP-0046 (80 of 80). ≈ 2.5
   vCPU-h billed.
+- **EXP-0050 — routing versus producers per product. Routing matters far more with more
+  possible makers; the trained orderer leads at wider fanout; why is undiagnosed.**
+  Registry v2 gives every product exactly two possible makers. The same arms ran on family
+  worlds with 2, 4, 7 or 14 makers per product (sparse_wide at 12 and 42 producers, and the dense
+  family), calm and shocked, 4 worlds per cell. At 42 producers the gap between `round_robin`
+  and the best hand-written roster rule grows from +116 / +150 units per episode at fanout 2 to
+  +335 / +421 at fanout 7 (cells are not paired across fanouts, so this is a pattern). Routers
+  that split lose more as makers multiply: `random` splits more at higher fanout (1.07 → 1.42
+  makers per order at 42 producers) and routing its choice whole (`random_whole`) recovers +254 /
+  +261 at fanout 14. (`even_split` collapses at fanout 7, but mostly through its lowest-index
+  tie-break, so it is not counted as evidence.) Lack of room is never the cause (no-fit losses ≈ 0). The spare-capacity
+  routers still do not beat blind choice: `two_choice_spare`, now really picking 2 of k, loses to
+  `random_whole` in 14 of 16 cells and gains at most 0.4% at fanout 14. The trained portable
+  orderer beats every hand-written rule and `random` in all 16 cells by mean (clearly, t ≥ 3.2,
+  in 12 and 13), clearly beats `round_robin` at 42 producers with fanout 4 and 14 (+153 / +151
+  at 42-f14), ties at fanout 7 and loses at fanout 2 (clearly in the 2 shocked cells); its leads
+  on 12-producer fanout-4 and dense-12 worlds sit in near-saturated cells. It splits as much as
+  the failing rules (1.6–1.8 producers per order at fanout ≥ 4) but its split orders complete
+  (10–15 wasted units against 126–271) and it loses the fewest units to expiring reservations,
+  which qualifies EXP-0049's "M4 needs whole-order routing": where the parts go matters at least
+  as much as whether the order is split.
+  Why its parts complete is not diagnosed. Its distillation target is input-aware (log of
+  `makeable_qty_now`, capacity and inputs in stock; `proportional` weighs capacity only), which
+  points at input availability; the deciding check is the teacher itself as a router, its
+  whole-order version, and a trace of expired reservations by the producer's input stock. Registry v2's fanout 2 is where routing matters least; a registry v3 could add
+  wider-fanout 42-producer worlds (12-producer fanout-4 and dense-12 worlds are near saturation).
+  ≈ 3.9 vCPU-h billed.

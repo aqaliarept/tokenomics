@@ -28,8 +28,11 @@ trace".
 2. **Did the trained orderer learn random's trick? Partly, and without randomness.** It changes
    the receiving producer from one decision to the next about as often as `round_robin` does,
    which was the main lever in EXP-0048. It is deterministic, so this is not "stochasticity"
-   (EXP-0006B's reading). It splits fewer orders than `proportional`, the rule it was distilled
-   from, but still about a third of consumer orders. It beats `random` on 126 of 128 episodes
+   (EXP-0006B's reading). It splits fewer orders than `proportional`, but still about a third
+   of consumer orders. (Correction after EXP-0050's review: an earlier version called
+   `proportional` "the rule it was distilled from". The distillation target is log of
+   `makeable_qty_now`, the units a maker can finish now from capacity and inputs in stock;
+   `proportional` weighs capacity only.) It beats `random` on 126 of 128 episodes
    and every roster member in every cell. `round_robin` still beats it on the shocked worlds.
 
 ## How to read this
@@ -268,6 +271,11 @@ new metrics did not change any episode, and the trained path loads the right che
   close is whole-order routing (split share 0.29–0.40 → 0, 8–40 wasted units); herding is not
   shown to matter. Whether routing whole recovers the shocked-world gap to `round_robin` is the
   next question, not answered here.
+  *Revised by EXP-0050* (`experiments/EXP-0050-routing-vs-fanout/`): on worlds with 4–14 makers
+  per product the trained orderer splits as much as the hand-written rules yet clearly beats
+  `round_robin` at 42 producers, because its split orders complete; routing whole is not a hard
+  requirement for a learned router, and where an order's parts go matters at least as much
+  (mechanism not yet diagnosed; whether routing whole would add to it is open).
 
 ## Details
 
