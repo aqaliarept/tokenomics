@@ -3,8 +3,9 @@
 ## Purpose
 
 Defines how the M3 development audit is run and read: it diagnoses a baseline anomaly before it
-reads a teacher against the hindsight baseline, limits a teacher label to information the agents
-could observe, measures headroom, role attribution and deployed cost, and ends every failed probe
+reads a teacher, measures per-world headroom and mines a headroom atlas over a multi-dimension
+world space, limits a teacher label to information the agents could observe, measures headroom
+with a teacher on a mined sample, role attribution and deployed cost, and ends every failed probe
 in a recorded diagnosis.
 
 ## ADDED Requirements
@@ -31,7 +32,8 @@ and in the diagnostics registry.
 A diagnostic trace SHALL classify every rejected bid as rejected by an outage, as not fitting
 the producer's capacity available at the start of its auction, or as displaced by
 higher-priced bids. It SHALL classify every failed reservation as dropped on re-validation or
-expired waiting for inputs.
+expired waiting for inputs. For every reservation that expired waiting for inputs, the trace
+SHALL record whether the receiving producer's input stock at routing time could cover the order.
 
 #### Scenario: Bid displaced by a higher-priced bid
 - **WHEN** a bid fits the capacity a producer has at the start of its auction but not the
@@ -47,8 +49,13 @@ expired waiting for inputs.
 - **WHEN** an episode is run with and without the trace
 - **THEN** every episode statistic and every action is identical in both runs
 
+#### Scenario: Expired reservation with inputs short
+- **WHEN** a reservation expires waiting for inputs and, when its order was routed, the receiving
+  producer held fewer input units than the order needed
+- **THEN** the trace counts its units as lost with inputs short, not with inputs available
+
 ### Requirement: Diagnostic routers stay outside the roster
-Routers built only to diagnose the baseline anomaly SHALL NOT be roster members, SHALL NOT be
+Routers built only to diagnose or to measure headroom SHALL NOT be roster members, SHALL NOT be
 added to the baseline dictionaries the gate and the signal check read, and SHALL NOT change any
 frozen registry, roster or parameter file.
 
@@ -57,12 +64,130 @@ frozen registry, roster or parameter file.
 - **THEN** the frozen roster files keep their content hashes and the hindsight baseline of
   every gate report is unchanged
 
+### Requirement: Per-world headroom
+The audit SHALL measure on every screened world, on identical world-episodes with matching
+digests, the atlas bar (best blind or hand-written arm), the best reach arm, an offline upper
+bound and a noise floor. A world SHALL be called hard only when the best reach arm beats the bar
+by more than the noise floor and in every episode; failure of every arm SHALL NOT make it hard.
+
+#### Scenario: Better policy reachable
+- **WHEN** on a world the best reach arm beats the atlas bar by more than the world's noise floor
+- **THEN** the world is classed hard
+
+#### Scenario: Everyone fails
+- **WHEN** every arm delivers few units on a world and no reach arm beats the atlas bar by more
+  than the noise floor
+- **THEN** the world is not classed hard
+
+#### Scenario: Gain within the noise
+- **WHEN** the best reach arm beats the atlas bar by less than the noise floor
+- **THEN** the world is not classed hard
+
+#### Scenario: Gain not consistent across episodes
+- **WHEN** the best reach arm beats the atlas bar on average by more than the noise floor but
+  falls below it in one of the world's episodes
+- **THEN** the world is not classed hard
+
+
+### Requirement: Noise floor is pooled
+The noise floor SHALL be pre-registered and SHALL use a spread pooled over the episodes of many
+worlds of the same stratum, not a standard error from the world's own one or two episodes.
+
+#### Scenario: Two episodes that agree by chance
+- **WHEN** a world's two episodes give nearly equal gains, so their own standard error is near
+  zero
+- **THEN** the noise floor still uses the pooled spread of its stratum
+
+### Requirement: Upper bound stays above every played arm
+The offline achievable-units upper bound SHALL be computed from the demand schedule the
+environment built for the episode, SHALL be reported only as a ceiling and never as a policy, and
+SHALL be at least the units of every arm played on that world-episode.
+
+#### Scenario: Demand cap reported as such
+- **WHEN** the upper bound's capacity term does not bind on a world
+- **THEN** the bound is recorded as demand-bound and is not used alone to judge that world's room
+
+#### Scenario: Bound below an arm
+- **WHEN** an arm delivers more units than the upper bound on the same world-episode
+- **THEN** the run is invalid and the result names the world, episode and arm
+
+#### Scenario: Bound on a patterned world
+- **WHEN** a world has a demand pattern or demand drift
+- **THEN** its upper bound uses that episode's built demand schedule, including every pattern draw
+
+### Requirement: Room is read against base capacity
+Each world's room SHALL be read against a ceiling that is the smaller of the upper bound and a
+base-capacity ceiling (base capacity at its initial maximum, no upgrades), and never below the best
+played arm's units. Every world-episode on which an arm exceeds the base-capacity ceiling SHALL be
+counted and reported.
+
+#### Scenario: Demand beyond base capacity
+- **WHEN** a world's scheduled demand far exceeds what its base capacity can make and the atlas bar
+  reaches 0.97 of the base-capacity ceiling
+- **THEN** the world is classed saturated, not open
+
+#### Scenario: Arm above the base-capacity ceiling
+- **WHEN** an arm delivers more units than the base-capacity ceiling on a world-episode
+- **THEN** the ceiling for that world is at least that arm's units and the event is counted
+
+### Requirement: Saturated worlds are filtered
+A world whose atlas bar fills at least the registry's saturation ceiling of consumer orders, or
+reaches at least 0.97 of the world's ceiling, SHALL be classed saturated and SHALL NOT be selected
+into the atlas.
+
+#### Scenario: Near-full world
+- **WHEN** the atlas bar fills 0.98 of consumer orders on a world
+- **THEN** the world is classed saturated and is not selected
+
+### Requirement: Atlas sampling covers the world space
+The atlas screen SHALL sample worlds space-fillingly over every world-space axis at each size,
+with categorical axis levels balanced, and SHALL record each world's measured coordinates and
+class.
+
+#### Scenario: Balanced categorical levels
+- **WHEN** the atlas screen samples 1,024 worlds at one size over a categorical axis with 7 levels
+- **THEN** each level holds 146 or 147 worlds
+
+#### Scenario: Screen record
+- **WHEN** the atlas screen finishes
+- **THEN** every screened world has its levers, seed, measured coordinates, arm units, bound,
+  noise floor and class recorded
+
+### Requirement: Atlas selection and split
+The atlas SHALL select worlds from the hard and open classes by a pre-registered deterministic rule
+that favours headroom and coverage of the axis bins, SHALL confirm each selected world on episode
+and replicate seeds not used for its selection, and SHALL record a train, validation and held-out
+split by world before the confirm stage. No choice made in the audit SHALL read the held-out worlds'
+results.
+
+#### Scenario: Uncovered bin
+- **WHEN** an axis bin holds hard or open candidates but no selected world
+- **THEN** the selection adds the best-scored candidate of that bin before filling by score
+
+#### Scenario: Confirm on fresh seeds
+- **WHEN** a selected world is confirmed
+- **THEN** its confirm episodes and replicates use seeds different from those of its screen run,
+  and a change of class is reported
+
+#### Scenario: Held-out sealed
+- **WHEN** the teacher sample is drawn from the atlas
+- **THEN** it contains train-split worlds only
+
+### Requirement: Atlas evidence does not change the gate
+Atlas worlds SHALL NOT enter a gate registry, roster or report, and the atlas SHALL NOT edit any
+frozen gate file. Adding atlas worlds or families to a gate registry SHALL be a user decision.
+
+#### Scenario: Hard region found
+- **WHEN** the atlas finds a region of hard worlds that no gate family covers
+- **THEN** the result records the evidence and the gate registry, roster and parameter files are
+  unchanged
+
 ### Requirement: Teacher labels depend only on observable information
 A teacher's forks SHALL keep the realised observable history and state, and SHALL replace
 every hidden part of the future (active shocks' remaining durations, future shock onsets,
-targets and magnitudes, future demand) with posterior draws given that history and the known
-generators. A draw SHALL be kept only if it reproduces every observed consequence and implies
-none that was not observed.
+targets and magnitudes, future demand including demand-pattern draws) with posterior draws given
+that history and the known generators. A draw SHALL be kept only if it reproduces every observed
+consequence and implies none that was not observed.
 
 #### Scenario: Two envs differ only in hidden state
 - **WHEN** two environments have the same observable history and state but different true
@@ -87,24 +212,35 @@ none that was not observed.
 ### Requirement: Unresolved labels fall back
 The teacher SHALL log the posterior acceptance rate of every decision cycle. When it cannot
 draw the pre-registered number of posterior samples within the pre-registered draw budget, it
-SHALL label the decision "unresolved" and act as `blend_0.5`.
+SHALL label the decision "unresolved" and act as its floor policy.
 
 #### Scenario: Posterior too narrow
 - **WHEN** fewer accepted posterior samples than the pre-registered minimum are found within
   the draw budget
-- **THEN** the decision is labelled unresolved, the action equals `blend_0.5`'s, and the
+- **THEN** the decision is labelled unresolved, the action equals the floor policy's, and the
   acceptance rate is recorded
 
-### Requirement: Forked demand keeps drift continuity
+### Requirement: Forked demand keeps continuity
 On a world with demand drift, the demand of a fork SHALL continue from the current cycle's
 consumer orders under the same drift bound, so that at most floor(j·N) orders change between
-consecutive cycles of the fork.
+consecutive cycles of the fork. On a world with a demand pattern whose future draws do not depend
+on hidden past draws, a fork SHALL resample the future from the pattern's generator. A world
+whose pattern carries hidden state the fork rule does not cover SHALL NOT be taught.
 
 #### Scenario: Drifting world forked
 - **WHEN** a fork resamples future demand on a world with drift parameter j and N drifting
   consumers
 - **THEN** its first forked cycle differs from the current cycle's orders in at most
   floor(j·N) orders, and so does every later transition
+
+#### Scenario: Seasonal world forked
+- **WHEN** a fork resamples future demand on a world with a seasonal pattern
+- **THEN** every forked cycle's demand follows the world's seasonal envelope for that cycle
+
+#### Scenario: Moving-hit world offered to the teacher
+- **WHEN** the teacher sample is drawn and a candidate world has the moving-hit or regime-switch
+  pattern
+- **THEN** that world is not in the sample
 
 ### Requirement: Clairvoyant bound is a reference only
 A clairvoyant teacher that rolls out the true future SHALL be reported only as an upper
@@ -116,28 +252,38 @@ candidate.
 - **THEN** it is listed separately from the teacher arms and marked as using hidden
   information
 
-### Requirement: Teacher audit reading
-The teacher audit SHALL compute each arm's per-world ratio over the hindsight baseline, using
-the frozen roster on identical world-episodes with matching demand and shock digests. It SHALL
-report the regime means, the worlds below 1.0 and deaths. It SHALL NOT produce an acceptance
-verdict.
+### Requirement: Expensive teacher only on a mined sample
+The search teacher SHALL run only on a pre-registered sample of atlas worlds, sized by a timing
+probe, with a hard compute stop. It SHALL NOT run on a world above 42 producers, and a run above
+its stop SHALL NOT launch without the user's approval.
 
-#### Scenario: Shocked headroom read
-- **WHEN** the depth-3 teacher's mean shocked ratio is at least 1.10 and no shocked world is
-  below 1.0
-- **THEN** the audit records that a teacher reaches the shocked margin on development worlds,
-  and no candidate is accepted by it
+#### Scenario: Probe above the stop
+- **WHEN** the teacher probe extrapolates the sample above its hard stop after the pre-registered
+  reduction order
+- **THEN** the teacher run does not launch and the implementer reports to the supervisor
+
+### Requirement: Teacher audit reading
+The teacher audit SHALL compute, per sampled world, the teacher's units against the atlas bar,
+the best reach arm and the upper bound, on identical world-episodes with matching demand and shock
+digests. It SHALL report the per-class reading, worlds below the bar, deaths and the unresolved
+fraction. It SHALL NOT produce an acceptance verdict.
+
+#### Scenario: Teacher finds headroom on open worlds
+- **WHEN** the teacher beats the atlas bar by more than the noise floor on at least half of the
+  sampled open worlds
+- **THEN** the audit records that search reaches headroom the cheap arms missed there, and no
+  candidate is accepted by it
 
 #### Scenario: Digest mismatch in the audit
-- **WHEN** a teacher episode's demand or shock digest differs from the roster's for the same
+- **WHEN** a teacher episode's demand or shock digest differs from a bar arm's for the same
   world and episode seed
 - **THEN** the audit fails, naming the world, episode and arm
 
 ### Requirement: Role attribution decides the first trained role
-The role attribution SHALL measure, on shocked development worlds, how much of the gap between
-the portable stack and the teacher-orderer reference each single-role swap closes. The role
-whose swap closes more SHALL be the role M4 trains first. A tie within the pre-registered band
-SHALL go to the user.
+The role attribution SHALL measure, on the shocked worlds of the teacher's mined sample, how much
+of the gap between the portable stack and the teacher-orderer reference each single-role swap
+closes. The role whose swap closes more SHALL be the role M4 trains first. A tie within the
+pre-registered band SHALL go to the user.
 
 #### Scenario: Orderer swap closes more
 - **WHEN** swapping in the teacher orderer closes 0.6 of the gap and swapping in the
@@ -150,29 +296,32 @@ SHALL go to the user.
 
 ### Requirement: Deployed-path cost on independent axes
 The cost audit SHALL time each stage of the deployed portable path per decision. It SHALL
-vary total producers at fixed fanout and fanout at fixed total producers, both within the
-12 → 42 producer target, and SHALL report a log-log slope per stage and axis.
+vary total producers at fixed fanout, fanout at fixed total producers, and consumers per producer
+at fixed total producers and fanout, all within the 12 → 42 producer target, and SHALL report a
+log-log slope per stage and axis. It SHALL NOT time any economy above 42 producers.
 
 #### Scenario: Superlinear stage
 - **WHEN** a stage's per-decision time grows with a slope above 1.1 on the eligible-producer
-  axis
+  axis or the consumer axis
 - **THEN** the audit names that stage as violating the bounded per-decision cost rule
 
-#### Scenario: Larger economies not run
-- **WHEN** the cost audit runs in this phase without the user's approval of a larger point
-- **THEN** it times no economy above 42 producers
-
-#### Scenario: User-approved larger point
-- **WHEN** the user approves one timing point above 42 producers
-- **THEN** that point is reported as non-gating and does not change the 12 → 42 scale target
+#### Scenario: Larger economy requested
+- **WHEN** the cost audit is asked to time an economy above 42 producers
+- **THEN** it refuses, naming the size
 
 ### Requirement: A failed probe ends in a diagnosis
-When the teacher audit, the role attribution or the cost audit falls short of its reading, the
-audit SHALL record the diagnosed cause, with evidence, before any next strategy is proposed.
-No margin, roster or registry SHALL be changed in reaction to the result of one of these three
-probes.
+When the atlas, the teacher audit, the role attribution or the cost audit falls short of its
+reading, the audit SHALL record the diagnosed cause, with evidence, before any next strategy is
+proposed. No margin, roster or registry SHALL be changed in reaction to the result of one of
+these probes.
 
-#### Scenario: Teacher below the shocked margin
-- **WHEN** the depth-3 teacher's mean shocked ratio is below 1.10
-- **THEN** the result records a diagnosed cause (world family, roster or fork) and the
-  acceptance margins are unchanged
+#### Scenario: Teacher does not beat the bar on open worlds
+- **WHEN** the teacher beats the atlas bar on fewer than half of the sampled open worlds
+- **THEN** the result records a diagnosed cause (bound-limited, fork-limited, or floor or
+  candidate-limited, from the clairvoyant arm and the unresolved rate) and the acceptance
+  margins are unchanged
+
+#### Scenario: Atlas finds no hard worlds
+- **WHEN** the atlas confirm stage classes no selected world hard
+- **THEN** the result records why per region (saturated, flat or open, with the bound and the
+  noise floor) and the gate files are unchanged

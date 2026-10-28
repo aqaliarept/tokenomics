@@ -3,134 +3,152 @@
 ## Why
 
 Roadmap milestone M3 "Development audit" (`establish-project-baseline` design D1, D4) must show,
-before any training spend in M4, whether a teacher can beat the hindsight baseline on the frozen
-v2 development worlds (PoC-A), which role M4 should train first (PoC-C), and what the deployed
-path costs as the economy grows (PoC-B). M3's exit is: PoC-A/B/C recorded, and every failure
-recorded with a diagnosed cause.
+before any training spend in M4, whether a better policy than the hand-written ones is reachable
+(PoC-A), which role M4 should train first (PoC-C), and what the deployed path costs as the
+economy grows (PoC-B). M3's exit is: PoC-A/B/C recorded, and every failure recorded with a
+diagnosed cause.
 
-One finding has to be explained first. In the v2 calibration screen (EXP-0047) the `random`
-ordering baseline (`entity_planner/random`, uniform random routing logits, scored as the mean of
-5 replicates) sets the hindsight baseline on 95 of the 128 development world-episodes: 6/24 at
-12-calm, 28/40 at 12-shocked, 21/24 at 42-calm and 40/40 at 42-shocked. EXP-0006B found the same
-pattern earlier: the seeds a deterministic orderer missed were the ones a random orderer won, and
-sampling at deployment closed them. Nobody knows why. Possible causes include packing under
-atomic acceptance, the value of spreading orders over time, defects in the hand-written rules, the
-investment-fund channel, the penalty of splitting an order when only whole orders count as
-fulfilled, and a scoring artifact. These call for different responses: the bar may
-be too low (a rule defect), M4 may need a load-aware feature, or M4 may need stochastic
-deployment. PoC-A measures the teacher against this bar, so its reading cannot be interpreted
-until the cause is known (CLAUDE.md "Root cause before next strategy").
+The project's main goal is to show that agents can **evolve themselves**: find worlds they handle
+badly, learn from them, and improve. That needs worlds where a better policy exists. M3's first
+three experiments showed that the gate worlds are not such worlds:
+
+- **EXP-0048** diagnosed why the `random` ordering baseline set the hindsight baseline on 95 of
+  the 128 registry v2 development world-episodes: routing each order **whole** to a producer that
+  **changes over time** wins. A blind deterministic rotation (`round_robin`) does it better than
+  `random`. A hand-written rule has a defect (`even_split`'s lowest-index tie-break).
+- **EXP-0049** found that routers which read each producer's spare capacity do not beat blind
+  rotation: spare capacity almost never binds (units lost to bids that did not fit ≤ 0.15 per
+  episode). The losses are reservations that expire waiting for inputs.
+- **EXP-0050** gave each product 2 to 14 possible producers instead of registry v2's 2. Routing
+  differences grow sharply with the choice (the gap between `round_robin` and the best roster
+  rule grows from about 150 to 300–400 units per episode at 42 producers), and the trained
+  portable orderer becomes the best router at wider fanout. Why its split orders complete is not
+  diagnosed. Two cells are saturated (12-producer fanout 4 and dense-12, fill 0.97–0.99) and
+  separate nothing.
+
+So the registry v2 worlds sit in an easy corner: capacity rarely binds (demand is about 6% of
+top-layer throughput in every family), each product has 2 possible producers, and demand is
+steady. There, blind spreading sets the bar. Hard-world mining so far (EXP-0023–0036, HISTORY §7)
+varied about two dimensions, topology and capacity tightness, and closed when it found that the
+mined distribution had no headroom (EXP-0033: the champion delivered 98.3% of an offline upper
+bound).
+
+**User decision (2026-10-28), option (a):** replace "PoC-A teacher on the v2 gate worlds" with a
+**multi-dimension headroom atlas**: sample a world space with many axes, measure on each world how
+far the best blind or hand-written policy sits below what better policies reach, and mine the
+worlds where a better policy is reachable. PoC-A, PoC-C and PoC-B stay. The expensive teacher runs
+only on a mined sample.
 
 ## What Changes
 
-- **Random-routing root cause (first).** Two pieces of diagnostic instrumentation:
-  - per-bid rejection and failure reasons, recorded as additive pure data on the domain's
-    production result (no RNG, IO or logging in `domain/`) and collected by an eval-side
-    tracer;
-  - diagnostic routers that separate the competing explanations: deterministic rotation, random
-    weights held fixed per episode, a noise-scale sweep of `random`, rules with their suspected
-    defects fixed, `random` on one order class only, and a whole-order / split-order ×
-    deterministic / random control.
-
-  Then a local single-episode unit trace, and one cloud experiment, **EXP-0048**, that runs the
-  diagnostic routers on all v2 development world-episodes. The result goes into its `RESULT.md`
-  in plain English, a `docs/DIAGNOSTICS.md` entry and a HISTORY paragraph. If a hand-written rule
-  is found defective, the fixed rule is a new ordering baseline under a new name. It reaches the
-  gate only through a new roster version and a re-screen (registry, roster and parameters v3).
-  The frozen v2 files are never edited. Adopting the new bar is a user decision.
-  A follow-up, **EXP-0049** (inserted after EXP-0048 on the user's request), runs three
-  whole-order routers that read each producer's spare capacity against the blind
-  `round_robin` / `random_whole`, and traces the trained portable orderer with the same
-  routing metrics, to see whether it learned random's spreading or `proportional`'s splitting.
-  A second follow-up, **EXP-0050**, reruns those arms on family worlds with 2 to 14 producers
-  per product (registry v2 has 2 everywhere), to see whether the routing findings hold when
-  the choice widens.
-- **PoC-A, teacher against the hindsight baseline (EXP-0051).** The EXP-0042 confidence-bounded
-  rollout orderer runs at depths 2 and 3, plus a clairvoyant upper bound, over the
-  `entity_planner` producer. It plays a pre-registered subset of the v2 development
-  world-episodes, calm and shocked, and is compared with the frozen roster v2 on identical
-  episodes. The teacher follows the D4 **teacher fork rule**:
-  - forks keep the observable history;
-  - hidden shock state is resampled from its posterior given that history and the known
-    generator;
-  - the posterior acceptance rate is logged, and below a pre-registered floor the decision is
-    labelled "unresolved" and falls back to `blend_0.5`;
-  - hidden domain fields are stripped before a rollout;
-  - future demand keeps drift continuity;
-  - a pytest shows byte-identical labels for two envs that differ only in hidden state.
-
-  The EXP-0042 teacher code is still on `new-model` (`eval/bounded_rollout_orderer.py`,
-  `env/future_fork.py`), so nothing is restored from `archive-1`.
-- **PoC-C, role attribution under shocks (EXP-0052).** In the style of EXP-0001 and EXP-0031,
-  the portable stack is run with one role swapped at a time: the teacher orderer in the orderer
-  role, the best hand-written producer in the producer role. This happens on the PoC-A shocked
-  subset, and the per-role closure of the gap decides which role M4 trains first.
-- **PoC-B, deployed-path cost (EXP-0053).** Per-decision cost of the portable stack is measured
-  stage by stage on two independent axes:
-  - total producers P ∈ {12, 24, 42} at fixed fanout;
-  - eligible producers E (fanout) ∈ {2, 4, 7, 14} at P = 42.
-
-  No point above 42 producers is timed unless the user asks for one. **Capped at the
-  12 → 42 target**, not 1200 producers (see Open question).
-- **Compute.** Every experiment runs on a CPU pod, is sized by a local timing probe, and has a
-  hard stop in vCPU-h. The parts with a grounded estimate (EXP-0048, EXP-0049, EXP-0050, EXP-0053 and the
-  12-producer parts of PoC-A/C) are expected to cost about 10–40 vCPU-h. The 42-producer teacher
-  parts are unknown until their probes and will likely hit their stop first, which inserts a
-  profile-and-optimize code task before they launch. The hard ceiling for the change is
-  70 vCPU-h, and no run comes near 1000 vCPU-h.
+- **Random-routing root cause (done).** Instrumentation (per-bid rejection and failure reasons, a
+  routing tracer, diagnostic routers outside the roster) and EXP-0048, EXP-0049 and EXP-0050, as
+  recorded. Unchanged.
+- **Atlas instruments (new, first).**
+  - Fix the `train/orderer_scorer.py` `teacher_logits` docstring, which wrongly says
+    `proportional` routes by the same signal (it weighs capacity only; the target is input-aware).
+  - EXP-0050's deciding check as cheap arms: the scorer's teacher as a router (split each order in
+    proportion to `makeable_qty_now`), its whole-order version (the whole order to one producer
+    drawn in proportion to `makeable_qty_now`), and a tracer field that classifies every expired
+    reservation by the receiving producer's input stock at routing time.
+  - An offline achievable-units upper bound per world: EXP-0033's analytic bound
+    (`eval/ceiling_bound.py`), restored from commit b96ecc0 (the parent of cleanup commit
+    18c717d, reachable from branch `archive-1`; the `archive-1` head 7aeef1f no longer holds the
+    file). Stated reason for the restore: the atlas needs a cheap per-world ceiling to tell a
+    saturated world from a world with room; EXP-0033 is the record that this bound is sound
+    (bound ≥ every observed arm, 0 violations). It is ported to read the demand schedule the env
+    actually built, so it covers drift and the new demand patterns. Its free-upgrade slack makes
+    it equal to the scheduled demand on these worlds, so it is kept as the sound invariant and a
+    second tier without upgrade slack (base capacity only, not guaranteed) is the ceiling that
+    room and saturation are read against.
+  - **Demand patterns** in the env layer: bursty spikes, a skewed popularity with a moving hit
+    product, seasonal waves and abrupt regime switches. Each draws on its own seeded stream,
+    is visible to agents only through the orders, is covered by the demand digest, and leaves
+    every world without a pattern byte-identical. Basket (co-ordered products) and
+    heavy-tailed buyers are deferred.
+  - A **world-space generator**: every world is a point on named axes (capacity tightness, order
+    size against capacity, choice, producer heterogeneity, shocks, size 12/42, demand pattern),
+    built from levers with neutral defaults that reproduce today's families byte for byte, with
+    each world's measured coordinates recorded.
+  - An **atlas driver** with a screen mode and a confirm mode: space-filling (Latin hypercube)
+    sampling, per-world headroom against the paired noise floor, a saturation filter, selection
+    by headroom and coverage, and a recorded train / validation / held-out split.
+  - ADR-0057 "Multi-dimension world space and headroom atlas".
+- **Atlas screen (EXP-0051)** on about 1,150 worlds (1,024 at 12 producers, 128 at 42), cheap arms
+  only, and **atlas confirm (EXP-0052)** on the selected worlds with more episodes, the full
+  portable stack and the deciding check read. Together they freeze atlas v1.
+- **PoC-A, teacher on a mined sample (EXP-0053).** The EXP-0042 confidence-bounded rollout search
+  with the design D4 fork rule (ADR-0056) runs only on a mined 12-producer sample (hard worlds,
+  where cheap arms already show headroom, and open worlds, where the ceiling leaves room no cheap
+  arm reached), sized by a probe. Its floor and candidate set are re-pointed at the diagnosed
+  cause: the EXP-0042 floor `blend_0.5` splits orders and does not rotate, which EXP-0048–0050
+  show loses 100–400 units to `round_robin`, so the floor becomes `round_robin` and the
+  candidates are whole-order receivers plus the trained orderer's action.
+- **PoC-C, role attribution (EXP-0054)** on the shocked worlds of PoC-A's mined sample instead of
+  v2's shocked subset, because attribution needs a gap to attribute, and v2's easy corner gives
+  little.
+- **PoC-B, deployed-path cost (EXP-0055)**, capped at 42 producers (user decision, 2026-10-28),
+  plus a load axis (consumers per producer), because the atlas varies it.
+- **Compute.** M3 budget 40 vCPU-h, ≈ 10.8 used. The planned remainder expects about 11–31
+  vCPU-h (central ≈ 18), with hard stops summing to 29, inside the remaining ≈ 29.2 (design D8).
+  Anything beyond a stop, and every 42-producer teacher run, needs the user's approval and is not
+  planned here.
 
 No **BREAKING** changes. The frozen v1/v2 registry, roster and parameter files, every existing
-episode statistic, and `ORDERING_BASELINES` / `PRODUCING_BASELINES` stay byte-identical.
+episode statistic, `ORDERING_BASELINES` / `PRODUCING_BASELINES`, every existing world
+configuration and every existing fingerprint stay byte-identical. New world families or a roster
+v3 for the gate stay user decisions; this change may only produce their evidence.
 
-## Open question for the user
+## Answered and open questions
 
-**PoC-B scale.** D4 says PoC-B measures cost "up to 1200 producers". That conflicts with the
-2026-10-27 decisions: the acceptance target is 12 → 42 producers, 120 is dropped until agents
-beat the hand-written baselines at 42, and there is no budget for runs of 1000+ vCPU-h. This
-change plans PoC-B at 12/24/42 producers only. Should D4's "up to 1200" be amended to "up to 42
-(larger sizes when scale is reopened)"? And does the user want one larger, non-gating timing
-point despite the scale decision, for example P = 84? The default is no. The driver supports
-it behind a flag, and a yes adds it to the PoC-B probe and run. The rest of the plan does not
-depend on the answer.
+- **PoC-B scale (answered by the user, 2026-10-28):** capped at 42 producers. No larger point is
+  timed, and the driver has no flag for one.
+- **Teacher floor (for the reviewer / user):** PoC-A re-points the EXP-0042 floor from
+  `blend_0.5` to `round_robin` (design D5). The alternative, the frozen EXP-0042 configuration,
+  would start the search 100–400 units below the bar on the mined worlds.
+- **42-producer teacher (for the user, later):** not in the budget. It needs a probe, a
+  profile-and-optimize code task and the user's approval of its spend.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `development-audit`: how the M3 audit diagnoses a baseline anomaly before reading a teacher
-  against the hindsight baseline, what information a teacher label may depend on (the fork
-  rule), how PoC-A, PoC-B and PoC-C are read, and that a failed PoC ends in a recorded diagnosis.
+- `development-audit`: how the M3 audit diagnoses a baseline anomaly, measures per-world
+  headroom and mines a headroom atlas, what information a teacher label may depend on (the fork
+  rule), how PoC-A, PoC-B and PoC-C are read, and that a failed probe ends in a recorded
+  diagnosis.
+- `world-space`: how a world is described as a point on named axes, how the generator realizes
+  and records it, and that neutral axis values reproduce today's worlds.
 
 ### Modified Capabilities
 
-- `gate-harness`: modifies "Frozen baseline roster", so that a roster version's pairings
-  range over the baselines that exist when it is drafted and a later baseline enters only a
-  later version. Adds two requirements.
-  - "Baseline rule corrections create a new roster version": a fixed hand-written rule enters
-    the gate only as a new member of a new roster version with a re-screen, never by editing a
-    frozen member.
-  - "Raising the bar is a user decision": a new roster version becomes the gate default only
-    after the user approves it.
+- `gate-harness`: modifies "Frozen baseline roster", so that a roster version's pairings range
+  over the baselines that exist when it is drafted and a later baseline enters only a later
+  version. Adds "Baseline rule corrections create a new roster version" and "Raising the bar is a
+  user decision".
+- `stochastic-environment`: adds demand patterns (bursts, moving hit, seasonal waves, regime
+  switches), each on its own stream, observable only through orders, digest-covered, and
+  byte-identical when absent.
 
 ## Impact
 
-- Domain: `tokenomics/tokenomics/domain/producing_agent.py`. The auction's per-cycle result gains
-  per-rejected-bid and per-failed-reservation reasons as additive pure data. No RNG, IO or
-  logging, and every episode statistic stays byte-identical.
-- Env: a new `env/shock_posterior.py`, which resamples hidden shock state from the posterior and
-  strips hidden fields from a fork, and `env/future_fork.py`, which gets a drift-continuous
-  demand fork.
-- Eval:
-  - new modules: `eval/routing_diagnostics.py` (diagnostic routers, kept out of the roster
-    dicts), `eval/routing_trace.py` (per-bid tracer), `eval/routing_audit.py` (EXP-0048 / 0049 / 0050 driver),
-    `eval/teacher_audit.py` (PoC-A/C driver) and `eval/deployed_cost.py` (PoC-B driver);
-  - `eval/bounded_rollout_orderer.py` gets a pluggable scenario source, a baseline producer and
-    a single-scenario deterministic future.
-- Records:
-  - EXP-0048 to EXP-0053, each with a `RESULT.md` and an `experiments/README.md` row;
-  - a new HISTORY §13 "The development audit (M3)";
-  - a `docs/DIAGNOSTICS.md` entry 19, for the random-routing cause;
-  - Domain Language entries in CLAUDE.md for any new term, for example "Unresolved label".
-- Compute: six CPU pod runs, each sized by a local probe, with a hard ceiling of 70 vCPU-h
-  (design D8). The 42-producer teacher parts likely need a profile-and-optimize task first.
-- Records: ADR-0056, "Teacher information set and posterior forks".
+- Domain: `domain/producing_agent.py` gained per-rejected-bid and per-failed-reservation reasons
+  (done). `domain/config.py` gains an optional demand-pattern record (data only, like
+  `DemandDrift`). No RNG, IO or logging in `domain/`; every existing statistic is unchanged.
+- Env: new `env/demand_patterns.py`; `env/aec_env.py` builds pattern schedules on their own
+  streams; new `env/shock_posterior.py`; `env/future_fork.py` gains drift- and pattern-continuous
+  demand forks.
+- Eval: `eval/routing_diagnostics.py` / `eval/routing_trace.py` / `eval/routing_audit.py` (done,
+  plus the deciding-check routers and the input-stock expiry field); restored
+  `eval/ceiling_bound.py`; new `eval/world_space.py` (axes, levers, sampler, measured
+  coordinates); `eval/families.py` gains neutral-default levers; new `eval/atlas.py` (screen,
+  confirm, headroom, selection, split, manifest); new `eval/teacher_audit.py`;
+  `eval/bounded_rollout_orderer.py` gains a pluggable scenario source, floor and candidate set;
+  new `eval/deployed_cost.py`.
+- Train: `train/orderer_scorer.py` docstring only.
+- Records: EXP-0048 to EXP-0055, HISTORY §13, DIAGNOSTICS entries 19 (done) and 20 (no headroom
+  in a world set), ADR-0056 and ADR-0057, Domain Language terms ("World space", "Demand pattern",
+  "Headroom", "Atlas bar", "Headroom atlas", "Unresolved label", "Clairvoyant bound", "Closure
+  (role attribution)").
+- Compute: five CPU pod runs after EXP-0050, each sized by a local probe, with hard stops summing
+  to 29 vCPU-h inside the M3 budget of 40 (design D8).
