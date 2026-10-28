@@ -138,6 +138,88 @@ class DemandDrift:
             object.__setattr__(self, "j", float(self.j))
 
 
+PATTERN_BURST = "burst"
+PATTERN_HIT = "hit"
+PATTERN_SEASONAL = "seasonal"
+PATTERN_SWITCH = "switch"
+PATTERN_KINDS = (PATTERN_BURST, PATTERN_HIT, PATTERN_SEASONAL, PATTERN_SWITCH)
+
+
+@dataclass(frozen=True)
+class DemandPattern:
+    """A demand pattern on the B9-randomized consumers (add-m3-development-audit design D11;
+    stochastic-environment "Demand patterns"). Demand, not a shock: it is part of the demand
+    schedule and stays in the shock-free twin. The env draws it (`env/demand_patterns.py`); this
+    is the parameter record only. Only the fields of `kind` are read; the others keep their
+    defaults (and the fingerprint covers them all).
+
+    - burst: each order is a burst with probability `burst_p`; a burst multiplies its quantity by
+      an integer factor uniform in [`burst_factor_min`, `burst_factor_max`];
+    - hit: popularity weight rank^(-`hit_alpha`) over a seeded ranking of the patterned
+      consumers' products, shifted by one rank every `hit_period` cycles;
+    - seasonal: quantity x (1 + `amplitude` * sin(2 pi (t + `phase`) / `period`)), stochastic
+      rounding, never below the consumer's `quantity_min`;
+    - switch: a seeded half of the products favoured (weight 1, the rest `low_weight`);
+      `switch_count` switches at cycles in [`switch_window_min`, `switch_window_max`] at least
+      `switch_min_gap` apart, each swapping the favoured half and its complement."""
+
+    kind: str
+    burst_p: float = 0.05
+    burst_factor_min: int = 5
+    burst_factor_max: int = 10
+    hit_alpha: float = 1.0
+    hit_period: int = 10
+    amplitude: float = 0.5
+    period: int = 20
+    phase: float = 0.0
+    switch_count: int = 1
+    switch_window_min: int = 11
+    switch_window_max: int = 90
+    switch_min_gap: int = 10
+    low_weight: float = 0.1
+
+    def validate(self) -> None:
+        """Rejects an unknown kind or out-of-range parameters of `kind`, naming them."""
+        def number(name: str, lo: float, hi: float, *, lo_open: bool = False) -> None:
+            v = getattr(self, name)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) \
+                    or v < lo or v > hi or (lo_open and v == lo):
+                raise ValueError(f"demand pattern {self.kind} {name} must be in "
+                                 f"{'(' if lo_open else '['}{lo}, {hi}], got {v!r}")
+
+        def integer(name: str, lo: int) -> None:
+            v = getattr(self, name)
+            if isinstance(v, bool) or not isinstance(v, int) or v < lo:
+                raise ValueError(f"demand pattern {self.kind} {name} must be an integer >= {lo}, "
+                                 f"got {v!r}")
+
+        if self.kind not in PATTERN_KINDS:
+            raise ValueError(f"unknown demand pattern kind {self.kind!r}; known: {PATTERN_KINDS}")
+        if self.kind == PATTERN_BURST:
+            number("burst_p", 0.0, 1.0)
+            integer("burst_factor_min", 1)
+            integer("burst_factor_max", self.burst_factor_min)
+        elif self.kind == PATTERN_HIT:
+            number("hit_alpha", 0.0, math.inf, lo_open=True)
+            integer("hit_period", 1)
+        elif self.kind == PATTERN_SEASONAL:
+            number("amplitude", 0.0, 1.0)
+            integer("period", 1)
+            number("phase", -math.inf, math.inf)
+        else:
+            integer("switch_count", 1)
+            integer("switch_window_min", 2)  # cycle 1 is never changed (as for shocks)
+            integer("switch_window_max", self.switch_window_min)
+            integer("switch_min_gap", 1)
+            number("low_weight", 0.0, 1.0)
+            span = self.switch_window_max - self.switch_window_min + 1
+            if span - (self.switch_count - 1) * (self.switch_min_gap - 1) < self.switch_count:
+                raise ValueError(
+                    f"demand pattern switch: {self.switch_count} switches at least "
+                    f"{self.switch_min_gap} apart do not fit the window "
+                    f"[{self.switch_window_min}, {self.switch_window_max}]")
+
+
 @dataclass(frozen=True)
 class Configuration:
     cycle_emission: Tokens
@@ -150,6 +232,10 @@ class Configuration:
     # Demand drift (D4) over the B9-randomized consumers. None = per-cycle independent
     # B9 sampling, unchanged; the fingerprint then omits the field (D5).
     demand_drift: DemandDrift | None = None
+    # Demand pattern (add-m3-development-audit D11) over the B9-randomized consumers, replacing
+    # drift there (a world has at most one demand process). None = unchanged; the fingerprint
+    # then omits the field.
+    demand_pattern: DemandPattern | None = None
 
     def validate(self) -> None:
         """Port of Configuration.Validate."""
@@ -274,6 +360,15 @@ class Configuration:
                     or not 0.0 <= j <= 1.0:
                 raise ValueError(f"demand drift j must be a number in [0, 1], got {j!r}")
 
+        if self.demand_pattern is not None:
+            if not isinstance(self.demand_pattern, DemandPattern):
+                raise ValueError(f"demand_pattern must be a DemandPattern, got "
+                                 f"{type(self.demand_pattern).__name__}")
+            self.demand_pattern.validate()
+            if self.demand_drift is not None:
+                raise ValueError("a configuration has at most one demand process: demand_drift "
+                                 "and demand_pattern are both set")
+
         # Shocks (design D1): kind table, start cycle >= 2, unbuilt kinds rejected by name.
         if self.shocks is not None:
             validate_shock_model(self.shocks, {
@@ -347,6 +442,12 @@ def _load_drift(d: dict) -> DemandDrift:
     return DemandDrift(j=d["j"])
 
 
+def _load_pattern(d: dict) -> DemandPattern:
+    """Optional top-level `demandPattern`: the `DemandPattern` fields by their (snake_case) names,
+    as `eval/scale.config_to_dict` writes them; an unknown key raises TypeError."""
+    return DemandPattern(**d)
+
+
 def load_config(path: str | Path) -> Configuration:
     """Parse the JSON config (same schema as emulation/config.json, plus an
     optional top-level `consumers` array)."""
@@ -382,6 +483,8 @@ def load_config(path: str | Path) -> Configuration:
         shocks=shock_model_from_dict(data["shocks"]) if "shocks" in data else None,
         # optional top-level `demandDrift: {"j": ...}` (design D4); absent -> no drift.
         demand_drift=_load_drift(data["demandDrift"]) if "demandDrift" in data else None,
+        # optional top-level `demandPattern` (add-m3-development-audit D11); absent -> none.
+        demand_pattern=_load_pattern(data["demandPattern"]) if "demandPattern" in data else None,
     )
     cfg.validate()
     return cfg

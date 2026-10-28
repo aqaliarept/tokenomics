@@ -9,16 +9,18 @@ switch points).
 
 #### Scenario: Burst factor
 - **WHEN** a world has a burst pattern with factor range 5 to 10 and an order is drawn as a burst
-- **THEN** its quantity is its unpatterned quantity times an integer factor between 5 and 10, and
-  its tokens are unchanged
+- **THEN** its quantity is the base quantity drawn for that order (the order of the same world
+  with burst probability 0) times an integer factor between 5 and 10, and its tokens are unchanged
 
 #### Scenario: Hit moves
 - **WHEN** a world has a moving-hit pattern with period 10
 - **THEN** the most popular product of cycles 1 to 10 differs from that of cycles 11 to 20
 
 #### Scenario: Seasonal envelope
-- **WHEN** two episodes with different seeds run on the same world with a seasonal pattern
-- **THEN** both follow the same envelope, and their quantities differ only by the seeded rounding
+- **WHEN** two episodes with different seeds run on the same world with a seasonal pattern and a
+  consumer with a fixed quantity
+- **THEN** that consumer's quantities follow the same envelope in both and differ only by the
+  seeded rounding
 
 #### Scenario: Regime switch
 - **WHEN** a world has a regime-switch pattern with one switch at cycle 40

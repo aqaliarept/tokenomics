@@ -78,6 +78,10 @@ def fork_future_demand(
         # An i.i.d. redraw of each tail would break the drift bound (add-shocks-i-drift D4);
         # a drift-aware fork is part of the M3 teacher fork rule, not this diagnostic.
         raise ValueError("fork_future_demand does not support demand drift")
+    if env.config.demand_pattern is not None:
+        # The same for a demand pattern (add-m3-development-audit D11): a B9 redraw of the tail
+        # would drop the bursts / hit / waves / switches. The pattern-aware fork is task 6.1's.
+        raise ValueError("fork_future_demand does not support demand patterns")
     clone = copy.deepcopy(env)
     rng = np.random.default_rng(continuation_seed(
         task_id, decision_digest, continuation_id, experiment=experiment))

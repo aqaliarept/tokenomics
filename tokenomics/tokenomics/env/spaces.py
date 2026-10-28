@@ -320,7 +320,7 @@ class EnvSpec:
 # `schedule` (add-measurement-gate-harness 2.2) is included: hashing its empty default had
 # silently moved every fingerprint (EXP-0006B pins 548120bd72921234); omitting it restores the
 # pre-M1 values.
-_OMIT_WHEN_UNSET = ("shocks", "demand_drift")
+_OMIT_WHEN_UNSET = ("shocks", "demand_drift", "demand_pattern")
 _OMIT_CONSUMER_WHEN_EMPTY = ("schedule",)
 
 

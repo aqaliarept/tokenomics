@@ -303,6 +303,10 @@ _Avoid_: Request, demand, task
 A seeded, slowly changing consumer demand schedule (ADR-0055). Between consecutive cycles at most floor(j·N) of the N randomized consumers change their order, where a change of product or of quantity counts as one changed order. The rest repeat their previous order. The env draws it before the episode starts, from the world configuration and the episode seed, on a stream of its own. Without drift, randomized consumers keep per-cycle independent sampling.
 _Avoid_: Demand noise, demand walk, trend
 
+**Demand Pattern:**
+A seeded shape of the randomized consumers' demand, one per world (add-m3-development-audit D11): a burst (occasional orders multiplied 5-10x), a moving hit (rank-skewed product popularity whose top product moves periodically), seasonal waves (quantities scaled by a fixed periodic envelope) or a regime switch (a favoured half of the products swapped with its complement at seeded cycles). The env draws it before the episode on its own stream, from the world configuration and the episode seed; it replaces demand drift on those consumers. It is demand, not a shock: agents see it only through the orders, the demand digest covers it, and the shock-free twin keeps it. Not the M6 demand surge (an unannounced, targeted shock measured by resilience).
+_Avoid_: Demand shock, surge, demand noise
+
 **TTL (Time to Live):**
 The maximum number of cycles an order can remain in progress before being rejected. Currently fixed at 2 cycles.
 _Avoid_: Timeout, deadline, expiry

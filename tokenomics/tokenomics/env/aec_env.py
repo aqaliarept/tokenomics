@@ -38,6 +38,7 @@ from .encode import (
 )
 from .demand_digest import demand_digest
 from .demand_drift import draw_schedule_entry, drift_schedules  # noqa: F401 (re-export)
+from .demand_patterns import pattern_schedules
 from .shock_schedule import build_schedule, shock_digest
 from .side_effects import SideEffectTracker, capacity_ratio
 from .spaces import build_spec
@@ -183,6 +184,17 @@ class TokenomicsAECEnv(AECEnv):
             drifting = [c for c in self.config.consumers if c.is_randomized]
             if drifting:
                 drifted = drift_schedules(drifting, drift.j, int(seed), self.horizon)
+        # Demand pattern (add-m3-development-audit D11): every B9-randomized consumer follows it,
+        # drawn on the pattern's own stream (env/demand_patterns.py); validation keeps it and
+        # drift apart, so it takes the drift's place and never reads the legacy stream.
+        pattern = self.config.demand_pattern
+        if pattern is not None:
+            if seed is None:
+                raise ValueError("a demand pattern needs an integer episode seed; "
+                                 "reset(seed=None) would not be reproducible")
+            patterned_consumers = [c for c in self.config.consumers if c.is_randomized]
+            if patterned_consumers:
+                drifted = pattern_schedules(patterned_consumers, pattern, int(seed), self.horizon)
         consumers: dict[str, Consumer] = {}
         self._demand_schedules: dict[ConsumerId, tuple[ScheduleEntry, ...]] = {}
         for c in self.config.consumers:

@@ -18,7 +18,7 @@ deterministic for a given seed."""
 from __future__ import annotations
 
 import random
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Sequence
 
 from ..domain.config import (Configuration, ConsumerConfig, InventoryExpansion,
@@ -62,7 +62,8 @@ def config_to_dict(cfg: Configuration) -> dict:
         "producerConfigs": producers,
         "consumers": [_consumer_to_dict(c) for c in cfg.consumers],
     } | ({"shocks": shock_model_to_dict(cfg.shocks)} if cfg.shocks is not None else {}) \
-      | ({"demandDrift": {"j": cfg.demand_drift.j}} if cfg.demand_drift is not None else {})
+      | ({"demandDrift": {"j": cfg.demand_drift.j}} if cfg.demand_drift is not None else {}) \
+      | ({"demandPattern": asdict(cfg.demand_pattern)} if cfg.demand_pattern is not None else {})
 
 
 def _consumer_to_dict(c: ConsumerConfig) -> dict:
