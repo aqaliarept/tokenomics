@@ -1,0 +1,375 @@
+{
+  "blas_threads": 1,
+  "champion": {
+    "champion_id": "m2_stream_stochastic",
+    "checkpoint": "/workspace/tokenomics/m2_inputs/m2_stream_stochastic.pt",
+    "checkpoint_version": 6,
+    "depth": 3,
+    "eval_episode_seeds": 40,
+    "hard_cells": [
+      6,
+      9
+    ],
+    "held_out_topology_seeds": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "max_death_rate": 0.0,
+    "orderer_obs_version": 3,
+    "primary_metric": "consumer_completed_units",
+    "producer": "v4",
+    "producer_checkpoint": "/workspace/tokenomics/m2_inputs/d3_rung_dagger_v4.pt",
+    "product_stream": true,
+    "strict_hindsight_baseline": true
+  },
+  "date": "2026-10-28",
+  "driver": "tokenomics.eval.shock_contract",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.14.1+cpu",
+    "torch_build": "452946f6ef64"
+  },
+  "experiment": "exp0046",
+  "inputs": {
+    "champion": {
+      "path": "/workspace/tokenomics/champion.json",
+      "sha256": "3f400116259d195a2f9be92d91ae8d765aa33d07e389fceac2f570a8aa5076ed"
+    },
+    "flat_orderer": {
+      "path": "/workspace/tokenomics/m2_inputs/m2_stream_stochastic.pt",
+      "sha256": "7d3f494784001f5a1ab1178db709e2960e3d702a736e79d3326bb613a7ab049c"
+    },
+    "flat_producer": {
+      "path": "/workspace/tokenomics/m2_inputs/d3_rung_dagger_v4.pt",
+      "sha256": "16e470eb808297d893c8a1999dd9c9baa68b90a3e370a1eecaf61b89ec33fa20"
+    },
+    "portable_orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "portable_producer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/producer_candidate.pt",
+      "sha256": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    }
+  },
+  "kind": "exit",
+  "pins": {
+    "checkpoints": {
+      "champion": "3f400116259d195a2f9be92d91ae8d765aa33d07e389fceac2f570a8aa5076ed",
+      "flat_orderer": "7d3f494784001f5a1ab1178db709e2960e3d702a736e79d3326bb613a7ab049c",
+      "flat_producer": "16e470eb808297d893c8a1999dd9c9baa68b90a3e370a1eecaf61b89ec33fa20",
+      "portable_orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+      "portable_producer": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    },
+    "dry_run": false,
+    "grid": {
+      "dev-sparse_wide-12-shocked-00": {
+        "episodes": [
+          1648273883,
+          403593754,
+          403330798,
+          411733136,
+          1344356697,
+          780216897,
+          1678546418,
+          469180525,
+          1202186258,
+          1523693189
+        ],
+        "regime": "shocked",
+        "size": 12,
+        "stack": "portable",
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "dev-sparse_wide-12-shocked-01": {
+        "episodes": [
+          480920748,
+          1962673112,
+          144403646,
+          1906499098,
+          1390414481,
+          1552390792,
+          1113839877,
+          797901344,
+          1763938669,
+          1379500898
+        ],
+        "regime": "shocked",
+        "size": 12,
+        "stack": "portable",
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "dev-sparse_wide-12-shocked-02": {
+        "episodes": [
+          1596453724,
+          2019752305,
+          1546132854,
+          2129989729,
+          952913334,
+          1512164500,
+          1868313768,
+          280198481,
+          137742314,
+          1385045357
+        ],
+        "regime": "shocked",
+        "size": 12,
+        "stack": "portable",
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "dev-sparse_wide-12-shocked-03": {
+        "episodes": [
+          1918321488,
+          1173714013,
+          800294722,
+          299142319,
+          605789734,
+          309898481,
+          1744692017,
+          64327752,
+          825435124,
+          1853533776
+        ],
+        "regime": "shocked",
+        "size": 12,
+        "stack": "portable",
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "dev-sparse_wide-42-shocked-00": {
+        "episodes": [
+          81752346,
+          4145884,
+          1907655396,
+          1060101985,
+          463618645,
+          1637931849,
+          685085498,
+          369292162,
+          435219139,
+          7743056
+        ],
+        "regime": "shocked",
+        "size": 42,
+        "stack": "portable",
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "dev-sparse_wide-42-shocked-01": {
+        "episodes": [
+          1968127071,
+          1466441995,
+          1226954377,
+          764460543,
+          1776585508,
+          317210345,
+          1674663210,
+          902957230,
+          746805083,
+          1824585025
+        ],
+        "regime": "shocked",
+        "size": 42,
+        "stack": "portable",
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "dev-sparse_wide-42-shocked-02": {
+        "episodes": [
+          160778965,
+          94719794,
+          376871033,
+          438669130,
+          1430791609,
+          911855958,
+          417658043,
+          1491523540,
+          1164095001,
+          1547671687
+        ],
+        "regime": "shocked",
+        "size": 42,
+        "stack": "portable",
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "dev-sparse_wide-42-shocked-03": {
+        "episodes": [
+          1925847396,
+          567075104,
+          869067812,
+          1740889567,
+          1028298466,
+          1076392355,
+          845870970,
+          1446351067,
+          1745165639,
+          872925809
+        ],
+        "regime": "shocked",
+        "size": 42,
+        "stack": "portable",
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "flat-scale-d3-s6": {
+        "depth": 3,
+        "episodes": [
+          791088714,
+          74373453,
+          717860156,
+          968271386,
+          729047990,
+          1108828098,
+          802917712,
+          1904170921,
+          1895206366,
+          462369195
+        ],
+        "regime": "shocked",
+        "size": 12,
+        "stack": "flat",
+        "topology": 6,
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "flat-scale-d3-s7": {
+        "depth": 3,
+        "episodes": [
+          1308777888,
+          304509238,
+          1448156173,
+          1281431087,
+          1117556223,
+          737842242,
+          1547906056,
+          56338695,
+          76756815,
+          2120692331
+        ],
+        "regime": "shocked",
+        "size": 12,
+        "stack": "flat",
+        "topology": 7,
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "flat-scale-d3-s8": {
+        "depth": 3,
+        "episodes": [
+          532807549,
+          782893563,
+          2002046616,
+          1432767314,
+          732363986,
+          1846099990,
+          571507645,
+          423961363,
+          1392890272,
+          2045525167
+        ],
+        "regime": "shocked",
+        "size": 12,
+        "stack": "flat",
+        "topology": 8,
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      },
+      "flat-scale-d3-s9": {
+        "depth": 3,
+        "episodes": [
+          1361460609,
+          526682124,
+          1697690039,
+          827979449,
+          318026300,
+          1434914232,
+          790997825,
+          548600355,
+          1508575247,
+          1494961383
+        ],
+        "regime": "shocked",
+        "size": 12,
+        "stack": "flat",
+        "topology": 9,
+        "twin": {
+          "tolerance": 0.05,
+          "window": 5
+        }
+      }
+    },
+    "horizon": 100,
+    "registry_version": "3032147f1f17233703f486c66e4c56e006c026399364dd1cbaead5b46bcfceb5",
+    "shock_profile": "shocks-i",
+    "shock_profiles_version": "c92d066085c000a066d91803b48f4b85ad81db22c4bbd4fa61531d94c267bd6f",
+    "source": {
+      "commit": "d04ee94f711b790822f6226da22cb2feedaa5054",
+      "tree_sha256": "2e9473eb25a08e328a62f9241276f243235103e057e972d8675361ffd2af8a5f"
+    },
+    "stacks": [
+      "portable",
+      "flat"
+    ]
+  },
+  "registry": {
+    "content_hash": "3032147f1f17233703f486c66e4c56e006c026399364dd1cbaead5b46bcfceb5",
+    "name": "worlds-v2",
+    "shock_profiles": "c92d066085c000a066d91803b48f4b85ad81db22c4bbd4fa61531d94c267bd6f"
+  },
+  "result": {
+    "acceptance_read": true,
+    "contract_failures": 0,
+    "deaths": 0,
+    "episodes": 120,
+    "exit_holds": true,
+    "missing_rows": 0,
+    "resilience_rows": 680,
+    "status": "complete",
+    "twins": 120
+  },
+  "resumes": [],
+  "source": {
+    "commit": "d04ee94f711b790822f6226da22cb2feedaa5054",
+    "n_files": 59,
+    "tree_sha256": "2e9473eb25a08e328a62f9241276f243235103e057e972d8675361ffd2af8a5f"
+  },
+  "started": "2026-10-28T06:51:41.774860+00:00",
+  "status": "complete",
+  "workers": 8
+}

@@ -467,3 +467,15 @@ worlds, checks that the baselines leave headroom, and calibrates the side-effect
   The stack is a few percent better than the strongest hand-written producer but far from the
   margins. The cause of the starvation (orderer split vs producer investment) is not yet
   diagnosed. This opens the measurement arc's baseline for M2+.
+- **EXP-0046 — M2 exit, champion shocked and unretrained (add-shocks-i-drift 8.1). CONTRACT
+  HOLDS.** Both stacks, never trained on shocks, ran the `shocks-i` profile (capacity hits and
+  producer outages) at horizon 100, each shocked episode paired with its shock-free twin (same
+  seed and demand, shocks removed). Portable stack (EXP-0035 producer + EXP-0012 orderer) on the
+  8 registry v2 shocked development worlds at 12 and 42 producers; flat champion
+  (`champion.json`) on topologies 6–9. 120 episodes + 120 twins at commit d04ee94.
+  - 0 contract failures, 0 deaths, no missing rows: the M2 exit criterion is met.
+  - Units against the twin: 0.994 (portable 12 and 42), 0.999 (flat); worst episode 0.955.
+  - 678 of 680 shocks recovered, median 0 cycles; outages dip 3–6 units each, capacity hits
+    about 1. The 2 unrecovered rows are outages starting at cycle 90, censored by the horizon.
+  `shocks-i` barely dents these stacks. Whether shocked worlds still separate policies is the
+  calibration question of EXP-0047. ≈ 0.41 vCPU-h billed.

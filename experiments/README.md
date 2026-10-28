@@ -11,6 +11,7 @@ only a lookup index into the per-experiment directories.
 
 | ID | Date | Result |
 |---|---|---|
+| [EXP-0046](EXP-0046-m2-exit-shocked-champion/RESULT.md) | 2026-10-28 | M2 exit, champion stacks shocked (`shocks-i`) and unretrained — **CONTRACT HOLDS**: 0 contract failures, 0 deaths, 120 episodes + 120 twins (portable 12/42 on registry v2 shocked dev worlds, flat topologies 6–9); units vs shock-free twin 0.994 portable / 0.999 flat; 678/680 shocks recovered (2 horizon-censored cycle-90 outages) |
 | [EXP-0045](EXP-0045-champion-dev-report-12-42/RESULT.md) | 2026-10-27 | Champion development report (portable stack, sparse-wide 12/42) — **REJECT** (dev reading, not acceptance): mean ratio 1.011–1.041 vs 1.05/1.10 margins, 5 losing calm worlds, run-down 1 world, starvation 6 calm worlds, zero deaths |
 | [EXP-0044](EXP-0044-gate-calibration-12-42/RESULT.md) | 2026-10-27 | Gate calibration screen at 12/42 producers — **HEADROOM FAILED**: dense-12 saturated (median best fill 0.954 > 0.95); other 3 cells pass; no frozen files. Retune probe: capacity scale 0.8–1.0 **does not fix it** (warm-up-dominated shortfall). **Attempt 2 (sparse-wide only): PASSED**, roster pruned to 5 entity_planner members, X 0.730 / Y 0.768, frozen files written |
 | [EXP-0043](EXP-0043-scenario-rollout-surrogate/RESULT.md) | 2026-08-27 | Scenario rollout surrogate — **CANCELLED, NOT RUN** (rejected by the baseline plan; code on `archive-1`) |
