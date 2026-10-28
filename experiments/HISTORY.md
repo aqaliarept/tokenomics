@@ -479,3 +479,16 @@ worlds, checks that the baselines leave headroom, and calibrates the side-effect
     about 1. The 2 unrecovered rows are outages starting at cycle 90, censored by the horizon.
   `shocks-i` barely dents these stacks. Whether shocked worlds still separate policies is the
   calibration question of EXP-0047. ≈ 0.41 vCPU-h billed.
+- **EXP-0047 — registry v2 calibration screen (add-shocks-i-drift 9.1). HEADROOM PASSED.** The
+  v1 screen repeated on the v2 drafts: shocked worlds now carry `shocks-i`, and roster v2 adds
+  the `shock_reactive` ordering baseline (48 members). 12,800 roster episodes on the 24
+  sparse-wide development worlds at commit ce6b367.
+  - No reserve was needed.
+  - Headroom median best fill: 0.9037 at 12 producers, 0.8749 at 42 (v1 0.9342 / 0.8856). The
+    16 calm worlds are identical to v1; `shocks-i` lowers the best fill on the 8 shocked worlds
+    by 0.03–0.07, so v2 leaves more headroom.
+  - Pruning keeps 6 of 48: v1's five `entity_planner` members plus
+    `entity_planner/shock_reactive`, which sets the best on 4 shocked 12-producer episodes.
+  - X 0.7516 (v1 0.7297), Y 0.7302 (v1 0.7681); the change comes from the shocked worlds.
+  The frozen v2 registry, roster and parameters share `screened_on` and wait for task 10.1.
+  ≈ 4.0 vCPU-h billed.
