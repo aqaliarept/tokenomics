@@ -38,7 +38,7 @@ Remote profiles: `cpu8` = `--create-pod --cpu --python python3.12 --vcpu 8 --mem
 
 ## 7. Integration check
 
-- [ ] 7.1 [code][local-exclusive] Run the full suite and `openspec validate add-shocks-i-drift --strict`; the supervisor then commits the tree so the pods run a recorded commit. After 6.2. Verify: both green, the goldens unchanged, `git status` clean after the commit.
+- [x] 7.1 [code][local-exclusive] Run the full suite and `openspec validate add-shocks-i-drift --strict`; the supervisor then commits the tree so the pods run a recorded commit. After 6.2. Verify: both green, the goldens unchanged, `git status` clean after the commit.
 
 ## 8. EXP-0046: M2 exit, champion shocked and unretrained
 
