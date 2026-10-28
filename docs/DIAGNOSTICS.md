@@ -191,6 +191,25 @@ edge (12-shocked, 42-calm, 42-shocked; +52 to +125 units), and beat `random_fixe
 helps somewhat more. Routing whole instead of split at the same variation is worth 0.78–4.04 of the
 edge. (a), (d) and (e) were ruled out.
 
+**Seen in EXP-0049** (`experiments/EXP-0049-informed-routing-and-trained-trace/`, follow-up to
+(b)): on registry v2 (every product has two eligible producers), three rules that read the
+producers' observed spare capacity do not improve on blind rotation; fanout ≥ 3 is untested.
+Check:
+`routing_audit --plan exp0049` (adds `two_choice_spare`, `spare_weighted_whole`,
+`spare_rotating_whole`, and the trained subjects, sha256-pinned checkpoints); compare each with
+its blind counterpart (`random_whole`, `round_robin`) on units, `receiver_change_share_*` and
+`herding_hhi`, and count how often spare binds
+(`openspec/changes/add-m3-development-audit/probes/spare_33.py`). Outcome: spare rarely binds
+(skip 0–2.7% of decisions; `lost_units_consumer_no_fit` ≈ 0 for every router), and following a
+shared capacity signal keeps each orderer on the same producer over time (receiver change
+0.17–0.30 for the argmax rule against 0.50 for blind random), losing units as TTL expiries.
+Read `receiver_change_share_*`, not `herding_hhi`: receiver change tracks units in every cell,
+per-cycle herding does not (`round_robin` herds at 0.89–0.90 on 12-producer worlds and wins).
+The trained portable orderer varies receivers like `round_robin` (0.64–0.67) without sampling,
+but splits 29–40% of consumer orders; it beats `random` and loses to `round_robin` on shocked
+worlds. Caveat: at
+fanout 2, "pick two, take the roomier" is an argmax; testing it needs worlds with fanout ≥ 3.
+
 ---
 
 ## Unverified problems (plain-English inbox)

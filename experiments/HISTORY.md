@@ -526,3 +526,27 @@ baseline on most registry v2 development episodes (95 of 128 in EXP-0047, all 40
   decision; M3 stops for it. The mechanism behind rotation's gain (fewer reservations expiring
   while they wait for inputs: 228.7 against 397.2 lost units per 42-shocked episode) is not yet
   traced. ≈ 4.4 vCPU-h billed.
+- **EXP-0049 — informed routing and the trained orderer's routing. Diagnosed: spare capacity is
+  not the lever; the trained orderer learned the time variation, not the whole orders.**
+  Two follow-up questions from the user after EXP-0048. First, can a rule that reads each
+  producer's spare capacity spread whole orders better than the blind `round_robin`? Not the
+  three rules tested on registry v2, where every product has two eligible producers; informed
+  spreading at fanout ≥ 3 (e.g. the power of two choices) is untested. Spare capacity almost
+  never binds at routing time (orders of 1.6–1.9 units; the smaller of the two eligible
+  producers' spare is 13–22 units on average; units lost to bids turned away for lack of room
+  ≤ 0.15 per episode; a skip-if-full rotation skips on 0–2.7% of decisions and equals
+  `round_robin`). Following the signal makes an agent keep choosing the same producer over time:
+  the argmax rule (`two_choice_spare`, which every product's fanout of 2 reduced to an argmax)
+  changes producer on 17–30% of decisions against blind `random_whole`'s 50% and loses 15–152
+  units per episode, almost all as expiring reservations; spare-weighted draws vary a little
+  less and lose up to 39. Receiver change tracks units in every cell; per-cycle herding does
+  not (`round_robin` herds at 0.89–0.90 on 12-producer worlds and wins).
+  Second, did the trained portable orderer learn random's trick? Partly: it changes the
+  receiving producer as often as `round_robin` (0.64–0.67), with no sampling, but still splits
+  29–40% of consumer orders (`proportional`, the rule it was distilled from: 45–59%). It
+  beats `random` on 126 of 128 episodes and every roster v2 member in every cell, but loses to
+  `round_robin` on the shocked worlds (−28 and −14 units). So the roster v3 candidates stay
+  `round_robin` and `even_split_rotating`, and M4 needs whole-order routing, not spare capacity
+  or sampling. The power-of-two-choices idea stays untested (needs fanout ≥ 3). The reference
+  rows reproduce EXP-0048 (2,304 rows) and `portable` reproduces EXP-0046 (80 of 80). ≈ 2.5
+  vCPU-h billed.
