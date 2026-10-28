@@ -30,6 +30,15 @@ from .requests import InvestmentRequest, InvestmentType, ReplenishmentRequest
 # failing (rejected, −5). Mirrors the order TTL (ADR-0025).
 RESERVATION_TTL = 2
 
+# Why a bid was rejected or a reservation failed (add-m3-development-audit D2, "Telemetry").
+# DIAGNOSTIC ONLY: `outage` is derived from hidden shock state that no agent observes, so no
+# policy and no teacher fork may read these (design D4); they exist for the routing trace.
+REJECT_OUTAGE = "outage"  # the producer was in an outage this cycle
+REJECT_NO_FIT = "no_fit"  # needs more of some type than the auction-start budget holds
+REJECT_DISPLACED = "displaced"  # fits the auction-start budget, not what higher bids left
+FAIL_DROPPED = "dropped"  # reservation lost re-validation against degraded capacity
+FAIL_TTL = "ttl"  # reservation (or its order) expired waiting for inputs
+
 
 @dataclass
 class Bid:
@@ -109,6 +118,10 @@ class ProductionResult:
     completed: list[Bid]  # delivered THIS cycle (same-cycle or reservation assembled)
     failed: list[Bid]  # a prior acceptance whose reservation dropped/TTL'd this cycle
     rejected: list[Bid]  # bid that never cleared the auction (tokens stay available)
+    # Diagnostic-only reasons aligned index for index with `rejected` / `failed` (REJECT_* /
+    # FAIL_* above); additive, never read by the simulation or by any agent.
+    rejection_reasons: list[str] = field(default_factory=list)
+    failure_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -415,6 +428,8 @@ class ProducingAgent:
         completed: list[Bid] = []
         failed: list[Bid] = []
         rejected: list[Bid] = []
+        failure_reasons: list[str] = []
+        rejection_reasons: list[str] = []
         cut_off_price = self.cut_off_price
         funds: Tokens = 0
         requested: Capacity = 0
@@ -424,6 +439,7 @@ class ProducingAgent:
         survivors, dropped = self._revalidate_reservations()
         for r in dropped:
             failed.append(r.bid)
+            failure_reasons.append(FAIL_DROPPED)
 
         # 2. survivors hold the per-cycle budget (the intended blocking pressure)
         available: dict[CapacityType, Capacity] = dict(self.capacities)
@@ -446,6 +462,7 @@ class ProducingAgent:
                     for t, c in r.bid.capacities.items():
                         available[t] += c
                     failed.append(r.bid)
+                    failure_reasons.append(FAIL_TTL)
                 else:
                     still.append(r)
 
@@ -453,6 +470,7 @@ class ProducingAgent:
         # clears is `accepted` (tokens burnt) this cycle, whether it completes now
         # or reserves and waits.
         requested_by_type: dict[CapacityType, Capacity] = {}
+        auction_budget = dict(available)  # diagnostic: no-fit vs displaced (D2)
         self.bids.sort(key=lambda b: b.capacity_unit_price(), reverse=True)
         for bid in self.bids:
             requested += bid.total_capacity()
@@ -460,6 +478,11 @@ class ProducingAgent:
                 requested_by_type[t] = requested_by_type.get(t, 0) + c
             if outage or not self._fits(available, bid.capacities):
                 rejected.append(bid)
+                rejection_reasons.append(
+                    REJECT_OUTAGE if outage
+                    else REJECT_NO_FIT if not self._fits(auction_budget, bid.capacities)
+                    else REJECT_DISPLACED
+                )
                 continue
             self._subtract(available, bid.capacities)
             funds += bid.tokens
@@ -482,4 +505,7 @@ class ProducingAgent:
         self.funds = funds
         self.cut_off_price = cut_off_price
         self.cmd_handled = False
-        return ProductionResult(accepted, completed, failed, rejected)
+        return ProductionResult(
+            accepted, completed, failed, rejected,
+            rejection_reasons=rejection_reasons, failure_reasons=failure_reasons,
+        )

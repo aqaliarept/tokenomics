@@ -56,6 +56,7 @@ from .ordering_agent import OrderingAgent, OrderingAgentCommand, OrderingAgentVi
 from .requests import ConsumerRequest, InvestmentType, ReplenishmentRequest
 from .telemetry import EconomyTelemetry
 from .producing_agent import (
+    FAIL_TTL,
     Bid,
     ProducerInfo,
     ProducingAgent,
@@ -113,6 +114,47 @@ class ProducerAuctionRecord:
 
 
 @dataclass(frozen=True)
+class BidOutcome:
+    """What happened to one bid in this cycle's production (add-m3-development-audit D2,
+    "Telemetry"), pure data. `outcome` is accepted / completed / failed / rejected; `reason`
+    is a REJECT_* / FAIL_* constant of `producing_agent` for rejected / failed bids, else None.
+    `order_kind` is consumer / replenishment / investment. DIAGNOSTIC ONLY: an `outage`
+    reason reveals hidden shock state, so no policy or teacher fork may read it (design D4)."""
+
+    producer_id: ProducerId
+    order_id: OrderId
+    order_kind: str
+    product: Product
+    quantity: int
+    capacity_units: Capacity
+    outcome: str
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class OrderResolution:
+    """An order completed or rejected this cycle, with the quantity actually delivered
+    before it resolved (D2): a rejected order with `completed_qty > 0` wasted units that were
+    produced. Pure data, diagnostic only."""
+
+    order_id: OrderId
+    order_kind: str
+    product: Product
+    quantity: int
+    completed: bool
+    completed_qty: int
+
+
+def order_kind(order: Order) -> str:
+    """consumer / replenishment / investment, from the request the order carries."""
+    if order.consumer_request is not None:
+        return "consumer"
+    if order.replenishment_request is not None:
+        return "replenishment"
+    return "investment"
+
+
+@dataclass(frozen=True)
 class CapacitySnapshot:
     """One producer's (current, max) capacity at the end of a played cycle, taken before the
     trailing `start_cycle` (add-shocks-i-drift D2), so a shock belonging to the next,
@@ -153,6 +195,10 @@ class CycleResult:
     # Every producer's capacity at the end of this played cycle, in producer order, taken
     # before the next cycle's shocks apply (add-shocks-i-drift D2); additive.
     end_capacities: tuple[CapacitySnapshot, ...] = ()
+    # Diagnostic-only production trace (add-m3-development-audit D2); additive. Never read
+    # by the simulation, the env reward or any agent observation.
+    bid_outcomes: tuple[BidOutcome, ...] = ()
+    order_resolutions: tuple[OrderResolution, ...] = ()
 
     @property
     def completed(self) -> int:
@@ -516,6 +562,14 @@ class System:
             oa.complete_cycle()
 
         producer_auctions: list[ProducerAuctionRecord] = []
+        bid_outcomes: list[BidOutcome] = []
+
+        def outcome(pid: ProducerId, bid: Bid, kind: str, reason: str | None) -> BidOutcome:
+            return BidOutcome(
+                pid, bid.order_id, order_kind(must_get(self.orders, bid.order_id)), bid.product,
+                bid.quantity, bid.total_capacity(), kind, reason,
+            )
+
         # producers in an outage during this played cycle (D2)
         out = self._outages_by_cycle.get(self.cycle_counter, set())
         for pid, p in self.producing_agents.items():
@@ -529,15 +583,19 @@ class System:
             for bid in result.accepted:
                 must_get(self.orders, bid.order_id).sub_accepted(bid.quantity, bid.tokens)
                 self._record_production("accepted", pid, bid)
+                bid_outcomes.append(outcome(pid, bid, "accepted", None))
             for bid in result.completed:
                 must_get(self.orders, bid.order_id).sub_completed(bid.quantity)
                 self._record_production("completed", pid, bid)
-            for bid in result.failed:
+                bid_outcomes.append(outcome(pid, bid, "completed", None))
+            for bid, reason in zip(result.failed, result.failure_reasons, strict=True):
                 must_get(self.orders, bid.order_id).sub_failed(bid.quantity)
                 self._record_production("failed", pid, bid)
-            for bid in result.rejected:
+                bid_outcomes.append(outcome(pid, bid, "failed", reason))
+            for bid, reason in zip(result.rejected, result.rejection_reasons, strict=True):
                 must_get(self.orders, bid.order_id).sub_rejected(bid.quantity)
                 self._record_production("rejected", pid, bid)
+                bid_outcomes.append(outcome(pid, bid, "rejected", reason))
 
         cycle_score: Score = 0
         completed_ids: list[OrderId] = []
@@ -545,6 +603,8 @@ class System:
         n_repl_done = n_repl_rej = 0
         units_cons_done = units_cons_rej = 0
         consumer_outcomes: list[ConsumerOrderOutcome] = []
+        order_resolutions: list[OrderResolution] = []
+        removed_kinds: dict[OrderId, str] = {}
         for oid, order in self.orders.items():
             # an unfunded producer order expired this cycle (budget exhausted by
             # higher-priority orders) — reject it without an auction (ADR-0025).
@@ -580,6 +640,11 @@ class System:
                 raise RuntimeError("unsupported order event")
             if not keep:
                 completed_ids.append(oid)
+                removed_kinds[oid] = order_kind(order)
+                order_resolutions.append(OrderResolution(
+                    oid, removed_kinds[oid], order.product, order.quantity,
+                    order.completed_qty == order.quantity, order.completed_qty,
+                ))
 
         removed = set(completed_ids)
         for oid in completed_ids:
@@ -597,6 +662,11 @@ class System:
                 for r in p.reservations:
                     if r.bid.order_id in removed:
                         self._record_production("failed", pid, r.bid)
+                        # the parent order's TTL fired: a TTL failure of the reservation
+                        bid_outcomes.append(BidOutcome(
+                            pid, r.bid.order_id, removed_kinds[r.bid.order_id], r.bid.product,
+                            r.bid.quantity, r.bid.total_capacity(), "failed", FAIL_TTL,
+                        ))
                     else:
                         survivors.append(r)
                 p.reservations = survivors
@@ -614,6 +684,8 @@ class System:
             consumer_outcomes=tuple(consumer_outcomes),
             producer_auctions=tuple(producer_auctions),
             end_capacities=end_capacities,
+            bid_outcomes=tuple(bid_outcomes),
+            order_resolutions=tuple(order_resolutions),
         )
 
     def is_dead(self) -> bool:
