@@ -41,7 +41,7 @@ from typing import Collection, Iterable, Mapping, Sequence
 
 from ..domain.shocks import shock_model_from_dict
 from .resilience import ResilienceParams, ResilienceRow, resilience_rows
-from .roster import GATE_SIZES, Roster, content_hash
+from .roster import GATE_SIZES, Roster, check_screened_on, content_hash, name_version_tag
 from .seeding import replicate_mean
 
 CALM = "calm"
@@ -118,6 +118,9 @@ class SideEffectParams:
     x: float
     y: float
     version: str
+    name: str = ""
+    # The registry draft hash a v2+ screen recorded (add-shocks-i-drift D8/D10); None on v1.
+    screened_on: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("x", "y"):
@@ -127,6 +130,14 @@ class SideEffectParams:
             object.__setattr__(self, name, float(v))
         if not self.version:
             raise ValueError("side-effect parameters need a version")
+        # Parameters exist only as a screen's output, so a v2+ name and `screened_on` go
+        # together (add-shocks-i-drift D10); a v1 (or unnamed) set never records one.
+        tag = name_version_tag(self.name)
+        if (tag >= 2) != (self.screened_on is not None):
+            raise ValueError(f"side-effect parameters {self.name!r} (v{tag}): screened_on is "
+                             f"recorded exactly from v2 on, got {self.screened_on!r}")
+        if self.screened_on is not None:
+            check_screened_on(self.screened_on, f"side-effect parameters {self.name!r}")
 
 
 # Side-effect parameter file (design D4; frozen by 8.2/10.1 as side_effect_params_v1.json). Same
@@ -136,16 +147,21 @@ DEFAULT_PARAMS = Path(__file__).parent / "registry" / "side_effect_params_v1.jso
 
 
 PARAMS_FIELDS = {"name", "x", "y", "q", "rule", "method", "evidence"}
+SCREENED_ON = "screened_on"
 
 
 def side_effect_params_payload(
     x: float, y: float, q: float, *, name: str = "side-effect-params", rule: str = "",
     method: str = "", evidence: Mapping[str, object] | None = None,
+    screened_on: str | None = None,
 ) -> dict:
     """The file payload (no hash). `q`, `rule`, `method` (the quantile method) and `evidence`
-    (episode counts + digest of the calibration rows) record how X and Y were obtained (D4)."""
+    (episode counts + digest of the calibration rows) record how X and Y were obtained (D4).
+    `screened_on` (v2+ only, add-shocks-i-drift D10) is the registry draft hash of the screen
+    that wrote the file; omitted when None, so v1 files are unchanged."""
     return {"name": name, "x": float(x), "y": float(y), "q": float(q), "rule": rule,
-            "method": method, "evidence": dict(evidence or {})}
+            "method": method, "evidence": dict(evidence or {})} | (
+        {} if screened_on is None else {SCREENED_ON: screened_on})
 
 
 def side_effect_params_json(x: float, y: float, q: float, **kw: object) -> str:
@@ -160,12 +176,17 @@ def params_from_dict(d: Mapping[str, object]) -> SideEffectParams:
     recorded = d.pop("content_hash", None)
     if recorded is None:
         raise ValueError("side-effect parameter file records no content_hash; it has no version")
-    if set(d) != PARAMS_FIELDS:
-        raise ValueError(f"side-effect parameter file fields {sorted(d)} != {sorted(PARAMS_FIELDS)}")
+    # v2+ parameter files are only ever written by a screen, so they always carry screened_on;
+    # v1 files never do (add-shocks-i-drift D10).
+    want = PARAMS_FIELDS | ({SCREENED_ON} if name_version_tag(str(d.get("name", ""))) >= 2 else set())
+    if set(d) != want:
+        raise ValueError(f"side-effect parameter file {d.get('name')!r} fields {sorted(d)} != "
+                         f"{sorted(want)}")
     if content_hash(d) != recorded:
         raise ValueError(f"side-effect parameter hash {content_hash(d)} != recorded {recorded}: "
                          "edited without a new version")
-    return SideEffectParams(x=d["x"], y=d["y"], version=str(recorded))  # type: ignore[arg-type]
+    return SideEffectParams(x=d["x"], y=d["y"], version=str(recorded),  # type: ignore[arg-type]
+                            name=str(d["name"]), screened_on=d.get(SCREENED_ON))  # type: ignore[arg-type]
 
 
 def load_side_effect_params(path: str | Path = DEFAULT_PARAMS) -> SideEffectParams:

@@ -20,8 +20,11 @@ Modes:
   files. In order: zero-baseline replacement (registry screening, development split) -> headroom per family × size on the final
   world set (D10; any failure stops with exit 3 and writes no frozen files) -> optional pruning
   (`--prune`, roster.prune_roster) -> X/Y calibration (D4) over the final worlds' episodes with the
-  (pruned) roster -> candidate frozen files `frozen/worlds_v1.json` (screened, headroom recorded),
-  `frozen/roster_v1.json` (frozen), `frozen/side_effect_params_v1.json`, plus `screening.json`.
+  (pruned) roster -> candidate frozen files `frozen/worlds_v<n>.json` (screened, headroom
+  recorded), `frozen/roster_v<n>.json` (frozen), `frozen/side_effect_params_v<n>.json`, plus
+  `screening.json`. The tag `v<n>` comes from the input registry's name (`worlds-v2` -> v2;
+  add-shocks-i-drift D10). From v2 on, all three files record `screened_on` = the draft registry
+  hash, and a real report admits a v2+ set only when the three agree (`version_set_problem`).
 - `probe` (task 10.2): baseline-only headroom of the development gate worlds of `--families`
   (default dense) at each `--scales` capacity scale, with an optional `--members` subset; writes
   `scale-<s>/` per scale and `probe_headroom.csv`. Calibration evidence for retuning a family
@@ -132,6 +135,7 @@ from .roster import (
     contract_for,
     freeze_roster,
     load_roster,
+    name_version_tag,
     prune_roster,
     roster_from_dict,
     save_roster,
@@ -643,6 +647,34 @@ def _execute(out: Path, spec: dict, done: Sequence[EpisodeRow], jobs: Sequence[J
 # --- report ---
 
 
+def version_set_problem(registry: Registry, roster: Roster,
+                        params: SideEffectParams) -> str | None:
+    """Why a real report may not pair these three files (add-shocks-i-drift D8 "Mixed versions",
+    gate-harness "Mixed versions refused"); None = admitted. A registry v2+ set is admitted only
+    when the registry, roster and parameters record the same `screened_on`, i.e. come from one
+    screen of one draft. v1 files record none and pair only with each other, so a v1 registry
+    with a v2+ roster or parameter file is refused too."""
+    files = (("registry", registry.name, registry.version, registry.screened_on),
+             ("roster", roster.name, roster.version, roster.screened_on),
+             ("parameters", params.name, params.version, params.screened_on))
+    tags = (registry.version_tag, roster.version_tag, name_version_tag(params.name))
+    for (what, name, version, on), tag in zip(files, tags):
+        # parsers refuse this on files; in-memory objects reach here too
+        if tag >= 2 and on is None:
+            return (f"mixed versions: {what} {name!r} ({version[:12]}) is v{tag} but records no "
+                    "screened_on")
+    bad = [f for f in files[1:] if f[3] != registry.screened_on]
+    if not bad:
+        return None
+
+    def show(f: tuple[str, str, str, str | None]) -> str:
+        on = "none" if f[3] is None else f[3][:12]
+        return f"{f[0]} {f[1]!r} ({f[2][:12]}, screened_on {on})"
+
+    return (f"mixed versions: {', '.join(show(f) for f in bad)} do not pair with "
+            f"{show(files[0])}")
+
+
 def run_report(
     *,
     out_dir: str | Path,
@@ -701,6 +733,9 @@ def run_report(
              "world/episode filters are set"),
             (smoke is not None, smoke or ""),
         ) if bad]
+        mixed = version_set_problem(registry, roster, params)
+        if mixed is not None:
+            problems.append(mixed)
         if problems:
             raise ValueError("not a valid real report (" + "; ".join(problems)
                              + "); pass --dry-run for a smoke run")
@@ -950,10 +985,19 @@ class ScreenOutcome:
 
 
 def screen_outcome(scope: Registry, roster: Roster, rows: Sequence[EpisodeRow], *, q: float,
-                   prune: bool, prune_sizes: Sequence[int] = GATE_SIZES) -> ScreenOutcome:
+                   prune: bool, prune_sizes: Sequence[int] = GATE_SIZES, tag: int = 1,
+                   screened_on: str | None = None) -> ScreenOutcome:
     """Zero-baseline replacement -> headroom -> pruning -> X/Y, in that order (module docstring).
     Headroom and X/Y read only the final development gate worlds (after replacement); reserves
-    feed replacement only."""
+    feed replacement only.
+
+    `tag` is the output generation (D10 "Versioned screen outputs"): the parameters are named
+    `side-effect-params-v<tag>`. From tag 2 on, `screened_on` (the draft registry hash) is
+    recorded in the frozen registry, roster and parameters, and the frozen roster is named
+    `roster-v<tag>`; tag 1 records nothing new, so v1 outputs are unchanged."""
+    if (tag >= 2) != (screened_on is not None):
+        raise ValueError(f"screened_on is recorded from tag v2 on, exactly (tag v{tag}, "
+                         f"screened_on {screened_on!r})")
     screened = screen_zero_baselines(scope, roster, rows, splits=(DEVELOPMENT,))
     final = {e.id: e for e in screened.gate_worlds(DEVELOPMENT)}
     final_rows = [r for r in rows if r.world in final]
@@ -973,9 +1017,13 @@ def screen_outcome(scope: Registry, roster: Roster, rows: Sequence[EpisodeRow], 
                             sizes=prune_sizes)
         final_rows = [r for r in final_rows if r.subject in set(kept.member_ids)]
     frozen = freeze_roster(kept)
+    if screened_on is not None:
+        screened = replace(screened, screened_on=screened_on)
+        frozen = replace(frozen, name=f"roster-v{tag}", screened_on=screened_on)
     cal = calibrate_x_y(final_rows, kept, q)
     params = side_effect_params_json(
-        cal.x, cal.y, q, name="side-effect-params-v1", rule=CALIBRATION_RULE, method=cal.method,
+        cal.x, cal.y, q, name=f"side-effect-params-v{tag}", rule=CALIBRATION_RULE,
+        method=cal.method, screened_on=screened_on,
         evidence=cal.evidence() | {"roster_version": frozen.version,
                                    "registry_version": screened.version})
     return ScreenOutcome(screened, hr, True, frozen, cal, params)
@@ -1054,6 +1102,9 @@ def run_screen(
         raise ValueError(f"reserves must be one of {RESERVE_MODES}, got {reserves!r}")
     if registry.screening is not None:
         raise ValueError(f"registry {registry.version[:12]} is already screened")
+    # Output generation from the input registry's name (D10 "Versioned screen outputs").
+    tag = registry.version_tag
+    screened_on = registry.version if tag >= 2 else None
     gate = select_worlds(registry, DEVELOPMENT, sizes=sizes, families=families, regimes=regimes,
                          max_worlds=max_worlds)
     groups = {e.group for e in gate}
@@ -1069,6 +1120,9 @@ def run_screen(
              "world/episode filters are set"),
             (reserves == "none", "reserves are skipped"),
             (bool(registry.coverage_problems()), "; ".join(registry.coverage_problems())),
+            (tag >= 2 and roster.version_tag != tag,
+             f"registry {registry.name!r} is v{tag} but roster {roster.name!r} is "
+             f"v{roster.version_tag}"),
             (smoke is not None, smoke or ""),
         ) if bad]
         if problems:
@@ -1146,21 +1200,25 @@ def run_screen(
         expected = expected_keys(grid, roster, 0)
         done = rows
     prune_sizes = GATE_SIZES if not dry_run else sorted({e.size for e in gate})
-    outcome = screen_outcome(scope, roster, rows, q=q, prune=prune, prune_sizes=prune_sizes)
+    outcome = screen_outcome(scope, roster, rows, q=q, prune=prune, prune_sizes=prune_sizes,
+                             tag=tag, screened_on=screened_on)
     report = outcome.report()
     (out / "screening.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     _write_table(out / "headroom.csv", [h.to_dict() for h in outcome.headroom])
     if outcome.passed:
         frozen = out / "frozen"
         frozen.mkdir(exist_ok=True)
-        save_registry(outcome.registry, frozen / "worlds_v1.json")
+        names = {k: f"{k}_v{tag}.json" for k in ("worlds", "roster", "side_effect_params")}
+        save_registry(outcome.registry, frozen / names["worlds"])
         assert outcome.roster is not None and outcome.params_json is not None
-        save_roster(outcome.roster, frozen / "roster_v1.json")
-        (frozen / "side_effect_params_v1.json").write_text(outcome.params_json)
+        save_roster(outcome.roster, frozen / names["roster"])
+        (frozen / names["side_effect_params"]).write_text(outcome.params_json)
         params_hash = json.loads(outcome.params_json)["content_hash"]
-        spec["frozen"] = {"worlds_v1.json": outcome.registry.version,
-                          "roster_v1.json": outcome.roster.version,
-                          "side_effect_params_v1.json": params_hash}
+        spec["frozen"] = {names["worlds"]: outcome.registry.version,
+                          names["roster"]: outcome.roster.version,
+                          names["side_effect_params"]: params_hash}
+        if screened_on is not None:
+            spec["screened_on"] = screened_on
     spec["status"] = "complete" if outcome.passed else "headroom-failed"
     spec["result"] = report
     _write_spec(out, spec)
@@ -1462,7 +1520,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         roster = replace(roster, name=f"{roster.name}-{'probe' if probe else 'dry-run'}",
                          members=members,
                          replicates=args.replicates or roster.replicates, frozen=False,
-                         pruning=None)
+                         pruning=None, screened_on=None)  # a derived smoke roster: no provenance
     try:
         return _run_mode(args, roster, source_commit, probe)
     except (ContractRunError, DigestMismatch) as exc:

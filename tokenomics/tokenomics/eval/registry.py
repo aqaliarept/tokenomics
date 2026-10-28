@@ -38,7 +38,6 @@ import argparse
 import copy
 import hashlib
 import json
-import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,7 +48,7 @@ from .families import (CALM, DENSE, FAMILIES, NEUTRAL_CAPACITY_SCALE, REGIMES, S
                        SPARSE_WIDE, check_capacity_scale)
 from .gate import CANDIDATE, EpisodeRow, Headroom, episode_baseline, world_baseline
 from .provenance import assert_inputs_match, sha256_file
-from .roster import GATE_SIZES, Roster, content_hash
+from .roster import GATE_SIZES, Roster, check_screened_on, content_hash, name_version_tag
 from .seeding import replicate_mean
 from .task_archive import REPRODUCERS
 
@@ -205,6 +204,11 @@ class Registry:
     # (add-shocks-i-drift D8). None for v1, which names no profile; omitted from the payload
     # then, so the v1 hash is unchanged.
     shock_profiles: str | None = None
+    # Hash of the registry draft a v2+ screen read, recorded by that screen (add-shocks-i-drift
+    # D8/D10). It pairs the frozen registry with the roster and parameters of the same screen;
+    # the frozen registry's own hash differs, since screening writes its record into the file.
+    # None on v1 and on unscreened drafts; omitted from the payload then (hash unchanged).
+    screened_on: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "entries", tuple(sorted(self.entries, key=lambda e: e.id)))
@@ -219,6 +223,11 @@ class Registry:
         gate shocked worlds; reserve positions contiguous per group."""
         if not 0 < self.saturation_ceiling <= 1:
             raise ValueError(f"saturation ceiling must be in (0, 1], got {self.saturation_ceiling}")
+        if self.screened_on is not None:
+            if self.screening is None or self.version_tag < 2:
+                raise ValueError(f"registry {self.name!r}: screened_on is recorded only on a "
+                                 f"screened v2+ registry (v{self.version_tag})")
+            check_screened_on(self.screened_on, f"registry {self.name!r}")
         if self.screening is not None and (not self.screening.splits
                                            or not set(self.screening.splits) <= set(SPLITS)):
             raise ValueError(f"screened splits {self.screening.splits} not a subset of {SPLITS}")
@@ -275,8 +284,7 @@ class Registry:
     def version_tag(self) -> int:
         """The registry generation from its name (`worlds-v2`, also a derived scope such as
         `worlds-v2-dry-run`, -> 2); 1 when the name carries none."""
-        m = re.search(r"-v(\d+)(?:-|$)", self.name)
-        return int(m.group(1)) if m else 1
+        return name_version_tag(self.name)
 
     def _check_shock_profiles(self) -> None:
         """gate-harness "Regimes" from v2 on: every shocked entry (gate and reserve, since a
@@ -436,7 +444,8 @@ class Registry:
             "entries": [e.to_dict() for e in self.entries],
             "screening": None if self.screening is None else self.screening.to_dict(),
             "saturation_ceiling": self.saturation_ceiling,
-        } | ({} if self.shock_profiles is None else {"shock_profiles": self.shock_profiles})
+        } | ({} if self.shock_profiles is None else {"shock_profiles": self.shock_profiles}) | (
+            {} if self.screened_on is None else {"screened_on": self.screened_on})
 
     @property
     def version(self) -> str:
@@ -465,10 +474,14 @@ def registry_from_dict(d: dict) -> Registry:
         screening=None if d["screening"] is None else ScreeningRecord.from_dict(d["screening"]),
         saturation_ceiling=d["saturation_ceiling"],
         shock_profiles=d.get("shock_profiles"),
+        screened_on=d.get("screened_on"),
     )
     if reg.version != recorded:
         raise RegistryHashMismatch(
             f"registry {recorded} is not in canonical form (re-derived hash {reg.version})")
+    if reg.screening is not None and reg.version_tag >= 2 and reg.screened_on is None:
+        raise ValueError(f"screened registry {reg.name!r} ({recorded[:12]}) records no "
+                         "screened_on: a frozen v2+ registry must name the draft its screen read")
     reg.check_replay()
     return reg
 

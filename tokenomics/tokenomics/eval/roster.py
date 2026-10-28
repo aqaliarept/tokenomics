@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Collection, Iterable
@@ -58,6 +59,22 @@ NEVER_ARGMAX_TEXT = (
     "measured economy size. Every member attaining an episode's max value counts as its argmax "
     "(ties never prune a co-winner). The evidence must cover every member on every episode."
 )
+
+
+def name_version_tag(name: str) -> int:
+    """The generation a registry, roster or parameter file name carries (`worlds-v2`,
+    `roster-v2`, `side-effect-params-v2`, also a derived name such as `worlds-v2-dry-run` -> 2);
+    1 when the name carries none (add-shocks-i-drift D10 "Versioned screen outputs")."""
+    m = re.search(r"-v(\d+)(?:-|$)", name)
+    return int(m.group(1)) if m else 1
+
+
+def check_screened_on(value: object, what: str) -> None:
+    """A recorded `screened_on` must be a registry content hash (sha256, 64 lowercase hex): an
+    empty or malformed key could otherwise compare equal across files and pass for one screen's
+    provenance (add-shocks-i-drift D10)."""
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError(f"{what}: screened_on must be a sha256 hex digest, got {value!r}")
 
 
 class RosterHashMismatch(ValueError):
@@ -166,10 +183,18 @@ class Roster:
     members: tuple[RosterMember, ...]
     frozen: bool = False
     pruning: PruningRecord | None = None
+    # Hash of the draft registry the v2+ screen that froze this roster read (add-shocks-i-drift
+    # D8/D10): the key that pairs a frozen registry, roster and parameter set. None on v1 and on
+    # unfrozen drafts; omitted from the payload then, so their hashes are unchanged.
+    screened_on: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "members", tuple(sorted(self.members, key=lambda m: m.id)))
         self.validate()
+
+    @property
+    def version_tag(self) -> int:
+        return name_version_tag(self.name)
 
     def validate(self) -> None:
         """Structural checks: R >= 1, unique members, known policies, and contract/random flags
@@ -179,6 +204,11 @@ class Roster:
             raise ValueError(f"roster R must be >= 1, got {self.replicates}")
         if not self.members:
             raise ValueError("roster has no members")
+        if self.screened_on is not None:
+            if not (self.frozen and self.version_tag >= 2):
+                raise ValueError(f"roster {self.name!r}: screened_on is recorded only on a frozen "
+                                 f"v2+ roster (frozen={self.frozen}, v{self.version_tag})")
+            check_screened_on(self.screened_on, f"roster {self.name!r}")
         ids = [m.id for m in self.members]
         if len(set(ids)) != len(ids):
             raise ValueError(f"duplicate roster members: {sorted({i for i in ids if ids.count(i) > 1})}")
@@ -216,7 +246,7 @@ class Roster:
             "replicates": self.replicates,
             "members": [m.to_dict() for m in self.members],
             "pruning": None if self.pruning is None else self.pruning.to_dict(),
-        }
+        } | ({} if self.screened_on is None else {"screened_on": self.screened_on})
 
     @property
     def version(self) -> str:
@@ -257,6 +287,7 @@ def roster_from_dict(d: dict) -> Roster:
         members=tuple(RosterMember.from_dict(m) for m in d["members"]),
         frozen=d["frozen"],
         pruning=None if d["pruning"] is None else PruningRecord.from_dict(d["pruning"]),
+        screened_on=d.get("screened_on"),
     )
     # Re-derive from the parsed object: catches a file whose member list is not in canonical
     # (sorted) order, since the recorded hash was taken over the file's own order.
@@ -264,6 +295,9 @@ def roster_from_dict(d: dict) -> Roster:
         raise RosterHashMismatch(
             f"roster {recorded} is not in canonical form (re-derived hash {roster.version})"
         )
+    if roster.frozen and roster.version_tag >= 2 and roster.screened_on is None:
+        raise ValueError(f"frozen roster {roster.name!r} ({recorded[:12]}) records no screened_on: "
+                         "a frozen v2+ roster must name the registry draft its screen read")
     return roster
 
 

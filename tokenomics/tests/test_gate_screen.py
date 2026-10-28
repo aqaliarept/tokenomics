@@ -791,3 +791,31 @@ def test_probe_refuses_a_foreign_non_empty_root(reserve_registry: Registry,
     with pytest.raises(ValueError, match="not empty"):
         _probe(reserve_registry, out, ran)
     assert ran == [] and _snapshot(out) == {"notes.txt": b"keep"}
+
+
+def test_v1_screen_frozen_files_byte_identical_to_c9c7da2(reserve_registry: Registry,
+                                                          tmp_path: Path) -> None:
+    """add-shocks-i-drift task 5.5 / D10: a v1 screen writes no `screened_on` and its frozen files
+    are byte-identical to those base commit c9c7da2 wrote for the same injected rows (the
+    on-demand fixture with one zero gate world, pruning on). sha256 taken by running this screen
+    at c9c7da2."""
+    import hashlib
+
+    out = tmp_path / "v1"
+    _, status = run_screen(out_dir=out, horizon=12, workers=1, registry=reserve_registry,
+                           roster=ROSTER, episodes_per_world=1, dry_run=True, prune=True,
+                           reserves="on-demand",
+                           run_job_fn=_zero_stub({"dev-dense-12-calm-00", "dev-dense-12-calm-r0"}),
+                           log=lambda s: None)
+    assert status == 0
+    got = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+           for p in sorted((out / "frozen").iterdir())}
+    assert got == {
+        "roster_v1.json": "9c9add0c0aa5fca770c283bf02fb35883fe0c8b7ca93527b9d849b5bb2586d5e",
+        "side_effect_params_v1.json":
+            "d7b9b50cf925a63a869dcc4cfd71a12208fbadaf9cb88af91922640e8bfba267",
+        "worlds_v1.json": "e0557c1c6beb865dadffc285e9b4d04d34a970a7da0636a55679a1a52fbef15f",
+    }
+    for name in got:
+        assert "screened_on" not in json.loads((out / "frozen" / name).read_text()), name
+    assert "screened_on" not in json.loads((out / "spec.json").read_text())
