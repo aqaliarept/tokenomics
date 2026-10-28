@@ -93,3 +93,66 @@ timed. The factor comes from two world-episodes of EXP-0047's mix, not all 128.
 | dev-sparse_wide-12-calm-03 | random_whole | 0.75 | 0.77 | 1.024 | 0.86 |
 
 </details>
+
+## §EXP-0049 (task 3.2)
+
+**Question.** How long will EXP-0049 take on a `cpu16` pod: `routing_audit --plan exp0049`,
+128 registry v2 development world-episodes × 31 runs = 3,968 horizon-100 episodes, tracer on?
+Per world-episode: the six roster v2 members (5 deterministic + `random` × 5 = 10 runs), the
+references `round_robin`, `even_split_rotating`, `proportional_whole` (1 each) and
+`random_whole` × 5, the informed routers `two_choice_spare` × 5, `spare_weighted_whole` × 5 and
+`spare_rotating_whole` × 1 (29 router runs), and the two trained subjects,
+`entity_planner/trained_orderer` and `portable`, once each (deterministic).
+
+**Local box.** As for §EXP-0048; one process, `--workers 1`. Load average 0.39 before the first
+command and 0.99 after the last.
+
+**Per-episode times.** `/srv/research/tokenomics/openspec/changes/add-m3-development-audit/probes/timing_32.py`, run from
+`/srv/research/tokenomics/tokenomics` (e.g. `../.venv/bin/python
+../openspec/changes/add-m3-development-audit/probes/timing_32.py --world dev-sparse_wide-42-shocked-00 --routers
+trained_orderer,portable`). It times the driver's own job (`routing_audit.run_job`: tracer and
+contract monitor on) for one horizon-100 episode per arm, replicate 0, first episode seed of
+the world; the checkpoint load (once per worker process) is timed apart. Three commands: 9.6 s
+(12, all six arms), 19.4 s (42, routers), 22.3 s (42, trained); all episodes survived to
+horizon 100, 0 contract failures.
+
+| arm | `dev-sparse_wide-12-shocked-00` s | `dev-sparse_wide-42-shocked-00` s |
+|---|---|---|
+| `round_robin` (reference) | 0.822 | 4.795 |
+| `two_choice_spare` | 0.807 | 4.572 |
+| `spare_weighted_whole` | 0.807 | 4.938 |
+| `spare_rotating_whole` | 0.837 | 4.766 |
+| `entity_planner/trained_orderer` | 1.733 | 8.820 |
+| `portable` | 2.556 | 11.389 |
+| checkpoint load (both, per process) | 1.23 | 1.29 |
+
+The informed routers cost what `round_robin` costs: reading spare capacity is a few integer
+operations per eligible producer. `round_robin` here is within 6% of its §EXP-0048 times
+(0.77 at 12-calm, 4.53 at 42-shocked). The trained orderer is about 2× a router episode (torch
+forward per stream decision), the full portable stack 2.4–3.1×.
+
+**Extrapolation.** Per size, 64 world-episodes: 1,856 router episodes at the mean of the four
+measured router times (all other routers are `round_robin`-like or roster members, whose times
+§EXP-0048 measured within the same range), plus 64 episodes of each trained subject; × 0.646
+(§EXP-0048's local-to-pod factor):
+
+| estimate | 12-producer local s | 42-producer local s | local vCPU-h | pod vCPU-h | `cpu16` wall |
+|---|---|---|---|---|---|
+| mean router time | 1,856 × 0.818 + 64 × (1.733 + 2.556) = 1,793 | 1,856 × 4.768 + 64 × (8.820 + 11.389) = 10,142 | 3.32 | **2.15** | **8.0 min** |
+| slowest router time | 1,856 × 0.837 + 275 = 1,828 | 1,856 × 4.938 + 1,293 = 10,458 | 3.42 | 2.21 | 8.3 min |
+
+The checkpoint loads add 16 × 1.3 s. Billed, with pod start-up, install and pull (EXP-0048:
+4.4 billed for 4.1 executed): about 2.5–3 vCPU-h, 10–12 min of pod life. Inside the expected
+1–3 vCPU-h and well under the **6 vCPU-h hard stop**: task 3.3 can launch as planned (`cpu16`,
+`--workers 16`).
+
+**Joining EXP-0048's reference rows instead.** Skipping the 18 reference runs per world-episode
+(roster members and the four references) would save 64 × 18 × (0.818 + 4.768) × 0.646 / 3,600 ≈
+1.15 vCPU-h. Not taken (design D2, "Informed spreading routers and trained-agent trace"): those
+rows lack the receiver-variation and herding columns both questions read, and rerunning them
+makes every reference row a reproduction check against EXP-0048.
+
+**Uncertainties.** One shocked world per size was timed; calm worlds and early deaths change the
+mix slightly (§EXP-0048: 12-calm 0.79 s against 12-shocked 0.82 s here). The trained subjects'
+time depends on how many stream decisions an episode has; one episode per size was timed. The
+0.646 factor comes from EXP-0047's job mix (§EXP-0048).

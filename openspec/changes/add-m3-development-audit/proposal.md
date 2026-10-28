@@ -38,7 +38,11 @@ until the cause is known (CLAUDE.md "Root cause before next strategy").
   is found defective, the fixed rule is a new ordering baseline under a new name. It reaches the
   gate only through a new roster version and a re-screen (registry, roster and parameters v3).
   The frozen v2 files are never edited. Adopting the new bar is a user decision.
-- **PoC-A, teacher against the hindsight baseline (EXP-0049).** The EXP-0042 confidence-bounded
+  A follow-up, **EXP-0049** (inserted after EXP-0048 on the user's request), runs three
+  whole-order routers that read each producer's spare capacity against the blind
+  `round_robin` / `random_whole`, and traces the trained portable orderer with the same
+  routing metrics, to see whether it learned random's spreading or `proportional`'s splitting.
+- **PoC-A, teacher against the hindsight baseline (EXP-0050).** The EXP-0042 confidence-bounded
   rollout orderer runs at depths 2 and 3, plus a clairvoyant upper bound, over the
   `entity_planner` producer. It plays a pre-registered subset of the v2 development
   world-episodes, calm and shocked, and is compared with the frozen roster v2 on identical
@@ -54,11 +58,11 @@ until the cause is known (CLAUDE.md "Root cause before next strategy").
 
   The EXP-0042 teacher code is still on `new-model` (`eval/bounded_rollout_orderer.py`,
   `env/future_fork.py`), so nothing is restored from `archive-1`.
-- **PoC-C, role attribution under shocks (EXP-0050).** In the style of EXP-0001 and EXP-0031,
+- **PoC-C, role attribution under shocks (EXP-0051).** In the style of EXP-0001 and EXP-0031,
   the portable stack is run with one role swapped at a time: the teacher orderer in the orderer
   role, the best hand-written producer in the producer role. This happens on the PoC-A shocked
   subset, and the per-role closure of the gap decides which role M4 trains first.
-- **PoC-B, deployed-path cost (EXP-0051).** Per-decision cost of the portable stack is measured
+- **PoC-B, deployed-path cost (EXP-0052).** Per-decision cost of the portable stack is measured
   stage by stage on two independent axes:
   - total producers P ∈ {12, 24, 42} at fixed fanout;
   - eligible producers E (fanout) ∈ {2, 4, 7, 14} at P = 42.
@@ -66,7 +70,7 @@ until the cause is known (CLAUDE.md "Root cause before next strategy").
   No point above 42 producers is timed unless the user asks for one. **Capped at the
   12 → 42 target**, not 1200 producers (see Open question).
 - **Compute.** Every experiment runs on a CPU pod, is sized by a local timing probe, and has a
-  hard stop in vCPU-h. The parts with a grounded estimate (EXP-0048, EXP-0051 and the
+  hard stop in vCPU-h. The parts with a grounded estimate (EXP-0048, EXP-0049, EXP-0052 and the
   12-producer parts of PoC-A/C) are expected to cost about 10–40 vCPU-h. The 42-producer teacher
   parts are unknown until their probes and will likely hit their stop first, which inserts a
   profile-and-optimize code task before they launch. The hard ceiling for the change is
@@ -115,15 +119,15 @@ depend on the answer.
   demand fork.
 - Eval:
   - new modules: `eval/routing_diagnostics.py` (diagnostic routers, kept out of the roster
-    dicts), `eval/routing_trace.py` (per-bid tracer), `eval/routing_audit.py` (EXP-0048 driver),
+    dicts), `eval/routing_trace.py` (per-bid tracer), `eval/routing_audit.py` (EXP-0048 / EXP-0049 driver),
     `eval/teacher_audit.py` (PoC-A/C driver) and `eval/deployed_cost.py` (PoC-B driver);
   - `eval/bounded_rollout_orderer.py` gets a pluggable scenario source, a baseline producer and
     a single-scenario deterministic future.
 - Records:
-  - EXP-0048 to EXP-0051, each with a `RESULT.md` and an `experiments/README.md` row;
+  - EXP-0048 to EXP-0052, each with a `RESULT.md` and an `experiments/README.md` row;
   - a new HISTORY §13 "The development audit (M3)";
   - a `docs/DIAGNOSTICS.md` entry 19, for the random-routing cause;
   - Domain Language entries in CLAUDE.md for any new term, for example "Unresolved label".
-- Compute: four CPU pod runs, each sized by a local probe, with a hard ceiling of 70 vCPU-h
+- Compute: five CPU pod runs, each sized by a local probe, with a hard ceiling of 70 vCPU-h
   (design D8). The 42-producer teacher parts likely need a profile-and-optimize task first.
 - Records: ADR-0056, "Teacher information set and posterior forks".

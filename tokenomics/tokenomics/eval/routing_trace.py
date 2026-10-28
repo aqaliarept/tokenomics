@@ -12,6 +12,19 @@ Per episode, it aggregates how the ordering agents' routing played out in the au
 - split degree (producers per order and cycle) and orders rejected after part of them was
   delivered (completed but wasted units);
 - Herfindahl concentration of routed units per product and cycle;
+- receiver variation (task 3.2): a *stream* is one ordering agent's orders of one product (under
+  joint_stack each ordering agent is one such stream). Each order routed in a cycle is one
+  routing decision, received by the set of producers it bid on; decisions of a stream are taken
+  in (cycle, order id) order, re-bids of a rejected remainder included. `receiver_change_share`
+  is the share of consecutive decision pairs of a stream whose receiving sets differ (0 = the
+  stream always sends to the same producers, 1 = it changes every time), consumer and producer
+  orders separately;
+- herding (task 3.2): per product and cycle with at least two routed orders and at least two
+  declaring producers, the Herfindahl of order-weighted producer shares, each order counting 1
+  spread over its receivers by quantity (1 = every order sent to one producer; 1/E = orders
+  spread evenly over E producers), averaged over such groups (`herding_hhi`, groups in
+  `herding_groups`). Unlike `herfindahl_mean` (units) it weights orders, not units, and skips
+  single-order groups, where a whole order is trivially concentrated;
 - the share of quantity-1 orders sent to their lowest-index eligible producer;
 - routes to producers that cannot make one unit, and orders beyond the `k_stream` slot bound;
 - each producer's investment-fund share and cut-off price, and two concentrations of the granted
@@ -80,6 +93,11 @@ class _Counts:
     wasted_units: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     hhi_sum: float = 0.0
     hhi_n: int = 0
+    last_receivers: dict[tuple[str, Product], frozenset[ProducerId]] = field(default_factory=dict)
+    receiver_pairs: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    receiver_changes: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    herding_sum: float = 0.0
+    herding_n: int = 0
     q1_orders: int = 0
     q1_lowest: int = 0
     routes: int = 0
@@ -152,11 +170,13 @@ class RoutingTracer:
 
         # placed bids, grouped per order and per product
         per_order: dict[object, set[ProducerId]] = defaultdict(set)
+        order_units: dict[object, dict[ProducerId, int]] = defaultdict(lambda: defaultdict(int))
         per_product: dict[Product, dict[ProducerId, int]] = defaultdict(lambda: defaultdict(int))
         for pid, p in system.producing_agents.items():
             reserved = p.reserved_capacity()
             for bid in p.bids:
                 per_order[bid.order_id].add(pid)
+                order_units[bid.order_id][pid] += bid.quantity
                 per_product[bid.product][pid] += bid.quantity
                 c.routes += 1
                 unit = {t: cap // bid.quantity for t, cap in bid.capacities.items()}
@@ -184,6 +204,8 @@ class RoutingTracer:
 
         for oa in system.ordering_agents.values():
             c.overflow_orders += max(0, len(oa.incoming) - self._k_stream)
+        self._receivers(system, per_order)
+        self._herding(system, order_units, declarers)
 
         fund = system.investment_fund
         granted: dict[ProducerId, int] = defaultdict(int)
@@ -200,6 +222,43 @@ class RoutingTracer:
             if not is_nan(p.cut_off_price):
                 c.cut_off_sum[pid] += p.cut_off_price
                 c.cut_off_n[pid] += 1
+
+    def _receivers(self, system: System, per_order: dict[object, set[ProducerId]]) -> None:
+        """Receiver variation per stream (module docstring)."""
+        c = self._c
+        for aid, oa in system.ordering_agents.items():
+            for oid in sorted(oa.incoming):
+                order = system.orders.get(oid)
+                if order is None or oid not in per_order:
+                    continue
+                stream = (aid, order.product)
+                receivers = frozenset(per_order[oid])
+                last = c.last_receivers.get(stream)
+                if last is not None:
+                    cls = order_class(order_kind(order))
+                    c.receiver_pairs[cls] += 1
+                    c.receiver_changes[cls] += int(receivers != last)
+                c.last_receivers[stream] = receivers
+
+    def _herding(self, system: System, order_units: dict[object, dict[ProducerId, int]],
+                 declarers: dict[Product, list[ProducerId]]) -> None:
+        """Order-weighted concentration per product and cycle (module docstring)."""
+        c = self._c
+        groups: dict[Product, list[dict[ProducerId, int]]] = defaultdict(list)
+        for oid, units in order_units.items():
+            order = system.orders.get(oid)
+            if order is not None:
+                groups[order.product].append(units)
+        for x, orders in groups.items():
+            if len(orders) < 2 or len(declarers.get(x, [])) < 2:
+                continue
+            weight: dict[ProducerId, float] = defaultdict(float)
+            for units in orders:
+                total = sum(units.values())
+                for pid, u in units.items():
+                    weight[pid] += u / total
+            c.herding_sum += sum((w / len(orders)) ** 2 for w in weight.values())
+            c.herding_n += 1
 
     def _after_auction(self, result: CycleResult) -> None:
         c = self._c
@@ -246,7 +305,12 @@ class RoutingTracer:
             out[f"split_degree_{cls}"] = c.producers_per_order.get(cls, 0) / n if n else 0.0
             out[f"wasted_orders_{cls}"] = float(c.wasted_orders.get(cls, 0))
             out[f"wasted_units_{cls}"] = float(c.wasted_units.get(cls, 0))
+            pairs = c.receiver_pairs.get(cls, 0)
+            out[f"receiver_change_share_{cls}"] = (
+                c.receiver_changes.get(cls, 0) / pairs if pairs else 0.0)
         out["herfindahl_mean"] = c.hhi_sum / c.hhi_n if c.hhi_n else 0.0
+        out["herding_hhi"] = c.herding_sum / c.herding_n if c.herding_n else 0.0
+        out["herding_groups"] = float(c.herding_n)
         out["q1_lowest_index_share"] = c.q1_lowest / c.q1_orders if c.q1_orders else 0.0
         out["q1_orders"] = float(c.q1_orders)
         out["zero_throughput_route_share"] = c.zero_throughput_routes / c.routes if c.routes else 0.0

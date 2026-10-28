@@ -7,6 +7,10 @@ without randomness (`round_robin`, `even_split_rotating`), load awareness
 weights (`random_fixed_episode`), tempered noise (`blend_noise_s`), the order class
 (`random_consumer_only` / `random_producer_only`) and whole versus split orders under
 whole-order completion (`proportional_whole`, `random_whole`, `even_split_random_leftover`).
+EXP-0049 adds informed spreading routers (task 3.2, D2 "Informed spreading routers and
+trained-agent trace"): whole orders, receiver varied like `random_whole` / `round_robin`, but
+steered by each producer's spare capacity (`two_choice_spare`, `spare_weighted_whole`,
+`spare_rotating_whole`).
 
 They are white-box `Policy`s like `proportional` / `blend_0.5` and emit the raw ordering action
 decode reads (ADR-0025/0026). A router that wants an exact integer split (a whole order, a
@@ -31,7 +35,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ..domain.common import OrderId
+from ..domain.common import OrderId, ProducerId, Product
+from ..domain.metrics import accept_qty_now
 from ..domain.system import order_kind
 from ..env.spaces import ACTION_LOGIT_BOUND
 from .baselines import Policy, ordering_blend, ordering_proportional, random_action
@@ -257,7 +262,82 @@ def ordering_even_split_random_leftover(env: "TokenomicsAECEnv", agent: str) -> 
     return _flat(mat)
 
 
-# Design D2 table. Not in ORDERING_BASELINES (module docstring).
+# --- informed spreading routers (EXP-0049): whole orders steered by spare capacity ---
+
+
+def spare_units(env: "TokenomicsAECEnv", pid: ProducerId, product: Product) -> int:
+    """Units of `product` producer `pid` can still clear in this cycle's auction:
+    min over the recipe's capacity types t of floor((C[p,t] - reserved[p,t]) / R[x,t]), i.e.
+    `domain.metrics.accept_qty_now`. It is the `accept_qty_now` field of the ordering agent's
+    own product-stream view (`ProducerProductStats`, orderer obs v3/v4), so a joint_stack
+    orderer legitimately sees it. It reads no shock state and no bid placed this cycle (no
+    orderer obs does, D2). The legacy orderer obs carries prices only (ADR-0029), so these
+    routers are joint_stack-only."""
+    return accept_qty_now(env.system.producing_agents[pid], product)
+
+
+def _spares(env: "TokenomicsAECEnv", oid: OrderId, elig: Sequence[int]) -> list[int]:
+    product = env.system.orders[oid].product
+    pids = env.spec_.producer_ids
+    return [spare_units(env, pids[i], product) for i in elig]
+
+
+def ordering_two_choice_spare(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """Power of two choices: per order, two distinct eligible producers drawn uniformly (env
+    action-space RNG, i.e. per orderer and call, seeded with the replicate seed); the whole
+    order goes to the one with more `spare_units`, the first drawn on a tie. One eligible
+    producer: it gets the order, no draw."""
+    mat = _matrix(env)
+    rng = _rng(env, agent)
+    for k, oid, q, elig in _slots(env, agent):
+        if not elig:
+            continue
+        chosen = 0
+        if len(elig) > 1:
+            a, b = (int(j) for j in rng.choice(len(elig), size=2, replace=False))
+            spare = _spares(env, oid, elig)
+            chosen = b if spare[b] > spare[a] else a
+        mat[k, elig] = _whole(elig, chosen, q)
+    return _flat(mat)
+
+
+def ordering_spare_weighted_whole(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """Whole order to one eligible producer drawn with probability proportional to its
+    `spare_units` (uniformly when every eligible producer has none)."""
+    mat = _matrix(env)
+    rng = _rng(env, agent)
+    for k, oid, q, elig in _slots(env, agent):
+        if not elig:
+            continue
+        spare = np.asarray(_spares(env, oid, elig), dtype=np.float64)
+        total = spare.sum()
+        probs = spare / total if total > 0 else np.full(len(elig), 1.0 / len(elig))
+        mat[k, elig] = _whole(elig, int(rng.choice(len(elig), p=probs)), q)
+    return _flat(mat)
+
+
+def ordering_spare_rotating_whole(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """`round_robin`'s rotation (start at eligible position (cycle + stable_hash(agent, slot))
+    mod E, the per-orderer offset that keeps orderers apart), skipping producers whose
+    `spare_units` cannot take the whole order: the first producer in rotation order with
+    spare >= quantity gets it; if none can, the one with the most spare (first in rotation
+    order on a tie). Deterministic."""
+    mat = _matrix(env)
+    cycle = env.system.cycle_counter
+    for k, oid, q, elig in _slots(env, agent):
+        if not elig:
+            continue
+        n = len(elig)
+        start = (cycle + stable_hash(agent, k)) % n
+        rotation = [(start + i) % n for i in range(n)]
+        spare = _spares(env, oid, elig)
+        fits = [j for j in rotation if spare[j] >= q]
+        chosen = fits[0] if fits else max(rotation, key=lambda j: spare[j])
+        mat[k, elig] = _whole(elig, chosen, q)
+    return _flat(mat)
+
+
+# Design D2 table (+ EXP-0049's informed routers). Not in ORDERING_BASELINES (module docstring).
 DIAGNOSTIC_ROUTERS: dict[str, Policy] = {
     "round_robin": ordering_round_robin,
     "even_split_rotating": ordering_even_split_rotating,
@@ -274,11 +354,15 @@ DIAGNOSTIC_ROUTERS: dict[str, Policy] = {
     "random_producer_only": ordering_random_one_class(PRODUCER),
     "random_whole": ordering_random_whole,
     "even_split_random_leftover": ordering_even_split_random_leftover,
+    "two_choice_spare": ordering_two_choice_spare,
+    "spare_weighted_whole": ordering_spare_weighted_whole,
+    "spare_rotating_whole": ordering_spare_rotating_whole,
 }
 
 ROUTER_KIND: dict[str, str] = {
     name: (DETERMINISTIC if name in ("round_robin", "even_split_rotating",
-                                     "proportional_load_aware", "proportional_whole")
+                                     "proportional_load_aware", "proportional_whole",
+                                     "spare_rotating_whole")
            else STOCHASTIC)
     for name in DIAGNOSTIC_ROUTERS
 }

@@ -114,9 +114,10 @@ Facts from the code and the record that shape the plan:
 ### D1. Order of work and gates
 
 ```
-routing diagnosis (1-3, EXP-0048) --> [user: roster v3? only if a rule defect, D3]
-        --> PoC-A (4-5, EXP-0049) --> PoC-C (6-7, EXP-0050)
-PoC-B (8-9, EXP-0051): depends only on its own code; runs in any order after its probe
+routing diagnosis (1-3, EXP-0048) --> informed routing + trained trace (3.2-3.3, EXP-0049)
+        --> [user: roster v3? only if a rule defect, D3]
+        --> PoC-A (4-5, EXP-0050) --> PoC-C (6-7, EXP-0051)
+PoC-B (8-9, EXP-0052): depends only on its own code; runs in any order after its probe
 M3 exit record (10)
 ```
 
@@ -208,6 +209,86 @@ because it duplicates domain logic and can drift from it.
 - Driver: `eval/routing_audit.py`. It reuses the gate's registry loading, replicate seeds, digest
   checks, contract checks and EXP layout, and writes `episodes.csv` (gate row format plus trace
   columns), `routing_metrics.csv`, `edge.csv`, `spec.json` and a `RESULT.md` skeleton.
+
+**Informed spreading routers and trained-agent trace (EXP-0049, tasks 3.2–3.3).** Inserted
+after EXP-0048 on the user's request. EXP-0048 found that `random` wins because it varies the
+receiving producer over time and almost never splits an order, and that `round_robin` does both
+deterministically. `round_robin` is blind, though. Two questions follow:
+1. Can a rule that reads producer data spread whole orders better than `round_robin` /
+   `random_whole`?
+2. Did the trained portable orderer learn random's trick? EXP-0006B credited "stochasticity".
+
+*Spare capacity.* `spare_units(p, x)` = min over the capacity types t of x's recipe of
+floor((C[p,t] − reserved[p,t]) / R[x,t]), i.e. `domain.metrics.accept_qty_now`. It is the
+`accept_qty_now` field of the ordering agent's own product-stream view (`ProducerProductStats`,
+orderer obs v3/v4), so a joint_stack orderer observes it. It holds no hidden shock state: an
+outage does not lower it, and a capacity hit lowers it only as a visible consequence. It does not
+include this cycle's bids from other orderers, which no orderer observation shows (below). The
+legacy orderer obs carries prices only (ADR-0029), so the three routers are valid under
+joint_stack only, like the trained orderer.
+
+| Router | Kind | Definition | Blind counterpart |
+|---|---|---|---|
+| `two_choice_spare` | stochastic | Per order, two distinct eligible producers drawn uniformly; the whole order goes to the one with more spare (the first drawn on a tie) | `random_whole` |
+| `spare_weighted_whole` | stochastic | Whole order to one eligible producer drawn with probability ∝ spare (uniform if all are 0) | `random_whole` |
+| `spare_rotating_whole` | deterministic | `round_robin`'s rotation and per-orderer offset; the first producer in rotation order whose spare takes the whole order gets it, else the one with the most spare | `round_robin` |
+
+Draws use the env action-space RNG (per orderer and call, seeded with the gate's replicate seed),
+R = 5, as for the other stochastic routers. The risk is herding: every orderer reads the same
+spare values at the same time, so informed choice can send many orderers to the same producer,
+the mechanism that sank `proportional_whole`. The herding metric below measures it.
+
+`sequential_fill` is not built. The ordering agents do act one after another within a cycle (AEC
+order: every producer, then every ordering agent, each placing its bids at once), but no
+orderer observation shows the bids placed earlier in the cycle. The legacy obs is prices; the
+stream view's rows read capacities, reservations, last cycle's requested load and telemetry EMAs
+that fold only in `complete_cycle` (`StreamViewCache`: routing only appends to `p.bids`, which no
+row reads). A later orderer therefore cannot legitimately see earlier sub-orders.
+`proportional_load_aware` reads `p.bids` white-box as a diagnostic of (a) only, and it did not
+help in EXP-0048.
+
+*Trained subjects.* The portable stack is EXP-0035 `producer_candidate.pt` + EXP-0012
+`orderer_scorer.pt`. It runs as `entity_planner/trained_orderer` (the routers' producer, so its
+routing compares with theirs) and as `portable` (its own producer). The orderer is a scorer
+distilled from `proportional`'s target, log(makeable units now) (`train/orderer_scorer.py`
+`teacher_logits`). Its policy emits deterministic logits and the decode does not sample, so both
+subjects are deterministic and run once (R = 1). They are not EXP-0006B's sampled policy.
+
+*Tracer additions.* Receiver variation: a stream is one ordering agent's orders of one product;
+each order routed in a cycle is one decision; `receiver_change_share` is the share of
+consecutive decisions of a stream, in (cycle, order id) order with re-bids included, whose sets
+of receiving producers differ (consumer and producer orders separately). Herding: per product and
+cycle with at least two routed orders and two declaring producers, the Herfindahl of
+order-weighted producer shares (each order counts 1, spread over its receivers by quantity),
+averaged over those groups (`herding_hhi`). 1 means every order went to one producer, 1/E means
+the orders were spread evenly over E producers.
+
+*Grid (`routing_audit --plan exp0049`).* All 128 world-episodes. The six roster v2 members (for
+the edge), the references `round_robin`, `even_split_rotating`, `proportional_whole` and
+`random_whole`, the three informed routers and the two trained subjects: 31 runs per
+world-episode, 3,968 horizon-100 episodes. The references are rerun, not joined from EXP-0048's
+`episodes.csv`. Joined rows would lack the receiver-variation and herding columns that both
+questions read, and the rerun costs about 1.2 vCPU-h. The overlapping rows then serve as the
+reproduction check: every reference row must equal EXP-0048's units for the same world-episode
+and replicate. That checks all of them, not 2 cells. The trained path has a reference too:
+EXP-0046 ran the same portable stack (its `portable_producer` / `portable_orderer` pins are the
+sha256 of the two checkpoints) through the gate job path on the 80 shocked development
+world-episodes, so every `portable` row there must equal EXP-0046's `candidate` units. That
+checks the checkpoint wiring, the contract and tracer neutrality on the trained path.
+`entity_planner/trained_orderer` has no prior reference.
+
+*Reading (pre-registered).* The D2 recovered fraction and the 0.8 / 2-of-3-cells rule apply to
+the new arms. An informed router *beats its blind counterpart* when its equal-weight world mean
+units exceed the counterpart's in at least 2 of the 3 random-dominated cells.
+- An informed router beats its counterpart: producer data helps beyond rotation. It is a roster
+  v3 candidate beside `round_robin` (D3), and M4's residual context needs spare capacity.
+- None does: blind spreading of whole orders is enough at these sizes, and spare capacity is
+  not the lever. If the informed routers herd more than their counterparts (`herding_hhi`), the
+  shared signal is the reason.
+- The trained orderer's split degree, receiver variation and herding near `proportional`'s and
+  far from `random`'s: it learned `proportional`'s mechanics, not random's trick, and its
+  distillation target is the thing to change for M4. Near `random`'s / `round_robin`'s: it
+  learned to spread whole orders.
 
 ### D3. What a found rule defect does to the gate
 
@@ -311,7 +392,7 @@ Alternatives considered:
   `shocks-i` profile (≈ 3e-4 acceptance per observed hit), so the unresolved fallback would
   swallow the shocked episodes.
 
-### D5. PoC-A, the teacher against the hindsight baseline (EXP-0049)
+### D5. PoC-A, the teacher against the hindsight baseline (EXP-0050)
 
 - **Arms.** All arms use the `entity_planner` producer and the joint-stack contract.
   - floor: `blend_0.5`, a roster member;
@@ -388,7 +469,7 @@ Alternatives considered:
     shocked d2 episode. The 42 part is therefore **likely to exceed the stop**: the expected
     outcome of task 4.3 at 42 is step 4 above (12 first; 42 after a profile-and-optimize task).
 
-### D6. PoC-C, role attribution under shocks (EXP-0050)
+### D6. PoC-C, role attribution under shocks (EXP-0051)
 
 - **Arms**, on PoC-A's 24 shocked world-episodes at both sizes:
   - S: the portable gate subject, EXP-0035 `producer_candidate.pt` + EXP-0012
@@ -397,9 +478,9 @@ Alternatives considered:
     cheaper than depth 3;
   - B: `entity_planner` + portable orderer;
   - T: `entity_planner` + teacher at depth 2.
-- **T rows.** T is reused from EXP-0049 only when the run commit's source fingerprint over the
+- **T rows.** T is reused from EXP-0050 only when the run commit's source fingerprint over the
   teacher path (`eval/bounded_rollout_orderer.py`, `eval/teacher_audit.py`,
-  `env/shock_posterior.py`, `env/future_fork.py`, `domain/`) equals EXP-0049's. Otherwise T is
+  `env/shock_posterior.py`, `env/future_fork.py`, `domain/`) equals EXP-0050's. Otherwise T is
   rerun.
 - **Arithmetic, per size.**
   - Gap: G = Σ_w (T_w − S_w), over world mean units.
@@ -417,7 +498,7 @@ Alternatives considered:
   T when it is not reused) at 12 producers ≈ 12 shocked world-episodes × (0.07–0.4) vCPU-h
   ≈ 1–5 vCPU-h. The 42 part is likely above the stop, as for PoC-A.
 
-### D7. PoC-B, deployed-path cost (EXP-0051)
+### D7. PoC-B, deployed-path cost (EXP-0052)
 
 - **Path.** The portable stack under `joint_stack_env`, calm `sparse_wide` family worlds.
 - **Per-decision wall time per stage**, from `perf_counter` wrappers in the driver
@@ -447,12 +528,13 @@ Alternatives considered:
 | EXP | Probe | Profile | Expected | Hard stop | Source |
 |---|---|---|---|---|---|
 | 0048 | 2.1 | cpu16 | 2.5–4 vCPU-h | 8 | EXP-0047 rate × 8,832 episodes × tracer overhead |
-| 0049 | 4.3 | cpu16 (cpu32 if > 4 h wall) | 12-producer part ≈ 6–30 (a priori, D5); 42 part unknown until the probe and likely above the stop | 40 | EXP-0042 per-stream cost × D5 arithmetic; replaced by the task 4.3 measurement |
-| 0050 | 6.2 | cpu16 | 12-producer part ≈ 1–5 (a priori, D6); 42 part as for 0049 | 20 | the same per-stream cost |
-| 0051 | 8.2 | cpu8 | ≤ 0.5 | 2 | DIAGNOSTICS 17 timings |
+| 0049 | 3.2 | cpu16 | ≈ 2.2 executed, 2.5–3 billed | 6 | task 3.2 probe × 3,968 episodes × EXP-0048's local-to-pod factor 0.646 |
+| 0050 | 4.3 | cpu16 (cpu32 if > 4 h wall) | 12-producer part ≈ 6–30 (a priori, D5); 42 part unknown until the probe and likely above the stop | 40 | EXP-0042 per-stream cost × D5 arithmetic; replaced by the task 4.3 measurement |
+| 0051 | 6.2 | cpu16 | 12-producer part ≈ 1–5 (a priori, D6); 42 part as for 0050 | 20 | the same per-stream cost |
+| 0052 | 8.2 | cpu8 | ≤ 0.5 | 2 | DIAGNOSTICS 17 timings |
 
-Expected spend for the parts with a grounded estimate (EXP-0048, EXP-0051, and the 12-producer
-parts of EXP-0049/0050) is about 10–40 vCPU-h. The 42-producer teacher parts are unknown until
+Expected spend for the parts with a grounded estimate (EXP-0048, EXP-0049, EXP-0052, and the 12-producer
+parts of EXP-0050/0051) is about 10–40 vCPU-h. The 42-producer teacher parts are unknown until
 their probes. Their likely outcome is a stop, then a profile-and-optimize code task before they
 launch, each under its own stop. The hard ceiling for the whole change is 70 vCPU-h. Every run
 uses a fresh pod (`--create-pod`) and `--verify-source-commit`. A run whose probe extrapolates

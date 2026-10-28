@@ -179,9 +179,11 @@ def test_diagnostic_router_kinds() -> None:
         "round_robin", "even_split_rotating", "proportional_load_aware", "proportional_whole",
         "random_scaled_0.5", "random_scaled_1", "random_scaled_2", "random_scaled_5",
         "random_fixed_episode", "blend_noise_0.15", "blend_noise_0.6", "random_consumer_only",
-        "random_producer_only", "random_whole", "even_split_random_leftover"])
+        "random_producer_only", "random_whole", "even_split_random_leftover",
+        "two_choice_spare", "spare_weighted_whole", "spare_rotating_whole"])
     assert sorted(n for n, k in ROUTER_KIND.items() if k != STOCHASTIC) == [
-        "even_split_rotating", "proportional_load_aware", "proportional_whole", "round_robin"]
+        "even_split_rotating", "proportional_load_aware", "proportional_whole", "round_robin",
+        "spare_rotating_whole"]
 
 
 # --- deterministic routers ---
@@ -612,3 +614,389 @@ def test_failed_job_makes_the_run_invalid(tmp_path: Path) -> None:
     assert code == 2
     assert len(read_failures(tmp_path / "exp")) == 1
     assert json.loads((tmp_path / "exp" / "spec.json").read_text())["status"] == "invalid"
+
+
+# --- EXP-0049: informed spreading routers (task 3.2) ---
+
+INFORMED = ("two_choice_spare", "spare_weighted_whole", "spare_rotating_whole")
+
+
+def _two_streams_config(capacities: tuple[int, int] = (120, 120), *, degradation: int = 5,
+                        ) -> tuple[Configuration, tuple[str, str]]:
+    """The fixture plus a second consumer of product 10 (quantity 3), named so that its stream
+    agent's `round_robin` offset has the other parity from c1's: per-orderer offsets put the
+    two streams on different producers in every cycle while both fit."""
+    from tokenomics.eval.routing_diagnostics import stable_hash
+
+    base = _config(3, capacities=capacities, degradation=degradation)
+    c1 = "order_c1__10"
+    for name in (f"c{i}" for i in range(3, 40)):
+        if (stable_hash(f"order_{name}__10", 0) - stable_hash(c1, 0)) % 2:
+            break
+    cfg = Configuration(base.cycle_emission, base.process_sheets, base.producer_configs,
+                        base.consumers + [ConsumerConfig(id=name, product=10,
+                                                         schedule=((10, 3),))])
+    cfg.validate()
+    return cfg, (c1, f"order_{name}__10")
+
+
+@pytest.mark.parametrize("name", INFORMED)
+def test_informed_routers_never_split_and_are_seed_deterministic(name: str) -> None:
+    """One sub-order per order, consumer and producer orders alike; the same seed gives the same
+    episode, action for action."""
+    a, stats_a = _record(_config(3, composite=True), DIAGNOSTIC_ROUTERS[name], action_seed=7)
+    b, stats_b = _record(_config(3, composite=True), DIAGNOSTIC_ROUTERS[name], action_seed=7)
+    assert {r["class"] for r in a} == {CONSUMER, PRODUCER}
+    assert all(len(r["subs"]) == 1 for r in a)
+    assert [r["subs"] for r in a] == [r["subs"] for r in b]
+    assert all(np.array_equal(x["row"], y["row"]) for x, y in zip(a, b) if x["row"] is not None)
+    assert stats_a == stats_b
+
+
+def test_spare_units_is_the_orderer_stream_view_field() -> None:
+    """`spare_units` equals the `accept_qty_now` the ordering agent's own product-stream view
+    reports (what a joint_stack orderer observes), for every eligible producer at every
+    decision, and moves with reservations / degradation over the episode."""
+    from tokenomics.eval.routing_diagnostics import spare_units
+
+    seen: set[int] = set()
+
+    def check(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        _, aid = e._role[agent]
+        view = e.system.product_stream_view(aid)
+        for oid in e.system.ordering_agents[aid].incoming:
+            product = e.system.orders[oid].product
+            for pid, pp in view.producer_products.items():
+                if pp.eligible:
+                    assert spare_units(e, pid, product) == pp.accept_qty_now
+                    seen.add(pp.accept_qty_now)
+        return DIAGNOSTIC_ROUTERS["spare_rotating_whole"](e, agent)
+
+    _record(_config(3, composite=True), check)
+    assert len(seen) > 2
+
+
+def test_two_choice_spare_picks_the_larger_spare_producer() -> None:
+    """Fanout 2, so both producers are always drawn: every consumer order goes to the producer
+    with more spare units (capacity-1 net of reservations, // 2 per unit of product 10)."""
+    log, _ = _record(_config(3, capacities=(120, 40)), DIAGNOSTIC_ROUTERS["two_choice_spare"],
+                     action_seed=3)
+    decided = 0
+    for r in _c1(log):
+        spare = {pid: t // 2 for pid, t in r["throughput"].items()}
+        if spare["p1"] != spare["p2"]:
+            assert r["subs"][0][0] == max(spare, key=spare.get)
+            decided += 1
+    assert decided >= HORIZON - 2
+
+
+def test_spare_rotating_whole_rotates_skips_and_spreads_orderers() -> None:
+    """Two consumer streams of product 10 over two equal producers: each stream's receiver
+    changes from cycle to cycle, and in every cycle the two streams use different producers
+    (per-orderer offsets), where `proportional_whole` sends both to the same one. A producer
+    whose spare cannot take the whole order is skipped."""
+    cfg, (s1, s2) = _two_streams_config()
+    log, _ = _record(cfg, DIAGNOSTIC_ROUTERS["spare_rotating_whole"],
+                     also={"proportional_whole": DIAGNOSTIC_ROUTERS["proportional_whole"]})
+    by_cycle: dict[int, dict[str, Record]] = defaultdict(dict)
+    for r in log:
+        if r["class"] == CONSUMER and r["slot"] == 0:
+            by_cycle[int(r["cycle"])][str(r["agent"])] = r
+    both = [c for c, rows in sorted(by_cycle.items()) if {s1, s2} <= rows.keys()]
+    assert len(both) >= HORIZON - 2
+    for c in both:
+        mine = {by_cycle[c][s]["subs"][0][0] for s in (s1, s2)}
+        theirs = {by_cycle[c][s]["alt"]["proportional_whole"][0][0] for s in (s1, s2)}
+        assert len(mine) == 2 and len(theirs) == 1
+    first = [by_cycle[c][s1]["subs"][0][0] for c in both]
+    assert all(a != b for a, b in zip(first, first[1:]))
+    # Hand-set state: p2 held at 4 capacity before every decision (2 spare units < quantity 3),
+    # so the rotation always skips it.
+    def starved(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        e.system.producing_agents["p2"].capacities["capacity-1"] = 4
+        return DIAGNOSTIC_ROUTERS["spare_rotating_whole"](e, agent)
+
+    small, _ = _record(_config(3, degradation=0), starved)
+    assert len(_c1(small)) >= HORIZON - 1
+    assert {r["subs"][0][0] for r in _c1(small)} == {"p1"}
+
+
+def test_receiver_variation_and_herding_metrics() -> None:
+    """Tracer metrics (task 3.2) on hand fixtures: `round_robin` changes a quantity-1 stream's
+    receiver every cycle (1.0), `proportional_whole` at constant throughputs never does (0.0);
+    with two consumer streams `proportional_whole` herds (order-weighted HHI 1.0) and
+    `spare_rotating_whole` spreads them (about 0.5, one order per producer)."""
+
+    def summary(cfg: Configuration, router: Policy) -> dict[str, float]:
+        env = joint_stack_env(cfg, HORIZON)
+        tracer = RoutingTracer()
+        tracer.attach(env)
+        run_episode(env, PRODUCING_BASELINES["entity_planner"], router, seed=0)
+        return tracer.summary()
+
+    rr = summary(_config(1), DIAGNOSTIC_ROUTERS["round_robin"])
+    fixed = summary(_config(1, degradation=0, capacities=(200, 120)),
+                    DIAGNOSTIC_ROUTERS["proportional_whole"])
+    assert rr["receiver_change_share_consumer"] == 1.0
+    assert fixed["receiver_change_share_consumer"] == 0.0
+    cfg, _ = _two_streams_config(degradation=0)
+    herd = summary(cfg, DIAGNOSTIC_ROUTERS["proportional_whole"])
+    spread = summary(cfg, DIAGNOSTIC_ROUTERS["spare_rotating_whole"])
+    assert herd["herding_groups"] >= HORIZON - 2 and herd["herding_hhi"] == 1.0
+    # mostly two orders on two producers (0.5); a cycle with p3's replenishment order of 10 too
+    # gives at least 5/9 (3 orders over 2 producers).
+    assert spread["herding_groups"] >= HORIZON - 2 and 0.5 <= spread["herding_hhi"] < 0.56
+
+
+@pytest.mark.parametrize("name", INFORMED)
+def test_informed_routers_see_no_shock_schedule(name: str) -> None:
+    """Scenario "Shock-reactive baseline sees no schedule", applied to the informed routers: the
+    same episode with every piece of shock state readable and hidden behind the sentinel gives
+    identical actions and statistics."""
+    from test_shock_reactive import _hidden, _recorded, _same, _smoke_world
+
+    config, seed = _smoke_world()
+
+    def actions(wrap: Callable[[Policy], Policy]) -> tuple[list, dict]:
+        log: list = []
+        env = joint_stack_env(config, 12)
+        stats = run_episode(env, PRODUCING_BASELINES["entity_planner"],
+                            _recorded(wrap(DIAGNOSTIC_ROUTERS[name]), log), seed=seed,
+                            action_seed=replicate_seed("w", seed, 0))
+        return log, stats
+
+    open_log, open_stats = actions(lambda p: p)
+    hidden_log, hidden_stats = actions(_hidden)
+    assert open_log and _same(open_log, hidden_log)
+    assert open_stats == hidden_stats and open_stats["shock_events"] == 3
+
+
+# --- EXP-0049: the plan and the trained subjects (task 3.2) ---
+
+PROD_CKPT = Path(__file__).resolve().parents[2] / (
+    "experiments/EXP-0035-distill-epochs/replay/artifacts/producer_candidate.pt")
+ORDERER_CKPT = Path(__file__).resolve().parents[2] / (
+    "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt")
+
+
+def _checkpoints_or_skip() -> None:
+    pytest.importorskip("torch")
+    for path in (PROD_CKPT, ORDERER_CKPT):
+        if not path.exists() or path.read_bytes()[:7] == b"version":  # git-lfs pointer
+            pytest.skip(f"git-lfs checkpoint {path.name} not present")
+
+
+def test_exp0049_plan_jobs() -> None:
+    """The EXP-0049 plan: the six roster members, 4 reference routers, the 3 informed routers
+    and the 2 trained subjects; 31 runs per world-episode at R = 5; only the trained jobs carry
+    checkpoints. The EXP-0048 plan is unchanged by the new routers (69 runs)."""
+    from tokenomics.eval.routing_audit import EXP0049, PORTABLE, TRAINED_ORDERER
+
+    roster = load_roster(ROSTER_V2)
+    table = router_table(roster, plan=EXP0049)
+    assert [r["router"] for r in table if not r["roster"]] == [
+        "round_robin", "even_split_rotating", "proportional_whole", "random_whole",
+        *INFORMED, TRAINED_ORDERER, PORTABLE]
+    subjects = {r["router"]: r for r in table}
+    assert subjects[TRAINED_ORDERER]["subject"] == "entity_planner/trained_orderer"
+    assert (subjects[PORTABLE]["subject"], subjects[PORTABLE]["producing"]) == (PORTABLE, PORTABLE)
+    world = select_worlds(load_registry(REGISTRY_V2), sizes=[12], max_worlds=1)[:1]
+    ckpts = {"producer": {"path": "p.pt", "sha256": "a"}, "orderer": {"path": "o.pt",
+                                                                     "sha256": "b"}}
+    jobs = build_jobs(world, table, roster.replicates, 100, 1, ckpts)
+    assert len(jobs) == 31
+    for j in jobs:
+        assert j["contract"] == (JOINT_STACK if j["ordering"] != "obs_price" else "legacy")
+        assert (j["checkpoints"] == ckpts) == (j["subject"] in (
+            "entity_planner/trained_orderer", PORTABLE))
+        assert j["action_seed"] is None or j["ordering"] in (
+            "random", "random_whole", "two_choice_spare", "spare_weighted_whole")
+    assert {j["ordering"] for j in jobs if j["checkpoints"]} == {TRAINED_ORDERER}
+    assert len(build_jobs(world, router_table(roster), roster.replicates, 100, 1)) == 69
+    with pytest.raises(ValueError, match="unknown plan"):
+        router_table(roster, plan="exp9999")
+    with pytest.raises(ValueError, match="--prod-ckpt and --orderer-ckpt"):
+        run_audit(out_dir="/nonexistent", registry=load_registry(REGISTRY_V2), roster=roster,
+                  plan=EXP0049, dry_run=True, sizes=[12], max_worlds=1)
+    kw = _real_kwargs()
+    with pytest.raises(ValueError, match="not a valid EXP-0049 run"):
+        run_audit(out_dir="/nonexistent", plan=EXP0049, prod_ckpt="p", orderer_ckpt="o",
+                  registry=kw["registry"], roster=kw["roster"], sizes=[12])
+
+
+def test_trained_subjects_run_a_smoke_episode(tmp_path: Path) -> None:
+    """Both checkpoints load (hash pinned in spec.json) and each trained subject plays one
+    horizon-12 `shocks-i-smoke` episode on a 12-producer shocked world with the tracer on and
+    zero contract failures."""
+    _checkpoints_or_skip()
+    from tokenomics.eval.provenance import sha256_file
+    from tokenomics.eval.routing_audit import EXP0049
+
+    out = tmp_path / "exp"
+    code = run_audit(out_dir=out, registry=load_registry(REGISTRY_V2),
+                     roster=load_roster(ROSTER_V2), plan=EXP0049, prod_ckpt=str(PROD_CKPT),
+                     orderer_ckpt=str(ORDERER_CKPT), horizon=12, replicates=1, sizes=[12],
+                     regimes=["shocked"], max_worlds=1, episodes_per_world=1,
+                     routers=["trained_orderer", "portable"], shock_profile=SHOCKS_I_SMOKE,
+                     dry_run=True, log=lambda s: None)
+    assert code == 0 and read_failures(out) == []
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["pins"]["checkpoints"] == {"producer": sha256_file(str(PROD_CKPT)),
+                                           "orderer": sha256_file(str(ORDERER_CKPT))}
+    from tokenomics.eval.routing_audit import read_episode_dicts
+
+    rows = read_episode_dicts(out / "episodes.csv")
+    assert {r["subject"] for r in rows} == {"entity_planner/trained_orderer", "portable"}
+    assert len(rows) == 2 and all(r["trace_receiver_change_share_consumer"] for r in rows)
+
+
+def test_bad_checkpoint_is_a_run_failure(tmp_path: Path) -> None:
+    """A checkpoint that does not load is a `run` row before any job, and the run is invalid."""
+    from tokenomics.eval.contract import ContractRunError
+    from tokenomics.eval.routing_audit import EXP0049
+
+    bad = tmp_path / "bad.pt"
+    bad.write_bytes(b"not a checkpoint")
+    out = tmp_path / "exp"
+    with pytest.raises(ContractRunError):
+        run_audit(out_dir=out, registry=load_registry(REGISTRY_V2),
+                  roster=load_roster(ROSTER_V2), plan=EXP0049, prod_ckpt=str(bad),
+                  orderer_ckpt=str(bad), horizon=4, replicates=1, sizes=[12],
+                  regimes=["calm"], max_worlds=1, episodes_per_world=1,
+                  routers=["trained_orderer"], dry_run=True, log=lambda s: None)
+    failures = read_failures(out)
+    assert [f["scope"] for f in failures] == ["run"] and failures[0]["check"] == "checkpoint"
+    assert json.loads((out / "spec.json").read_text())["status"] == "invalid"
+    assert not (out / "episodes.csv").exists()
+
+
+# --- review m3-audit-3-2: the routers' defining draws, the worker hash check, herding groups ---
+
+
+def _fanout4_config() -> Configuration:
+    """Four producers of primal product 10 with distinct capacities (fanout 4), so a two-choice
+    draw is a strict subset of the eligible producers; consumer c1 orders 1 unit each cycle."""
+    base = _config(1)
+    p1 = base.producer_configs[0]
+    extra = [ProducingAgentConfig(id=f"p{4 + i}", capacities={"capacity-1": cap},
+                                  degradation=p1.degradation, restoration=p1.restoration,
+                                  upgrade=p1.upgrade, produces=frozenset({10}))
+             for i, cap in enumerate((60, 30))]
+    cfg = Configuration(base.cycle_emission, base.process_sheets,
+                        [base.producer_configs[0],
+                         ProducingAgentConfig(id="p2", capacities={"capacity-1": 90},
+                                              degradation=p1.degradation,
+                                              restoration=p1.restoration, upgrade=p1.upgrade,
+                                              produces=frozenset({10})),
+                         base.producer_configs[2], *extra], base.consumers)
+    cfg.validate()
+    return cfg
+
+
+def _replayed(name: str, expected: Callable[[np.random.Generator, list[int]], int],
+              starve: str | None = None) -> list[tuple[list[int], int]]:
+    """Run `name` on the fanout-4 fixture; before each decision save the agent's RNG state,
+    replay `expected(rng, spares)` on a copy for the first slot, and check the router chose
+    exactly that producer. `starve` holds that producer at 1 capacity (0 spare units) before
+    every decision. Returns (spares, chosen position) per checked decision."""
+    from tokenomics.eval.routing_diagnostics import spare_units
+
+    seen: list[tuple[list[int], int]] = []
+
+    def checked(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        if starve:
+            e.system.producing_agents[starve].capacities["capacity-1"] = 1
+        _, aid = e._role[agent]
+        view = e.system.ordering_agents[aid].view(e.system.producer_infos)
+        rng = e.action_space(agent).np_random
+        state = rng.bit_generator.state
+        act = DIAGNOSTIC_ROUTERS[name](e, agent)
+        if not view.incoming:
+            return act
+        oid = sorted(view.incoming)[0]
+        elig = [pid for pid in e.spec_.producer_ids if pid in view.eligible[oid]]
+        if len(elig) < 3:
+            return act
+        spares = [spare_units(e, pid, view.incoming[oid].product) for pid in elig]
+        replay = np.random.Generator(np.random.PCG64())
+        replay.bit_generator.state = state
+        want = expected(replay, spares)
+        cmd = decode_ordering(e.spec_, np.asarray(act), view)
+        got = elig.index(cmd.orders[oid][0].producer_id)
+        assert got == want, (agent, spares, got, want)
+        seen.append((spares, got))
+        return act
+
+    env = joint_stack_env(_fanout4_config(), HORIZON)
+    run_episode(env, PRODUCING_BASELINES["entity_planner"], checked, seed=0,
+                action_seed=replicate_seed("w", 1, 0))
+    return seen
+
+
+def test_two_choice_spare_chooses_within_the_drawn_pair() -> None:
+    """Fanout 4: the router takes the larger-spare producer of the two it drew (replayed draw),
+    so the overall largest-spare producer is not always chosen and the smallest never is."""
+
+    def pair(rng: np.random.Generator, spares: list[int]) -> int:
+        a, b = (int(j) for j in rng.choice(len(spares), size=2, replace=False))
+        return b if spares[b] > spares[a] else a
+
+    seen = _replayed("two_choice_spare", pair)
+    assert len(seen) >= HORIZON
+    distinct = [(s, g) for s, g in seen if len(set(s)) == len(s)]
+    assert distinct
+    assert any(s[g] != max(s) for s, g in distinct)  # not a global argmax
+    assert all(s[g] != min(s) for s, g in distinct)  # the smallest never wins a pair
+
+
+def test_spare_weighted_whole_draws_in_proportion_to_spare() -> None:
+    """The draw is `rng.choice(E, p = spare / sum)` (replayed), and a producer held at 0 spare
+    units is never chosen while others have spare."""
+
+    def weighted(rng: np.random.Generator, spares: list[int]) -> int:
+        s = np.asarray(spares, dtype=np.float64)
+        return int(rng.choice(len(s), p=s / s.sum()))
+
+    seen = _replayed("spare_weighted_whole", weighted, starve="p5")
+    assert len(seen) >= HORIZON
+    assert all(s[3] == 0 and g != 3 for s, g in seen)  # p5 is the 4th eligible producer
+    assert len({g for _, g in seen}) >= 2
+
+
+def test_worker_refuses_a_checkpoint_whose_hash_differs_from_the_pin(tmp_path: Path) -> None:
+    """A trained job whose pinned sha256 differs from the file it would load is a job failure
+    naming the mismatch; nothing is loaded."""
+    from tokenomics.eval.contract import is_failure
+    from tokenomics.eval.provenance import sha256_file
+    from tokenomics.eval.routing_audit import EXP0049, TRAINED_ORDERER, run_job
+
+    ckpt = tmp_path / "o.pt"
+    ckpt.write_bytes(b"pretend checkpoint")
+    pins = {role: {"path": str(ckpt), "sha256": "0" * 64} for role in ("producer", "orderer")}
+    assert sha256_file(str(ckpt)) != "0" * 64
+    table = router_table(load_roster(ROSTER_V2), [TRAINED_ORDERER], plan=EXP0049)
+    world = select_worlds(load_registry(REGISTRY_V2), sizes=[12], max_worlds=1)[:1]
+    job = build_jobs(world, table, 1, 4, 1, pins)[0]
+    row = run_job(job)
+    assert is_failure(row) and "sha256" in row["message"] and "pinned" in row["message"]
+
+
+def test_herding_counts_only_groups_with_two_orders() -> None:
+    """`herding_groups` equals an independent count of (product 10, cycle) groups with at least
+    two routed orders, on a fixture that also has single-order cycles (which are skipped)."""
+    env = joint_stack_env(_config(1, degradation=0), HORIZON)
+    tracer = RoutingTracer()
+    tracer.attach(env)
+    orders: dict[int, set[str]] = defaultdict(set)
+
+    def logged(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        _, aid = e._role[agent]
+        for oid, oi in e.system.ordering_agents[aid].incoming.items():
+            if oi.product == 10:
+                orders[e.system.cycle_counter].add(oid)
+        return DIAGNOSTIC_ROUTERS["round_robin"](e, agent)
+
+    run_episode(env, PRODUCING_BASELINES["entity_planner"], logged, seed=0)
+    sizes = [len(v) for v in orders.values()]
+    assert 1 in sizes and any(n >= 2 for n in sizes)
+    assert tracer.summary()["herding_groups"] == sum(1 for n in sizes if n >= 2)

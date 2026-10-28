@@ -1,15 +1,27 @@
-"""EXP-0048 driver: `python -m tokenomics.eval.routing_audit` (add-m3-development-audit design D2,
-"EXP-0048 grid"; development-audit "Baseline anomaly diagnosed before the teacher audit").
+"""EXP-0048 / EXP-0049 driver: `python -m tokenomics.eval.routing_audit` (add-m3-development-audit
+design D2, "EXP-0048 grid" and "Informed spreading routers and trained-agent trace";
+development-audit "Baseline anomaly diagnosed before the teacher audit").
 
-Question: why does the `random` ordering baseline set the hindsight baseline on most v2
+`--plan` picks the run's router set. `exp0048` (default): the six roster members and the 15
+diagnostic routers of EXP-0048. `exp0049` (task 3.2): the six roster members, the references
+`round_robin`, `even_split_rotating`, `proportional_whole`, `random_whole`, the informed
+spreading routers `two_choice_spare`, `spare_weighted_whole`, `spare_rotating_whole`, and two
+trained subjects (`--prod-ckpt`, `--orderer-ckpt`): `entity_planner/trained_orderer` (the
+portable orderer scorer with the routers' producer) and `portable` (the full portable stack,
+its own producer). Both trained subjects are deterministic (scorer logits, decoded without
+sampling), so they run once, like the deterministic routers. Their checkpoints are hashed and
+trial-loaded before any job (a failure is a `run` row, as in the gate) and every worker checks
+the hash of the file it loads.
+
+EXP-0048's question: why does the `random` ordering baseline set the hindsight baseline on most v2
 development world-episodes? Every router runs with the `entity_planner` producer (the producer
 of every roster v2 member) on every registry development gate world-episode, horizon 100,
 routing tracer on (`eval/routing_trace.py`):
 - the six roster members, each under the contract its roster entry records (roster v2:
   `entity_planner/obs_price` legacy, the rest joint_stack), as references whose rows must
   reproduce EXP-0047; `random` runs R replicates with the gate's replicate seeds;
-- the diagnostic routers of `eval/routing_diagnostics.py` under joint_stack, the deterministic
-  ones once, the stochastic ones R times with the same replicate seeds.
+- the plan's diagnostic routers of `eval/routing_diagnostics.py` under joint_stack, the
+  deterministic ones once, the stochastic ones R times with the same replicate seeds.
 
 Rows use the gate row format (`gate.row_from_stats`) plus `trace_*` columns, and are paired as
 they arrive: every run of a (world, episode) must see the same demand and shock digests
@@ -29,9 +41,9 @@ split degree (tolerance `MATCHED_SPLIT_TOLERANCE`, chosen in this driver, not pr
 and the (e) replicate check.
 
 A real run needs the frozen roster, a screened registry, a 40-hex source commit, horizon 100,
-every router, the roster's R and no filters; anything else needs `--dry-run` (marked as not an
-acceptance read). DIAGNOSTIC ONLY: the trace reads hidden shock state (outage reasons); nothing
-here feeds a policy.
+every router of the plan, the roster's R and no filters; anything else needs `--dry-run`
+(marked as not an acceptance read). DIAGNOSTIC ONLY: the trace reads hidden shock state
+(outage reasons); nothing here feeds a policy.
 """
 
 from __future__ import annotations
@@ -51,8 +63,10 @@ from typing import Callable, Mapping, Sequence
 
 from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from .contract import (
+    CHECKPOINT,
     DIGEST,
     ContractMonitor,
+    ContractRunError,
     append_failure,
     ensure_failures_file,
     failure_from_dict,
@@ -78,7 +92,7 @@ from .gate_cli import (
     read_rows,
     test_only_problem,
 )
-from .provenance import resolve_verified_commit, source_fingerprint
+from .provenance import resolve_verified_commit, sha256_file, source_fingerprint
 from .registry import DEFAULT_REGISTRY, DEVELOPMENT, Registry, WorldEntry, load_registry
 from .roster import DEFAULT_ROSTER, JOINT_STACK, RANDOM_POLICY, Roster, load_roster, member_id
 from .routing_diagnostics import DETERMINISTIC, DIAGNOSTIC_ROUTERS, ROUTER_KIND, STOCHASTIC
@@ -107,6 +121,27 @@ SPLIT_CLASSES: dict[tuple[str, str], tuple[str, ...]] = {
 }
 MATCHED_SPLIT_TOLERANCE = 0.05
 
+# Router sets per plan (module docstring). EXP-0048's 15 diagnostic routers are listed, not
+# taken from DIAGNOSTIC_ROUTERS, so routers added later never change that grid.
+EXP0048 = "exp0048"
+EXP0049 = "exp0049"
+TRAINED_ORDERER = "trained_orderer"
+PORTABLE = "portable"
+PLANS: dict[str, dict[str, tuple[str, ...]]] = {
+    EXP0048: {"diagnostic": (
+        "round_robin", "even_split_rotating", "proportional_load_aware", "proportional_whole",
+        "random_scaled_0.5", "random_scaled_1", "random_scaled_2", "random_scaled_5",
+        "random_fixed_episode", "blend_noise_0.15", "blend_noise_0.6", "random_consumer_only",
+        "random_producer_only", "random_whole", "even_split_random_leftover"),
+        "trained": ()},
+    EXP0049: {"diagnostic": (
+        "round_robin", "even_split_rotating", "proportional_whole", "random_whole",
+        "two_choice_spare", "spare_weighted_whole", "spare_rotating_whole"),
+        "trained": (TRAINED_ORDERER, PORTABLE)},
+}
+PLAN_EXPERIMENT = {EXP0048: "EXP-0048", EXP0049: "EXP-0049"}
+DEFAULT_PLAN = EXP0048
+
 TRACE_PREFIX = "trace_"
 TRACE_SCALARS = tuple(RoutingTracer().summary())
 TRACE_SERIES = ("fund_share_by_producer", "cut_off_price_by_producer", "capacity_ratio_trace")
@@ -117,18 +152,34 @@ EPISODE_COLUMNS = CSV_COLUMNS + TRACE_COLUMNS
 # --- routers and jobs ---
 
 
-def router_table(roster: Roster, routers: Sequence[str] | None = None) -> list[dict]:
+def _trained_entry(name: str) -> dict:
+    """`trained_orderer`: entity_planner + the portable orderer; `portable`: the full portable
+    stack. Both joint_stack (the scorer reads the product-stream view) and deterministic."""
+    producing = PRODUCER if name == TRAINED_ORDERER else PORTABLE
+    return {"router": name, "subject": member_id(PRODUCER, name) if name == TRAINED_ORDERER
+            else PORTABLE, "producing": producing, "ordering": TRAINED_ORDERER,
+            "contract": JOINT_STACK, "random": False, "roster": False, "kind": DETERMINISTIC,
+            "trained": True}
+
+
+def router_table(roster: Roster, routers: Sequence[str] | None = None,
+                 plan: str = DEFAULT_PLAN) -> list[dict]:
     """Every router of the run, in order: the roster members (their recorded contract and
-    random flag), then the diagnostic routers (joint_stack; random = stochastic). `routers`
-    keeps a subset by ordering name (dry run)."""
+    random flag), then the plan's diagnostic routers (joint_stack; random = stochastic), then
+    its trained subjects. `routers` keeps a subset by router name (dry run)."""
+    if plan not in PLANS:
+        raise ValueError(f"unknown plan {plan!r}; known: {sorted(PLANS)}")
     table = [{"router": m.ordering, "subject": m.id, "producing": m.producing,
-              "contract": m.contract, "random": m.random, "roster": True,
-              "kind": STOCHASTIC if m.random else DETERMINISTIC}
+              "ordering": m.ordering, "contract": m.contract, "random": m.random,
+              "roster": True, "kind": STOCHASTIC if m.random else DETERMINISTIC,
+              "trained": False}
              for m in roster.members]
     table += [{"router": name, "subject": member_id(PRODUCER, name), "producing": PRODUCER,
-               "contract": JOINT_STACK, "random": ROUTER_KIND[name] == STOCHASTIC,
-               "roster": False, "kind": ROUTER_KIND[name]}
-              for name in DIAGNOSTIC_ROUTERS]
+               "ordering": name, "contract": JOINT_STACK,
+               "random": ROUTER_KIND[name] == STOCHASTIC, "roster": False,
+               "kind": ROUTER_KIND[name], "trained": False}
+              for name in PLANS[plan]["diagnostic"]]
+    table += [_trained_entry(name) for name in PLANS[plan]["trained"]]
     if routers is not None:
         known = {r["router"] for r in table}
         unknown = sorted(set(routers) - known)
@@ -166,10 +217,12 @@ def replicates_of(router: Mapping[str, object], replicates: int) -> int:
 
 def build_jobs(worlds: Sequence[WorldEntry], routers: Sequence[Mapping[str, object]],
                replicates: int, horizon: int,
-               episodes_per_world: int | None = None) -> list[Job]:
+               episodes_per_world: int | None = None,
+               checkpoints: Mapping[str, Mapping[str, str]] | None = None) -> list[Job]:
     """One job per (world, episode, router, replicate); a random router's replicate r gets the
     gate's action seed `replicate_seed(world, episode, r)`, a deterministic one keeps the
-    legacy coupling (None), exactly as the gate runs roster members."""
+    legacy coupling (None), exactly as the gate runs roster members. A trained subject's job
+    carries `checkpoints` (role -> {path, sha256})."""
     jobs: list[Job] = []
     for e in worlds:
         episodes = e.episode_seeds[:episodes_per_world] if episodes_per_world else e.episode_seeds
@@ -180,8 +233,9 @@ def build_jobs(worlds: Sequence[WorldEntry], routers: Sequence[Mapping[str, obje
                         "world": e.id, "size": e.size, "regime": e.regime,
                         "world_seed": e.world_seed, "generator": e.generator, "episode": ep,
                         "subject": r["subject"], "replicate": rep, "producing": r["producing"],
-                        "ordering": r["router"], "contract": r["contract"], "horizon": horizon,
-                        "action_seed": replicate_seed(e.id, ep, rep) if r["random"] else None})
+                        "ordering": r["ordering"], "contract": r["contract"], "horizon": horizon,
+                        "action_seed": replicate_seed(e.id, ep, rep) if r["random"] else None,
+                        "checkpoints": dict(checkpoints or {}) if r["trained"] else None})
     return jobs
 
 
@@ -194,10 +248,76 @@ def expected_keys(grid: Mapping[str, Mapping], routers: Sequence[Mapping[str, ob
 # --- worker ---
 
 _CONFIGS: dict[str, object] = {}
+_TRAINED: dict[tuple[str, str, str], Policy] = {}
+ROLES = ("producer", "orderer")
 
 
 def ordering_policy(name: str) -> Policy:
     return ORDERING_BASELINES[name] if name in ORDERING_BASELINES else DIAGNOSTIC_ROUTERS[name]
+
+
+def load_trained_policy(role: str, path: str) -> Policy:
+    """The portable producer (`producer`) or orderer (`orderer`) as a `Policy`; torch is
+    imported here only, pinned to one thread."""
+    import torch
+
+    torch.set_num_threads(1)
+    if role == "producer":
+        from ..train.producer_scorer import load_producer_score_model, scorer_producing_policy
+
+        return scorer_producing_policy(load_producer_score_model(path))
+    from ..train.orderer_scorer import load_scorer, scorer_ordering_policy
+
+    return scorer_ordering_policy(load_scorer(path))
+
+
+def trained_policy(job: Job, role: str) -> Policy:
+    """The job's checkpoint for `role`, loaded once per process after checking its sha256
+    against the parent's pin."""
+    ckpt = job["checkpoints"][role]
+    key = (role, ckpt["path"], ckpt["sha256"])
+    if key not in _TRAINED:
+        digest = sha256_file(ckpt["path"])
+        if digest != ckpt["sha256"]:
+            raise ValueError(f"{role} checkpoint {ckpt['path']} has sha256 {digest}, "
+                             f"pinned {ckpt['sha256']}")
+        _TRAINED[key] = load_trained_policy(role, ckpt["path"])
+    return _TRAINED[key]
+
+
+def job_policies(job: Job) -> tuple[Policy, Policy]:
+    prod = (trained_policy(job, "producer") if job["producing"] == PORTABLE
+            else PRODUCING_BASELINES[job["producing"]])
+    order = (trained_policy(job, "orderer") if job["ordering"] == TRAINED_ORDERER
+             else ordering_policy(job["ordering"]))
+    return prod, order
+
+
+def checked_checkpoints(out: Path, paths: Mapping[str, str], dry_run: bool,
+                        log: Callable[[str], None]) -> dict[str, dict[str, str]]:
+    """role -> {path, sha256} after a trial load in the parent (the gate's run-level check):
+    a checkpoint that does not hash or load is a `run` row in `contract_failures.csv`,
+    `spec.json` invalid, and `ContractRunError` before any job runs."""
+    try:
+        pins = {role: {"path": str(paths[role]), "sha256": sha256_file(paths[role])}
+                for role in ROLES}
+        for role in ROLES:
+            load_trained_policy(role, paths[role])
+    except Exception as exc:  # noqa: BLE001 - recorded, then the run ends invalid
+        out.mkdir(parents=True, exist_ok=True)
+        append_failure(out, run_failure(CHECKPOINT, exc))
+        spec_path = out / "spec.json"
+        spec = json.loads(spec_path.read_text()) if spec_path.exists() else {
+            "experiment": out.name, "driver": DRIVER,
+            "kind": "dry-run" if dry_run else "audit",
+            "inputs": {role: {"path": str(paths.get(role)), "sha256": None} for role in ROLES}}
+        spec["status"] = INVALID
+        spec["result"] = {"status": INVALID, "contract_failures": len(read_failures(out))}
+        _write_spec(out, spec)
+        log(f"[routing_audit] INVALID: checkpoint failed to hash or load ({exc})")
+        raise ContractRunError(f"checkpoint failed to hash or load ({type(exc).__name__}: "
+                               f"{exc})") from exc
+    return pins
 
 
 def run_job(job: Job) -> dict[str, str]:
@@ -228,8 +348,9 @@ def _run_job(job: Job) -> dict[str, str]:
     tracer = RoutingTracer()
     tracer.attach(env)
     monitor = ContractMonitor(env)
-    run_episode(env, PRODUCING_BASELINES[job["producing"]], ordering_policy(job["ordering"]),
-                seed=job["episode"], action_seed=job["action_seed"], monitor=monitor)
+    prod, order = job_policies(job)
+    run_episode(env, prod, order, seed=job["episode"], action_seed=job["action_seed"],
+                monitor=monitor)
     stats = env.episode_stats
     monitor.verify(dead=bool(stats["dead"]), cycles=stats["cycles"], horizon=horizon)
     row = row_to_dict(row_from_stats(job["world"], job["size"], job["regime"], job["episode"],
@@ -550,19 +671,29 @@ def write_csv(path: Path, columns: Sequence[str], rows: Sequence[Mapping[str, ob
 
 # --- run ---
 
-RESULT_SKELETON = """# {title}
-
-{banner}**Status: {status}.** {n_rows} episode rows over {n_world_episodes} world-episodes,
-{n_routers} routers (R = {replicates}), horizon {horizon}; registry {registry}, roster {roster}.
-Produced by `python -m {driver}` (see `spec.json`).
-
-## Question
-
+QUESTIONS = {
+    EXP0048: """\
 Why does the `random` ordering baseline set the hindsight baseline on most registry v2
 development world-episodes (design D2)? Each router isolates one explanation: (a) packing under
 atomic acceptance, (b) temporal variation versus randomness, (c) rule defects, (d) the
 investment-fund channel, (e) the scoring of random replicates, (f) the split penalty under
-whole-order completion.
+whole-order completion.""",
+    EXP0049: """\
+Can a router that reads producer data (spare capacity) spread whole orders better than the
+blind `round_robin` / `random_whole`, and did the trained portable orderer learn random's trick
+(whole orders, a receiver that varies over time, no herding) or `proportional`'s (design D2,
+"Informed spreading routers and trained-agent trace")?""",
+}
+
+RESULT_SKELETON = """# {title}
+
+{banner}**Status: {status}.** {n_rows} episode rows over {n_world_episodes} world-episodes,
+{n_routers} routers (R = {replicates}), horizon {horizon}; registry {registry}, roster {roster}.
+Produced by `python -m {driver} --plan {plan}` (see `spec.json`).
+
+## Question
+
+{question}
 
 ## Result
 
@@ -629,17 +760,22 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
               sizes: Sequence[int] | None = None, regimes: Sequence[str] | None = None,
               max_worlds: int | None = None, episodes_per_world: int | None = None,
               routers: Sequence[str] | None = None, shock_profile: str | None = None,
-              source_commit: str = "", dry_run: bool = False,
+              source_commit: str = "", dry_run: bool = False, plan: str = DEFAULT_PLAN,
+              prod_ckpt: str | None = None, orderer_ckpt: str | None = None,
               run_job_fn: Callable[[Job], dict[str, str]] = run_job,
               log: Callable[[str], None] = print) -> int:
-    """Run (or resume) EXP-0048 into `out_dir`; return the exit status (0, or
-    `CONTRACT_INVALID` when contract failures were recorded or rows are missing)."""
+    """Run (or resume) the plan's experiment (EXP-0048 / EXP-0049) into `out_dir`; return the
+    exit status (0, or `CONTRACT_INVALID` when contract failures were recorded or rows are
+    missing)."""
     replicates = roster.replicates if replicates is None else replicates
     worlds = select_worlds(registry, sizes=sizes, regimes=regimes, max_worlds=max_worlds,
                            shock_profile=shock_profile)
     if not worlds:
         raise ValueError("no development gate worlds selected")
-    table = router_table(roster, routers)
+    table = router_table(roster, routers, plan)
+    trained = any(r["trained"] for r in table)
+    if trained and not (prod_ckpt and orderer_ckpt):
+        raise ValueError("the trained subjects need --prod-ckpt and --orderer-ckpt")
     if not dry_run:
         problems = real_run_problems(
             registry=registry, roster=roster, worlds=worlds, horizon=horizon,
@@ -648,9 +784,11 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
                      "episodes_per_world": episodes_per_world, "routers": routers,
                      "shock_profile": shock_profile})
         if problems:
-            raise ValueError("not a valid EXP-0048 run (" + "; ".join(problems)
+            raise ValueError(f"not a valid {PLAN_EXPERIMENT[plan]} run (" + "; ".join(problems)
                              + "); pass --dry-run for a smoke run")
     out = Path(out_dir)
+    checkpoints = (checked_checkpoints(out, {"producer": prod_ckpt, "orderer": orderer_ckpt},
+                                       dry_run, log) if trained else {})
     grid = job_grid(worlds, episodes_per_world)
     source = source_fingerprint(source_commit or None)
     pins = {
@@ -658,6 +796,7 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
         "registry_version": registry.version, "roster_version": roster.version,
         "registry_name": registry.name, "roster_name": roster.name,
         "registry_screened_on": registry.screened_on, "roster_screened_on": roster.screened_on,
+        "plan": plan, "checkpoints": {k: v["sha256"] for k, v in checkpoints.items()},
         "producer": PRODUCER, "routers": table, "replicates": replicates,
         "shock_profile_override": shock_profile,
         "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
@@ -668,7 +807,7 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
     spec = _open_spec(out, old_spec, workers, {
         "experiment": out.name, "driver": DRIVER, "kind": "dry-run" if dry_run else "audit",
         "pins": pins, "roster": roster.payload() | {"content_hash": roster.version},
-        "source": source,
+        "inputs": checkpoints, "source": source,
         "pre_registered": {"recovery_threshold": RECOVERY_THRESHOLD,
                            "dominant_cells": [list(c) for c in DOMINANT_CELLS],
                            "most_cells": MOST_CELLS,
@@ -678,7 +817,7 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
                            "float_tolerance": FLOAT_TOLERANCE},
     })
     ensure_failures_file(out)
-    jobs = build_jobs(worlds, table, replicates, horizon, episodes_per_world)
+    jobs = build_jobs(worlds, table, replicates, horizon, episodes_per_world, checkpoints)
     if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
         raise AssertionError("job list and pinned grid disagree")  # internal invariant
     episodes = out / "episodes.csv"
@@ -719,7 +858,7 @@ def run_audit(*, out_dir: str | Path, registry: Registry, roster: Roster, worker
             n_world_episodes=sum(len(g["episodes"]) for g in grid.values()),
             n_routers=len(table), replicates=replicates, horizon=horizon,
             registry=registry.version[:12], roster=roster.version[:12], driver=DRIVER,
-            tolerance=MATCHED_SPLIT_TOLERANCE))
+            tolerance=MATCHED_SPLIT_TOLERANCE, plan=plan, question=QUESTIONS[plan]))
     log(f"[routing_audit] {'DRY RUN ' if dry_run else ''}{status}")
     return code
 
@@ -746,7 +885,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--max-worlds", type=int,
                     help="dry run: the first N worlds of each size x regime cell")
     ap.add_argument("--episodes-per-world", type=int, help="dry run")
-    ap.add_argument("--routers", help="dry run: comma list of ordering names")
+    ap.add_argument("--plan", choices=sorted(PLANS), default=DEFAULT_PLAN,
+                    help="router set: exp0048 (default) or exp0049 (needs the checkpoints)")
+    ap.add_argument("--prod-ckpt", help="exp0049: portable producer checkpoint "
+                                        "(EXP-0035 producer_candidate.pt)")
+    ap.add_argument("--orderer-ckpt", help="exp0049: portable orderer checkpoint "
+                                           "(EXP-0012 orderer_scorer.pt)")
+    ap.add_argument("--routers", help="dry run: comma list of router names")
     ap.add_argument("--shock-profile", help="dry run: rewrite shocked worlds' profile, e.g. "
                                             "shocks-i-smoke")
     ap.add_argument("--source-commit", default="")
@@ -765,8 +910,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             regimes=_csv_strs(args.regimes), max_worlds=args.max_worlds,
             episodes_per_world=args.episodes_per_world, routers=_csv_strs(args.routers),
             shock_profile=args.shock_profile, source_commit=source_commit,
-            dry_run=args.dry_run)
-    except DigestMismatch as exc:
+            dry_run=args.dry_run, plan=args.plan, prod_ckpt=args.prod_ckpt,
+            orderer_ckpt=args.orderer_ckpt)
+    except (DigestMismatch, ContractRunError) as exc:
         print(f"[routing_audit] INVALID run: {exc}", file=sys.stderr)
         return CONTRACT_INVALID
 
