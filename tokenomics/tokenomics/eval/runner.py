@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from statistics import mean, median, pstdev
-from typing import Iterable, Mapping
+from typing import Any, Iterable, Mapping, Protocol
 
 from ..domain.config import Configuration
 from ..env import TokenomicsAECEnv
@@ -12,6 +12,16 @@ from .baselines import Policy
 
 # metric name -> (mean, std) over seeds
 Aggregated = dict[str, tuple[float, float]]
+
+
+class EpisodeMonitor(Protocol):
+    """Observer of the step loop (`eval/contract.py`, add-shocks-i-drift D10): sees what
+    `env.last()` returned for each agent turn, and each policy action before the env decodes
+    it. It may raise to stop the episode; it never changes what the loop does."""
+
+    def on_last(self, agent: str, observation: Any, terminated: bool, truncated: bool) -> None: ...
+
+    def on_action(self, agent: str, action: Any) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -59,24 +69,33 @@ def run_episode(
     order_policy: Policy,
     seed: int,
     action_seed: int | None = None,
+    *,
+    monitor: EpisodeMonitor | None = None,
+    max_iter: int | None = None,
 ) -> dict:
     """Drive one episode. `seed` is the event seed (demand RNG at reset); `action_seed`
     seeds the action spaces `random` baselines sample from. None keeps the legacy coupling
     (action spaces seeded with `seed`, pinned by test_legacy_invariance); the gate passes
     `eval.seeding.replicate_seed(...)` so replicates vary actions over identical demand
-    (design D5, add-measurement-gate-harness)."""
+    (design D5, add-measurement-gate-harness). `monitor` observes the loop (the gate's contract
+    checks); `max_iter` overrides the step budget (tests only)."""
     env.reset(seed=seed)
     # seed action spaces so `random` baselines are reproducible
     for a in env.possible_agents:
         env.action_space(a).seed(seed if action_seed is None else action_seed)
-    max_iter = env.horizon * len(env.possible_agents) * 3 + 100
+    if max_iter is None:
+        max_iter = env.horizon * len(env.possible_agents) * 3 + 100
     for agent in env.agent_iter(max_iter=max_iter):
-        _, _, term, trunc, _ = env.last()
+        obs, _, term, trunc, _ = env.last()
+        if monitor is not None:
+            monitor.on_last(agent, obs, term, trunc)
         if term or trunc:
             env.step(None)
             continue
         role = env._role[agent][0]
         action = prod_policy(env, agent) if role == "prod" else order_policy(env, agent)
+        if monitor is not None:
+            monitor.on_action(agent, action)
         env.step(action)
 
     s = dict(env.episode_stats)

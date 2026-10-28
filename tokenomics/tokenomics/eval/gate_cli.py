@@ -36,7 +36,9 @@ already-loaded OpenBLAS (numpy's bundled build, via ctypes) and torch in-process
 checks the run pins in `spec.json`, drops a torn last line, skips rows already present and runs the
 rest. Demand and shock digests are compared as rows arrive, so a contract mismatch stops the run
 early; the pure layer re-checks them. A world naming the test-only `shocks-i-smoke` profile (D7)
-runs only in a dry run.
+runs only in a dry run. Contract failures (`eval/contract.py`, D10) are recorded in the
+append-only `contract_failures.csv`; any row, or a missing episode row, makes the run `invalid`
+(exit `CONTRACT_INVALID`) with no verdict.
 """
 
 from __future__ import annotations
@@ -86,6 +88,20 @@ from .gate import (
 )
 from .resilience import DEFAULT_PARAMS as DEFAULT_RESILIENCE, ResilienceParams, shock_free_twin
 from .shock_profiles import load_shock_profile, names_test_only_profile
+from .contract import (
+    CHECKPOINT,
+    DIGEST,
+    FAILURES_FILE,
+    ContractMonitor,
+    ContractRunError,
+    append_failure,
+    ensure_failures_file,
+    failure_from_dict,
+    is_failure,
+    job_failure,
+    read_failures,
+    run_failure,
+)
 from .provenance import environment_manifest, sha256_file, source_fingerprint
 from .families import DENSE, NEUTRAL_CAPACITY_SCALE, check_capacity_scale
 from .registry import (
@@ -293,7 +309,16 @@ def _policies(job: Job) -> tuple[Policy, Policy]:
 
 
 def run_job(job: Job) -> dict[str, str]:
-    """Run one episode and return its row as CSV strings (`gate.row_to_dict`)."""
+    """Run one episode and return its row as CSV strings (`gate.row_to_dict`), or, when anything
+    in the job raises or a contract check fails (`eval/contract.py`), its failure row
+    (`contract.Failure.to_dict`): the job stops and the other jobs go on."""
+    try:
+        return _run_job(job)
+    except Exception as exc:  # noqa: BLE001 - every job failure is recorded, never fatal
+        return job_failure(job, exc).to_dict()
+
+
+def _run_job(job: Job) -> dict[str, str]:
     from ..env import TokenomicsAECEnv
     from .joint_stack import joint_stack_env
     from .runner import run_episode
@@ -314,7 +339,11 @@ def run_job(job: Job) -> dict[str, str]:
     env = (joint_stack_env(cfg, horizon) if job["contract"] == JOINT_STACK
            else TokenomicsAECEnv(config=cfg, horizon=horizon))
     prod, order = _policies(job)
-    run_episode(env, prod, order, seed=job["episode"], action_seed=job["action_seed"])
+    monitor = ContractMonitor(env)
+    run_episode(env, prod, order, seed=job["episode"], action_seed=job["action_seed"],
+                monitor=monitor)
+    stats = env.episode_stats
+    monitor.verify(dead=bool(stats["dead"]), cycles=stats["cycles"], horizon=horizon)
     schedule = None
     if job["subject"] == CANDIDATE or twin:  # resilience inputs: candidate and twin rows only
         events = build_schedule(cfg, job["episode"], horizon)
@@ -496,6 +525,11 @@ def _prepare_resume(out: Path, pins: Mapping[str, object], grid: Mapping[str, Ma
     (orphans), a spec with different pins (inputs, source or grid), rows outside the grid."""
     spec_path, episodes = out / "spec.json", out / "episodes.csv"
     old_spec = json.loads(spec_path.read_text()) if spec_path.exists() else None
+    if old_spec is not None and "pins" not in old_spec and old_spec.get("status") == INVALID:
+        # the spec of a run that failed before any job (a checkpoint, D10): nothing was pinned
+        # or run, so this run pins afresh; contract_failures.csv keeps the failure, so the
+        # run still ends invalid
+        old_spec = None
     if old_spec is None and episodes.exists() and episodes.stat().st_size:
         raise ValueError(f"{episodes} exists without spec.json: orphan rows, refusing to resume")
     if old_spec is not None and old_spec.get("pins") != pins:
@@ -528,7 +562,12 @@ def _execute(out: Path, spec: dict, done: Sequence[EpisodeRow], jobs: Sequence[J
              run_job_fn: Callable[[Job], dict[str, str]], log: Callable[[str], None]) -> None:
     """Run every job not already in `done`, appending each row as it lands and checking demand
     and shock digests per (world, episode) as rows arrive. A twin pairs on demand only and must
-    have an empty shock schedule."""
+    have an empty shock schedule. A failed job (`run_job` returns its failure row: every
+    exception inside a job is caught there) is appended to `contract_failures.csv` and the
+    other jobs go on; a digest mismatch of any kind is recorded as one `run` row, sets
+    `spec.json` invalid and still stops the run. An
+    exception out of `run_job_fn` itself or a dead worker is a crash of the run, not of a job:
+    it propagates and the run resumes as before."""
     episodes = out / "episodes.csv"
     done_keys = {job_key(r.world, r.episode, r.subject, r.replicate) for r in done}
     demand: dict[tuple[str, int], tuple[str, str]] = {}
@@ -549,8 +588,19 @@ def _execute(out: Path, spec: dict, done: Sequence[EpisodeRow], jobs: Sequence[J
             if value != ref[0]:
                 raise DigestMismatch(f"{where} saw {what} {value}, {ref[1]} saw {ref[0]}")
 
+    def pair(row: EpisodeRow) -> None:
+        """Every pairing failure, whatever its variant: one `run` row, status invalid, raise."""
+        try:
+            note_digest(row)
+        except DigestMismatch as exc:
+            append_failure(out, run_failure(DIGEST, exc))
+            spec["status"] = INVALID
+            spec["result"] = {"status": INVALID, "contract_failures": len(read_failures(out))}
+            _write_spec(out, spec)
+            raise
+
     for r in done:
-        note_digest(r)
+        pair(r)
     if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
         raise AssertionError("job list and pinned grid disagree")  # internal invariant
     todo = [j for j in jobs
@@ -558,8 +608,14 @@ def _execute(out: Path, spec: dict, done: Sequence[EpisodeRow], jobs: Sequence[J
     log(f"[gate] {len(jobs)} jobs, {len(jobs) - len(todo)} already done, {len(todo)} to run")
 
     def finish(d: dict[str, str]) -> None:
+        if is_failure(d):
+            f = failure_from_dict(d)
+            append_failure(out, f)
+            log(f"[gate] CONTRACT FAILURE {f.world} ep={f.episode} {f.subject} "
+                f"r{f.replicate}: {f.check} {f.error_type}")
+            return
         row = row_from_dict(d)
-        note_digest(row)
+        pair(row)
         _append_row(episodes, d)
         log(f"[gate] {row.world} ep={row.episode} {row.subject} r{row.replicate} "
             f"units={row.units:g} dead={row.dead}")
@@ -617,7 +673,14 @@ def run_report(
     A real report (`dry_run=False`) needs a frozen roster, a screened registry, a full 40-hex
     source commit and no world/episode filters; anything less must be declared a dry run, which
     `spec.json` and `RESULT.md` mark as not an acceptance read. Everything that can refuse runs
-    before any file in `out_dir` is touched."""
+    before any file in `out_dir` is touched.
+
+    Contract failures (`eval/contract.py`) are recorded in `contract_failures.csv`, never
+    refused: a checkpoint that does not hash or load is a `run` row and raises
+    `ContractRunError` before any job; a failed job is a `job` row and the others finish; a
+    digest mismatch is a `run` row and still raises. A run with any failure row, now or from
+    an earlier session in the same `out_dir`, or with missing rows, ends `invalid` (spec.json and
+    verdict.json) and returns no report."""
     if split not in SPLITS:
         raise ValueError(f"split must be one of {SPLITS}")
     pair = parse_subject(subject)
@@ -644,6 +707,8 @@ def run_report(
     if not worlds:
         raise ValueError("no gate worlds selected")
     checkpoints = ({"producer": prod_ckpt, "orderer": orderer_ckpt} if pair is None else {})
+    out = Path(out_dir)
+    ckpt_hashes = _checked_checkpoints(out, checkpoints, dry_run, log)
     candidate_replicates = roster.replicates if pair and RANDOM_POLICY in pair else 1
     grid = job_grid(worlds, episodes_per_world, twins=True)
     source = source_fingerprint(source_commit or None)
@@ -651,11 +716,10 @@ def run_report(
         "subject": subject, "split": split, "horizon": horizon, "dry_run": dry_run,
         "registry_version": registry.version, "roster_version": roster.version,
         "params_version": params.version,
-        "checkpoints": {k: sha256_file(v) for k, v in checkpoints.items()},
+        "checkpoints": ckpt_hashes,
         "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
         "candidate_replicates": candidate_replicates, "grid": grid,
     }
-    out = Path(out_dir)
     expected = expected_keys(grid, roster, candidate_replicates)
     old_spec, done = _prepare_resume(out, pins, grid, expected)
     if split == SEALED:
@@ -678,16 +742,31 @@ def run_report(
                       twin_worlds={w for w, g in grid.items() if "twin" in g})
     init = (horizon, prod_ckpt if pair is None else None, orderer_ckpt if pair is None else None)
     episodes = out / "episodes.csv"
-    _execute(out, spec, done, jobs, expected, workers, init, run_job_fn, log)
-    rows = read_rows(episodes)
-    check_rows(rows, grid, expected, complete=True)
-    report = compute_report(rows, roster, params, registry.version)
+    counts = {"jobs": len(jobs), "skipped": len(done), "run": len(jobs) - len(done)}
+    ensure_failures_file(out)
+    try:
+        _execute(out, spec, done, jobs, expected, workers, init, run_job_fn, log)
+        rows = read_rows(episodes)
+        check_rows(rows, grid, expected, complete=False)
+        missing = expected - {job_key(r.world, r.episode, r.subject, r.replicate) for r in rows}
+        failures = read_failures(out)
+        if failures or missing:
+            _finish_invalid(out, spec, len(failures), len(missing), dry_run, log)
+            return None, counts
+        try:
+            report = compute_report(rows, roster, params, registry.version)
+        except DigestMismatch as exc:  # the pure re-check; the live one should have caught it
+            append_failure(out, run_failure(DIGEST, exc))
+            raise
+    except DigestMismatch:
+        _finish_invalid(out, spec, len(read_failures(out)), None, dry_run, log)
+        raise
     resilience = resilience_table(rows, grid_resilience(grid))
     write_report_files(out, report, resilience_to_csv(resilience))
     spec["status"] = "complete"
     spec["result"] = {"overall": report.overall, "failing_clauses": list(report.failing_clauses),
                       "non_gating_worlds": list(report.non_gating_worlds),
-                      "resilience_rows": len(resilience)}
+                      "resilience_rows": len(resilience), "contract_failures": 0}
     _write_spec(out, spec)
     if not (out / "RESULT.md").exists():
         (out / "RESULT.md").write_text(RESULT_SKELETON.format(
@@ -697,50 +776,146 @@ def run_report(
             registry=registry.version[:12], params=params.version[:12], split=split,
             subject=subject, driver=DRIVER))
     log(f"[gate] {'DRY RUN ' if dry_run else ''}verdict {report.overall}; failing clauses: "
-        f"{', '.join(report.failing_clauses) or 'none'}")
-    return report, {"jobs": len(jobs), "skipped": len(done), "run": len(jobs) - len(done)}
+        f"{', '.join(report.failing_clauses) or 'none'}; contract failures: 0")
+    return report, counts
+
+
+INVALID = "invalid"
+
+
+def _checked_checkpoints(out: Path, checkpoints: Mapping[str, str | None], dry_run: bool,
+                         log: Callable[[str], None]) -> dict[str, str]:
+    """sha256 of each checkpoint, then a trial load in the parent (D10 run-level failures):
+    a checkpoint that does not hash or load is a `run` row and `ContractRunError`, before any
+    job runs. `spec.json` and `verdict.json` then say `invalid`: an existing spec (an earlier
+    session in this `out_dir`) keeps its pins and provenance; otherwise a minimal one names
+    the inputs."""
+    try:
+        hashes = {k: sha256_file(v) for k, v in checkpoints.items()}
+        if checkpoints:
+            from ..train.orderer_scorer import load_scorer
+            from ..train.producer_scorer import load_producer_score_model
+
+            load_producer_score_model(checkpoints["producer"])
+            load_scorer(checkpoints["orderer"])
+    except Exception as exc:  # noqa: BLE001 - recorded, then the run ends invalid
+        append_failure(out, run_failure(CHECKPOINT, exc))
+        spec_path = out / "spec.json"
+        spec = json.loads(spec_path.read_text()) if spec_path.exists() else {
+            "experiment": out.name, "driver": DRIVER, "mode": "report",
+            "kind": "dry-run" if dry_run else "report",
+            "inputs": {k: {"path": str(v), "sha256": None} for k, v in checkpoints.items()},
+            "date": datetime.now(timezone.utc).isoformat()[:10]}
+        _finish_invalid(out, spec, len(read_failures(out)), None, dry_run, log)
+        raise ContractRunError(f"checkpoint failed to hash or load ({type(exc).__name__}: "
+                               f"{exc}); recorded in {out / FAILURES_FILE}") from exc
+    return hashes
+
+
+def invalid_verdict(failures: int, missing: int | None) -> dict[str, object]:
+    return {"status": INVALID, "contract_failures": failures, "missing_rows": missing,
+            "acceptance_read": False,
+            "reason": "contract failures recorded or episode rows missing; no verdict is built "
+                      "from partial rows (add-shocks-i-drift D10)"}
+
+
+def _finish_invalid(out: Path, spec: dict, failures: int, missing: int | None, dry_run: bool,
+                    log: Callable[[str], None]) -> None:
+    doc = invalid_verdict(failures, missing)
+    (out / "verdict.json").write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    spec["status"] = INVALID
+    spec["result"] = doc
+    _write_spec(out, spec)
+    if not (out / "RESULT.md").exists():
+        (out / "RESULT.md").write_text(INVALID_SKELETON.format(
+            title=out.name, banner=DRY_BANNER if dry_run else "", failures=failures,
+            missing="unknown" if missing is None else missing, driver=DRIVER))
+    log(f"[gate] INVALID run: {failures} contract failure(s), "
+        f"{'unknown' if missing is None else missing} missing row(s); see {FAILURES_FILE}")
+
+
+INVALID_SKELETON = """# {title}
+
+{banner}**INVALID: not an acceptance read.** {failures} contract failure(s) in
+`contract_failures.csv`, {missing} episode row(s) missing. No verdict is built from partial rows.
+
+Produced by `python -m {driver} --mode report` (see `spec.json`).
+
+## Diagnosis
+
+TODO
+"""
 
 
 # --- recompute ---
 
 
-def recompute(out_dir: str | Path) -> tuple[GateReport, bool]:
-    """(report, verdict and resilience both match): `recompute_details` folded."""
-    report, verdict_ok, resilience_ok = recompute_details(out_dir)
-    return report, verdict_ok and resilience_ok
+@dataclass(frozen=True)
+class Recomputed:
+    """`--mode recompute` outcome. `status` is "valid" (a report was rebuilt and compared) or
+    `INVALID` (contract failure rows, or rows of the pinned grid missing: no report is built)."""
+
+    status: str
+    report: GateReport | None
+    verdict_ok: bool
+    resilience_ok: bool
+    contract_failures: int
+    missing_rows: int
+
+    @property
+    def ok(self) -> bool:
+        return self.status != INVALID and self.verdict_ok and self.resilience_ok
 
 
-def recompute_details(out_dir: str | Path) -> tuple[GateReport, bool, bool]:
+def recompute(out_dir: str | Path) -> tuple[GateReport | None, bool]:
+    """(report, valid and both verdict and resilience match): `recompute_details` folded."""
+    r = recompute_details(out_dir)
+    return r.report, r.ok
+
+
+def recompute_details(out_dir: str | Path) -> Recomputed:
     """Rebuild the report from `episodes.csv` and the payloads embedded in `spec.json` (hash-checked
-    against the pinned versions), after checking the CSV holds exactly the pinned job grid; compare
+    against the pinned versions), after checking the CSV rows against the pinned job grid; compare
     it with the recorded `verdict.json`, and the rebuilt `resilience.csv` with the recorded one (a
-    run without that file, from before it existed, matches only an empty table). Returns
-    (report, verdict matches, resilience matches)."""
+    run without that file, from before it existed, matches only an empty table). A run with any
+    `contract_failures.csv` row, or with pinned rows missing, is `INVALID`: never a verdict
+    from partial rows (D10)."""
     out = Path(out_dir)
+    failures = len(read_failures(out))
     spec = json.loads((out / "spec.json").read_text())
+    if "pins" not in spec:
+        if failures:  # a run-level failure before any job: nothing was pinned
+            return Recomputed(INVALID, None, False, False, failures, 0)
+        raise ValueError(f"{out / 'spec.json'} pins nothing")
     pins = spec["pins"]
     roster = roster_from_dict(spec["roster"])
-    params = params_from_dict(spec["side_effect_params"])
-    for what, got, want in (("roster", roster.version, pins["roster_version"]),
-                            ("params", params.version, pins["params_version"])):
-        if got != want:
-            raise ValueError(f"embedded {what} hashes to {got}, spec pins {want}")
+    if roster.version != pins["roster_version"]:
+        raise ValueError(f"embedded roster hashes to {roster.version}, spec pins "
+                         f"{pins['roster_version']}")
     rows = read_rows(out / "episodes.csv")
     grid = pins["grid"]
-    check_rows(rows, grid, expected_keys(grid, roster, pins["candidate_replicates"]),
-               complete=True)
+    expected = expected_keys(grid, roster, pins["candidate_replicates"])
+    check_rows(rows, grid, expected, complete=False)
+    missing = len(expected - {job_key(r.world, r.episode, r.subject, r.replicate) for r in rows})
+    if failures or missing:  # decided before anything only a verdict needs is read
+        return Recomputed(INVALID, None, False, False, failures, missing)
+    params = params_from_dict(spec["side_effect_params"])
+    if params.version != pins["params_version"]:
+        raise ValueError(f"embedded params hashes to {params.version}, spec pins "
+                         f"{pins['params_version']}")
     report = compute_report(rows, roster, params, pins["registry_version"])
     recorded = (out / "verdict.json").read_text()
     table = resilience_table(rows, grid_resilience(grid))
     res_path = out / "resilience.csv"
     res_ok = (res_path.read_text() == resilience_to_csv(table) if res_path.exists()
               else not table)
-    return report, report.to_json() == recorded, res_ok
+    return Recomputed("valid", report, report.to_json() == recorded, res_ok, 0, 0)
 
 
 # --- screen (tasks 8.2 / 10.1) ---
 
 HEADROOM_FAILED = 3  # exit status: a family × size failed D10; no frozen files written
+CONTRACT_INVALID = 2  # exit status: contract failures recorded (or rows missing); run invalid
 RESERVE_MODES = ("on-demand", "eager", "none")
 
 
@@ -951,6 +1126,7 @@ def run_screen(
         jobs = build_jobs(worlds, roster, None, episodes_per_world=episodes_per_world)
         _execute(out, spec, done, jobs, expected, workers, (horizon, None, None), run_job_fn,
                  log)
+        _stop_if_failed(out, spec)
         rows = read_rows(out / "episodes.csv")
         check_rows(rows, grid, expected, complete=True)
         if reserves != "on-demand":
@@ -1097,6 +1273,7 @@ def run_probe(
         _execute(sub, spec, done, build_jobs(worlds, roster, None,
                                              episodes_per_world=episodes_per_world),
                  expected, workers, (horizon, None, None), run_job_fn, log)
+        _stop_if_failed(sub, spec)
         rows = read_rows(sub / "episodes.csv")
         check_rows(rows, grid, expected, complete=True)
         hr = headroom(episode_bests(rows, roster), {e.id: e.family for e in worlds},
@@ -1111,6 +1288,17 @@ def run_probe(
                                         for h in hr))
     _write_table(out / "probe_headroom.csv", rows_out)
     return table
+
+
+def _stop_if_failed(out: Path, spec: dict) -> None:
+    """Screen and probe: any contract failure row ends the run invalid before any outcome."""
+    failures = read_failures(out)
+    if failures:
+        spec["status"] = INVALID
+        spec["result"] = {"status": INVALID, "contract_failures": len(failures)}
+        _write_spec(out, spec)
+        raise ContractRunError(f"{len(failures)} contract failure(s) recorded in "
+                               f"{out / FAILURES_FILE}; the run is invalid")
 
 
 RUN_ARTIFACTS = ("spec.json", "episodes.csv", "screening.json", "verdict.json", "frozen")
@@ -1232,13 +1420,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.mode == "recompute":
-        report, verdict_ok, res_ok = recompute_details(args.out_dir)
-        ok = verdict_ok and res_ok
-        print(f"[gate] recomputed verdict {report.overall}; "
-              f"{'MATCH' if ok else 'MISMATCH'} with {Path(args.out_dir) / 'verdict.json'} "
-              f"(verdict {'equal' if verdict_ok else 'differs'}, resilience.csv "
-              f"{'equal' if res_ok else 'differs'})")
-        return 0 if ok else 1
+        r = recompute_details(args.out_dir)
+        if r.status == INVALID:
+            print(f"[gate] recomputed status INVALID: {r.contract_failures} contract failure(s), "
+                  f"{r.missing_rows} missing row(s); no verdict from partial rows")
+            return CONTRACT_INVALID
+        assert r.report is not None
+        print(f"[gate] recomputed verdict {r.report.overall}; "
+              f"{'MATCH' if r.ok else 'MISMATCH'} with {Path(args.out_dir) / 'verdict.json'} "
+              f"(verdict {'equal' if r.verdict_ok else 'differs'}, resilience.csv "
+              f"{'equal' if r.resilience_ok else 'differs'})")
+        return 0 if r.ok else 1
 
     if args.regimes and args.mode not in ("report", "screen"):
         ap.error("--regimes filters a report or screen dry run")
@@ -1271,6 +1463,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                          members=members,
                          replicates=args.replicates or roster.replicates, frozen=False,
                          pruning=None)
+    try:
+        return _run_mode(args, roster, source_commit, probe)
+    except (ContractRunError, DigestMismatch) as exc:
+        print(f"[gate] INVALID run: {exc}", file=sys.stderr)
+        return CONTRACT_INVALID
+
+
+def _run_mode(args: argparse.Namespace, roster: Roster, source_commit: str, probe: bool) -> int:
     if probe:
         run_probe(out_dir=args.out_dir, horizon=args.horizon, workers=args.workers,
                   registry=load_registry(args.registry), roster=roster,
@@ -1291,17 +1491,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         return status
     params_payload = json.loads(Path(args.params).read_text())
     params = load_side_effect_params(args.params)
-    run_report(
-        out_dir=args.out_dir, subject=args.subject, split=args.split, horizon=args.horizon,
-        workers=args.workers, registry=load_registry(args.registry), roster=roster,
-        params=params, params_payload=params_payload, prod_ckpt=args.prod_ckpt,
-        orderer_ckpt=args.orderer_ckpt, preregistration=args.preregistration,
-        access_log=args.access_log, sizes=_csv_ints(args.sizes),
-        families=_csv_strs(args.families), regimes=_csv_strs(args.regimes),
-        max_worlds=args.max_worlds,
-        episodes_per_world=args.episodes_per_world, source_commit=source_commit,
-        dry_run=args.dry_run)
-    return 0
+    try:
+        report, _ = run_report(
+            out_dir=args.out_dir, subject=args.subject, split=args.split, horizon=args.horizon,
+            workers=args.workers, registry=load_registry(args.registry), roster=roster,
+            params=params, params_payload=params_payload, prod_ckpt=args.prod_ckpt,
+            orderer_ckpt=args.orderer_ckpt, preregistration=args.preregistration,
+            access_log=args.access_log, sizes=_csv_ints(args.sizes),
+            families=_csv_strs(args.families), regimes=_csv_strs(args.regimes),
+            max_worlds=args.max_worlds,
+            episodes_per_world=args.episodes_per_world, source_commit=source_commit,
+            dry_run=args.dry_run)
+    except (ContractRunError, DigestMismatch) as exc:
+        print(f"[gate] INVALID run: {exc}", file=sys.stderr)
+        return CONTRACT_INVALID
+    return 0 if report is not None else CONTRACT_INVALID
 
 
 if __name__ == "__main__":

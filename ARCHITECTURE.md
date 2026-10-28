@@ -512,6 +512,21 @@ profile (the registered `shocks-i` with onsets at cycles 2–8, so horizon-12
 smokes see shocks) runs only under `--dry-run`; real reports, screens and
 probes refuse it.
 
+**Contract failures** (`eval/contract.py`, D10). A broken run is counted, not
+judged. Each job's step loop carries a monitor: every observation and every
+policy action, before the env decodes or clips it, must be a member of its
+space (shape, dtype, bounds, finite), and each agent's terminal outcome is
+latched the first time `env.last()` reports it, because PettingZoo's dead-step
+cleanup deletes the flags. After the loop every agent must be latched, the
+terminations must agree with `dead` and the truncations with `cycles ==
+horizon` (never inferred from the cycle count). A job that raises or fails a
+check becomes a `job` row in `contract_failures.csv` and the other jobs finish.
+A checkpoint that does not hash or load in the parent, and a digest mismatch,
+become `run` rows. The file is append-only across resumes. Any row, or any
+missing episode row, makes the run `invalid` in `spec.json` and `verdict.json`
+(exit 2; `--mode recompute` likewise), never a verdict built from partial rows.
+Death and low value are not contract failures: the verdict judges them.
+
 ### 7.3 Failure classification
 
 Every below-bar result in the curriculum is assigned exactly one class, by

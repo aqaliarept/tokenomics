@@ -220,9 +220,9 @@ def test_resilience_rows_in_a_report(report_dir: Path) -> None:
 
 
 def test_report_then_recompute_identical(report_dir: Path) -> None:
-    report, verdict_ok, res_ok = recompute_details(report_dir)
-    assert verdict_ok and res_ok
-    assert report.to_json() == (report_dir / "verdict.json").read_text()
+    r = recompute_details(report_dir)
+    assert r.status == "valid" and r.verdict_ok and r.resilience_ok and r.report is not None
+    assert r.report.to_json() == (report_dir / "verdict.json").read_text()
     res = subprocess.run([sys.executable, "-m", "tokenomics.eval.gate", "--mode", "recompute",
                           "--out-dir", str(report_dir)], capture_output=True, text=True,
                          timeout=120)
@@ -235,11 +235,11 @@ def test_recompute_detects_an_edited_resilience_file(report_dir: Path, tmp_path:
         (tmp_path / name).write_text((report_dir / name).read_text())
     lines = (tmp_path / "resilience.csv").read_text().splitlines(keepends=True)
     (tmp_path / "resilience.csv").write_text("".join(lines[:-1]))  # drop one shock row
-    _, verdict_ok, res_ok = recompute_details(tmp_path)
-    assert verdict_ok and not res_ok
+    r = recompute_details(tmp_path)
+    assert r.verdict_ok and not r.resilience_ok
     assert main(["--mode", "recompute", "--out-dir", str(tmp_path)]) == 1
     (tmp_path / "resilience.csv").unlink()  # a missing file matches only an empty table
-    assert recompute_details(tmp_path)[2] is False
+    assert recompute_details(tmp_path).resilience_ok is False
 
 
 def test_resilience_is_not_an_acceptance_clause(report_dir: Path, inputs: dict[str, Path]) -> None:
@@ -307,9 +307,9 @@ def test_twin_pairing_fails_recompute(report_dir: Path, tmp_path: Path, field: s
         recompute(tmp_path)
 
 
-def _replay(report_dir: Path, tamper: str, field: str, value: str):  # -> run_job_fn
-    """A `run_job_fn` that returns the recorded rows (no simulation), with `field` of the
-    `tamper` subject's shocked-world row replaced."""
+def _replay(report_dir: Path, tamper: str | None, edits: dict[str, str]):  # -> run_job_fn
+    """A `run_job_fn` that returns the recorded rows (no simulation), with `edits` applied to
+    the `tamper` subject's shocked-world row."""
     with (report_dir / "episodes.csv").open() as fh:
         recorded = {(d["world"], int(d["episode"]), d["subject"], int(d["replicate"])): d
                     for d in csv.DictReader(fh)}
@@ -317,31 +317,58 @@ def _replay(report_dir: Path, tamper: str, field: str, value: str):  # -> run_jo
     def fn(job: dict) -> dict[str, str]:
         d = dict(recorded[(job["world"], job["episode"], job["subject"], job["replicate"])])
         if job["subject"] == tamper and job["world"] == SHOCKED_WORLD:
-            d[field] = value
+            d.update(edits)
         return d
     return fn
 
 
-@pytest.mark.parametrize("tamper, field, value, match", [
-    ("entity_planner/proportional", "shock_digest", "1" * 64, "saw shock digest 1{64}"),
-    (TWIN, "demand_digest", "2" * 64, "twin:candidate replicate 0 saw demand digest 2{64}"),
+def _contaminated_twin(report_dir: Path) -> dict[str, str]:
+    """Twin row fields carrying one real shock event, self-consistent (digest = schedule)."""
+    with (report_dir / "episodes.csv").open() as fh:
+        cand = next(d for d in csv.DictReader(fh)
+                    if d["world"] == SHOCKED_WORLD and d["subject"] == CANDIDATE)
+    first = json.loads(cand["shock_schedule"])[:1]
+    return {"shock_events": "1",
+            "shock_schedule": json.dumps(first, sort_keys=True, separators=(",", ":")),
+            "shock_digest": shock_digest(_events(first))}
+
+
+@pytest.mark.parametrize("tamper, edits, match", [
+    ("entity_planner/proportional", {"shock_digest": "1" * 64}, "saw shock digest 1{64}"),
+    (TWIN, {"demand_digest": "2" * 64}, "twin:candidate replicate 0 saw demand digest 2{64}"),
+    (TWIN, None, "the shock-free twin has 1 shock events"),  # contaminated twin
 ])
 def test_digest_mismatch_stops_a_live_run(report_dir: Path, inputs: dict[str, Path],
-                                          tmp_path: Path, tamper: str, field: str, value: str,
-                                          match: str) -> None:
+                                          tmp_path: Path, tamper: str,
+                                          edits: dict[str, str] | None, match: str) -> None:
     out = tmp_path / "run"
+    kw = dict(out_dir=out, subject=SUBJECT, split="development", horizon=HORIZON, workers=1,
+              registry=load_registry(inputs["registry"]), roster=load_roster(inputs["roster"]),
+              params=load_side_effect_params(inputs["params"]), params_payload={},
+              families=["sparse_wide"], episodes_per_world=1, dry_run=True,
+              log=lambda _: None)
+    edits = _contaminated_twin(report_dir) if edits is None else edits
     with pytest.raises(DigestMismatch, match=match):
-        run_report(out_dir=out, subject=SUBJECT, split="development",
-                   horizon=HORIZON, workers=1, registry=load_registry(inputs["registry"]),
-                   roster=load_roster(inputs["roster"]),
-                   params=load_side_effect_params(inputs["params"]), params_payload={},
-                   families=["sparse_wide"], episodes_per_world=1, dry_run=True,
-                   run_job_fn=_replay(report_dir, tamper, field, value), log=lambda _: None)
+        run_report(run_job_fn=_replay(report_dir, tamper, edits), **kw)  # type: ignore[arg-type]
     # stopped as the row arrived (not by the pure re-check after the run): the bad row was
-    # never appended and no report was written
+    # never appended and no report was written; the mismatch is a recorded `run` failure
     assert tamper not in {r.subject for r in read_rows(out / "episodes.csv")
                           if r.world == SHOCKED_WORLD}
-    assert not (out / "verdict.json").exists()
+    assert json.loads((out / "verdict.json").read_text())["status"] == "invalid"
+    assert not (out / "worlds.csv").exists()
+    with (out / "contract_failures.csv").open() as fh:
+        (failure,) = list(csv.DictReader(fh))
+    assert (failure["scope"], failure["check"], failure["error_type"]) == \
+        ("run", "digest_pairing", "DigestMismatch")
+    assert json.loads((out / "verdict.json").read_text())["contract_failures"] == 1
+    assert json.loads((out / "spec.json").read_text())["status"] == "invalid"
+    # resume with honest rows: every job completes, the recorded mismatch keeps it invalid
+    report, _ = run_report(run_job_fn=_replay(report_dir, None, {}), **kw)  # type: ignore[arg-type]
+    assert report is None
+    assert len(read_rows(out / "episodes.csv")) == len(read_rows(report_dir / "episodes.csv"))
+    assert json.loads((out / "spec.json").read_text())["status"] == "invalid"
+    r = recompute_details(out)
+    assert (r.status, r.contract_failures, r.missing_rows) == ("invalid", 1, 0)
 
 
 # --- jobs and filters ---
@@ -487,6 +514,6 @@ def test_twin_shorter_without_dying_is_refused() -> None:
 
 @pytest.mark.skipif(not (EXP_0045 / "episodes.csv").exists(), reason="EXP-0045 record absent")
 def test_exp_0045_recompute_still_matches() -> None:
-    report, verdict_ok, res_ok = recompute_details(EXP_0045)
-    assert verdict_ok and res_ok
+    r = recompute_details(EXP_0045)
+    assert r.status == "valid" and r.verdict_ok and r.resilience_ok
     assert not (EXP_0045 / "resilience.csv").exists()  # read-only record, nothing written

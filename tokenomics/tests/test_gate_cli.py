@@ -28,6 +28,7 @@ from tokenomics.eval.gate_cli import (
     read_rows,
     recompute,
     run_job,
+    recompute_details,
     run_report,
     select_worlds,
 )
@@ -278,17 +279,22 @@ def _csv_rows(d: Path) -> list[dict]:
         return list(csv.DictReader(fh))
 
 
-@pytest.mark.parametrize("drop,match", [
-    (lambda r: r["world"] == "dev-sparse_wide-12-calm-00", "incomplete"),  # a whole world
-    (lambda r: r["subject"] == CANDIDATE and r["world"] == "dev-dense-12-calm-00", "incomplete"),
-    (lambda r: r["subject"] == "random/even_split" and r["replicate"] == "1", "incomplete"),
+@pytest.mark.parametrize("drop,missing", [
+    (lambda r: r["world"] == "dev-sparse_wide-12-calm-00", 5),  # a whole world
+    (lambda r: r["subject"] == CANDIDATE and r["world"] == "dev-dense-12-calm-00", 1),
+    (lambda r: r["subject"] == "random/even_split" and r["replicate"] == "1", 2),
 ])
-def test_recompute_refuses_missing_rows(report_dir: Path, tmp_path: Path,
-                                       drop: Callable[[dict], bool], match: str) -> None:
+def test_recompute_invalid_on_missing_rows(report_dir: Path, tmp_path: Path,
+                                           drop: Callable[[dict], bool], missing: int) -> None:
+    """Missing rows make the run invalid (add-shocks-i-drift D10): no verdict from partial
+    rows, and the CLI exits non-zero."""
     rows = [r for r in _csv_rows(report_dir) if not drop(r)]
     _copy_run(report_dir, tmp_path, rows=rows)
-    with pytest.raises(ValueError, match=match):
-        recompute(tmp_path)
+    r = recompute_details(tmp_path)
+    assert (r.status, r.report, r.missing_rows, r.contract_failures) == \
+        ("invalid", None, missing, 0)
+    assert recompute(tmp_path) == (None, False)
+    assert main(["--mode", "recompute", "--out-dir", str(tmp_path)]) == 2
 
 
 def test_recompute_refuses_extra_and_duplicate_rows(report_dir: Path, tmp_path: Path) -> None:
@@ -426,6 +432,11 @@ def test_portable_subject_pins_checkpoint_hashes(inputs: dict[str, Path], tmp_pa
     prod.write_bytes(b"fake-producer")
     order.write_bytes(b"fake-orderer")
     monkeypatch.setattr(gc, "_worker_init", lambda h, p, o: gc._W.update(horizon=h, configs={}))
+    # the parent's trial load (add-shocks-i-drift D10) would refuse the fake bytes
+    import tokenomics.train.orderer_scorer as osc
+    import tokenomics.train.producer_scorer as psc
+    monkeypatch.setattr(osc, "load_scorer", lambda path: None)
+    monkeypatch.setattr(psc, "load_producer_score_model", lambda path: None)
 
     def stub(job: dict) -> dict:
         if job["producing"] == "portable":
