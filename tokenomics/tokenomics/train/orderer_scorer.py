@@ -177,14 +177,16 @@ def scorer_ordering_policy(model: "OrdererScoreModel"):
     return policy
 
 
-# --- supervised teacher: proportional throughput logits per producer ---
+# --- supervised teacher: log makeable-units-now logits per producer (input-aware) ---
 
 
 def teacher_logits(view: ProductStreamView) -> tuple[list[ProducerId], np.ndarray, np.ndarray]:
-    """Per-producer distillation target = log(makeable-units-now), the same throughput
-    signal the `proportional` baseline routes by, clamped to the action bound; an
-    ineligible or zero-throughput producer floors at -bound. Returns (producer ids,
-    target logits, eligibility mask), aligned to sorted producer ids."""
+    """Per-producer distillation target = log(`makeable_qty_now`), clamped to the action
+    bound: the units the producer can complete now, min(units its free capacity allows,
+    units its inputs in stock allow). This is NOT `proportional`'s signal, which weighs
+    capacity only (throughput net of reservations); the target is input-aware. A producer
+    with nothing makeable now floors at -bound. Returns (producer ids, target logits,
+    eligibility mask), aligned to sorted producer ids."""
     pids = sorted(view.producers)
     target = np.empty(len(pids), dtype=np.float32)
     mask = np.empty(len(pids), dtype=bool)

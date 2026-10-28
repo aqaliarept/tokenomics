@@ -180,10 +180,11 @@ def test_diagnostic_router_kinds() -> None:
         "random_scaled_0.5", "random_scaled_1", "random_scaled_2", "random_scaled_5",
         "random_fixed_episode", "blend_noise_0.15", "blend_noise_0.6", "random_consumer_only",
         "random_producer_only", "random_whole", "even_split_random_leftover",
-        "two_choice_spare", "spare_weighted_whole", "spare_rotating_whole"])
+        "two_choice_spare", "spare_weighted_whole", "spare_rotating_whole",
+        "makeable_split", "makeable_weighted_whole"])
     assert sorted(n for n, k in ROUTER_KIND.items() if k != STOCHASTIC) == [
-        "even_split_rotating", "proportional_load_aware", "proportional_whole", "round_robin",
-        "spare_rotating_whole"]
+        "even_split_rotating", "makeable_split", "proportional_load_aware", "proportional_whole",
+        "round_robin", "spare_rotating_whole"]
 
 
 # --- deterministic routers ---
@@ -619,6 +620,7 @@ def test_failed_job_makes_the_run_invalid(tmp_path: Path) -> None:
 # --- EXP-0049: informed spreading routers (task 3.2) ---
 
 INFORMED = ("two_choice_spare", "spare_weighted_whole", "spare_rotating_whole")
+DECIDING = ("makeable_split", "makeable_weighted_whole")  # task 4.1, EXP-0050's deciding check
 
 
 def _two_streams_config(capacities: tuple[int, int] = (120, 120), *, degradation: int = 5,
@@ -748,7 +750,7 @@ def test_receiver_variation_and_herding_metrics() -> None:
     assert spread["herding_groups"] >= HORIZON - 2 and 0.5 <= spread["herding_hhi"] < 0.56
 
 
-@pytest.mark.parametrize("name", INFORMED)
+@pytest.mark.parametrize("name", INFORMED + DECIDING)
 def test_informed_routers_see_no_shock_schedule(name: str) -> None:
     """Scenario "Shock-reactive baseline sees no schedule", applied to the informed routers: the
     same episode with every piece of shock state readable and hidden behind the sentinel gives
@@ -1218,3 +1220,186 @@ def test_exp0050_real_run_guard(change: str, needle: str) -> None:
     with pytest.raises(ValueError, match="not a valid EXP-0050 run") as err:
         run_audit(**kw)
     assert needle in str(err.value)
+
+
+# --- EXP-0050's deciding-check routers (task 4.1, design D12 "Reach arms") ---
+
+
+def _composite_pair_config() -> Configuration:
+    """Two declarers of composite product 20 (q1, q2: equal capacity-2) fed by primal producer
+    p1; consumer c2 orders 3 units of 20 per cycle. Input stock is set by the test."""
+    base = _config(3, composite=True)
+    p3 = base.producer_configs[2]
+    q = [ProducingAgentConfig(id=f"q{i}", capacities={"capacity-2": 120}, degradation=0,
+                              restoration=p3.restoration, upgrade=p3.upgrade,
+                              produces=frozenset({20}), inventory_limit=30, max_replenish=10,
+                              replenish_cost_per_unit=2) for i in (1, 2)]
+    consumers = [ConsumerConfig(id="c2", product=20, schedule=((20, 3),))]
+    cfg = Configuration(base.cycle_emission, base.process_sheets,
+                        [base.producer_configs[0], *q], consumers)
+    cfg.validate()
+    return cfg
+
+
+def test_makeable_units_is_the_orderer_stream_view_field() -> None:
+    """`makeable_units` equals the `makeable_qty_now` the ordering agent's own product-stream
+    view reports, at every decision, for every eligible producer."""
+    from tokenomics.eval.routing_diagnostics import makeable_units
+
+    seen: set[int] = set()
+
+    def check(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        _, aid = e._role[agent]
+        view = e.system.product_stream_view(aid)
+        for oid in e.system.ordering_agents[aid].incoming:
+            product = e.system.orders[oid].product
+            for pid, pp in view.producer_products.items():
+                if pp.eligible:
+                    assert makeable_units(e, pid, product) == pp.makeable_qty_now
+                    seen.add(pp.makeable_qty_now)
+        return DIAGNOSTIC_ROUTERS["makeable_split"](e, agent)
+
+    _record(_config(3, composite=True), check)
+    assert len(seen) > 2
+
+
+def _makeable_split_checked(stock: dict[str, int] | None = None,
+                            ) -> list[tuple[list[int], list[int]]]:
+    """Run `makeable_split` on the composite-pair fixture; when `stock` is given, set each
+    q-producer's input stock of product 10 before every decision. Per decision on product 20:
+    (makeable units per eligible producer, decoded units per eligible producer)."""
+    from tokenomics.eval.routing_diagnostics import makeable_units
+
+    seen: list[tuple[list[int], list[int]]] = []
+
+    def checked(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        for pid, units in (stock or {}).items():
+            e.system.producing_agents[pid].inventory[10] = units
+        _, aid = e._role[agent]
+        view = e.system.ordering_agents[aid].view(e.system.producer_infos)
+        act = DIAGNOSTIC_ROUTERS["makeable_split"](e, agent)
+        cmd = decode_ordering(e.spec_, np.asarray(act), view)
+        for oid, oi in view.incoming.items():
+            if oi.product != 20:
+                continue
+            elig = [pid for pid in e.spec_.producer_ids if pid in view.eligible[oid]]
+            made = [makeable_units(e, pid, 20) for pid in elig]
+            got = dict.fromkeys(elig, 0)
+            for sub in cmd.orders[oid]:
+                got[sub.producer_id] = sub.quantity
+            seen.append((made, [got[pid] for pid in elig]))
+        return act
+
+    env = joint_stack_env(_composite_pair_config(), HORIZON)
+    run_episode(env, PRODUCING_BASELINES["entity_planner"], checked, seed=0)
+    return seen
+
+
+def test_makeable_split_is_the_largest_remainder_split_of_makeable_units() -> None:
+    """Integer units equal the decode's largest-remainder split of the makeable shares; with input
+    stock 2 at q1 and 1 at q2 a 3-unit order goes 2 / 1, and with no stock at q2 all of it goes
+    to q1 (input-aware, unlike capacity-only `proportional`, which would split 120 / 120)."""
+    from tokenomics.env.allocator import _allocate_int
+
+    for stock, want in (({"q1": 2, "q2": 1}, [2, 1]), ({"q1": 5, "q2": 0}, [3, 0])):
+        seen = _makeable_split_checked(stock)
+        assert len(seen) >= HORIZON - 2
+        for made, got in seen:
+            props = np.asarray(made, dtype=np.float64) / sum(made)
+            assert got == _allocate_int(props, 3)
+            assert got == want, (stock, made, got)
+
+
+def test_makeable_split_is_even_when_nothing_is_makeable() -> None:
+    """No input stock anywhere: every eligible producer has 0 makeable units, and the order is
+    split evenly (largest remainder, the odd unit to the lowest index)."""
+    seen = _makeable_split_checked({"q1": 0, "q2": 0})
+    assert seen and all(made == [0, 0] and got == [2, 1] for made, got in seen)
+
+
+def test_makeable_weighted_whole_never_splits_and_is_seed_deterministic() -> None:
+    a, stats_a = _record(_config(3, composite=True), DIAGNOSTIC_ROUTERS["makeable_weighted_whole"],
+                         action_seed=7)
+    b, stats_b = _record(_config(3, composite=True), DIAGNOSTIC_ROUTERS["makeable_weighted_whole"],
+                         action_seed=7)
+    assert {r["class"] for r in a} == {CONSUMER, PRODUCER}
+    assert all(len(r["subs"]) == 1 for r in a)
+    assert [r["subs"] for r in a] == [r["subs"] for r in b]
+    assert stats_a == stats_b
+    s, _ = _record(_config(3, composite=True), DIAGNOSTIC_ROUTERS["makeable_split"])
+    t, _ = _record(_config(3, composite=True), DIAGNOSTIC_ROUTERS["makeable_split"])
+    assert [r["subs"] for r in s] == [r["subs"] for r in t]
+
+
+def test_makeable_weighted_whole_draws_in_proportion_to_makeable_units() -> None:
+    """Fanout 4 (primal product, so makeable = spare): the draw is
+    `rng.choice(E, p = makeable / sum)` (replayed), and a producer with 0 makeable units is
+    never chosen while others have some."""
+
+    def weighted(rng: np.random.Generator, made: list[int]) -> int:
+        m = np.asarray(made, dtype=np.float64)
+        return int(rng.choice(len(m), p=m / m.sum()))
+
+    seen = _replayed("makeable_weighted_whole", weighted, starve="p5")
+    assert len(seen) >= HORIZON
+    assert all(s[3] == 0 and g != 3 for s, g in seen)
+    assert len({g for _, g in seen}) >= 2
+
+
+def _makeable_whole_replayed(stock: dict[str, int]) -> list[tuple[list[int], int]]:
+    """Run `makeable_weighted_whole` on the composite-pair fixture with each q-producer's input
+    stock of product 10 set before every decision (capacity stays 120 / 120, so makeable units
+    differ from capacity-only spare). For the first slot of every decision on product 20, replay
+    the agent's RNG: `rng.choice(E, p = makeable / sum)`, uniform when all are 0, and check the
+    decoded receiver. Returns (makeable units, chosen position) per checked decision."""
+    from tokenomics.eval.routing_diagnostics import makeable_units, spare_units
+
+    seen: list[tuple[list[int], int]] = []
+
+    def checked(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        for pid, units in stock.items():
+            e.system.producing_agents[pid].inventory[10] = units
+        _, aid = e._role[agent]
+        view = e.system.ordering_agents[aid].view(e.system.producer_infos)
+        rng = e.action_space(agent).np_random
+        state = rng.bit_generator.state
+        act = DIAGNOSTIC_ROUTERS["makeable_weighted_whole"](e, agent)
+        if not view.incoming:
+            return act
+        oid = sorted(view.incoming)[0]
+        if view.incoming[oid].product != 20:
+            return act
+        elig = [pid for pid in e.spec_.producer_ids if pid in view.eligible[oid]]
+        made = [makeable_units(e, pid, 20) for pid in elig]
+        assert [spare_units(e, pid, 20) for pid in elig] != made  # capacity alone differs
+        m = np.asarray(made, dtype=np.float64)
+        probs = m / m.sum() if m.sum() > 0 else np.full(len(m), 1.0 / len(m))
+        replay = np.random.Generator(np.random.PCG64())
+        replay.bit_generator.state = state
+        want = int(replay.choice(len(m), p=probs))
+        cmd = decode_ordering(e.spec_, np.asarray(act), view)
+        assert len(cmd.orders[oid]) == 1
+        got = elig.index(cmd.orders[oid][0].producer_id)
+        assert got == want, (stock, made, got, want)
+        seen.append((made, got))
+        return act
+
+    env = joint_stack_env(_composite_pair_config(), HORIZON)
+    run_episode(env, PRODUCING_BASELINES["entity_planner"], checked, seed=0,
+                action_seed=replicate_seed("w", 2, 0))
+    return seen
+
+
+@pytest.mark.parametrize("stock,made,receivers", [
+    ({"q1": 2, "q2": 1}, [2, 1], {0, 1}),  # p = 2/3, 1/3 (capacity alone would be 1/2, 1/2)
+    ({"q1": 5, "q2": 0}, [5, 0], {0}),     # nothing makeable at q2: never chosen
+    ({"q1": 0, "q2": 0}, [0, 0], {0, 1}),  # nothing makeable anywhere: uniform
+])
+def test_makeable_weighted_whole_draws_in_proportion_to_input_aware_units(
+        stock: dict[str, int], made: list[int], receivers: set[int]) -> None:
+    """Replayed draws on a composite product whose makeable units are set by input stock, not
+    capacity, including the all-zero uniform fallback."""
+    seen = _makeable_whole_replayed(stock)
+    assert len(seen) >= HORIZON - 2
+    assert all(m == made for m, _ in seen)
+    assert {g for _, g in seen} == receivers

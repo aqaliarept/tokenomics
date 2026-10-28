@@ -371,3 +371,146 @@ def test_fund_share_herfindahl_per_cycle_versus_episode() -> None:
     assert s["fund_share_herfindahl_episode"] == 0.5
     starved = _fund_tracer([{"pa": 3}, {"pa": 3}, {"pb": 1}]).summary()
     assert starved["fund_share_herfindahl_episode"] == pytest.approx((6 / 7) ** 2 + (1 / 7) ** 2)
+
+
+def test_expired_reservation_with_inputs_short() -> None:
+    """Scenario "Expired reservation with inputs short" (task 4.1): two reservations of the
+    composite product expire at their TTL; pa held no input units when its order was routed, pb
+    held enough. The ttl units split into inputs_short / inputs_ok, and together they equal the
+    `ttl` failed bid-units; a `ttl_outage` failure is in neither."""
+    from types import SimpleNamespace
+
+    from tokenomics.domain.order import Order
+    from tokenomics.domain.requests import ConsumerRequest
+    from tokenomics.domain.system import BidOutcome, CycleResult
+
+    def producer(pid: str, stock: int) -> ProducingAgent:
+        p = ProducingAgent(ProducingAgentConfig(
+            id=pid, capacities={CAP: 20}, degradation=0,
+            restoration=Restoration(require=PRIMAL, restores=1, type=CAP),
+            upgrade=Upgrade(require=PRIMAL, increases=1, type=CAP),
+            produces=frozenset({PRIMAL, COMPOSITE}), inventory_limit=10,
+        ), dict(SHEETS))
+        p.inventory[PRIMAL] = stock
+        return p
+
+    agents = {"pa": producer("pa", 0), "pb": producer("pb", 5), "pc": producer("pc", 0)}
+    orders = {oid: Order.new_consumer_order(oid, SHEETS[COMPOSITE],
+                                            ConsumerRequest("c", COMPOSITE, 10, 2))
+              for oid in ("o_short", "o_ok", "o_out")}
+    for pid, oid in (("pa", "o_short"), ("pb", "o_ok"), ("pc", "o_out")):
+        agents[pid].place_sub_orders([RoutedSubOrder(oid, COMPOSITE, 2, 10)])
+
+    def outcome(pid: str, oid: str, kind: str, reason: str | None) -> BidOutcome:
+        return BidOutcome(pid, oid, "consumer", COMPOSITE, 2, 6, kind, reason)
+
+    results = {
+        1: CycleResult(score=0, bid_outcomes=tuple(
+            outcome(p, o, "accepted", None)
+            for p, o in (("pa", "o_short"), ("pb", "o_ok"), ("pc", "o_out")))),
+        2: CycleResult(score=0, bid_outcomes=tuple(
+            outcome(p, o, "failed", FAIL_TTL)
+            for p, o in (("pa", "o_short"), ("pb", "o_ok"), ("pc", "o_out")))),
+    }
+    system = SimpleNamespace(
+        cycle_counter=1, _outages_by_cycle={2: {"pc"}}, producing_agents=agents, orders=orders,
+        ordering_agents={}, investment_fund=0)
+    system.complete_cycle = lambda: results[system.cycle_counter]
+    tracer = RoutingTracer()
+    tracer.attach_system(system, ["pa", "pb", "pc"], k_stream=2)  # type: ignore[arg-type]
+    system.complete_cycle()
+    for p in agents.values():  # reservations are no longer bids; stock arriving later is ignored
+        p.bids = []
+        p.inventory[PRIMAL] = 9
+    system.cycle_counter = 2
+    system.complete_cycle()
+
+    s = tracer.summary()
+    assert s["ttl_lost_units_consumer_inputs_short"] == 2
+    assert s["ttl_lost_units_consumer_inputs_ok"] == 2
+    assert s["failed_bid_units_consumer_ttl"] == 4
+    assert s["failed_bid_units_consumer_ttl_outage"] == 2  # pc: in neither input state
+    assert s["ttl_lost_units_producer_inputs_short"] == s["ttl_lost_units_producer_inputs_ok"] == 0
+
+
+def test_ttl_input_split_covers_every_ttl_failure_in_an_episode() -> None:
+    """On a traced episode every `ttl` failure's placement was seen, so the two input states sum
+    to `failed_bid_units_*_ttl` for both order classes."""
+    tracer = RoutingTracer()
+    _run(tracer)
+    s = tracer.summary()
+    assert s["failed_bid_units_consumer_ttl"] > 0 and s["failed_bid_units_producer_ttl"] > 0
+    for cls in ("consumer", "producer"):
+        assert (s[f"ttl_lost_units_{cls}_inputs_short"] + s[f"ttl_lost_units_{cls}_inputs_ok"]
+                == s[f"failed_bid_units_{cls}_ttl"])
+
+
+def test_ttl_input_state_boundary_input_only_and_latest_placement() -> None:
+    """Edges of "Expired reservation with inputs short": stock exactly covering the sub-order is
+    inputs_ok; a producer with enough inputs but too little capacity is inputs_ok (the read is
+    input-limited, not capacity-limited); an order placed twice at one producer is classified by
+    its latest placement (short at the first, enough at the second)."""
+    from types import SimpleNamespace
+
+    from tokenomics.domain.metrics import input_makeable_qty, makeable_qty_now
+    from tokenomics.domain.order import Order
+    from tokenomics.domain.requests import ConsumerRequest
+    from tokenomics.domain.system import BidOutcome, CycleResult
+
+    def producer(pid: str, capacity: int, stock: int) -> ProducingAgent:
+        p = ProducingAgent(ProducingAgentConfig(
+            id=pid, capacities={CAP: capacity}, degradation=0,
+            restoration=Restoration(require=PRIMAL, restores=1, type=CAP),
+            upgrade=Upgrade(require=PRIMAL, increases=1, type=CAP),
+            produces=frozenset({PRIMAL, COMPOSITE}), inventory_limit=10,
+        ), dict(SHEETS))
+        p.inventory[PRIMAL] = stock
+        return p
+
+    # pe: 2 input units for a 2-unit sub-order (exactly enough); pcap: 5 input units but capacity
+    # for 1 unit (3 per unit); prep: no stock at the first placement, 5 at the second.
+    agents = {"pe": producer("pe", 20, 2), "pcap": producer("pcap", 3, 5),
+              "prep": producer("prep", 20, 0)}
+    assert input_makeable_qty(agents["pe"], COMPOSITE) == 2
+    assert input_makeable_qty(agents["pcap"], COMPOSITE) == 5
+    assert makeable_qty_now(agents["pcap"], COMPOSITE) == 1  # a capacity-limited read would be short
+    orders = {oid: Order.new_consumer_order(oid, SHEETS[COMPOSITE],
+                                            ConsumerRequest("c", COMPOSITE, 10, 2))
+              for oid in ("o_e", "o_cap", "o_rep")}
+
+    def outcome(pid: str, oid: str, kind: str, reason: str | None) -> BidOutcome:
+        return BidOutcome(pid, oid, "consumer", COMPOSITE, 2, 6, kind, reason)
+
+    results = {
+        1: CycleResult(score=0, bid_outcomes=(
+            outcome("pe", "o_e", "accepted", None), outcome("pcap", "o_cap", "accepted", None),
+            outcome("prep", "o_rep", "rejected", REJECT_DISPLACED))),
+        2: CycleResult(score=0, bid_outcomes=(outcome("prep", "o_rep", "accepted", None),)),
+        3: CycleResult(score=0, bid_outcomes=tuple(
+            outcome(p, o, "failed", FAIL_TTL)
+            for p, o in (("pe", "o_e"), ("pcap", "o_cap"), ("prep", "o_rep")))),
+    }
+    system = SimpleNamespace(cycle_counter=1, _outages_by_cycle={}, producing_agents=agents,
+                             orders=orders, ordering_agents={}, investment_fund=0)
+    system.complete_cycle = lambda: results[system.cycle_counter]
+    tracer = RoutingTracer()
+    tracer.attach_system(system, list(agents), k_stream=2)  # type: ignore[arg-type]
+
+    for pid, oid in (("pe", "o_e"), ("pcap", "o_cap"), ("prep", "o_rep")):
+        agents[pid].place_sub_orders([RoutedSubOrder(oid, COMPOSITE, 2, 10)])
+    system.complete_cycle()
+    for p in agents.values():
+        p.bids = []
+    agents["prep"].inventory[PRIMAL] = 5  # stock arrived before the re-placement
+    agents["prep"].place_sub_orders([RoutedSubOrder("o_rep", COMPOSITE, 2, 10)])
+    system.cycle_counter = 2
+    system.complete_cycle()
+    for p in agents.values():
+        p.bids = []
+    system.cycle_counter = 3
+    system.complete_cycle()
+
+    s = tracer.summary()
+    assert s["failed_bid_units_consumer_ttl"] == 6
+    assert s["ttl_lost_units_consumer_inputs_ok"] == 6
+    assert s["ttl_lost_units_consumer_inputs_short"] == 0

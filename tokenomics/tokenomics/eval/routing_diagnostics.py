@@ -11,6 +11,10 @@ EXP-0049 adds informed spreading routers (task 3.2, D2 "Informed spreading route
 trained-agent trace"): whole orders, receiver varied like `random_whole` / `round_robin`, but
 steered by each producer's spare capacity (`two_choice_spare`, `spare_weighted_whole`,
 `spare_rotating_whole`).
+EXP-0050's deciding check adds the reach arms of the headroom atlas (add-m3-development-audit
+task 4.1, design D12 "Reach arms"): the portable scorer's distillation target used directly as a
+router, split (`makeable_split`) and whole (`makeable_weighted_whole`), both steered by each
+producer's `makeable_qty_now` (capacity and inputs in stock).
 
 They are white-box `Policy`s like `proportional` / `blend_0.5` and emit the raw ordering action
 decode reads (ADR-0025/0026). A router that wants an exact integer split (a whole order, a
@@ -36,8 +40,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ..domain.common import OrderId, ProducerId, Product
-from ..domain.metrics import accept_qty_now
+from ..domain.metrics import accept_qty_now, makeable_qty_now
 from ..domain.system import order_kind
+from ..env.allocator import _allocate_int
 from ..env.spaces import ACTION_LOGIT_BOUND
 from .baselines import Policy, ordering_blend, ordering_proportional, random_action
 from .routing_trace import CONSUMER, PRODUCER, order_class
@@ -337,7 +342,59 @@ def ordering_spare_rotating_whole(env: "TokenomicsAECEnv", agent: str) -> np.nda
     return _flat(mat)
 
 
-# Design D2 table (+ EXP-0049's informed routers). Not in ORDERING_BASELINES (module docstring).
+# --- deciding-check routers (EXP-0050, atlas reach arms): steered by makeable units ---
+
+
+def makeable_units(env: "TokenomicsAECEnv", pid: ProducerId, product: Product) -> int:
+    """Units of `product` producer `pid` can complete now: min(units its free capacity allows,
+    units its inputs in stock allow), i.e. `domain.metrics.makeable_qty_now`, the
+    `makeable_qty_now` field of the ordering agent's own product-stream view (encoded in the
+    orderer obs v3/v4) and the portable scorer's distillation target (`train/orderer_scorer.py`
+    `teacher_logits`). Unlike `spare_units` it counts input stock. It reads no shock state;
+    joint_stack only, like the informed routers."""
+    return makeable_qty_now(env.system.producing_agents[pid], product)
+
+
+def _makeables(env: "TokenomicsAECEnv", oid: OrderId, elig: Sequence[int]) -> list[int]:
+    product = env.system.orders[oid].product
+    pids = env.spec_.producer_ids
+    return [makeable_units(env, pids[i], product) for i in elig]
+
+
+def ordering_makeable_split(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """The scorer's teacher as a router: each order split over its eligible producers in
+    proportion to their `makeable_units`, integer units by the decode's own largest remainder
+    (`env.allocator._allocate_int`, ties to the lowest index); an even split when every eligible
+    producer has 0. Deterministic."""
+    mat = _matrix(env)
+    for k, oid, q, elig in _slots(env, agent):
+        if not elig:
+            continue
+        made = np.asarray(_makeables(env, oid, elig), dtype=np.float64)
+        total = made.sum()
+        props = made / total if total > 0 else np.full(len(elig), 1.0 / len(elig))
+        mat[k, elig] = split_logits(_allocate_int(props, q))
+    return _flat(mat)
+
+
+def ordering_makeable_weighted_whole(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """Whole order to one eligible producer drawn with probability proportional to its
+    `makeable_units` (uniformly when every eligible producer has none): the same expected
+    allocation as `makeable_split`, never split."""
+    mat = _matrix(env)
+    rng = _rng(env, agent)
+    for k, oid, q, elig in _slots(env, agent):
+        if not elig:
+            continue
+        made = np.asarray(_makeables(env, oid, elig), dtype=np.float64)
+        total = made.sum()
+        probs = made / total if total > 0 else np.full(len(elig), 1.0 / len(elig))
+        mat[k, elig] = _whole(elig, int(rng.choice(len(elig), p=probs)), q)
+    return _flat(mat)
+
+
+# Design D2 table (+ EXP-0049's informed routers, + the D12 deciding-check routers). Not in
+# ORDERING_BASELINES (module docstring).
 DIAGNOSTIC_ROUTERS: dict[str, Policy] = {
     "round_robin": ordering_round_robin,
     "even_split_rotating": ordering_even_split_rotating,
@@ -357,12 +414,14 @@ DIAGNOSTIC_ROUTERS: dict[str, Policy] = {
     "two_choice_spare": ordering_two_choice_spare,
     "spare_weighted_whole": ordering_spare_weighted_whole,
     "spare_rotating_whole": ordering_spare_rotating_whole,
+    "makeable_split": ordering_makeable_split,
+    "makeable_weighted_whole": ordering_makeable_weighted_whole,
 }
 
 ROUTER_KIND: dict[str, str] = {
     name: (DETERMINISTIC if name in ("round_robin", "even_split_rotating",
                                      "proportional_load_aware", "proportional_whole",
-                                     "spare_rotating_whole")
+                                     "spare_rotating_whole", "makeable_split")
            else STOCHASTIC)
     for name in DIAGNOSTIC_ROUTERS
 }

@@ -32,7 +32,13 @@ Per episode, it aggregates how the ordering agents' routing played out in the au
   producer's total grants over the episode (is a producer starved of investment? D2 (d) reads
   this one), and `fund_share_herfindahl`, the per-cycle Herfindahl of that cycle's grants averaged
   over cycles with grants (reported; it mostly tracks how many producers are granted per cycle);
-- the capacity-ratio trace and the investment rejection rate.
+- the capacity-ratio trace and the investment rejection rate;
+- expired reservations by input stock (task 4.1, EXP-0050's deciding check):
+  `ttl_lost_units_{consumer,producer}_{inputs_short,inputs_ok}` split `failed_bid_units_*_ttl`
+  (reason `ttl`, not `ttl_outage`) by whether the receiving producer's input stock at routing
+  time could assemble the sub-order: `domain.metrics.input_makeable_qty` read just before the
+  auction of the bid's latest placement (its routing), against the bid's quantity. A failed
+  reservation whose placement the tracer did not see (attached mid-episode) is in neither.
 
 White-box, like the baselines: the tracer wraps `system.complete_cycle` to snapshot the placed
 bids just before the auction, then reads the result's diagnostic `bid_outcomes` and
@@ -53,6 +59,7 @@ from typing import TYPE_CHECKING, Callable
 from collections.abc import Sequence
 
 from ..domain.common import OrderId, ProducerId, Product, is_nan
+from ..domain.metrics import input_makeable_qty
 from ..domain.producing_agent import FAIL_TTL
 from ..domain.system import CycleResult, System, order_kind
 
@@ -65,6 +72,8 @@ REJECT_REASONS = ("outage", "no_fit", "displaced")
 FAIL_REASONS = ("dropped", "ttl", "ttl_outage")
 LOSS_REASONS = REJECT_REASONS + FAIL_REASONS + ("never_bid",)
 FAIL_TTL_OUTAGE = "ttl_outage"
+INPUTS_SHORT = "inputs_short"  # input stock at routing could not assemble the sub-order
+INPUTS_OK = "inputs_ok"
 
 
 def order_class(kind: str) -> str:
@@ -112,6 +121,9 @@ class _Counts:
     cycles: int = 0
     investment_resolved: int = 0
     investment_rejected: int = 0
+    # per order and producer: (input-makeable units, bid quantity) at the latest placement
+    routed_inputs: dict[OrderId, dict[ProducerId, tuple[float, int]]] = field(default_factory=dict)
+    ttl_units: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
 
 class RoutingTracer:
@@ -175,6 +187,8 @@ class RoutingTracer:
         for pid, p in system.producing_agents.items():
             reserved = p.reserved_capacity()
             for bid in p.bids:
+                c.routed_inputs.setdefault(bid.order_id, {})[pid] = (
+                    input_makeable_qty(p, bid.product), bid.quantity)
                 per_order[bid.order_id].add(pid)
                 order_units[bid.order_id][pid] += bid.quantity
                 per_product[bid.product][pid] += bid.quantity
@@ -274,9 +288,15 @@ class RoutingTracer:
                     else str(b.reason)
                 c.failed_bid_units[f"{cls}:{reason}"] += b.quantity
                 c.last_reason[b.order_id] = reason
+                routed = c.routed_inputs.get(b.order_id, {}).get(b.producer_id)
+                if reason == FAIL_TTL and routed is not None:
+                    stock, quantity = routed
+                    state = INPUTS_SHORT if stock < quantity else INPUTS_OK
+                    c.ttl_units[f"{cls}:{state}"] += b.quantity
         for r in result.order_resolutions:
             cls = order_class(r.order_kind)
             last = c.last_reason.pop(r.order_id, "never_bid")
+            c.routed_inputs.pop(r.order_id, None)
             if not r.completed:
                 c.lost_units[f"{cls}:{last}"] += r.quantity - r.completed_qty
             if not r.completed and r.completed_qty > 0:
@@ -305,6 +325,8 @@ class RoutingTracer:
             out[f"split_degree_{cls}"] = c.producers_per_order.get(cls, 0) / n if n else 0.0
             out[f"wasted_orders_{cls}"] = float(c.wasted_orders.get(cls, 0))
             out[f"wasted_units_{cls}"] = float(c.wasted_units.get(cls, 0))
+            for state in (INPUTS_SHORT, INPUTS_OK):
+                out[f"ttl_lost_units_{cls}_{state}"] = float(c.ttl_units.get(f"{cls}:{state}", 0))
             pairs = c.receiver_pairs.get(cls, 0)
             out[f"receiver_change_share_{cls}"] = (
                 c.receiver_changes.get(cls, 0) / pairs if pairs else 0.0)
