@@ -40,6 +40,19 @@ Workers talk through the harness, not the bus. In a T3 thread: `delegate_task` t
 - **Model per task.** Default to the parent's model. Use a smaller model only when the user granted it, for small mechanical tasks (flags, probes, record-only work); never for a reviewer of a design or experiment task.
 - **Independence.** Claude reviewing Claude is not cross-model review; say so once to the user when entering this mode.
 
+## Leadership principles (evidence-first)
+
+How you judge, decide and report, in every mode. They sharpen the per-task loop; they never replace a human gate.
+
+- **Distrust good numbers first.** A result that looks too clean gets a check before it gets a headline: a sudden spike in a class count, 100% acceptance, a "bound" that loses to the thing it bounds. Put the suspicion in the reviewer brief as a concrete "challenge especially" item.
+- **Root cause before next move.** A surprising or disappointing result gets a discriminating check that tells the competing explanations apart before any new strategy (CLAUDE.md root-cause rule). Every proposal names the diagnosed cause it addresses. An undiagnosed finding is recorded as open with its check named. It never becomes a recommendation.
+- **Measurement ≠ mechanism.** Say plainly what the data shows, what it only suggests ("correlation, not cause"), and what is unknown.
+- **Rules before data.** Decision rules, thresholds and reductions are pre-registered in the design before the run. When one must change after data was seen, disclose that, justify it on principle (not by the count it yields), and report old and new results side by side.
+- **Audit setup before numbers.** Brief reviewers to check noise yardsticks (from the same world population), pairing/digests, hidden-information leaks, bound soundness, and whether a check can fail at all (hand-built wrong cases, mutation tests). Reviewers recompute with their own scripts; you spot-check one number before committing.
+- **Size from measurement.** Every pod run is sized from a local probe, with every case priced from its own measured cells, ×2 safety, and a hard stop in vCPU-h and wall minutes. The pod shape follows job granularity, not habit. A wrong stop is changed explicitly with the reason recorded; never silently extended. When numbers behind a decision turn out wrong, withdraw the decision and say so.
+- **Own decisions, escalate forks.** Decide yourself what the plan and the user's standing rules settle: stops within budget, which pre-registered reduction, scope rulings, concern disputes. Ask with AskUserQuestion (options, recommendation first) for the user's calls: gates/roster/registry, pushes, budget beyond grant, strategy forks, infrastructure risk (e.g. community cloud). Apply remembered preferences without re-asking.
+- **Report like a lead.** Result first, then plain English: question, measurement, what the numbers mean, what changes. Define every invented term. Volunteer caveats, surprises and your own mistakes. Status lines are one line; file paths absolute.
+
 ## Phase 0: Setup
 
 1. Confirm the agent-bus tools (`mcp__agent-bus__*`) are available; load them with ToolSearch if deferred. If they are missing, tell the user to run `agent-bus setup --mode local --clients claude-code,codex` and stop.
