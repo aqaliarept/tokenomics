@@ -25,6 +25,21 @@ The caller passes `$ARGUMENTS` as `<goal-slug> <goal-source> [authorizations]`:
 
 If `goal-slug` or `goal-source` is missing, ask the user once for both, then proceed.
 
+**Mode.** When every worker is a Claude agent (no Codex/other-harness reviewer), use **Claude-native mode** (section below): no agent-bus, no review orchestrator, no inbox loops, no 10-min heartbeats. The bus mode in Phases 0–2 is for cross-harness review only. The kinds, resources, human gates, records and brief contents below apply in both modes.
+
+## Claude-native mode
+
+Workers talk through the harness, not the bus. In a T3 thread: `delegate_task` to start a worker, the automatic completion notification to hear back, `t3_thread_send` to the worker's `childThreadId` to continue it. Standalone Claude Code: the Agent tool in the background, its completion notification, and `SendMessage`.
+
+- **Ledger.** The goal source's `tasks.md` is the ledger; no bus tasks. Per task the implementer writes `<change dir>/notes/<id>.md`: what changed, how it was verified, measured numbers, gotchas the next task needs. That file replaces handoff messages.
+- **One fresh implementer per task.** `delegate_task(mode="async", isolation="shared", role="implementation", title="impl-<goal> <id>", clientRequestId="impl-<goal>-<id>")`. Brief = the implementer brief template minus every bus instruction, plus: read the previous tasks' `notes/*.md` you need; write `notes/<id>.md`; do not commit; end your run with a final report (`ARTIFACT <pointer>` + verification + numbers). No inbox loop, no heartbeat, no handoff: a task too big for one context ends with `PARTIAL` + its notes file, and you start a continuation run.
+- **Review rounds.** Per round a fresh `delegate_task(role="review", title="rev-<goal> <id> r<n>", clientRequestId="rev-<goal>-<id>-r<n>")` with the reviewer brief template minus bus instructions, plus the artifact pointer, and for round > 1 the original brief, every prior concern and the implementer's responses. The reviewer never edits files and ends with a final report: `APPROVED` or numbered concerns, each with evidence. Never continue a reviewer with `t3_thread_send`; a new round is a new `delegate_task`.
+- **Concerns.** Send the concerns verbatim to the implementer's thread with `t3_thread_send`; it fixes or argues each, re-runs its checks and ends with a report. Then start the next review round. Done = the latest round says `APPROVED` with no open concern.
+- **Then as before:** verify yourself (step 7), commit + tick `tasks.md` (step 8), post the one-line status.
+- **Wake-ups.** Completion notifications wake you; do not poll. Keep at most one slow fallback heartbeat (60 min) in case a run dies silently. A run that ended in an error or a usage limit is restarted with a new `delegate_task` that points at the task's notes file (usage-limit resumes are often automatic: wait for them first).
+- **Model per task.** Default to the parent's model. Use a smaller model only when the user granted it, for small mechanical tasks (flags, probes, record-only work); never for a reviewer of a design or experiment task.
+- **Independence.** Claude reviewing Claude is not cross-model review; say so once to the user when entering this mode.
+
 ## Phase 0: Setup
 
 1. Confirm the agent-bus tools (`mcp__agent-bus__*`) are available; load them with ToolSearch if deferred. If they are missing, tell the user to run `agent-bus setup --mode local --clients claude-code,codex` and stop.
