@@ -76,6 +76,30 @@ def seasonal_factor(pattern: DemandPattern, t: int) -> float:
     return 1.0 + pattern.amplitude * math.sin(2.0 * math.pi * (t + pattern.phase) / pattern.period)
 
 
+def burst_entry(rng: np.random.Generator, c: ConsumerConfig,
+                pattern: DemandPattern) -> ScheduleEntry:
+    """One burst order (4 draws: product, quantity, the burst test, the factor). Its draws do
+    not depend on any earlier draw, so the teacher fork resamples a future from it (D4)."""
+    pool = c.product_pool
+    product = pool[int(rng.integers(len(pool)))]
+    quantity = int(rng.integers(c.quantity_min, c.quantity_max + 1))
+    burst = rng.random() < pattern.burst_p
+    factor = int(rng.integers(pattern.burst_factor_min, pattern.burst_factor_max + 1))
+    return (product, quantity * factor if burst else quantity)
+
+
+def seasonal_entry(rng: np.random.Generator, c: ConsumerConfig, pattern: DemandPattern,
+                   t: int) -> ScheduleEntry:
+    """One seasonal order for cycle t (3 draws: product, base quantity, the rounding); the
+    envelope s(t) comes from the config, so a fork resamples the future from it (D4)."""
+    pool = c.product_pool
+    product = pool[int(rng.integers(len(pool)))]
+    quantity = int(rng.integers(c.quantity_min, c.quantity_max + 1))
+    scaled = quantity * seasonal_factor(pattern, t)
+    rounded = math.floor(scaled) + (1 if rng.random() < scaled - math.floor(scaled) else 0)
+    return (product, max(c.quantity_min, rounded))
+
+
 def pattern_schedules(consumers: Sequence[ConsumerConfig], pattern: DemandPattern, seed: int,
                       horizon: int) -> dict[ConsumerId, list[ScheduleEntry]]:
     """Per-cycle schedules (length `horizon`) of the patterned consumers, in config order."""
@@ -109,17 +133,9 @@ def pattern_schedules(consumers: Sequence[ConsumerConfig], pattern: DemandPatter
         for c in consumers:
             pool, qmin, qmax = c.product_pool, c.quantity_min, c.quantity_max
             if pattern.kind == PATTERN_BURST:
-                product = pool[int(rng.integers(len(pool)))]
-                quantity = int(rng.integers(qmin, qmax + 1))
-                burst = rng.random() < pattern.burst_p
-                factor = int(rng.integers(pattern.burst_factor_min, pattern.burst_factor_max + 1))
-                out[c.id].append((product, quantity * factor if burst else quantity))
+                out[c.id].append(burst_entry(rng, c, pattern))
             elif pattern.kind == PATTERN_SEASONAL:
-                product = pool[int(rng.integers(len(pool)))]
-                quantity = int(rng.integers(qmin, qmax + 1))
-                scaled = quantity * seasonal_factor(pattern, t)
-                rounded = math.floor(scaled) + (1 if rng.random() < scaled - math.floor(scaled) else 0)
-                out[c.id].append((product, max(qmin, rounded)))
+                out[c.id].append(seasonal_entry(rng, c, pattern, t))
             else:  # hit / switch: weighted product, B9 quantity
                 product = _weighted(rng, pool, weight)
                 out[c.id].append((product, int(rng.integers(qmin, qmax + 1))))

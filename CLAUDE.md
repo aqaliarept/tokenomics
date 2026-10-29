@@ -349,3 +349,7 @@ _Avoid_: Baseline, hindsight baseline, envelope, best rule
 **Headroom Atlas:**
 The classified sample of the world space (D12, ADR-0057): every screened world with its world record, atlas bar, best reach arm, bounds, noise floor and class (collapse, saturated, hard, open, flat), the selected hard and open worlds confirmed on fresh seeds, and their train / validation / held-out split. Frozen as `atlas_v1.json` in its EXP directory (EXP-0052 as run) and reclassified under task 5.3's floor and dead-arm rule as `reclassified/atlas_v2.json`; never part of a gate registry, roster or report.
 _Avoid_: World registry, curriculum, benchmark
+
+**Unresolved Label:**
+A teacher decision whose shock posterior is too narrow to sample (ADR-0056, add-m3-development-audit D4): fewer than 16 particles that reproduce every observed consequence, and imply none that was not observed, were found within the 1,024-draw budget of its decision cycle. The teacher then acts as its floor policy (`round_robin` in PoC-A). The cycle's acceptance rate is logged either way. An unresolved label is a fallback, not a teacher label.
+_Avoid_: Abstain, skipped label, no-op

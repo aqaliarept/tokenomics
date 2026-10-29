@@ -206,11 +206,16 @@ def test_drift_needs_a_seed() -> None:
     TokenomicsAECEnv(config=_config(3, None), horizon=10).reset(seed=None)  # B9 unchanged
 
 
-def test_future_fork_refuses_drift() -> None:
+def test_future_fork_continues_drift() -> None:
+    """Task 6.1 replaced the 3.2 refusal: a fork continues the drift process from the current
+    cycle's orders (ADR-0056), so every forked transition keeps the floor(j*N) bound; the full
+    scenario is in test_shock_posterior ("Drifting world forked")."""
     env = TokenomicsAECEnv(config=_config(3, 0.34), horizon=10)
     env.reset(seed=1)
-    with pytest.raises(ValueError, match=r"does not support demand drift"):
-        fork_future_demand(env, task_id="t", decision_digest=0, continuation_id=0)
+    fork = fork_future_demand(env, task_id="t", decision_digest=0, continuation_id=0)
+    rows = [fork.system.consumers[c]._schedule for c in sorted(fork.system.consumers)]
+    for i in range(1, 10):
+        assert sum(r[i] != r[i - 1] for r in rows) <= 1  # floor(0.34 * 3) = 1
 
 
 # --- numeric forms keep one fingerprint (review concern 162) ---

@@ -362,17 +362,20 @@ def test_burst_x10_episode_keeps_the_contract() -> None:
     assert max(q for s in env._demand_schedules.values() for _, q in s) >= 20
 
 
-def test_future_fork_refuses_a_patterned_world() -> None:
-    """`fork_future_demand` would redraw the tail i.i.d. from B9 and lose the pattern, so it
-    refuses a patterned config loudly (the pattern-aware fork is task 6.1's)."""
+def test_future_fork_refuses_a_hidden_state_pattern() -> None:
+    """A moving hit or a regime switch carries hidden pattern state, so `fork_future_demand`
+    refuses it; burst and seasonal worlds are forked from their generator (task 6.1,
+    ADR-0056; the continuity scenarios are in test_shock_posterior)."""
     from tokenomics.env.future_fork import fork_future_demand
 
     for pattern in PATTERNS.values():
         env = TokenomicsAECEnv(config=_with(_base(), pattern), horizon=12)
         env.reset(seed=0)
-        with pytest.raises(ValueError, match="does not support demand patterns"):
+        if pattern.kind in ("hit", "switch"):
+            with pytest.raises(ValueError, match="hidden pattern state"):
+                fork_future_demand(env, task_id="t", decision_digest=1, continuation_id=0)
+        else:
             fork_future_demand(env, task_id="t", decision_digest=1, continuation_id=0)
-
 
 
 # --- review of 4.3: the stream, the hit's timing, the scope, the switch gaps ---

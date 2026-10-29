@@ -445,6 +445,10 @@ New `env/shock_posterior.py`, in the env layer because it draws random numbers.
   - the domain-owned telemetry the ordering views expose (per producer and product: routed,
     accepted, completed, rejected and failed EMAs and counts), which the orderers already see;
   - realised consumer orders and the agents' own actions.
+  - *As implemented (task 6.1, ADR-0056):* the realised non-shock state that forks keep anyway
+    (bids, reservations, inventory). It is read on a stripped copy whose shock fields are mapped
+    away unread. The exact predicates need it: each producer's auction is run with and without
+    an outage, and the public telemetry fold decides between the two.
 
   It may not read the env's shock schedule, the domain's shock or outage state, or any
   `ProductionResult` field that no observation encodes. In particular it may not read the
@@ -477,9 +481,12 @@ New `env/shock_posterior.py`, in the env layer because it draws random numbers.
        outage on a producer that received no bids in its active cycles).
   - **Validation, two-sided.** Every constructed particle is replayed with the agents' recorded
     actions, and it is kept only if it **reproduces every observed consequence** and **implies
-    none that was not observed**. The acceptance rate therefore measures real residual
-    ambiguity, not prior improbability. Consequence-level predicates may replace the replay where
+    none that was not observed**. Consequence-level predicates may replace the replay where
     they are exact; the replay from reset is the reference the tests compare against.
+    *(As implemented, task 6.1 / ADR-0056 "Floor": the constructive proposal is consistent by
+    construction, so the rate is 1 on a feasible plan and the validation is a guard. The rate is
+    not a measure of residual ambiguity: "unresolved" means an infeasible plan (draws 0, rate 0),
+    and sampling stops at 16 accepted.)*
   - An active outage's remaining duration is drawn from the duration range conditioned on at
     least the elapsed cycles.
   - Sampling runs once per decision cycle and is cached for every orderer in that cycle.
@@ -499,7 +506,9 @@ New `env/shock_posterior.py`, in the env layer because it draws random numbers.
   the known generator. Patterns whose future draws do not depend on hidden past draws are forked
   by resampling the future from the generator on a fork-seeded stream: bursts (each future order
   is a burst with probability p, independently) and seasonal waves (the envelope is a function of
-  the cycle and the config; only the stochastic rounding is redrawn). The moving hit and the
+  the cycle and the config; only the stochastic rounding is redrawn). *(As implemented, task 6.1:
+  the whole seasonal entry is redrawn, i.e. product, base quantity and rounding, since the product
+  and base quantity are hidden future draws too.)* The moving hit and the
   regime switch carry hidden state (where the hit is, when the next switch comes) that this rule
   does not define a posterior for. Worlds with those two patterns are therefore not in the
   teacher's sample (D5); extending the rule to them is an ADR-0056 amendment.
