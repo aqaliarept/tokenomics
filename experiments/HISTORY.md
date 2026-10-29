@@ -1,6 +1,7 @@
 # Experiment history — compacted outline
 
-One document for the whole empirical record: 49 experiments, June–August 2026.
+One document for the whole empirical record: EXP-0001 → EXP-0056 (64 directories, lettered
+variants included), June–October 2026.
 Replaces the per-experiment verdict table and the running progress log.
 
 Each experiment still has its own directory (`spec.json` + `RESULT.md` + `summary.csv`)
@@ -36,6 +37,25 @@ Mean ratio over the hindsight baseline is 1.011–1.041 against margins of 1.05 
 shocked; there are losing calm worlds, starvation on calm 42-producer worlds, and zero deaths
 (§12).
 
+**Where M3 left it (2026-10-29; §13 "M3 exit summary").** The development audit is done
+(EXP-0048–0056, ≈ 27.9 vCPU-h billed of 40). `random` set the gate's bar because it routes
+orders whole and varies the receiver, not because it is random; the deterministic
+`round_robin` does both and beats it on every episode of the cells `random` dominated, so a
+simple rule outside roster v2 would raise the gate's bar (roster v3 is the user's call). Over a
+wider space of worlds (the headroom atlas, atlas v2), a cheap informed policy beats the best
+simple rule by more than chance on 13 of 32 selected worlds at 42 producers (11 of them with 14
+possible makers per product) and on 11 of 64 at 12 (dense and 4-maker worlds), with larger
+gains at 42; most worlds are open, with room under the analytic ceiling that no cheap policy reaches.
+The depth-2 search teacher is safe but weak: it beats the bar beyond noise on 2 of 4 open
+12-producer worlds, a thin call (both margins under 40 units over the one-episode floor), and
+closes only 0.1–3.3% of their room. The ordering role is the one to train first: swapping it for the teacher closes the
+whole gap to the teacher stack, swapping the producer about a tenth (c_O = 1.023 against
+c_P = 0.118, on 3 worlds); on those worlds the trained orderer's loss to `round_robin`
+needs whole routing and varied receivers together (EXP-0056, `joint`; which receiver property
+matters is open). No stage of a deployed decision is superlinear up to 42 producers
+(EXP-0055). Waiting on the user: roster v3, atlas worlds in a gate registry, a 42-producer
+teacher read, and how M4 trains the orderer.
+
 **What is settled.** The environment poses a real learning problem; imitation of a
 strong heuristic works; a learned orderer beats the best hand-written baseline; the
 policy contract is product-agnostic and transfers across topology size and recipe shape.
@@ -53,7 +73,9 @@ rollout passes its fixed-topology gate (§10) at ~16k–33k rollouts per episode
 baseline plan rejects it because it still rolls out at decision time. The forward plan — measurement gate, shocks, development audit, bounded
 evolution-strategies training on whole-episode outcomes instead of per-decision imitation —
 is the OpenSpec change `openspec/changes/establish-project-baseline/` (`design.md`,
-milestones M1–M7), against the acceptance specs in `openspec/specs/`.
+milestones M1–M7), against the acceptance specs in `openspec/specs/`. M1 (gate), M2 (shocks)
+and M3 (development audit) are done; M4 (bounded ES, the ordering role first) waits on the user's
+decisions listed in §13.
 
 **Where the code for closed arcs went.** The drivers of every closed or rejected arc (the
 PPO trainer, the curriculum game-master, the marginal-value router, the graph branch, and
@@ -750,3 +772,173 @@ with a split of the selected worlds recorded before confirm reads them.
   above 42 return (capped by the user, 2026-10-28). A horizon-100 portable episode at 42 producers
   costs ≈ 5–19 pod s, so M4/M5's cost will be the teacher's, not the deployed path's. Fresh
   4 vCPU pod (no 8 vCPU secure capacity), ≈ 0.23 vCPU-h; M3 ≈ 27.8 of 40 (≈ 30.6 upper).
+
+### M3 exit summary (2026-10-29)
+
+**What M3 asked, and what it found, in plain English.** M3 set out with five questions. Is the
+development bar a fair one, given that the `random` routing baseline sets it on most episodes?
+Where, in a much wider space of worlds, can a better policy than the best simple rule be reached
+at all? Can an expensive lookahead teacher find it? Which of the two trained roles should M4
+improve first? Does the deployed agent stay cheap as the economy grows to 42 producers? Two
+follow-up diagnostics joined on the way: the deciding check (answer 3) and the split check
+(answer 6). Terms used below: *fanout* fN = N possible makers (producers allowed to make it) per
+product, so f14 = 14 makers and *dense* = every producer of a layer makes every product of that
+layer; `entity_planner` = the best hand-written producer policy; `d2` = the PoC-A teacher, a
+depth-2 lookahead search over orderer actions. The answers, in order:
+
+1. **Why `random` sets the bar (EXP-0048–0050).** Not because it is random. It sends each order
+   whole to one producer, and it varies which producer from one cycle to the next. A
+   deterministic rule that does both, `round_robin`, recovers at least 1.6× random's edge in
+   every cell random dominated and beats it on all 104 of those episodes. The hand-written roster
+   rules lose because they split orders (a split order completes only if every part does) and
+   keep sending to the same producer. Reading the producers' spare capacity does not help: it
+   almost never limits an order, and following it removes the variation over time. Routing
+   matters more as each product gets more possible makers: at 42 producers `round_robin`'s lead
+   over the best roster rule grows from +116 / +150 units per episode (calm / shocked) at f2 to
+   +335 / +421 at f7. The trained portable orderer is the strongest router with many makers
+   (+153 / +151 over `round_robin` at f14) but trails `round_robin` at f2 (−28.3 and −14.2 units
+   on registry v2's shocked worlds), the gate's setting.
+2. **Where the headroom is (EXP-0051, EXP-0052, tasks 4.7 and 5.3).** The *atlas bar* is the
+   best blind or hand-written rule on a world; the *ceiling* is an analytic upper bound on the
+   consumer units any policy could deliver there; the *noise floor* is how large a gain could be
+   luck; a *reach arm* is a cheap informed policy (input-aware routers and the trained orderer).
+   A world is *hard* when a reach arm beats the bar by more than the noise floor, *open* when no
+   cheap arm does but the ceiling leaves room above the bar, *saturated* when the bar nearly
+   fills demand or the ceiling. Saturation is rare: 21 of 640 screened worlds, 10 in the
+   low-tightness, small-order corner where registry v2's worlds live and 11 over-demanded worlds (tightness ρ = demand against starting throughput; ρ up to 14) where the bar already delivers ≥ 97% of what the ceiling allows. The screen's
+   first count of hard worlds was too high, because its noise floor was borrowed from
+   easy-corner worlds whose replicate spread is 18–35 times smaller than the atlas worlds' own
+   (DIAGNOSTICS 21, the borrowed-floor lesson: a stage with its own spread decides). On fresh
+   seeds with its own spreads the confirm kept 4 of 48 selected hard worlds at 12 producers and
+   10 of 24 at 42 (atlas v1; the selected worlds are split train 60 / validation 16 / held-out 16
+   / held-out-region 4: PoC-A samples from train only, no M3 choice reads held-out, and
+   held-out-region is every selected 42-producer regime-switch world). That pooled floor was in turn set by
+   a few wildly swinging worlds, and one world was hard only because its bar arm died. On the
+   user's "fix floor, then sample", task 5.3 switched to a median-based spread and a dead-arm
+   collapse rule and reclassified the recorded rows offline (atlas v2; the median floor falls
+   from 397 to 145 units at 12 producers and from 577 to 349 at 42): hard 11 / open 49 /
+   collapse 4 at 12 producers and hard 13 / open 17 / collapse 2 at 42. By rate, headroom is
+   denser and larger at 42 producers (13 of 32 selected worlds; 11 f14, 1 f7, 1 dense; median
+   +16% of the bar under atlas v1) than at 12 (11 of 64; 6 dense and 5 f4, none at f2; gains
+   5–22% of the bar, one at 83%, 12-0273); the addendum notes the earlier "isolated at 12"
+   reading came from the floor. The visible cheap lever is input-aware routing, mostly whole
+   (`makeable_weighted_whole`). Most worlds are *open*: the bar fills about 46% of orders and the
+   ceiling leaves about half the room. Task 4.7's input-output ceiling (one linear program of the
+   whole economy) did not shrink that room: it equals scheduled demand on 601 of 648
+   world-episodes and is never below 0.913 of it, while no played row exceeds it (0 of 7,776).
+   So the open room is either a limit the program leaves out (input lead time, the investment
+   fund, inventory limits) or a matter of how the economy is run; the bound cannot tell which.
+3. **The deciding check (follow-up to EXP-0050's open question: why the trained orderer's split
+   orders complete).** Read on the hard worlds with 4 or more makers, none of its pre-registered
+   branches reaches 2/3: input-aware weighting, splitting costs and scorer beyond its target hold
+   on 4 / 8 / 2 of 14 worlds under atlas v1 and 5 / 24, 15 / 24, 7 / 24 under atlas v2.
+   Input-aware routers do cut the share of expired consumer reservations whose producer lacked
+   inputs, from ≈ 0.89 to 0.71–0.73. The cause stays undiagnosed.
+4. **The teacher on mined worlds (PoC-A, EXP-0053).** `d2` starts from `round_robin` and, where
+   shocks are hidden, plays its lookahead on forks sampled from the posterior (the shock states
+   consistent with what the agents have observed). It never falls below the bar (+7 to +203
+   units) on its mined sample, 8 world-episodes at 12 producers. On open worlds it beats the bar
+   by more than the noise floor on 2 of 4 (12-0344, 12-0308), M4's teacher-label candidates,
+   but the call is thin: the margins over the matching one-episode floor are +38.7 and +16.7
+   units, 2 of 4 is the minimum for D5's "at least half", each world rests on one episode, and
+   the search's own sampling variation is in no floor, so one world falling inside noise on a
+   second seed would flip the reading. It closes only 0.1–3.3% of the open worlds' room, and
+   whether that room is reachable at all is unproven. On hard worlds it ties or trails the best
+   cheap informed router. Its clairvoyant variant `ub` (the same search on the true future)
+   scores 1–99 units *below* it on all 5 worlds where it ran: the search scores candidates over
+   a two-cycle window, more decisions tie on the true future, and ties keep the floor. So `ub` is
+   not an upper bound for this search (DIAGNOSTICS 23). A safe but weak teacher; what limits it
+   (candidates, depth, the two-cycle window, forks) is open.
+5. **Which role first (PoC-C, EXP-0054).** On the 3 shocked mined worlds the deployed portable
+   stack S trails the teacher stack T (`entity_planner` + `d2`) by 2,440 units. Swapping only the
+   orderer for the teacher (stack A) closes c_O = 1.023 of that gap; swapping only the producer for
+   `entity_planner` closes c_P = 0.118. M4 trains the ordering role first. Caveats: c_O above 1
+   is not an overshoot (A − T is inside the floor on every world, so c_O ≈ 1); the producer swap
+   and the interaction clear the floor only on 12-0111; c_P measures only the distance to the
+   hand-written `entity_planner`, not to a producer teacher; the sample is three shocked
+   12-producer worlds, one episode each. Against EXP-0053's same-digest `round_robin` rows
+   (cross-run arithmetic, under `entity_planner`), 72% of the gap is the trained orderer
+   trailing plain `round_robin` (by 274–891 units per world), 16% the search's gain over that
+   floor and 12% the producer.
+6. **Why the trained orderer trails `round_robin` (follow-up, EXP-0056).** A 2 × 2 on the same
+   scorer: sending its orders whole (TW) recovers −0.48 / 0.61 / 0.34 of the per-world gap,
+   handing its split parts out in `round_robin`'s rotation (RS) −0.02 / 0.23 / 0.09; neither
+   reaches the pre-registered 2/3 on any world, and `round_robin` (both changes) closes it.
+   Reading `joint` on 3 of 3 (D13's name for "no single change, both together"). Single changes do help on some worlds (on 12-0111 TW +544 and RS
+   +202 units, both above the 164.3 floor), just not enough. Limits: `joint` is the remainder
+   branch by construction, and only the interaction speaks to the two changes being complements
+   (positive on 3 worlds, above the floor on 2, clean of TW's investment failure only on 12-0344,
+   +335); the receiver factor covers spread across concurrent orders, rotation over time and
+   which producers alike, so which property matters is open; the traces (the scorer sends nearly
+   all of a product's concurrent orders to one producer, concurrent top share 0.98–0.99) are a
+   description, not a causal test; three shocked burst-demand 12-producer worlds, one episode
+   each. For M4, on these worlds: the orderer needs both abilities available, route an order
+   whole and vary its receivers (which property is open).
+7. **Deployed-path cost (PoC-B, EXP-0055).** Up to 42 producers no stage of a deployed decision
+   is superlinear: the orderer decision is flat in the number of makers (slope 0.03, 268 → 285
+   µs), the producer decision grows with slope 0.48, and every per-decision consumer-axis slope
+   is ≤ 0.25, against the 1.1 flag. Per cycle, cost grows with slope 1.24 on producers (reported,
+   not flagged: more producers mean more decisions per cycle). A 100-cycle episode at 42
+   producers costs 5–19 pod-seconds, so M4/M5's cost will be the teacher's, not the deployed
+   path's.
+
+**Verdict lines** (each quoted from its `RESULT.md`):
+
+| EXP | Verdict line |
+|---|---|
+| 0048 | "Verdict: diagnosed, two factors." |
+| 0049 | "Not the three rules tested, on these worlds, and the reason is diagnosed." / "Partly, and without randomness." |
+| 0050 | "Yes, routing matters much more with more makers, mostly because the hand-written rules break down." |
+| 0051 | "Measured headroom is narrower than the screen's labels" |
+| 0052 | "Confirmed headroom is a 42-producer, wide-choice (f14) phenomenon"; task 5.3 addendum: hard 11 / open 49 / collapse 4 (12), hard 13 / open 17 / collapse 2 (42) |
+| 0053 | "Not an acceptance read"; "open — search headroom on 2 of 4" |
+| 0054 | "D6 reading: **orderer**" |
+| 0055 | "Not an acceptance read; no stage flagged." |
+| 0056 | "Reading: `joint` (3 of 3 worlds)." |
+
+**Pod spend.** Billed vCPU-h per record: EXP-0048 4.4, EXP-0049 2.5, EXP-0050 3.9, EXP-0051 7.3,
+EXP-0052 3.8, EXP-0053 3.1, EXP-0054 2.6, EXP-0055 0.23, EXP-0056 0.1: **≈ 27.9 vCPU-h** of the
+40 vCPU-h M3 budget; ≈ 30.7 if the failed 16 vCPU pod before EXP-0052 (≈ 2.8 vCPU-h-equivalent)
+was billed, which is not confirmed. On 2026-10-29, after ≈ 27.8 vCPU-h (≈ 28, before EXP-0056),
+the user reset the M3 budget counter to a fresh 40; against it M3 used ≈ 0.1 (recorded in
+EXP-0056's RESULT.md and `sizing.md` §EXP-0056).
+
+**The user's decisions during M3.**
+- 2026-10-28: after EXP-0048, two follow-up questions (can an informed rule spread whole orders
+  better; did the trained orderer learn random's trick), which became EXP-0049.
+- 2026-10-28: after EXP-0049, "we have only 2 factories to choose from — increase the number"
+  (EXP-0050).
+- 2026-10-28: replace "PoC-A on the gate worlds" with the headroom atlas (option a, design
+  D10–D12).
+- 2026-10-28: PoC-B capped at 42 producers; no larger economy anywhere in M3.
+- 2026-10-29: experiments with a hard stop ≤ 40 vCPU-h launch without asking (per run; the
+  milestone budget still binds).
+- 2026-10-29: secure pods only, never community cloud; the largest secure CPU shape first.
+- 2026-10-29: the input-output ceiling (task 4.7).
+- 2026-10-29: "fix floor, then sample" (task 5.3: robust floor, dead-arm rule, atlas v2 before
+  PoC-A).
+- 2026-10-29: add the DIAGNOSTICS 19 split check to M3 before this summary (design D13, tasks
+  11.2 / 11.3, EXP-0056).
+- 2026-10-29: M3 budget counter reset (above).
+
+**Decisions still with the user.**
+- **Roster v3** (design D3): either add `round_robin` (and `even_split_rotating`) as roster
+  members under new names, through a roster v3 draft and a baseline-only re-screen (≈ 4 vCPU-h)
+  that raises the gate's hindsight baseline, or keep roster v2 and its bar unchanged.
+- **Atlas worlds or families in a gate registry** (design D12), and which regions: the evidence
+  points at the 42-producer wide-choice hard worlds (f14); the 12-producer dense / f4 hard
+  worlds are a smaller second region; or none.
+- **A 42-producer teacher read** (PoC-A / PoC-C at 42 producers; design D5, D8): its spend.
+- **How M4 trains the orderer, given EXP-0056** (scoped to its three worlds): on those worlds the orderer needed both abilities, route whole
+  and vary receivers (which property is open). Options for the
+  label source: diagnose what limits `d2` first (root-cause rule), `d2` labels on its two thin
+  open candidate worlds, or `round_robin`-like targets.
+
+**Open, undiagnosed** (the root-cause rule asks for these before M4 designs training on them):
+what limits `d2` (candidates, depth, the two-cycle window, forks; EXP-0053); which receiver
+property matters (spread, rotation, which producers; EXP-0056 limit (ii)); why the trained
+orderer's split orders complete (the deciding check, answer 3).
+
+Housekeeping left to this change: amend `establish-project-baseline` D4's "up to 1200
+producers" in a separate change; sync the specs and archive `add-m3-development-audit`. Branch
+`new-model` is ahead of `origin`; pushing is a human gate.

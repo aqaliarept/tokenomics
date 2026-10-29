@@ -1021,3 +1021,6 @@ Sum 8.0 s; the `--poc split --dry-run` on 12-0060 (6 episodes) takes 7.4 s wall 
 - **Hard stop 1 billed vCPU-h** = 15 min of 4 vCPU pod life (fallback 8 vCPU secure: 7.5 min).
 - M3 spend: ≈ 27.8 billed (≈ 30.6 upper) through EXP-0055 + ≤ 1 → ≤ 31.6 of 40. Within the
   40 vCPU-h per-run auto-approval and the milestone budget.
+- **Budget counter reset (2026-10-29).** Before EXP-0056 launched, the user reset the M3 pod
+  budget counter to a fresh 40 vCPU-h, after ≈ 27.8 billed (≈ 30.6 upper) through EXP-0055.
+  EXP-0056 billed ≈ 0.1 against the fresh counter (EXP-0056 RESULT.md, Details).
