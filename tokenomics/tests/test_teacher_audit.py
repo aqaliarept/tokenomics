@@ -131,6 +131,79 @@ def test_pre_registered_sample_equals_the_probe() -> None:
     assert ta.first_confirm_seed(ta.world_view(_entry(atlas, SHOCKED_WORLD))) == 1295251592
 
 
+STEP2_SAMPLE = [
+    ("hard", "ws-atlas-v1-12-0060"), ("hard", "ws-atlas-v1-12-0176"),
+    ("hard", "ws-atlas-v1-12-0005"), ("hard", "ws-atlas-v1-12-0348"),
+    ("open", "ws-atlas-v1-12-0111"), ("open", "ws-atlas-v1-12-0344"),
+    ("open", "ws-atlas-v1-12-0308"), ("open", "ws-atlas-v1-12-0392"),
+]
+
+
+@needs_atlas
+def test_step2_reduction_sample() -> None:
+    """D5 step 2 (sizing.md §EXP-0053, the EXP-0053 sample): the same rule at 8 world-episodes,
+    4 hard + 4 open; 12-0408 leaves by the rule."""
+    atlas = ta.load_atlas(ATLAS_V2)
+    assert ta.pre_registered_sample(atlas, ta.STEP2) == STEP2_SAMPLE
+    assert [w for _, w in ta.pre_registered_sample(atlas, ta.STEP2)] == [
+        v["world"] for v in ta.select_worlds(atlas, reduction=ta.STEP2)]
+    assert ta.pre_registered_sample(atlas) == EXPECTED_SAMPLE  # the full sample is unchanged
+    with pytest.raises(ValueError, match="unknown reduction"):
+        ta.pre_registered_sample(atlas, "step9")
+    with pytest.raises(ValueError, match="exclusive"):
+        ta.select_worlds(atlas, [SHOCKED_WORLD], reduction=ta.STEP2)
+
+
+class _PastChecks(Exception):
+    pass
+
+
+@needs_atlas
+def test_step2_reduction_allowed_in_a_real_run(tmp_path: Path,
+                                               monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real run with `--reduction step2` passes the real-run checks (it stops at the
+    checkpoint check, which runs after them); any other filter is still refused."""
+    def past(*_a: object, **_k: object) -> None:
+        raise _PastChecks
+
+    monkeypatch.setattr(ta, "checked_orderer", past)
+    monkeypatch.setattr(ta, "lp_available", lambda: True)
+    roster = load_roster(str(ta.DEFAULT_ROSTER))
+    kw = dict(atlas_path=ATLAS_V2, orderer_ckpt="o.pt", roster=roster, source_commit="a" * 40,
+              log=lambda s: None)
+    with pytest.raises(_PastChecks):
+        ta.run_teacher_audit(out_dir=tmp_path / "step2", reduction=ta.STEP2, **kw)
+    with pytest.raises(_PastChecks):  # the full sample, as before
+        ta.run_teacher_audit(out_dir=tmp_path / "full", **kw)
+    for extra, flag in (({"max_worlds": 2}, "--max-worlds"), ({"arms": ["floor", "d2"]}, "--arms"),
+                        ({"horizon": 12}, "horizon 12"), ({"baseline": []}, "--baseline"),
+                        ({"max_search_actions": 3}, "--max-search-actions"),
+                        ({"replicates": 1}, "--replicates"),
+                        ({"shock_profile": "shocks-i-smoke"}, "--shock-profile")):
+        with pytest.raises(ValueError, match=flag):
+            ta.run_teacher_audit(out_dir=tmp_path / "x", reduction=ta.STEP2, **kw, **extra)
+    with pytest.raises(ValueError, match="--worlds is set"):  # an explicit world list, no reduction
+        ta.run_teacher_audit(out_dir=tmp_path / "w", worlds=[SHOCKED_WORLD], **kw)
+
+
+@needs_atlas
+def test_step2_reduction_recorded_in_spec(tmp_path: Path) -> None:
+    """spec.json pins the reduction and records its sample and the deviation note."""
+    out = tmp_path / "rec"
+    code = ta.run_teacher_audit(atlas_path=ATLAS_V2, out_dir=out, orderer_ckpt="unused.pt",
+                                roster=load_roster(str(ta.DEFAULT_ROSTER)), dry_run=True,
+                                reduction=ta.STEP2, max_worlds=1, arms=["floor"], baseline=[],
+                                horizon=3, log=lambda s: None)
+    assert code == 0
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["pins"]["reduction"] == "step2"
+    red = spec["pre_registered"]["reduction"]
+    assert (red["name"], red["size"], red["hard"]) == ("step2", 8, 4)
+    assert "deviation" in red["note"] and "`ub` kept" in red["note"]
+    assert [x["world"] for x in spec["pins"]["sample"]] == [SHOCKED_WORLD]
+    assert spec["pins"]["sample"][0]["pre_registered"] is True
+
+
 @needs_atlas
 def test_moving_hit_world_offered_to_the_teacher(tmp_path: Path) -> None:
     """Scenario "Moving-hit world offered to the teacher": hit and switch worlds with the best

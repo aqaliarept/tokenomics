@@ -39,7 +39,8 @@ skeleton. Never an acceptance read: no verdict, the gate margins are reference r
 
 Refuses any world above 42 producers, any world outside the manifest's train split and any
 moving-hit or regime-switch world. A real run needs the registered atlas (content hash), the full
-sample, every arm, horizon 100, the registered shock window, the frozen roster, B_lp (scipy) and
+sample or a pre-registered reduction of it (`--reduction step2`: D5 step 2, 8 world-episodes with
+`ub` kept, the EXP-0053 sample of sizing.md §EXP-0053), every arm, horizon 100, the registered shock window, the frozen roster, B_lp (scipy) and
 a 40-hex source commit; anything else needs `--dry-run` (marked "not an acceptance read").
 """
 
@@ -137,6 +138,16 @@ MAX_PRODUCERS = 42  # spec "Expensive teacher only on a mined sample"
 SAMPLE_PRODUCERS = 12
 SAMPLE_SIZE = 12
 SAMPLE_HARD = 6
+# Pre-registered reductions (D5 "Sizing"; sizing.md §EXP-0053): name -> (size, hard target, note).
+# A reduction is the same rule at a smaller size, so it is allowed in a real run.
+STEP2 = "step2"
+REDUCTIONS: dict[str, tuple[int, int, str]] = {
+    STEP2: (8, 4, "D5 reduction step 2 (8 world-episodes, 4 hard + 4 open by the same rule) with "
+                  "`ub` kept: a deviation from the written order (step 1, drop `ub`, first), "
+                  "decided by the supervisor on cost alone before any result was seen "
+                  "(sizing.md §EXP-0053): with step 2 the run fits the 10 vCPU-h stop with `ub`, "
+                  "the only measure of what the hidden information is worth"),
+}
 HARD, OPEN = "hard", "open"
 POC_PATTERNS = (CYCLIC, IID, DRIFT, "burst", "seasonal")  # D4: hit / switch carry hidden state
 FLOOR_ROUTER = "round_robin"
@@ -209,17 +220,23 @@ def refusal(view: Mapping) -> str | None:
     return None
 
 
-def pre_registered_sample(atlas: Mapping) -> list[tuple[str, str]]:
-    """(class, world) of D5's sample, hard first, each class in rank order."""
+def pre_registered_sample(atlas: Mapping, reduction: str | None = None
+                          ) -> list[tuple[str, str]]:
+    """(class, world) of D5's sample, hard first, each class in rank order; `reduction` = a
+    pre-registered smaller size of the same rule (`REDUCTIONS`)."""
+    if reduction is not None and reduction not in REDUCTIONS:
+        raise ValueError(f"unknown reduction {reduction!r}; known: {sorted(REDUCTIONS)}")
+    size, hard = (REDUCTIONS[reduction][:2] if reduction is not None
+                  else (SAMPLE_SIZE, SAMPLE_HARD))
     pool = {v["world"]: v for v in map(world_view, atlas["worlds"])
             if v["split"] == TRAIN and v["size"] == SAMPLE_PRODUCERS
             and v["pattern"] in POC_PATTERNS}
     ranked = {c: sorted((w for w, v in pool.items() if v["class"] == c),
                         key=lambda w: -(pool[w]["gain"] if c == HARD else pool[w]["room"]))
               for c in (HARD, OPEN)}
-    n = {HARD: min(SAMPLE_HARD, len(ranked[HARD]))}
-    n[OPEN] = min(SAMPLE_SIZE - n[HARD], len(ranked[OPEN]))
-    n[HARD] = min(SAMPLE_SIZE - n[OPEN], len(ranked[HARD]))
+    n = {HARD: min(hard, len(ranked[HARD]))}
+    n[OPEN] = min(size - n[HARD], len(ranked[OPEN]))
+    n[HARD] = min(size - n[OPEN], len(ranked[HARD]))
     out: list[tuple[str, str]] = []
     for c in (HARD, OPEN):
         want = {True: n[c] // 2, False: n[c] - n[c] // 2}
@@ -238,17 +255,19 @@ def first_confirm_seed(view: Mapping) -> int:
 
 
 def select_worlds(atlas: Mapping, worlds: Sequence[str] | None = None,
-                  max_worlds: int | None = None) -> list[dict]:
+                  max_worlds: int | None = None, reduction: str | None = None) -> list[dict]:
     """The sampled world views (`worlds`: a dry run's explicit ids, each refused like the
     sample would be). Any refused world raises."""
     views = {v["world"]: v for v in map(world_view, atlas["worlds"])}
+    if worlds and reduction is not None:
+        raise ValueError("--worlds and --reduction are exclusive: a reduction is a sample")
     if worlds:
         unknown = sorted(set(worlds) - set(views))
         if unknown:
             raise ValueError(f"worlds {unknown} are not in the atlas")
         chosen = [views[w] for w in worlds]
     else:
-        chosen = [views[w] for _, w in pre_registered_sample(atlas)]
+        chosen = [views[w] for _, w in pre_registered_sample(atlas, reduction)]
     for v in chosen:
         why = refusal(v)
         if why:
@@ -657,6 +676,7 @@ def run_teacher_audit(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
                       arms: Sequence[str] | None = None,
                       baseline: Sequence[str] | None = None, replicates: int | None = None,
                       shock_profile: str | None = None, max_search_actions: int | None = None,
+                      reduction: str | None = None,
                       source_commit: str = "", dry_run: bool = False,
                       run_job_fn: Callable[[Job], dict[str, str]] = run_audit_job,
                       log: Callable[[str], None] = print) -> int:
@@ -671,7 +691,7 @@ def run_teacher_audit(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
                          f"known: {TEACHER_ARMS}")
     atlas_path = Path(atlas_path)
     atlas = load_atlas(atlas_path)
-    views = select_worlds(atlas, worlds, max_worlds)
+    views = select_worlds(atlas, worlds, max_worlds, reduction)
     if not dry_run:
         problems = real_run_problems(
             atlas=atlas, roster=roster, horizon=horizon, source_commit=source_commit,
@@ -694,7 +714,7 @@ def run_teacher_audit(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
     for e in entries:
         expected |= expected_keys({e.id: grid[e.id]}, tables[e.id], 1)
     source = source_fingerprint(source_commit or None)
-    classes = {w: c for c, w in pre_registered_sample(atlas)}
+    classes = {w: c for c, w in pre_registered_sample(atlas, reduction)}
     pins = {
         "driver": DRIVER, "horizon": horizon, "dry_run": dry_run, "depth": DEPTH,
         "atlas": {"path": str(atlas_path), "sha256": sha256_file(atlas_path),
@@ -702,7 +722,7 @@ def run_teacher_audit(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
         "roster_version": roster.version, "checkpoints": {"orderer": pin["sha256"]} if pin
         else {}, "producer": PRODUCER, "floor": FLOOR_ROUTER, "teacher_arms": list(teachers),
         "baseline_arms": base_table, "shock_profile": shock_profile,
-        "max_search_actions": max_search_actions,
+        "max_search_actions": max_search_actions, "reduction": reduction,
         "sample": [{"world": v["world"], "class": v["class"], "shocks": v["shocks"],
                     "pattern": v["pattern"], "pre_registered": v["world"] in classes,
                     "arms": [a["subject"] for a in tables[v["world"]]]} for v in views],
@@ -725,7 +745,10 @@ def run_teacher_audit(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
             "teacher_arms": [FLOOR, D2],
             "reference_arms": {UB: {"hidden_information": True, "teacher": False,
                                     "label_source": False}},
-            "gate_margins_reference_only": GATE_MARGINS},
+            "gate_margins_reference_only": GATE_MARGINS,
+            "reduction": ({"name": reduction, "size": REDUCTIONS[reduction][0],
+                           "hard": REDUCTIONS[reduction][1], "note": REDUCTIONS[reduction][2]}
+                          if reduction is not None else None)},
         "driver_choices": {
             "ambiguity_gate": "none: every stream with >= 2 eligible producers is searched "
                               "(a whole-order floor is never ambiguous)",
@@ -821,6 +844,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--replicates", type=int, help="dry run: R of every stochastic arm")
     p.add_argument("--horizon", type=int, default=HORIZON)
     p.add_argument("--shock-profile", choices=(SHOCKS_I_SMOKE,))
+    p.add_argument("--reduction", choices=sorted(REDUCTIONS),
+                   help="a pre-registered smaller sample (allowed in a real run)")
     p.add_argument("--max-search-actions", type=int,
                    help="dry run: search at most N decisions per teacher episode")
     a = p.parse_args(argv)
@@ -832,6 +857,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds, arms=_csv_strs(a.arms),
             baseline=_csv_strs(a.baseline), replicates=a.replicates,
             shock_profile=a.shock_profile, max_search_actions=a.max_search_actions,
+            reduction=a.reduction,
             source_commit=commit, dry_run=a.dry_run)
     except ContractRunError:
         return CONTRACT_INVALID

@@ -604,7 +604,11 @@ bound leaves room, does a lookahead search reach more than the best cheap arm?
   to E + 1 = 5 candidates at fanout 4, ×1.7 → 0.12–0.7 vCPU-h. 12 world-episodes → 1.4–8.4; `ub`
   uses one scenario, ≈ 0.1–0.5 more. **Hard stop 8 vCPU-h.** Reduction order if the extrapolation
   (× 2 safety factor) exceeds it: 1. drop `ub`; 2. 8 world-episodes (4 hard + 4 open); 3. nothing
-  launches and the implementer reports to the supervisor.
+  launches and the implementer reports to the supervisor. *(As decided after task 6.3, `sizing.md`
+  §EXP-0053: measured per world, the full sample's longest job (12-0408's `d2`, 82 pod min) puts the
+  full sample above the stop at × 2 on every shape; EXP-0053 runs step 2 with `ub` kept, a deviation from this order decided by
+  the supervisor on cost alone before any result, on an 8 vCPU pod with a 10 billed vCPU-h stop. The
+  driver's `--reduction step2` (task 6.4) is that pre-registered sample, allowed in a real run.)*
 
 ### D6. PoC-C, role attribution on mined shocked worlds (EXP-0054)
 
