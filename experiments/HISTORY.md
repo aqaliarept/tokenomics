@@ -674,3 +674,28 @@ with a split of the selected worlds recorded before confirm reads them.
   in D5's sense on 12-producer mined worlds; what limits it (candidates, depth, the myopic
   window, forks) is open and needs a discriminating check first. ≈ 3.1 vCPU-h billed; M3 ≈ 25.0 of 40
   (≈ 27.8 upper).
+
+### Which role to train first (PoC-C)
+
+- **EXP-0054 — PoC-C. The orderer: swapping it for the teacher closes the whole gap, swapping
+  the producer 12%.** On the 3 shocked world-episodes of PoC-A's sample as run (D6: 12-0060
+  hard, 12-0111 and 12-0344 open, burst demand + `shocks-i`, one episode each), the portable
+  stack S delivers 2,440 units (26%) fewer than the teacher stack T (`entity_planner` + `d2`).
+  Swapping only the orderer for `d2` (A, the search planning with the portable producer) closes
+  c_O = 1.02 of that gap; swapping only the producer for `entity_planner` (B) closes c_P = 0.12;
+  the difference 0.90 is far outside D6's 0.15 tie band, every world reads the same way and
+  A − B clears the one-episode noise floor (3σ_ep = 164.3 units) on all three, so by D6's rule
+  **M4 trains the ordering role first** (not a tie; the choice does not go to the user). The
+  secondary readings mostly sit inside that floor: A ≈ T (c_O ≈ 1), and the producer swap and
+  the interaction (−344 summed) are distinguishable from zero only on 12-0111. Against
+  EXP-0053's same-digest `round_robin` rows, 72% of the gap is the trained orderer trailing plain
+  whole-order rotation under `entity_planner` (by 274–891 units per world, above the floor on
+  all three), 16% is the search's gain over that floor and 12% the producer. Why the trained
+  orderer trails rotation is not diagnosed: it is DIAGNOSTICS 19's symptom, and EXP-0053's traces
+  fit both splitting (f) and less receiver rotation (b); the discriminating check (the trained
+  orderer forced whole against itself and `round_robin` on these worlds, a new router first)
+  decides how M4 trains the orderer, including whether `d2` labels are the source. T had to be rerun (task
+  8.1 changed the search worker, so the teacher-path fingerprint differs) and reproduced EXP-0053
+  exactly, units and search counts. Limits: the producer reference is hand-written, not a
+  teacher; 3 worlds, one episode each, 12 producers only. ≈ 2.6 vCPU-h billed; M3 ≈ 27.6 of 40
+  (≈ 30.4 upper).

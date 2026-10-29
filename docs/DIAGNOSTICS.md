@@ -246,6 +246,23 @@ clear but partial share of the input-shortage cause of consumer expiries (≈ 16
 consistent with the trained orderer's split parts completing more often (not a causal test). What
 it does not settle is whether splitting itself costs; the 42-producer evidence leans that way.
 
+**Seen in EXP-0054** (`experiments/EXP-0054-role-attribution-mined/`, PoC-C; open, not
+diagnosed). On the 3 shocked, burst-demand 12-producer world-episodes of PoC-A's sample
+(12-0060, 12-0111, 12-0344), the trained orderer with `entity_planner` trails whole-order
+`round_robin` by 274 / 891 / 589 units (EXP-0053's rows; each above the one-episode floor
+3σ_ep = 164.3), 72% of the portable stack's gap to the teacher stack. EXP-0053's trace columns
+(trained orderer / `round_robin`) fit two branches and do not separate them: (f) split share of
+consumer orders 0.36 / 0.23 / 0.26 against 0, `wasted_units_consumer` 190 / 428 / 345 (sum 963
+of the 1,754); (b) `receiver_change_share_consumer` 0.83 / 0.46 / 0.55 against 0.94 / 0.71 /
+0.68, `rejected_bid_units_consumer_displaced` 493 / 3,489 / 2,886 against 68 / 1,346 / 1,749.
+Check (not yet run; needs a new diagnostic router, a code task): the trained orderer forced to
+route each order whole to its argmax receiver, against the trained orderer as-is and against
+`round_robin`, on these 3 world-episodes (`entity_planner` producer, routing tracer on). Branches:
+the whole version recovers most of the 1,754 units → (f), splitting is the cost, and M4's
+orderer must be able to route whole; it does not → read its `receiver_change_share_consumer`
+against `round_robin`'s: lower and losing → (b), the orderer's receiver variation is the lever;
+neither → a new cause, diagnose before M4 designs orderer training.
+
 ## 20. A world set has no headroom
 
 **Problem (plain English):** on some worlds no better policy can be reached: every cheap policy
