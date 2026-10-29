@@ -754,8 +754,8 @@ def setup_env(ssh: Ssh, remote_dir: str, *, cpu: bool = False, python_bin: str =
         package (`-e .`) so it REUSES that prebuilt CUDA torch — no multi-GB download.
       * CPU (`cpu=True`): a `runpod/base:*` image has no torch. Make an ISOLATED venv
         (no system site-packages, so a stray system torch can't shadow it) and install
-        the `[train]` extra so pip pulls CPU torch into the venv. This is the right
-        profile for the single-threaded, CPU-bound work (scorer distillation, DAgger,
+        the `[train]` extra so pip pulls CPU torch into the venv (and `[lp]`, scipy). This
+        is the right profile for the single-threaded, CPU-bound work (scorer distillation, DAgger,
         rollout search) — the GPU buys nothing for batch-1 inference + a Python
         round-robin rollout, so a cheap CPU pod is the correct off-box target.
 
@@ -768,18 +768,19 @@ def setup_env(ssh: Ssh, remote_dir: str, *, cpu: bool = False, python_bin: str =
         # `torch` is the CUDA build, which drags in multi-GB `nvidia-*` deps that blow a
         # small container disk (5 GB). The CPU wheel is ~190 MB with no CUDA libs.
         # `--no-cache-dir` keeps pip from also stashing the wheel on the same small disk.
-        # The second install then sees torch satisfied and adds only the rest of [train].
+        # The second install then sees torch satisfied and adds only the rest of [train];
+        # `lp` adds scipy for the atlas's input-output bound B_lp (task 4.7).
         install = (
             f"test -x .venv/bin/python || {python_bin} -m venv .venv && "
             ".venv/bin/pip install --no-cache-dir -q torch "
             "--index-url https://download.pytorch.org/whl/cpu && "
-            ".venv/bin/pip install --no-cache-dir -q -e .[train]"
+            ".venv/bin/pip install --no-cache-dir -q -e .[train,lp]"
         )
     else:
-        # GPU profile: reuse the image's system CUDA torch (no torch install).
+        # GPU profile: reuse the image's system CUDA torch (no torch install); `lp` = scipy.
         install = (
             f"test -x .venv/bin/python || {python_bin} -m venv --system-site-packages .venv && "
-            ".venv/bin/pip install -e . -q"
+            ".venv/bin/pip install -e .[lp] -q"
         )
     cmd = (
         f"cd {remote_dir} && {install} && "

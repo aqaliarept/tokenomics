@@ -482,3 +482,12 @@ worlds, 1 episode per world, a smaller K) is the supervisor's or the user's deci
 **Budget.** Planned: screen 8.26 + confirm 4.49 = 12.75 pod vCPU-h (≈ 13.4 billed), against
 D8's central 11.5 for the two and their stops' sum of 16. With ≈ 10.8 billed so far, M3 would
 stand at ≈ 24.2 of 40 after the atlas.
+
+**B_lp in confirm (task 4.7).** Confirm also solves B_lp and B_lp_base once per world-episode
+(on the first job of each). Measured in the EXP-0051 re-bound (`probes/rebound_47.jsonl`, both
+programs, local box): 0.59 s mean per world-episode at 12 producers and 7.7 s at 42 (max 23 s).
+On the 96 selected worlds (122 world-episodes at 12, 63 at 42; cyclic worlds without shocks play
+one episode) that is 73 + 597 = 670 local s, **0.12 pod vCPU-h** (× 0.646), so the confirm
+recheck becomes 3.91 + 0.12 = **4.03 pod vCPU-h**, still under the 6 vCPU-h stop. The solve sits
+on one job per world-episode; the longest such job (42 f14 with an 18.8 s LP) stays far below the
+≈ 15 min wall. The pod installs the `lp` extra (scipy) for it.

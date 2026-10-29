@@ -12,6 +12,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 train = ["supersuit>=3.9", "torch>=2.2"]
+# the input-output ceiling B_lp (eval/ceiling_bound.py, task 4.7): HiGHS via scipy; only the
+# atlas bound needs it, so it stays out of the core dependencies
+lp = ["scipy>=1.11"]
 
 [build-system]
 requires = ["setuptools>=68"]

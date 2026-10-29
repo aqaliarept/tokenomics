@@ -99,9 +99,9 @@ worlds of the same stratum, not a standard error from the world's own one or two
 - **THEN** the noise floor still uses the pooled spread of its stratum
 
 ### Requirement: Upper bound stays above every played arm
-The offline achievable-units upper bound SHALL be computed from the demand schedule the
-environment built for the episode, SHALL be reported only as a ceiling and never as a policy, and
-SHALL be at least the units of every arm played on that world-episode.
+The offline achievable-units upper bounds SHALL be computed from the demand schedule the
+environment built for the episode, SHALL be reported only as ceilings and never as a policy, and
+SHALL each be at least the units of every arm played on that world-episode.
 
 #### Scenario: Demand cap reported as such
 - **WHEN** the upper bound's capacity term does not bind on a world
@@ -115,16 +115,41 @@ SHALL be at least the units of every arm played on that world-episode.
 - **WHEN** a world has a demand pattern or demand drift
 - **THEN** its upper bound uses that episode's built demand schedule, including every pattern draw
 
+### Requirement: Input-output bound
+The atlas SHALL also compute an input-output upper bound per world-episode: one linear program over
+every producer, capacity type and product that honours each producer's declared products, recipe
+inputs, degradation with costed restorations, costed upgrades and the order time-to-live window. It
+SHALL be at least the units of every arm played on that world-episode.
+
+#### Scenario: Input-output bound below an arm
+- **WHEN** an arm delivers more units than the input-output bound on the same world-episode
+- **THEN** the run is invalid and the result names the world, episode and arm
+
+#### Scenario: Upgrades are paid for
+- **WHEN** a producer can upgrade its capacity
+- **THEN** the input-output bound lets it complete at most one upgrade per cycle, each consuming one
+  unit of the upgrade product made with capacity, instead of adding capacity for free
+
+#### Scenario: Capacity of a producer that does not declare the product
+- **WHEN** a producer owns a capacity type a product needs but does not declare that product
+- **THEN** the input-output bound does not count that producer's capacity toward the product
+
 ### Requirement: Room is read against base capacity
-Each world's room SHALL be read against a ceiling that is the smaller of the upper bound and a
+Each world's room SHALL be read against a ceiling that is the smallest of the upper bounds and a
 base-capacity ceiling (base capacity at its initial maximum, no upgrades), and never below the best
-played arm's units. Every world-episode on which an arm exceeds the base-capacity ceiling SHALL be
+played arm's units. Where the input-output program was solved, the base-capacity ceiling SHALL be
+that program without upgrades. Every world-episode on which an arm exceeds the base-capacity ceiling SHALL be
 counted and reported.
 
 #### Scenario: Demand beyond base capacity
 - **WHEN** a world's scheduled demand far exceeds what its base capacity can make and the atlas bar
   reaches 0.97 of the base-capacity ceiling
 - **THEN** the world is classed saturated, not open
+
+#### Scenario: Base-capacity ceiling from the input-output program
+- **WHEN** the input-output program was solved for a world-episode
+- **THEN** its base-capacity ceiling is the program's value without upgrades, which is never above
+  the base-capacity bound that pools capacity per type
 
 #### Scenario: Arm above the base-capacity ceiling
 - **WHEN** an arm delivers more units than the base-capacity ceiling on a world-episode

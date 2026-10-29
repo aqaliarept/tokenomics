@@ -136,6 +136,18 @@ consumers only, so a cyclic world is never patterned.
   - B_base, the base-capacity ceiling, which is not guaranteed.
 
   The ceiling is C = max(min(B2, B_base), best arm), and room = (C − bar) / C.
+
+  *Note (task 4.7, 2026-10-29).* Two more bounds come from one input-output linear program
+  (`ceiling_bound.lp_bound`, design D12):
+  - B_lp, which is sound like B2. It accounts for producer eligibility, the joint product mix,
+    exact recipes, degradation with costed restorations, costed upgrades (at most one per
+    producer per cycle) and the TTL window;
+  - B_lp_base, the same program without upgrades. It replaces B_base as the base-capacity
+    ceiling and is never above it.
+
+  Where the LP ran, the ceiling is C = max(min(B2, B_lp, B_lp_base), best arm). The solver is
+  scipy's HiGHS, in the optional `lp` extra. On EXP-0051's lever range a costed upgrade per cycle
+  still lets capacity reach demand, so B_lp is mostly a demand cap too.
 - **Classes.** Evaluated in order:
   1. collapse;
   2. saturated (bar fill ≥ 0.95 or bar ≥ 0.97 · C);
@@ -182,7 +194,8 @@ The atlas answers the mining arc's failure in three ways:
 - An atlas world is reproducible from its record alone, and the config hash is checked on
   rebuild.
 - The B_base ceiling is optimistic about degradation and blind to upgrades, so the count of arms
-  above B_base is reported.
+  above B_base is reported. From task 4.7 on, B_lp_base takes its place: it costs degradation
+  and restorations, but it stays blind to upgrades, so the count is kept.
 - Sizes are capped at 12 and 42 until agents beat baselines at 42 (the scale target).
 
 Cites: ADR-0055 (seeded streams, fingerprint omission, shock-free twin), EXP-0033

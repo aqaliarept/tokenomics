@@ -245,3 +245,72 @@ dense 3; shocks on 17; 9 by coverage pass). Split: 12 → train 39, validation 1
   too small for σ_rep on atlas worlds; σ_ep unmeasured) and a 2 × SE floor, and the winning arm is stochastic with one replicate; open room partly rests on B_base,
   which ignores degradation. EXP-0052 replays the 96 selected worlds on fresh seeds (recheck
   extrapolation 3.91 pod vCPU-h, stop 6) and decides.
+
+## Addendum (task 4.7, 2026-10-29): the input-output ceiling
+
+**In plain English.** The screen judged room against two simple bounds: B2, which counts
+upgrades as free and so is really just the scheduled demand, and B_base, which looks at capacity
+but pools it across producers, ignores degradation and is not guaranteed. Task 4.7 replaced them
+with one linear program, an input-output (Leontief-style) model of the whole economy: each
+producer can only make the products it declares, with its own capacity; one product mix is shared
+across all capacity types; recipes are followed exactly, so inputs, restorations and upgrades all
+have to be made by someone; capacity wears down every cycle and only comes back through
+restorations; upgrades are allowed, at most one per producer per cycle, and each costs a real
+product; and an order can only be served in the three cycles before it expires. The guaranteed
+version (with upgrades) is **B_lp**; the same program with upgrades switched off is
+**B_lp_base**, the new base-capacity ceiling.
+
+The question was whether this sharper ceiling changes where the screen sees room. It barely does.
+B_lp never falls below what any policy actually delivered (0 of 7,776 rows), so it is sound. But on
+601 of 648 world-episodes it still equals the scheduled demand, and it is never below 91% of it:
+one paid-for upgrade per cycle is cheap enough on these worlds (e.g. +23 capacity on a base of 67
+for one unit of a 4-capacity product) that capacity could grow until demand binds. The ceiling
+without upgrades, B_lp_base, is never above B_base and is lower on 202 world-episodes, but by a
+median factor of 1.000, so room hardly moves. Read with C = max(min(B2, B_lp, B_lp_base), best
+arm), one world changes class (12-0369, open → saturated: the bar fills 11% of orders and is
+already at what base capacity allows) and none of the 96 selected worlds changes class. The
+selection rule would pick the same 32 worlds at 42 producers and 60 of the same 64 at 12; the
+other 4 swaps are only a re-ranking among worlds that stay open (room 0.59–0.64 instead of
+0.65–0.69).
+
+What this means: the bar's low fill on open worlds (about 40–45% of orders) is not explained by
+the limits the program models. Capacity, its upkeep, who may make what, the recipes and the
+consumer order deadline all allow far more. That does not yet say what does cause it, because the
+program leaves three real limits out:
+- **input lead time**: the program lets an input be used before it is made, while the simulation
+  needs it in stock before assembly, bought through a replenishment order with its own TTL, across
+  multi-level recipes. The screen's traces fit this: for the two arms that set the bar on almost
+  every world (`round_robin`, `random_whole`, 1,944 rows), TTL expiries are 84% of the consumer
+  units lost (8.17 M of 9.77 M), and 87% of those expired with the receiving producer's inputs
+  short (7.09 M against 1.07 M with inputs in stock);
+- **the investment fund**: it is fixed at half the emission per cycle and pays for every input
+  purchase, restoration and upgrade. A funded order needs at least one token, so the fund caps the
+  number of such orders per cycle; it does not cap units per order, so the program cannot use it
+  as a sound limit, but it shapes which orders get through;
+- **inventory limits** on input stock.
+
+So the gap is either a limit of this kind or a matter of how the economy is run (how inputs are
+stocked, how the fund is spent, how orders are routed, how little producers upgrade), and this
+bound cannot tell the two apart. A time-expanded input flow in the program, or the teacher (PoC-A)
+finding policies that close the gap, would discriminate. Until then the open worlds' room is room
+against a bound that ignores these limits, and the bound cannot say how much of it is reachable.
+EXP-0052 keeps this screen's selection and split and reads its ceiling with B_lp and B_lp_base on
+its own episodes (design D12).
+
+| check (648 world-episodes, `probes/rebound_47.py`) | result |
+|---|---|
+| rows above B_lp + 0.01 | 0 of 7,776 |
+| B_lp above B2 / B_lp_base above B_base | 0 / 0 |
+| B_lp = B2 (demand) | 601; below demand on 47 (min B_lp / demand 0.913) |
+| B_lp_base < B_base | 202 (median ratio 1.000) |
+| classes with the LP ceiling, 12 producers | saturated 22, hard 213, open 273, flat 4 (one open → saturated: 12-0369, not selected) |
+| classes with the LP ceiling, 42 producers | unchanged (hard 68, open 58, flat 1, collapse 1) |
+| selection rerun with the LP ceiling | 42: 32 of 32 the same; 12: 60 of 64 the same (dropped 12-0089, 0155, 0352, 0436, all still open, room ≥ 0.59; added 12-0012, 0025, 0196, 0336) |
+| ceiling against B_lp alone (guaranteed, for comparison) | 12: 12 classes change upward (8 saturated → open, 3 saturated → hard, 1 flat → open); 42: none |
+| solve time, both programs | 0.59 s mean per world-episode at 12 producers, 7.7 s at 42 (max 23 s); 1,335 s in all |
+
+Reproduce: `../.venv/bin/python ../openspec/changes/add-m3-development-audit/probes/rebound_47.py
+compute --out <jsonl>` (chunked with `--start/--count`), then `... analyse --out <jsonl>` (from
+`/srv/research/tokenomics/tokenomics`, with the `lp` extra); the per-world-episode values are in
+`/srv/research/tokenomics/openspec/changes/add-m3-development-audit/probes/rebound_47.jsonl`. The
+screen's own files are unchanged.

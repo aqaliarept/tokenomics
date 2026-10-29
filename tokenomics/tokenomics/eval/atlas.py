@@ -57,7 +57,14 @@ from pathlib import Path
 from statistics import fmean
 from typing import Callable, Iterable, Mapping, Sequence
 
-from .ceiling_bound import B_BASE, episode_demand, world_ceiling
+from .ceiling_bound import (
+    B_BASE,
+    episode_cycle_demand,
+    episode_demand,
+    lp_available,
+    lp_bound,
+    world_ceiling,
+)
 from .contract import (
     RUN,
     ContractRunError,
@@ -183,7 +190,9 @@ COORDINATES = ("rho", "sigma", "cv_capacity", "cv_degradation", "cv_cost",
 CATEGORICAL_AXES = ("choice", "shocks", "pattern")
 BOUND_CHECK = "bound_below_arm"
 ANCHOR_CHECK = "anchor_reproduction"
-BOUND_COLUMNS = ("bound_b2", "bound_base", "bound_b2_binding", "bound_base_binding")
+BOUND_COLUMNS = ("bound_b2", "bound_base", "bound_b2_binding", "bound_base_binding",
+                 "bound_lp", "bound_lp_base", "bound_lp_binding", "bound_lp_base_binding")
+LP_JOB = "solve_lp"  # job flag: this job also solves its world-episode's B_lp (task 4.7)
 ATLAS_COLUMNS = EPISODE_COLUMNS + BOUND_COLUMNS
 TTL_PREFIX = "trace_ttl_lost_units_"
 
@@ -319,7 +328,9 @@ _BOUNDS: dict[tuple, dict[str, str]] = {}
 
 
 def bound_cells(job: Job) -> dict[str, str]:
-    """B2 and B_base of the job's world-episode (cached per process)."""
+    """B2 and B_base of the job's world-episode (cached per process); on the one job per
+    world-episode flagged `LP_JOB`, also B_lp and B_lp_base (task 4.7: an LP is 0.1-10 s, so it
+    is solved once per world-episode, not once per arm; the other rows leave the cells empty)."""
     key = (job["world"], job["world_seed"], json.dumps(job["generator"], sort_keys=True),
            job["episode"], job["horizon"])
     if key not in _BOUNDS:
@@ -329,7 +340,26 @@ def bound_cells(job: Job) -> dict[str, str]:
                         "bound_base": repr(float(b[B_BASE].units)),
                         "bound_b2_binding": b["B2"].binding_constraint,
                         "bound_base_binding": b[B_BASE].binding_constraint}
-    return _BOUNDS[key]
+    cells = dict(_BOUNDS[key])
+    if job.get(LP_JOB):
+        cfg = job_config(job)
+        demand = episode_cycle_demand(cfg, job["horizon"], job["episode"])
+        for tier, bound in (("bound_lp", lp_bound(cfg, job["horizon"], demand)),
+                            ("bound_lp_base", lp_bound(cfg, job["horizon"], demand,
+                                                       upgrades=False))):
+            cells[tier] = repr(float(bound.units))
+            cells[f"{tier}_binding"] = bound.binding_constraint
+    return cells
+
+
+def flag_lp_jobs(jobs: Sequence[Job]) -> None:
+    """Flag the first job of every world-episode (`LP_JOB`), in job order."""
+    seen: set[tuple[str, int]] = set()
+    for j in jobs:
+        k = (j["world"], int(j["episode"]))
+        if k not in seen:
+            seen.add(k)
+            j[LP_JOB] = True
 
 
 def run_atlas_job(job: Job) -> dict[str, str]:
@@ -372,6 +402,8 @@ class ArmEpisode:
 class Episode:
     b2: float | None = None
     base: float | None = None
+    lp: float | None = None  # B_lp (guaranteed; task 4.7), from the world-episode's LP row
+    lp_base: float | None = None  # B_lp_base (capacity-aware, not guaranteed)
     arms: dict[str, ArmEpisode] = field(default_factory=dict)
 
 
@@ -388,6 +420,8 @@ def episode_values(dicts: Iterable[Mapping[str, str]]) -> dict[str, dict[int, Ep
         ep = out[d["world"]].setdefault(int(d["episode"]), Episode())
         ep.b2 = _num(d.get("bound_b2")) if ep.b2 is None else ep.b2
         ep.base = _num(d.get("bound_base")) if ep.base is None else ep.base
+        ep.lp = _num(d.get("bound_lp")) if ep.lp is None else ep.lp
+        ep.lp_base = _num(d.get("bound_lp_base")) if ep.lp_base is None else ep.lp_base
         a = ep.arms.setdefault(d["subject"], ArmEpisode())
         a.units.append(float(d["units"]))
         ordered, fulfilled = _num(d.get("ordered_units")), _num(d.get("fulfilled_units"))
@@ -425,6 +459,8 @@ class Measures:
     collapse: bool
     above_base: dict[str, int]  # arm -> world-episodes on which it exceeded B_base
     stochastic: dict[str, int]  # stochastic argmax arm -> its R (min over episodes)
+    lp: float | None = None  # mean B_lp (task 4.7)
+    lp_base: float | None = None  # mean B_lp_base
     rep_ss: float = 0.0  # sum of squared replicate deviations of the stochastic argmax arms
     rep_df: int = 0
     arm_means: dict[str, float] = field(default_factory=dict)
@@ -483,11 +519,13 @@ def measures(world: str, episodes: Mapping[int, Episode], arms: Sequence[Mapping
     for e in eps:
         ep = episodes[e]
         best = max(x for a in ep.arms.values() for x in a.units)
-        bounds = [b for b in (ep.b2, ep.base) if b is not None]
+        # the base-capacity ceiling is B_lp_base when the LP ran (task 4.7), else B_base
+        cap = ep.lp_base if ep.lp_base is not None else ep.base
+        bounds = [b for b in (ep.b2, ep.lp, cap) if b is not None]
         ceilings.append(max(min(bounds), best) if bounds else best)
-        if ep.base is not None:
+        if cap is not None:
             for s, a in ep.arms.items():
-                if max(a.units) > ep.base + BOUND_TOLERANCE:
+                if max(a.units) > cap + BOUND_TOLERANCE:
                     above[s] += 1
         if bar_arm:
             fills += [f for f in ep.arms[bar_arm].fills if f is not None]
@@ -495,6 +533,8 @@ def measures(world: str, episodes: Mapping[int, Episode], arms: Sequence[Mapping
     room = (ceiling - bar) / ceiling if bar is not None and ceiling > 0 else 0.0
     b2s = [episodes[e].b2 for e in eps if episodes[e].b2 is not None]
     bases = [episodes[e].base for e in eps if episodes[e].base is not None]
+    lps = [episodes[e].lp for e in eps if episodes[e].lp is not None]
+    lp_bases = [episodes[e].lp_base for e in eps if episodes[e].lp_base is not None]
     collapse = bool(eps) and all(c for e in eps for a in episodes[e].arms.values()
                                  for c in a.collapsed)
     return Measures(
@@ -502,7 +542,8 @@ def measures(world: str, episodes: Mapping[int, Episode], arms: Sequence[Mapping
         reach=reach, gain=fmean(d) if d else None, d=d, d_reps=d_reps,
         bar_fill=fmean(fills) if fills else None, b2=fmean(b2s) if b2s else None,
         base=fmean(bases) if bases else None, ceiling=ceiling, room=room, collapse=collapse,
-        above_base=dict(above), stochastic=stochastic, rep_ss=rep_ss, rep_df=rep_df,
+        above_base=dict(above), stochastic=stochastic, lp=fmean(lps) if lps else None,
+        lp_base=fmean(lp_bases) if lp_bases else None, rep_ss=rep_ss, rep_df=rep_df,
         arm_means=means)
 
 
@@ -616,8 +657,9 @@ def classify(m: Measures, floor: float) -> str:
 
 
 def bound_violations(dicts: Iterable[Mapping[str, str]]) -> list[Failure]:
-    """B2 >= every played arm's units (tolerance `BOUND_TOLERANCE`): one `run` row per row
-    above it, naming world, episode and arm."""
+    """B2 and, where the LP ran, B_lp >= every played arm's units (tolerance
+    `BOUND_TOLERANCE`): one `run` row per row above either, naming world, episode and arm."""
+    dicts = list(dicts)
     out = []
     for d in dicts:
         b2 = _num(d.get("bound_b2"))
@@ -627,6 +669,21 @@ def bound_violations(dicts: Iterable[Mapping[str, str]]) -> list[Failure]:
                 message=(f"world {d['world']} episode {d['episode']}: arm {d['subject']} "
                          f"replicate {d['replicate']} delivered {float(d['units']):g} units, "
                          f"above B2 = {b2:g}"),
+                world=d["world"], episode=int(d["episode"]), subject=d["subject"],
+                replicate=int(d["replicate"])))
+    lp: dict[tuple[str, int], float] = {}
+    for d in dicts:
+        v = _num(d.get("bound_lp"))
+        if v is not None:
+            lp.setdefault((d["world"], int(d["episode"])), v)
+    for d in dicts:
+        v = lp.get((d["world"], int(d["episode"])))
+        if v is not None and float(d["units"]) > v + BOUND_TOLERANCE:
+            out.append(Failure(
+                scope=RUN, check=BOUND_CHECK, error_type="BoundBelowArm",
+                message=(f"world {d['world']} episode {d['episode']}: arm {d['subject']} "
+                         f"replicate {d['replicate']} delivered {float(d['units']):g} units, "
+                         f"above B_lp = {v:g}"),
                 world=d["world"], episode=int(d["episode"]), subject=d["subject"],
                 replicate=int(d["replicate"])))
     return out
@@ -881,6 +938,7 @@ DECIDING_COLUMNS = ("kind", "world", "size", "choice", "eligible", "split_vs_tra
 
 WORLD_COLUMNS = ("world", "size", "choice", "pattern", "shocks", "anchor", "episodes",
                  "bar_arm", "bar", "bar_fill", "reach_arm", "reach", "gain", "b2", "b_base",
+                 "b_lp", "b_lp_base",
                  "ceiling", "room", "sigma_ep", "df_ep", "merged_ep", "sigma_rep", "df_rep",
                  "merged_rep", "se", "noise_floor", "sign_consistent", "class",
                  "arms_above_base", "screen_class", "class_changed", "split", "arm_units",
@@ -913,7 +971,8 @@ def analyse(dicts: Sequence[Mapping[str, str]], infos: Mapping[str, WorldInfo],
             "shocks": info.shocks, "anchor": info.anchor, "episodes": m.episodes,
             "bar_arm": m.bar_arm, "bar": m.bar, "bar_fill": m.bar_fill,
             "reach_arm": m.reach_arm, "reach": m.reach, "gain": m.gain, "b2": m.b2,
-            "b_base": m.base, "ceiling": m.ceiling, "room": m.room,
+            "b_base": m.base, "b_lp": m.lp, "b_lp_base": m.lp_base, "ceiling": m.ceiling,
+            "room": m.room,
             **({k: v for k, v in sp.to_dict().items()} if sp else {}),
             "se": se, "noise_floor": floor, "sign_consistent": sign_consistent(m),
             "class": classify(m, floor), "arms_above_base": sum(m.above_base.values()),
@@ -979,6 +1038,7 @@ def real_run_problems(*, roster: Roster, worlds: Sequence[WorldEntry], horizon: 
         (not _is_commit(source_commit),
          "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
         (horizon != HORIZON, f"horizon {horizon} != {HORIZON}"),
+        (not lp_available(), "B_lp needs scipy: install the lp extra (pip install -e .[lp])"),
         (tuple(shock_window) != tuple(SHOCKS_I_WINDOW),
          f"shock window {tuple(shock_window)} is not {SHOCKS_I_WINDOW} (test-only)"),
     ) if bad]
@@ -1159,6 +1219,8 @@ def run_atlas(*, mode: str, out_dir: str | Path, roster: Roster, workers: int = 
     })
     ensure_failures_file(out)
     jobs = build_jobs(worlds, table, 1, horizon, None, checkpoints)
+    if lp_available():  # a real run requires it (real_run_problems); a dry run may skip it
+        flag_lp_jobs(jobs)
     if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
         raise AssertionError("job list and pinned grid disagree")  # internal invariant
     episodes = out / "episodes.csv"

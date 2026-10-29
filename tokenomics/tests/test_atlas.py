@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import time
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -240,6 +241,44 @@ def test_arm_above_the_base_capacity_ceiling() -> None:
     assert m.above_base == {"reach_d": 1, "portable": 1}
 
 
+def test_lp_base_replaces_b_base_and_b_lp_caps_the_ceiling() -> None:
+    """Task 4.7: where the LP ran (its cells on one row of the world-episode), the
+    base-capacity ceiling is B_lp_base and the guaranteed B_lp joins B2: C = max(min(B2, B_lp,
+    B_lp_base), best arm). Without LP cells (EXP-0051's rows) it stays min(B2, B_base)."""
+    rows = _world("w", {"bar_d": [[80]], "reach_d": [[90]]}, b2=1000.0, base=500.0,
+                  ordered=1000.0)
+    assert _measure(rows).ceiling == pytest.approx(500.0)
+    rows[0] |= {"bound_lp": repr(950.0), "bound_lp_base": repr(200.0)}
+    m = _measure(rows)
+    assert (m.lp, m.lp_base, m.ceiling) == (950.0, 200.0, pytest.approx(200.0))
+    assert m.room == pytest.approx((200 - 80) / 200)
+    rows[0] |= {"bound_lp": repr(150.0)}
+    assert _measure(rows).ceiling == pytest.approx(150.0)
+    rows[0] |= {"bound_lp_base": repr(85.0), "bound_lp": repr(900.0)}
+    m = _measure(rows)  # an arm above B_lp_base: counted, and C never below it
+    assert m.above_base == {"reach_d": 1} and m.ceiling == pytest.approx(90.0)
+
+
+def test_arm_above_b_lp_makes_the_run_invalid() -> None:
+    """Scenario "Bound below an arm" for B_lp: its cells sit on one row of the world-episode,
+    every row of that world-episode is checked against them."""
+    rows = [_row("w1", 7, "bar_d", 50) | {"bound_lp": repr(60.0)},
+            _row("w1", 7, "reach_d", 61), _row("w1", 8, "reach_d", 61)]
+    bad = bound_violations(rows)
+    assert [(f.world, f.episode, f.subject) for f in bad] == [("w1", 7, "reach_d")]
+    assert "B_lp" in bad[0].message
+
+
+def test_real_run_needs_the_lp_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tokenomics.eval.families import SHOCKS_I_WINDOW
+
+    monkeypatch.setattr(atlas, "lp_available", lambda: False)
+    problems = atlas.real_run_problems(
+        roster=load_roster(DEFAULT_ROSTER), worlds=[], horizon=atlas.HORIZON,
+        source_commit="0" * 40, filters={}, shock_window=SHOCKS_I_WINDOW)
+    assert any("lp extra" in p for p in problems)
+
+
 def test_collapse_open_and_flat_classes() -> None:
     dead = _world("w", {"bar_d": [[5]], "reach_d": [[6]]}, dead=True, cycles=30)
     assert _class(dead, SPREAD) == atlas.COLLAPSE
@@ -397,6 +436,17 @@ def test_dry_runs_write_the_layout(dry_runs: dict) -> None:
     for name in ("spec.json", "episodes.csv", "worlds.csv", "deciding_check.csv",
                  "atlas_v1.json", "contract_failures.csv", "RESULT.md"):
         assert (base / "confirm" / name).exists(), name
+    if atlas.lp_available():  # task 4.7: one LP row per world-episode, B_lp in worlds.csv
+        for mode in ("screen", "confirm"):
+            with (base / mode / "episodes.csv").open(newline="") as fh:
+                eps = list(csv.DictReader(fh))
+            lp_rows = Counter((r["world"], r["episode"]) for r in eps if r["bound_lp"])
+            assert set(lp_rows) == {(r["world"], r["episode"]) for r in eps}
+            assert set(lp_rows.values()) == {1}
+            assert all(float(r["units"]) <= float(r["bound_lp"]) + 0.01 for r in eps
+                       if r["bound_lp"])
+            with (base / mode / "worlds.csv").open(newline="") as fh:
+                assert all(r["b_lp"] and r["b_lp_base"] for r in csv.DictReader(fh))
     head = (base / "screen" / "episodes.csv").read_text().splitlines()[0].split(",")
     assert {"bound_b2", "bound_base", "trace_split_degree_consumer"} <= set(head)
     for stage in ("screen", "confirm"):

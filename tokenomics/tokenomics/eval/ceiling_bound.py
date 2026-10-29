@@ -28,6 +28,28 @@ guaranteed, since an upgrading policy can exceed it, but it sees capacity. The a
 room and saturation against the ceiling C = max(min(B2, B_base), best played arm), so C never sits
 below what was delivered, and counts every arm that exceeds B_base.
 
+Input-output tier B_lp (task 4.7, design D12 "Bound"). One linear program over every producer,
+capacity type and product, in the spirit of a dynamic Leontief model: the guaranteed bound that
+sees capacity, which B2 (a demand cap) and B_base (not guaranteed) do not. Each relaxation keeps it
+an upper bound on the consumer units of every policy (soundness argument in `lp_bound`):
+- per-producer `produces` eligibility and per-producer capacity: no pooling across non-declarers;
+- one product mix across all capacity types (not a per-type minimum);
+- recipes exactly, cycles included: a product balance per product (inputs, restoration and upgrade
+  products are consumed like any other demand);
+- capacity per producer x type x cycle, degrading geometrically at the configured rate and
+  raised only by restorations and upgrades, each at most one completion per producer per cycle and
+  each costing one unit of its product through that product's recipe (upgrades are a growth bound,
+  not free slack);
+- consumer service in the TTL window: an order placed in cycle t is served only by production in
+  the auctions of t..t + ORDER_TTL, out of that cycle's capacity;
+- other product flows (inputs, investment products) aggregated over the horizon: a product may be
+  used before it is made; lead time, inventory limits, funding, routing and shocks are ignored.
+A time-expanded flow for inputs too would multiply the program by the horizon again, and on 24
+sampled EXP-0051 worlds the consumer window itself moved B_lp on one world, by 0.1% (task 4.7),
+so it is not added.
+`upgrades=False` gives B_lp_base: capacity-aware, but NOT guaranteed (an upgrading policy can
+exceed it). Needs scipy (the `lp` extra, HiGHS).
+
 Pure: no RNG, IO or env state beyond reading a built demand schedule.
 """
 
@@ -41,12 +63,16 @@ from typing import TYPE_CHECKING
 from ..domain.common import CapacityType, ConsumerId, Product
 from ..domain.config import Configuration
 from ..domain.consumer import ScheduleEntry
+from ..domain.order import ORDER_TTL
 
 if TYPE_CHECKING:
     from ..env import TokenomicsAECEnv
 
 DEMAND = "demand"
 B_BASE = "B_base"  # B2 without upgrade slack: the base-capacity ceiling (not guaranteed)
+B_LP = "B_lp"  # the input-output LP: guaranteed and capacity-aware (task 4.7)
+B_LP_BASE = "B_lp_base"  # B_lp without upgrades: capacity-aware, NOT guaranteed
+LP_CAPACITY = "lp"  # B_lp's binding label when the LP sits below demand
 
 
 @dataclass(frozen=True)
@@ -241,10 +267,222 @@ def ceiling_bounds(
 
 def world_ceiling(cfg: Configuration, horizon: int,
                   demand: Mapping[Product, int]) -> dict[str, Bound]:
-    """The two bounds the atlas reads per world-episode (D12): `B2`, the guaranteed bound (with
-    upgrade slack; on family worlds a demand cap), and `B_base`, B2 without upgrade slack (the
-    base-capacity ceiling; not guaranteed). These are the inputs, not the ceiling: room is read
-    against C = max(min(B2, B_base), best played arm), which needs the episode's arm units."""
+    """The two analytic bounds the atlas reads per world-episode (D12): `B2`, the guaranteed
+    bound (with upgrade slack; on family worlds a demand cap), and `B_base`, B2 without upgrade
+    slack (the base-capacity ceiling; not guaranteed). These are inputs, not the ceiling: room is
+    read against C = max(min(B2, B_lp, B_lp_base), best played arm) where the LP ran (task 4.7),
+    else max(min(B2, B_base), best played arm), which needs the episode's arm units."""
     base = ceiling_bounds(cfg, horizon, demand, include_upgrade_slack=False)["B2"]
     return {"B2": ceiling_bounds(cfg, horizon, demand)["B2"],
             B_BASE: Bound(B_BASE, base.units, base.binding_constraint)}
+
+
+# --- input-output LP (task 4.7) ---
+
+
+CycleDemand = Mapping[Product, Sequence[int]]  # product -> units ordered per placement cycle
+
+
+def schedule_cycle_demand(schedules: Mapping[ConsumerId, Sequence[ScheduleEntry]],
+                          horizon: int) -> dict[Product, list[int]]:
+    """`schedule_demand` per placement cycle: units of each product ordered in cycles
+    0..horizon-1 (the same replay, so it sums to `schedule_demand`)."""
+    out: dict[Product, list[int]] = {}
+    for schedule in schedules.values():
+        for t in range(horizon):
+            product, quantity = schedule[t % len(schedule)]
+            out.setdefault(product, [0] * horizon)[t] += int(quantity)
+    return out
+
+
+def env_cycle_demand(env: "TokenomicsAECEnv") -> dict[Product, list[int]]:
+    """Per-cycle demand of the episode `env` was last reset for (B_lp's input)."""
+    return schedule_cycle_demand(env._demand_schedules, env.horizon)
+
+
+def episode_cycle_demand(cfg: Configuration, horizon: int, seed: int) -> dict[Product, list[int]]:
+    """`env_cycle_demand` of a fresh env reset for episode `seed`."""
+    from ..env import TokenomicsAECEnv
+
+    env = TokenomicsAECEnv(config=cfg, horizon=horizon)
+    env.reset(seed=seed)
+    return env_cycle_demand(env)
+
+
+@dataclass(frozen=True)
+class LpSize:
+    """Shape of one B_lp program (sizing and tests)."""
+
+    variables: int
+    constraints: int
+    nonzeros: int
+
+
+@dataclass
+class _Program:
+    cost: list[float]
+    bounds: list[tuple[float, float | None]]
+    ub: list[tuple[int, int, float]]
+    n_ub: int
+    rhs: dict[int, float]  # nonzero A_ub right-hand sides
+    eq: list[tuple[int, int, float]]
+    n_eq: int
+    total: float
+
+
+def _lp_program(cfg: Configuration, horizon: int, demand: CycleDemand, upgrades: bool,
+                window: int | None) -> _Program:
+    """B_lp's columns and rows (`lp_bound`). Consumer service: with `window` = w, an order
+    placed in cycle t is served by consumer production in cycles t..t+w (time-expanded,
+    per-cycle capacity); with None, deliveries are capped by total demand only (aggregated)."""
+    cost: list[float] = []
+    bounds: list[tuple[float, float | None]] = []
+    ub: list[tuple[int, int, float]] = []
+    eq: list[tuple[int, int, float]] = []
+    ub_rhs: dict[int, float] = {}
+    n = {"ub": 0, "eq": 0}
+
+    def col(c: float, lo: float, hi: float | None) -> int:
+        cost.append(c)
+        bounds.append((lo, hi))
+        return len(cost) - 1
+
+    def row(kind: str = "ub") -> int:
+        n[kind] += 1
+        return n[kind] - 1
+
+    sheets = {sh.product: sh for sh in cfg.process_sheets}
+    want = {j: [max(0, int(q)) for q in qs[:horizon]] for j, qs in demand.items()
+            if j in sheets and sum(qs[:horizon]) > 0}
+    total = float(sum(sum(qs) for qs in want.values()))
+    balance = {j: row() for j in sheets}  # uses - production <= 0, over the horizon
+    serve: dict[tuple[Product, int], int] = {}  # (j, s): consumer service from cycle-s output
+    for j, qs in sorted(want.items()):
+        if window is None:
+            ub.append((balance[j], col(-1.0, 0.0, float(sum(qs))), 1.0))
+            continue
+        for s in range(horizon):
+            serve[(j, s)] = row()
+        for t, q in enumerate(qs):
+            if q <= 0:
+                continue
+            cap = row()  # served units of cycle-t orders <= ordered
+            for s in range(t, min(horizon, t + window + 1)):
+                w = col(-1.0, 0.0, None)
+                ub += [(cap, w, 1.0), (serve[(j, s)], w, 1.0), (balance[j], w, 1.0)]
+            ub_rhs[cap] = float(q)
+    late = horizon - 1  # completions at the end of the last cycle cannot be used
+    for p in cfg.producer_configs:
+        keep = 1.0 - p.degradation / 100.0  # ceil(d M / 100) >= (d / 100) x current
+        cap_row = {k: row() for k in p.capacities}  # all production <= sum of a over cycles
+        rest, upg = p.restoration, p.upgrade
+        a: dict[CapacityType, list[int]] = {}
+        r = [col(0.0, 0.0, 1.0) for _ in range(late)] if rest.restores > 0 else []
+        u = [col(0.0, 0.0, 1.0) for _ in range(late)] if (
+            upgrades and upg.increases > 0 and upg.type in p.capacities) else []
+        m: list[int] = []
+        if u:
+            top = float(p.capacities[upg.type])
+            m = [col(0.0, top, top)] + [col(0.0, top, None) for _ in range(late)]
+            for t in range(late):
+                e = row("eq")
+                eq += [(e, m[t + 1], 1.0), (e, m[t], -1.0), (e, u[t], -float(upg.increases))]
+        for k, c0 in p.capacities.items():
+            grows = bool(m) and k == upg.type
+            a[k] = [col(0.0, 0.0, float(c0))] + [
+                col(0.0, 0.0, None if grows else float(c0)) for _ in range(late)]
+            for t in range(horizon):
+                ub.append((cap_row[k], a[k][t], -1.0))
+                if grows:
+                    g = row()
+                    ub += [(g, a[k][t], 1.0), (g, m[t], -1.0)]
+            for t in range(late):
+                d = row()
+                ub += [(d, a[k][t + 1], 1.0), (d, a[k][t], -keep)]
+                if r and k == rest.type:
+                    ub.append((d, r[t], -float(rest.restores)))
+                if u and k == upg.type:
+                    ub.append((d, u[t], -float(upg.increases)))
+        for v in r:
+            ub.append((balance[rest.require], v, 1.0))
+        for v in u:
+            ub.append((balance[upg.require], v, 1.0))
+        per_cycle = {(k, t): row() for k in p.capacities for t in range(horizon)} if (
+            window is not None) else {}
+        for k, t in per_cycle:  # consumer production in cycle t <= a_pkt
+            ub.append((per_cycle[(k, t)], a[k][t], -1.0))
+        for j in sorted(p.produces):
+            sheet = sheets[j]
+            outputs = [col(0.0, 0.0, None)]  # y: production for any use, aggregated
+            if window is not None and j in want:
+                outputs += [col(0.0, 0.0, None) for _ in range(horizon)]  # f_pjs
+            for idx, y in enumerate(outputs):
+                ub.append((balance[j], y, -1.0))
+                for k, need in sheet.require.items():
+                    ub.append((cap_row[k], y, float(need)))
+                    if idx:
+                        ub.append((per_cycle[(k, idx - 1)], y, float(need)))
+                for i, qty in sheet.inputs.items():
+                    ub.append((balance[i], y, float(qty)))
+                if idx:
+                    ub.append((serve[(j, idx - 1)], y, -1.0))
+    return _Program(cost, bounds, ub, n["ub"], ub_rhs, eq, n["eq"], total)
+
+
+def lp_available() -> bool:
+    """Whether B_lp can be solved here (scipy, the `lp` extra)."""
+    try:
+        import scipy.optimize  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def lp_size(cfg: Configuration, horizon: int, demand: CycleDemand, *, upgrades: bool = True,
+            window: int | None = ORDER_TTL) -> LpSize:
+    pr = _lp_program(cfg, horizon, demand, upgrades, window)
+    return LpSize(len(pr.cost), pr.n_ub + pr.n_eq, len(pr.ub) + len(pr.eq))
+
+
+def lp_bound(cfg: Configuration, horizon: int, demand: CycleDemand, *, upgrades: bool = True,
+             window: int | None = ORDER_TTL) -> Bound:
+    """B_lp: the most consumer units over `horizon` cycles the input-output LP allows for this
+    episode's per-cycle `demand` (module docstring). Sound because every played trajectory is a
+    feasible point. With its own deliveries, productions, completed investments and capacity at
+    each auction: (i) an order placed in cycle t completes only by the auction of cycle
+    t + ORDER_TTL (domain `Order.complete_cycle`) and its units were accepted, so their
+    capacity was allocated, in one of those auctions; (ii) every unit delivered, used as an input
+    or consumed by an investment was produced by a declarer (aggregated balance, no initial
+    stock); (iii) a producer's capacity use in a cycle is at most its capacity at that auction,
+    and over the episode at most their sum; (iv) the capacity at the next auction is at most
+    min(max, max(0, a - ceil(d M / 100)) + restored + upgraded) <= (1 - d / 100) a + restored +
+    upgraded, because a <= M; capacity hits and outages only lower it; (v) restorations and
+    upgrades each run one at a time, so at most one completes per producer per cycle, and one
+    completed at the end of the last cycle is never used. `upgrades=False` drops (v)'s upgrades:
+    B_lp_base, capacity-aware but NOT guaranteed for a policy that upgrades. `window=None`
+    serves orders from production in any cycle (aggregated; looser). Raises if scipy is missing
+    or HiGHS does not report an optimum."""
+    try:
+        from scipy.optimize import linprog
+        from scipy.sparse import coo_matrix
+    except ImportError as exc:  # pragma: no cover - exercised only without the extra
+        raise ImportError("B_lp needs scipy: pip install -e .[lp]") from exc
+    pr = _lp_program(cfg, horizon, demand, upgrades, window)
+    tier = B_LP if upgrades else B_LP_BASE
+    if pr.total <= 0:
+        return Bound(tier, 0.0, DEMAND)
+
+    def mat(trip: list[tuple[int, int, float]], n_rows: int) -> object:
+        rr, cc, vv = zip(*trip)
+        return coo_matrix((vv, (rr, cc)), shape=(n_rows, len(pr.cost))).tocsr()
+
+    b_ub = [0.0] * pr.n_ub
+    for i, v in pr.rhs.items():
+        b_ub[i] = v
+    res = linprog(pr.cost, A_ub=mat(pr.ub, pr.n_ub), b_ub=b_ub,
+                  A_eq=mat(pr.eq, pr.n_eq) if pr.n_eq else None,
+                  b_eq=[0.0] * pr.n_eq if pr.n_eq else None, bounds=pr.bounds, method="highs")
+    if res.status != 0:
+        raise RuntimeError(f"{tier}: HiGHS did not solve ({res.status}: {res.message})")
+    units = min(pr.total, -float(res.fun))
+    return Bound(tier, units, DEMAND if units >= pr.total - 1e-6 else LP_CAPACITY)
