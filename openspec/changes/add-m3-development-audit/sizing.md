@@ -491,3 +491,174 @@ one episode) that is 73 + 597 = 670 local s, **0.12 pod vCPU-h** (× 0.646), so 
 recheck becomes 3.91 + 0.12 = **4.03 pod vCPU-h**, still under the 6 vCPU-h stop. The solve sits
 on one job per world-episode; the longest such job (42 f14 with an 18.8 s LP) stays far below the
 ≈ 15 min wall. The pod installs the `lp` extra (scipy) for it.
+
+## §EXP-0053 (task 6.3)
+
+**Question.** How much will the PoC-A teacher audit cost (`eval/teacher_audit.py`, design D5):
+12 world-episodes at 12 producers (the pre-registered sample: hard 0060\*, 0176, 0005, 0348; open
+0111\*, 0344\*, 0230\*, 0308, 0392, 0254\*, 0155, 0408; \* shocked), horizon 100, arms `floor`, `d2`
+and `ub` (`ub` on the 8 worlds with shocks or stochastic demand), plus the 14 blind / reach arms per
+world-episode? And which pod shape runs it under the **8 vCPU-h hard stop**?
+
+**Probe.** `probes/timing_63.py` (run from `/srv/research/tokenomics/tokenomics` with
+`../.venv/bin/python`; every command < 2 min, `--workers 1`; output in `probes/timing_63.jsonl`)
+builds each teacher episode exactly as `teacher_audit.run_teacher_episode` does, but searches only
+on chosen cycles (the floor elsewhere) and stops searching after a time budget (the remaining
+streams of that cycle are counted, not timed). Seconds per searched stream = the decision's
+seconds over its streams (forks and the shared floor rollouts included), so the scenario mix
+(streams resolved at 4, 8 or 16 scenarios) is in the measured time, not assumed.
+
+**Timed cells.**
+
+Horizon 12 (`shocks-i-smoke`, the task's cell): 12-0060
+
+| arm | cycles | streams (timed) | s per searched stream | decisions by scenarios used | overrides |
+|---|---|---|---|---|---|
+| `d2` (posterior) | 0–11 (search capped at 90 s from cycle 4) | 405 (168) | 0.36, 0.40, 0.55, 0.72, 0.90 (cycles 0–4); mean 0.54 | 4: 117, 8: 1, 16: 18 | 2 |
+| `ub` (clairvoyant) | 0–11 | 406 (406) | 0.06–0.10; mean 0.09 | 1: 342 | 12 |
+
+Every stream had 4 candidates (E = 4 whole-order receivers + the trained row − the floor's row).
+Posterior: 12 of 12 cycles resolved, acceptance rate 1.0, unresolved fraction 0. The per-stream
+time grows over cycles 0–4 because more streams need 16 scenarios once shocks are observed, so the
+horizon-12 cell understates a horizon-100 episode; the extrapolation uses the horizon-100 cells.
+
+Horizon 100 (registered shock window), every sampled world and arm, search on three cycles of a
+played episode (the floor elsewhere; one command per cell, 0408 `d2` one command per cycle):
+
+| world | class | arm (scenarios) | orderer turns per cycle | cycles | streams per cycle | decisions by scenarios used | search s per cycle | mean | search pod min per episode (100 × mean × 0.646) |
+|---|---|---|---|---|---|---|---|---|---|
+| 0060 | hard | `d2` posterior | 54 | 30, 60, 90 | 21, 27, 25 | 4: 43, 8: 1, 16: 29 | 23.6, 22.9, 25.6 | 24.0 | 25.9 |
+| 0060 | | `ub` | 54 | 30, 60, 90 | 21, 27, 22 | 1: 70 | 2.2, 2.9, 2.6 | 2.6 | 2.8 |
+| 0176 | hard | `d2` deterministic | 46 | 30, 60, 90 | 18, 16, 15 | 1: 47 | 1.4, 1.3, 1.1 | 1.3 | 1.4 |
+| 0005 | hard | `d2` deterministic | 54 | 30, 60, 90 | 23, 17, 18 | 1: 55 | 1.9, 1.4, 1.5 | 1.6 | 1.7 |
+| 0348 | hard | `d2` deterministic | 53 | 30, 60, 90 | 11, 10, 10 | 1: 31 | 0.8, 0.7, 0.7 | 0.7 | 0.8 |
+| 0111 | open | `d2` posterior | 40 | 10, 50, 80 | 26, 22, 20 | 4: 53, 8: 1, 16: 9 | 8.7, 8.5, 7.8 | 8.3 | 9.0 |
+| 0111 | | `ub` | 40 | 30, 60, 90 | 24, 28, 21 | 1: 69 | 1.5, 1.8, 1.4 | 1.6 | 1.7 |
+| 0344 | open | `d2` posterior | 62 | 30, 60, 90 | 38, 41, 36 | 4: 74, 8: 3, 16: 23 | 29.4, 25.2, 25.1 | 26.6 | 28.6 |
+| 0344 | | `ub` | 62 | 30, 60, 90 | 38, 38, 36 | 1: 100 | 3.5, 3.7, 3.9 | 3.7 | 4.0 |
+| 0230 | open | `d2` posterior | 48 | 30, 60, 90 | 22, 16, 21 | 4: 49, 16: 5 | 7.8, 6.0, 10.6 | 8.1 | 8.8 |
+| 0230 | | `ub` | 48 | 30, 60, 90 | 22, 16, 21 | 1: 54 | 1.8, 1.2, 1.8 | 1.6 | 1.7 |
+| 0308 | open | `d2` posterior | 38 | 30, 60, 90 | 33, 26, 26 | 4: 64, 8: 1, 16: 8 | 10.0, 10.7, 7.3 | 9.3 | 10.0 |
+| 0308 | | `ub` | 38 | 30, 60, 90 | 33, 26, 26 | 1: 73 | 1.8, 1.6, 1.6 | 1.7 | 1.8 |
+| 0392 | open | `d2` posterior | 58 | 30, 60, 90 | 36, 28, 38 | 4: 69, 16: 17 | 25.4, 31.1, 28.4 | 28.3 | 30.5 |
+| 0392 | | `ub` | 58 | 30, 60, 90 | 36, 28, 37 | 1: 86 | 4.4, 3.3, 5.1 | 4.3 | 4.6 |
+| 0254 | open | `d2` posterior | 60 | 30, 60, 90 | 37, 47, 40 | 4: 107, 16: 5 | 12.9, 17.4, 14.8 | 15.0 | 16.2 |
+| 0254 | | `ub` | 60 | 30, 60, 90 | 37, 47, 40 | 1: 112 | 2.7, 3.6, 3.3 | 3.2 | 3.5 |
+| 0155 | open | `d2` deterministic | 28 | 30, 60, 90 | 17, 16, 10 | 1: 38 | 0.6, 0.5, 0.3 | 0.5 | 0.5 |
+| 0408 | open | `d2` posterior | 108 | 30, 60, 90 | 45, 46, 51 | 4: 78, 8: 5, 16: 45 | 64.0, 83.7, 79.9 | **75.8** | **81.7** |
+| 0408 | | `ub` | 108 | 30, 60, 90 | 45, 41, 47 | 1: 122 | 7.7, 7.5, 9.6 | 8.2 | 8.9 |
+
+Candidates per stream (all cells): 4 on the dense and sparse_f4 worlds (0060, 0176, 0005, 0348,
+0230, 0392, 0408: E = 4 whole-order receivers + the trained row − the floor's row) and 2 on the
+sparse_f2 worlds (0111, 0344, 0308, 0254, 0155: E = 2 + trained − floor's row). Per stream ≈ 0.3–0.4 s when it stops at 4 scenarios and ≈ 1.4–1.8 s
+at 16; per-cycle cost is flat over the history (e.g. 0060: 23.6 / 22.9 / 25.6 s at cycles 30 / 60
+/ 90). Posterior acceptance rate 1.0 and no unresolved decision in any cell.
+
+**Why the first version of this section was wrong** (review concern #346). It timed 3 posterior
+worlds (0060, 0392, 0111) chosen without a cost driver and priced the other 5 posterior worlds at
+their mean (central) or maximum (high). The cost of a world's `d2` episode scales with its orderer
+turns per cycle (each floor rollout plays them all), its streams per cycle, the candidates per
+stream and the share of streams that need 16 scenarios. 12-0408 (dense, seasonal, k_c 5.53) has
+108 orderer turns per cycle against 28–62 elsewhere, 45–51 streams with 4 candidates each (2 on
+the sparse_f2 worlds) and 35% of its decisions at 16 scenarios: 75.8 s per cycle, 2.7× the pooled maximum. It is now measured; no world is priced by
+a pool.
+
+Posterior sampler at a horizon-100 history (`timing_63.py sampler`, 12-0060, `round_robin` played
+with the recorder on): 0.019 / 0.025 / 0.016 s at cycles 30 / 60 / 90 as recorded in `timing_63.jsonl` (16 of 16 accepted; an earlier, unrecorded run gave 0.019 / 0.022 / 0.016); in
+the search cells 2–33 ms per cycle. ≤ 3.3 s per episode: negligible. The recorder's replay over
+90 cycles: 2.7 s per episode.
+
+0.646 factor check (`timing_63.py rr`): one traced `round_robin` horizon-100 episode on
+dev-sparse_wide-12-calm-03 takes 0.82 / 0.83 s (§EXP-0048: 0.73–0.77 s, §EXP-0049 reference
+0.82 s): the box runs at the speed the factor was derived at, so pod vCPU-s = 0.646 × local s
+stands. On 12-0060: 1.60–1.66 s, 2,429 units (EXP-0052's `round_robin` row reproduced).
+
+**Arithmetic** (`probes/extrapolate_63.py`). Per teacher episode = 100 cycles × the world's own
+search s per cycle (central: mean of its three cycles; high: its most expensive cycle) + the
+floor-speed episode (1.6 s) + for posterior arms the sampler (100 × 13 ms) and the recorder
+(2.7 s). An unmeasured world or arm is an error. Blind / reach reruns at 46.1 s per world-episode
+(§EXP-0052's 12-dense confirm figure, 18 router-equivalents with `portable`, which the audit does
+not run: conservative). × 0.646 = pod vCPU-h.
+
+| sample | case | `d2` local s | `ub` local s | rest | pod vCPU-h | × 2 | longest job (pod min) |
+|---|---|---|---|---|---|---|---|
+| full 12, `floor` / `d2` / `ub` | central | 20,019 | 2,698 | 572 | **4.18** | **8.36** | 0408 `d2` 81.7 |
+| | high | 22,252 | 3,068 | 572 | 4.65 | 9.29 | 0408 `d2` 90.1 |
+| D5 step 1: drop `ub` | central | 20,019 | – | 572 | 3.69 | 7.39 | 0408 `d2` 81.7 |
+| D5 steps 1 + 2: 8 world-episodes, no `ub` | central | 10,049 | – | 382 | **1.87** | **3.74** | 0392 `d2` 30.5 |
+| | high | 11,009 | – | 382 | 2.04 | 4.09 | 0392 `d2` 33.6 |
+| step 2 only (8 world-episodes with `ub`) | central | 10,049 | 1,385 | 382 | 2.12 | 4.24 | 0392 `d2` 30.5 |
+
+Step 2's sample by D5's rule: hard 0060, 0176, 0005, 0348 (all four; 0060 the only shocked one);
+open the best 2 shocked by room (0111, 0344) and the best 2 unshocked (0308, 0392). 0408 (open,
+room 0.546, the last of the open worlds) is not in it.
+
+**Job granularity and pod shape.** The run is 200 jobs (per world-episode 14 blind / reach arms,
+`floor`, `d2`, and `ub` on 8 worlds); all the cost is in the 12 `d2` and 8 `ub` jobs. One episode
+is one sequential job and the driver cannot split it, so the wall is at least the longest job and
+billed vCPU-h = vCPU × wall. A 32-worker pod is never filled (at most 20 long jobs, and after the
+first minutes only a handful still run). Driver order (per world the blind / reach arms, then
+`floor`, `d2`, `ub`; the first free worker takes the next job), secure CPU pods, workers = vCPU:
+
+| sample | shape | stop 8 vCPU-h as wall | central wall / billed | × 2 wall / billed | high wall / billed |
+|---|---|---|---|---|---|
+| full 12 | 32 vCPU | 15 min | 82.0 min / 43.7 | 164 min / 87.5 | 90.4 min / 48.2 |
+| full 12 | 16 vCPU | 30 min | 83.9 min / 22.4 | 168 min / 44.7 | 92.5 min / 24.7 |
+| full 12 | 8 vCPU | 60 min | 92.7 min / 12.4 | 185 min / 24.7 | 102.6 min / 13.7 |
+| full 12 | 4 vCPU | 120 min | 114.9 min / 7.7 | 230 min / 15.3 | 126.9 min / 8.5 |
+| step 1 (no `ub`) | 8 vCPU | 60 min | 85.4 min / 11.4 | 171 min / 22.8 | 94.2 min / 12.6 |
+| steps 1 + 2 | 16 vCPU | 30 min | 30.9 min / 8.2 | 62 min / 16.5 | 33.9 min / 9.1 |
+| **steps 1 + 2** | **8 vCPU** | **60 min** | **31.8 min / 4.2** | **63.6 min / 8.5** | **34.9 min / 4.7** |
+| steps 1 + 2 | 4 vCPU | 120 min | 42.1 min / 2.8 | 84.3 min / 5.6 | 45.7 min / 3.0 |
+| step 2 only (with `ub`) | 8 vCPU | 60 min | 33.3 min / 4.4 | 66.7 min / 8.9 | 36.7 min / 4.9 |
+
+(Submitting the teacher jobs first, longest first, a driver change not made, would cut the
+step-1 + 2 8-vCPU run to 30.5 min / 4.1, × 2 8.15.)
+
+**D5 reduction order.** By D5's compute rule (× 2 of the summed job time), the full sample
+(8.36) is above the stop and step 1 (drop `ub`, 7.39) brings it under. On a real pod that is not
+enough: 0408's `d2` episode alone takes 81.7 pod min (164 at × 2), so with or without `ub` the
+full sample bills 11.4–12.4 vCPU-h on 8 vCPU at central (≥ 22.8 at × 2) and 7.3–7.7 on 4 vCPU
+over ~2 h. Step 2 (8 world-episodes) removes 0408; with steps 1 + 2 the longest job is 0392's
+`d2` (30.5 pod min) and an 8 vCPU pod runs it in ≈ 32 min for ≈ 4.2 billed vCPU-h (× 2: 64 min,
+8.5).
+
+**Result.** After the D5 reduction order (steps 1 and 2: 8 world-episodes, arms `floor` / `d2`,
+no `ub`): **1.87 pod vCPU-h compute (× 2: 3.74); on an 8 vCPU secure CPU pod ≈ 32 min wall,
+≈ 4.2 billed vCPU-h (× 2: ≈ 64 min, 8.5)**. Against the plan's 8 vCPU-h stop the × 2 billed
+figure on the recommended 8 vCPU shape is still just above it (a 4 vCPU pod gives 5.6 at × 2 over
+≈ 84 min), so this goes to the supervisor; nothing launches until it decides. Against the 10
+vCPU-h stop of the superseded decision below (75 min wall on 8 vCPU) the reduced run fits at × 2.
+
+**Superseded supervisor decision (2026-10-29, taken on the first, wrong version of this section;
+kept for the record).** EXP-0053 to run the full pre-registered sample, no reduction, on an 8 vCPU
+secure CPU pod, `--workers 8`, hard stop raised from 8 to 10 billed vCPU-h = a 75 min wall on 8
+vCPU (the × 2 case was then 72 min, 9.7 vCPU-h); fallback 16 vCPU secure (37.5 min wall), never
+community; no driver change. With the measured 0408 the full sample cannot finish inside that
+wall even at × 1 (92.7 min central on 8 vCPU). Replaced by the decision below.
+
+**Supervisor decision (2026-10-29, on the measured figures; replaces the superseded one).** EXP-0053
+runs **D5 step 2 only: the 8 world-episodes** (hard 0060, 0176, 0005, 0348; open 0111, 0344, 0308,
+0392), **with `ub` kept**, arms `floor` / `d2` / `ub` plus the blind and reach reruns, on an **8 vCPU
+secure CPU pod, `--workers 8`**, with a **hard stop of 10 billed vCPU-h = a 75 min wall** on that
+shape (central 33.3 min / 4.4 billed vCPU-h; × 2 66.7 min / 8.9, inside the stop; high 36.7 min /
+4.9). **Deviation from the written reduction order, decided on cost alone before any result was
+seen:** D5 drops `ub` first (step 1) and only then reduces the sample (step 2). With step 2
+applied the run fits the 10 vCPU-h stop with `ub` kept, and `ub` costs ≈ 0.2–0.5 vCPU-h while it is
+the only measure of how much the hidden information is worth (D5's "fork-limited" reading needs
+it), so step 1 is skipped. **12-0408 leaves the sample by the step-2 rule** (the last open world by
+room, 0.546); it is also the costliest world measured: 108 orderer turns per cycle, 75.8 s of
+search per cycle, an 81.7 pod-min `d2` episode. **Why 8 vCPU and not the
+preferred larger pods (32 → 16 → 8), a deviation made on cost:** the wall is bounded by the longest
+job (0392's `d2`, ≈ 31 pod min) and billed vCPU-h = vCPU × wall, so on this sample 32 vCPU runs
+30.7 min for 16.4 billed vCPU-h (× 2 61 min / 32.7) and 16 vCPU 31.0 min for 8.3 (× 2 62 min /
+16.5, above the 10 stop), against 8 vCPU's 33.3 min / 4.4 (× 2 8.9): the larger pods buy
+≈ 2 min of wall for 2–4× the bill; 16 vCPU stays the fallback. Budget: M3 ≈ 22–25 vCPU-h used +
+10 worst case = 35 of 40. Fallback if no 8 vCPU secure pod is available: 16 vCPU secure (the same 10 vCPU-h stop =
+a 37.5 min wall; the longest job, 0392's `d2`, takes ≈ 31 pod min at × 1; if the run would exceed
+the wall, it reports rather than extends), never community. No driver change.
+
+**Final sample:** 8 world-episodes (4 hard, 4 open; 3 with shocks: 0060, 0111, 0344), the confirm's
+first episode seed each, horizon 100; `floor` and `d2` on all 8, `ub` on the 5 with shocks or
+stochastic demand (0060, 0111, 0344, 0308, 0392); **2.12 pod vCPU-h compute (× 2: 4.24); 8 vCPU ≈
+33 min wall, ≈ 4.4 billed vCPU-h (× 2: ≈ 67 min, 8.9) against the 10 vCPU-h / 75 min stop.**
