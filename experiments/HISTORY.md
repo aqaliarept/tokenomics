@@ -646,3 +646,31 @@ with a split of the selected worlds recorded before confirm reads them.
   (`atlas_v1.json`, `f241464c4bc4…`) keeps EXP-0051's split; gate files untouched. ≈ 3.8 vCPU-h
   billed on an 8 vCPU secure pod (16 vCPU unavailable; a failed 16 vCPU pod added ≈ 2.8 if its
   initialization was billed); M3 ≈ 21.9 of 40 vCPU-h (≈ 24.7 upper).
+
+### The teacher on mined worlds (PoC-A)
+
+- **EXP-0053 — PoC-A. A safe but weak teacher: search headroom on 2 of 4 open worlds; the
+  clairvoyant arm is no upper bound.** The EXP-0042 depth-2 rollout search, re-pointed (D5) to a `round_robin`
+  floor (whole orders; EXP-0048–0050's diagnosed cause: splitting floors start 100–400 units
+  below the bar) with whole-order candidates plus the trained orderer's action and ADR-0056
+  posterior forks, on atlas v2's pre-registered 12-producer train sample reduced to 8
+  world-episodes (4 hard, 4 open; `ub`, the same search on the true future, kept on the 5 worlds
+  with random futures). The teacher is never below the bar (+7 to +203 units, 1.002–1.127 × the
+  bar) or its floor. On the open worlds it beats the bar by more than the noise floor on 2 of 4
+  (12-0344, 12-0308; by 17–39 units beyond the one-episode floor 3 × σ_ep = 164.3, the atlas's
+  159.5 being a 2-episode-mean floor), which meets D5's "at least half": search finds
+  headroom the cheap arms miss there, and those two are M4's teacher-label candidates; the other
+  two neither it nor `ub` beats the bar (the rule's "ceiling-limited"). It closes only 0.1–3.3% of the open worlds' room, whose ceiling is
+  essentially demand (fill 24–35%). On the hard worlds it ties or trails the best cheap informed
+  router (beyond trained only on 12-0005; 12-0348 below the trained orderer by more than its
+  floor although that action is a candidate), overriding `round_robin` on 1.6–6.3% of searched
+  streams; whether the candidate set, the depth or the two-cycle objective limits it is not
+  separated. `ub`, the same search on the true future, lands 1–99 units *below* `d2` on all 5
+  worlds: the search scores candidates by units gained in a two-cycle window, and on the true
+  future more decisions are exactly neutral there, so `ub` keeps the floor where posterior forks
+  expose small one-sided gains that `d2` takes and that pay off later (DIAGNOSTICS 23). `ub` is
+  therefore no upper bound for this search, and D5's fork-limited reading is not determinable
+  here. The posterior resolved every decision (16 / 16, 0 unresolved). For M4: a teacher exists
+  in D5's sense on 12-producer mined worlds; what limits it (candidates, depth, the myopic
+  window, forks) is open and needs a discriminating check first. ≈ 3.1 vCPU-h billed; M3 ≈ 25.0 of 40
+  (≈ 27.8 upper).

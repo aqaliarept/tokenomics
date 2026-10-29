@@ -382,6 +382,51 @@ ws-atlas-v1-12-0060 seed 1295251592 reproduces EXP-0052 (`round_robin` 2,429, tr
 
 ---
 
+## 23. A clairvoyant search scores below the same search on posterior forks
+
+**Problem (plain English):** the teacher audit's `ub` arm runs the teacher's lookahead search
+with the true future (the real pending shocks and demand) as its only scenario. It is meant as an
+upper reference: with perfect information the same search should do at least as well as with
+guessed futures (`d2`, ADR-0056 posterior forks). In EXP-0053 it did worse on all 5 worlds where
+it ran (1–99 consumer units below `d2`). Read naively, that says foresight is worth nothing and
+better forks cannot help. The competing explanations call for different responses:
+- a fork defect: the clairvoyant fork does not actually carry the true future (wrong demand or
+  shock stream), so `ub` is searching a wrong world. Fix the fork;
+- a structural effect: the search scores each candidate by the consumer units it adds inside a
+  short window (depth 2 cycles, then the floor), and a single exact scenario often shows exactly
+  zero gain there for every candidate, so the search keeps the floor (`deterministic_zero`),
+  while posterior forks show small one-sided gains for weakly better actions in a few futures and
+  the confidence test accepts them; those actions pay off beyond the window. Then `ub` is not an
+  upper bound for this search, the fork-limited reading is not determinable, and the fix (if
+  one is wanted) is a different objective or reference, not the forks.
+
+**Discriminating check (local, minutes):** from the run's `teacher_decisions.csv`, (1) per
+world, the `deterministic_zero` share of searched streams for `ub` and `d2`; (2) the first
+decision where the two arms differ (same cycle and agent), and its resolution in each; (3) a
+one-decision repro at that point: a `ClairvoyantSource` fork played to the episode end must have
+the recorded episode's demand and shock digests, and the `d2` per-scenario gains at that decision
+show how the confidence test passed.
+
+**Outcome branches:**
+- **clairvoyant fork digests differ from the episode's**: fork defect; `ub` results are invalid,
+  fix the scenario source and rerun `ub`;
+- **digests match, `ub`'s `deterministic_zero` share is higher on every world and the first
+  divergence is `ub` keeping the floor by `deterministic_zero` where `d2` overrides**: structural
+  window / tie effect; report `ub` as not an upper bound, D5's fork-limited reading as
+  not determinable, and make no claim about forks from it. A meaningful clairvoyant reference
+  needs a longer window or a non-myopic score (a design change, not a fix);
+- **digests match but the shares are equal and the divergence is elsewhere**: neither; look at
+  the confidence rule's parameters (z, minimum expected gain) and candidate dedup.
+
+**Seen in:** EXP-0053 (task 7.1, review concern #358). Digests match at 0060 cycle 2
+(`41b0057e66b5` / `c961073d1524`); `deterministic_zero` share `ub` vs `d2`: 0060 70.0 / 66.9%,
+0111 82.5 / 81.3, 0308 89.0 / 86.0, 0344 74.2 / 68.9, 0392 79.7 / 78.8; first override
+divergences 0060 cycle 2, 0308 cycle 8, 0392 cycle 8, each `ub` `deterministic_zero` against a
+`d2` override (0060: nonzero `d2` gains in 3 of 16 posterior futures, mean 0.56 units, none
+negative). Outcome: structural; EXP-0053 records `ub` as no upper bound.
+
+---
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

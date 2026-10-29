@@ -1,0 +1,984 @@
+{
+  "acceptance_read": false,
+  "blas_threads": 1,
+  "date": "2026-10-29",
+  "driver": "tokenomics.eval.teacher_audit",
+  "driver_choices": {
+    "ambiguity_gate": "none: every stream with >= 2 eligible producers is searched (a whole-order floor is never ambiguous)",
+    "bar": "best blind arm on the same world-episode (this run's rows)",
+    "candidate_dedup": "a candidate equal to the floor's row or an earlier candidate is dropped",
+    "floor_check": "teacher/floor units == entity_planner/round_robin units"
+  },
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "exp0053",
+  "inputs": {
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    }
+  },
+  "kind": "audit",
+  "pins": {
+    "atlas": {
+      "content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+      "path": "/workspace/tokenomics/_pod_ckpts/atlas_v2.json",
+      "sha256": "7517314f297ac39e1c00da3fb734bb40fcfecc9492ee2e67936fc910f8cf9568"
+    },
+    "baseline_arms": [
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "blend_0.5",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "blend_0.5",
+        "side": "blind",
+        "subject": "entity_planner/blend_0.5",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "even_split",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "even_split",
+        "side": "blind",
+        "subject": "entity_planner/even_split",
+        "trained": false
+      },
+      {
+        "contract": "legacy",
+        "kind": "deterministic",
+        "ordering": "obs_price",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "obs_price",
+        "side": "blind",
+        "subject": "entity_planner/obs_price",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "proportional",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "proportional",
+        "side": "blind",
+        "subject": "entity_planner/proportional",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "random",
+        "producing": "entity_planner",
+        "random": true,
+        "replicates": 2,
+        "roster": true,
+        "router": "random",
+        "side": "blind",
+        "subject": "entity_planner/random",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "shock_reactive",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": true,
+        "router": "shock_reactive",
+        "side": "blind",
+        "subject": "entity_planner/shock_reactive",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "round_robin",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "round_robin",
+        "side": "blind",
+        "subject": "entity_planner/round_robin",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "random_whole",
+        "producing": "entity_planner",
+        "random": true,
+        "replicates": 2,
+        "roster": false,
+        "router": "random_whole",
+        "side": "blind",
+        "subject": "entity_planner/random_whole",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "makeable_split",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "makeable_split",
+        "side": "reach",
+        "subject": "entity_planner/makeable_split",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "makeable_weighted_whole",
+        "producing": "entity_planner",
+        "random": true,
+        "replicates": 2,
+        "roster": false,
+        "router": "makeable_weighted_whole",
+        "side": "reach",
+        "subject": "entity_planner/makeable_weighted_whole",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "trained_orderer",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "trained_orderer",
+        "side": "reach",
+        "subject": "entity_planner/trained_orderer",
+        "trained": true
+      }
+    ],
+    "checkpoints": {
+      "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "depth": 2,
+    "driver": "tokenomics.eval.teacher_audit",
+    "dry_run": false,
+    "floor": "round_robin",
+    "grid": {
+      "ws-atlas-v1-12-0005": {
+        "episodes": [
+          1034002112
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0060": {
+        "episodes": [
+          1295251592
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0111": {
+        "episodes": [
+          195303600
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0176": {
+        "episodes": [
+          232428550
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0308": {
+        "episodes": [
+          1768789793
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0344": {
+        "episodes": [
+          1680874617
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0348": {
+        "episodes": [
+          1582100760
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0392": {
+        "episodes": [
+          515039714
+        ],
+        "regime": "calm",
+        "size": 12
+      }
+    },
+    "horizon": 100,
+    "max_search_actions": null,
+    "producer": "entity_planner",
+    "reduction": "step2",
+    "roster_version": "5050508ecb25f0eda0ae0a61b0dde4ba948a6e9b0d901cd14cde28e0db161f38",
+    "sample": [
+      {
+        "arms": [
+          "entity_planner/blend_0.5",
+          "entity_planner/even_split",
+          "entity_planner/obs_price",
+          "entity_planner/proportional",
+          "entity_planner/random",
+          "entity_planner/shock_reactive",
+          "entity_planner/round_robin",
+          "entity_planner/random_whole",
+          "entity_planner/makeable_split",
+          "entity_planner/makeable_weighted_whole",
+          "entity_planner/trained_orderer",
+          "teacher/floor",
+          "teacher/d2",
+          "bound/ub"
+        ],
+        "class": "hard",
+        "pattern": "burst",
+        "pre_registered": true,
+        "shocks": true,
+        "world": "ws-atlas-v1-12-0060"
+      },
+      {
+        "arms": [
+          "entity_planner/blend_0.5",
+          "entity_planner/even_split",
+          "entity_planner/obs_price",
+          "entity_planner/proportional",
+          "entity_planner/random",
+          "entity_planner/shock_reactive",
+          "entity_planner/round_robin",
+          "entity_planner/random_whole",
+          "entity_planner/makeable_split",
+          "entity_planner/makeable_weighted_whole",
+          "entity_planner/trained_orderer",
+          "teacher/floor",
+          "teacher/d2"
+        ],
+        "class": "hard",
+        "pattern": "cyclic",
+        "pre_registered": true,
+        "shocks": false,
+        "world": "ws-atlas-v1-12-0176"
+      },
+      {
+        "arms": [
+          "entity_planner/blend_0.5",
+          "entity_planner/even_split",
+          "entity_planner/obs_price",
+          "entity_planner/proportional",
+          "entity_planner/random",
+          "entity_planner/shock_reactive",
+          "entity_planner/round_robin",
+          "entity_planner/random_whole",
+          "entity_planner/makeable_split",
+          "entity_planner/makeable_weighted_whole",
+          "entity_planner/trained_orderer",
+          "teacher/floor",
+          "teacher/d2"
+        ],
+        "class": "hard",
+        "pattern": "cyclic",
+        "pre_registered": true,
+        "shocks": false,
+        "world": "ws-atlas-v1-12-0005"
+      },
+      {
+        "arms": [
+          "entity_planner/blend_0.5",
+          "entity_planner/even_split",
+          "entity_planner/obs_price",
+          "entity_planner/proportional",
+          "entity_planner/random",
+          "entity_planner/shock_reactive",
+          "entity_planner/round_robin",
+          "entity_planner/random_whole",
+          "entity_planner/makeable_split",
+          "entity_planner/makeable_weighted_whole",
+          "entity_planner/trained_orderer",
+          "teacher/floor",
+          "teacher/d2"
+        ],
+        "class": "hard",
+        "pattern": "cyclic",
+        "pre_registered": true,
+        "shocks": false,
+        "world": "ws-atlas-v1-12-0348"
+      },
+      {
+        "arms": [
+          "entity_planner/blend_0.5",
+          "entity_planner/even_split",
+          "entity_planner/obs_price",
+          "entity_planner/proportional",
+          "entity_planner/random",
+          "entity_planner/shock_reactive",
+          "entity_planner/round_robin",
+          "entity_planner/random_whole",
+          "entity_planner/makeable_split",
+          "entity_planner/makeable_weighted_whole",
+          "entity_planner/trained_orderer",
+          "teacher/floor",
+          "teacher/d2",
+          "bound/ub"
+        ],
+        "class": "open",
+        "pattern": "burst",
+        "pre_registered": true,
+        "shocks": true,
+        "world": "ws-atlas-v1-12-0111"
+      },
+      {
+        "arms": [
+          "entity_planner/blend_0.5",
+          "entity_planner/even_split",
+          "entity_planner/obs_price",
+          "entity_planner/proportional",
+          "entity_planner/random",
+          "entity_planner/shock_reactive",
+          "entity_planner/round_robin",
+          "entity_planner/random_whole",
+          "entity_planner/makeable_split",
+          "entity_planner/makeable_weighted_whole",
+          "entity_planner/trained_orderer",
+          "teacher/floor",
+          "teacher/d2",
+          "bound/ub"
+        ],
+        "class": "open",
+        "pattern": "burst",
+        "pre_registered": true,
+        "shocks": true,
+        "world": "ws-atlas-v1-12-0344"
+      },
+      {
+        "arms": [
+          "entity_planner/blend_0.5",
+          "entity_planner/even_split",
+          "entity_planner/obs_price",
+          "entity_planner/proportional",
+          "entity_planner/random",
+          "entity_planner/shock_reactive",
+          "entity_planner/round_robin",
+          "entity_planner/random_whole",
+          "entity_planner/makeable_split",
+          "entity_planner/makeable_weighted_whole",
+          "entity_planner/trained_orderer",
+          "teacher/floor",
+          "teacher/d2",
+          "bound/ub"
+        ],
+        "class": "open",
+        "pattern": "seasonal",
+        "pre_registered": true,
+        "shocks": false,
+        "world": "ws-atlas-v1-12-0308"
+      },
+      {
+        "arms": [
+          "entity_planner/blend_0.5",
+          "entity_planner/even_split",
+          "entity_planner/obs_price",
+          "entity_planner/proportional",
+          "entity_planner/random",
+          "entity_planner/shock_reactive",
+          "entity_planner/round_robin",
+          "entity_planner/random_whole",
+          "entity_planner/makeable_split",
+          "entity_planner/makeable_weighted_whole",
+          "entity_planner/trained_orderer",
+          "teacher/floor",
+          "teacher/d2",
+          "bound/ub"
+        ],
+        "class": "open",
+        "pattern": "drift",
+        "pre_registered": true,
+        "shocks": false,
+        "world": "ws-atlas-v1-12-0392"
+      }
+    ],
+    "shock_profile": null,
+    "source": {
+      "commit": "6abb218d3c2c04b9ab6331c07bfdf73239abd06a",
+      "tree_sha256": "8fa9dbdd45f472333cf89ce4c5858289050b38f67081868abf7008f728bbf100"
+    },
+    "teacher_arms": [
+      "floor",
+      "d2",
+      "ub"
+    ],
+    "worlds": [
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "63e01342ff973702199696249cd13b4b5af77b835ca6901e4c908d29d0d1616c",
+        "coordinates": {
+          "cv_capacity": 0.761370734135766,
+          "cv_cost": 0.13010740204643487,
+          "cv_degradation": 0.44796315092798794,
+          "demand_concentration": 0.2882786367940267,
+          "demand_volatility": 0.39501458770520387,
+          "rho": 0.32595993322203676,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.526653005,
+          "shock_outage_duration": 3.5,
+          "sigma": 0.22202301054650048
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 60,
+        "levers": {
+          "capacity_scale": 1.7168402703695202,
+          "choice": "sparse_f4",
+          "h_cap": 1.6206827036654499,
+          "h_cost": 0.6293675572479243,
+          "h_deg": 1.6380576544061731,
+          "hit_magnitude": 0.5266530051369962,
+          "k_c": 2.2563638175368332,
+          "m_q": 2.660848984714653,
+          "outage_duration": 2,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.03718936924320634
+          },
+          "shock_rate": 2.168557099348533,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 2063402108,
+        "pool_width": null,
+        "seed": 2063402108,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0060"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "250fddb417fcdb3a26c4013efbba2d5676112f4462fcf4db2b277fb3ea0cadc2",
+        "coordinates": {
+          "cv_capacity": 0.048311535891862656,
+          "cv_cost": 0.31348334783247833,
+          "cv_degradation": 0.07005258480945839,
+          "demand_concentration": 0.3071355797167422,
+          "demand_volatility": 0.2662985959187739,
+          "rho": 0.29882044560943644,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.3694189602446483
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 176,
+        "levers": {
+          "capacity_scale": 1.808445267294787,
+          "choice": "sparse_f4",
+          "h_cap": 0.07383220586278702,
+          "h_cost": 1.8020455295381168,
+          "h_deg": 0.16810133669627722,
+          "hit_magnitude": 0.6326547861281384,
+          "k_c": 0.9486124391763728,
+          "m_q": 6.8023094498871535,
+          "outage_duration": 10,
+          "pattern": "cyclic",
+          "pattern_params": {},
+          "shock_rate": 2.420804583996227,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 109358168,
+        "pool_width": null,
+        "seed": 109358168,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0176"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "8564738c742948863451c4a72a2e8adad582fc40ad97374579c1bdc96df93837",
+        "coordinates": {
+          "cv_capacity": 0.5580923470661565,
+          "cv_cost": 0.2001796498001413,
+          "cv_degradation": 0.38140673208110143,
+          "demand_concentration": 0.2945986557793335,
+          "demand_volatility": 0.10798151549185238,
+          "rho": 0.5149136577708006,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.4620408163265306
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 5,
+        "levers": {
+          "capacity_scale": 0.2676213221578264,
+          "choice": "dense",
+          "h_cap": 1.3101381439844826,
+          "h_cost": 0.9839447990264348,
+          "h_deg": 1.2310039535599506,
+          "hit_magnitude": 0.5646785724926761,
+          "k_c": 1.447308718420147,
+          "m_q": 1.9846040184825968,
+          "outage_duration": 6,
+          "pattern": "cyclic",
+          "pattern_params": {},
+          "shock_rate": 1.2086980085422365,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1908557372,
+        "pool_width": null,
+        "seed": 1908557372,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0005"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "7dadca80cfe974867f4081fd8765b6645faa29048a447fc508469a5f01a38248",
+        "coordinates": {
+          "cv_capacity": 0.23371731913691265,
+          "cv_cost": 0.00938665665145504,
+          "cv_degradation": 0.19781445398776784,
+          "demand_concentration": 0.3105768564063132,
+          "demand_volatility": 0.3184812670015515,
+          "rho": 0.1908953722334004,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.2004285714285714
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 348,
+        "levers": {
+          "capacity_scale": 0.7107611574213464,
+          "choice": "dense",
+          "h_cap": 0.4055167484429455,
+          "h_cost": 0.039258904832339354,
+          "h_deg": 0.7520817039312636,
+          "hit_magnitude": 0.46261400467376423,
+          "k_c": 1.2525899811536934,
+          "m_q": 1.3653983559253322,
+          "outage_duration": 3,
+          "pattern": "cyclic",
+          "pattern_params": {},
+          "shock_rate": 0.8076443784065459,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 481695889,
+        "pool_width": null,
+        "seed": 481695889,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0348"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "be004c2c9815a3e942ed246cc5586b4dc58b22c14d93ecedf1dc68c1eb684982",
+        "coordinates": {
+          "cv_capacity": 0.026215664117916954,
+          "cv_cost": 0.09747659191043688,
+          "cv_degradation": 0.3214635991224449,
+          "demand_concentration": 0.2997412702861336,
+          "demand_volatility": 0.435605935137057,
+          "rho": 0.47089262613195343,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.215114969,
+          "shock_outage_duration": 4.5,
+          "sigma": 0.3720630987617415
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 111,
+        "levers": {
+          "capacity_scale": 1.4067219017939707,
+          "choice": "sparse_f2",
+          "h_cap": 0.07685417940550528,
+          "h_cost": 0.44379764805770766,
+          "h_deg": 1.511747867532156,
+          "hit_magnitude": 0.2151149685202031,
+          "k_c": 2.510022610111238,
+          "m_q": 6.347466426909869,
+          "outage_duration": 3,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.09673920388308244
+          },
+          "shock_rate": 1.9518477292138794,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1633498243,
+        "pool_width": null,
+        "seed": 1633498243,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0111"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "ddefffcf839154087f5673bdad35ee35efc7ece80cb8dfae53290d5d040f7247",
+        "coordinates": {
+          "cv_capacity": 0.20239637318196868,
+          "cv_cost": 0.28075287271515526,
+          "cv_degradation": 0.0996268797913759,
+          "demand_concentration": 0.28706013006782527,
+          "demand_volatility": 0.295606350165527,
+          "rho": 0.6003180492976411,
+          "shock_events_per_producer": 0.5833333333333334,
+          "shock_hit_magnitude": 0.663119394,
+          "shock_outage_duration": 3.5,
+          "sigma": 0.22194016249361265
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 344,
+        "levers": {
+          "capacity_scale": 1.4232796581475249,
+          "choice": "sparse_f2",
+          "h_cap": 0.8152513614418799,
+          "h_cost": 1.55563263043938,
+          "h_deg": 0.46886354780695577,
+          "hit_magnitude": 0.6631193941305201,
+          "k_c": 6.465851177202179,
+          "m_q": 2.4637357985118795,
+          "outage_duration": 2,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.07829314369626973
+          },
+          "shock_rate": 2.3705756598055983,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 128846000,
+        "pool_width": null,
+        "seed": 128846000,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0344"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "0bc0f1f2e8447e9fe9ccf9e98855657229710d2dc5c943afecb48b86c1107d51",
+        "coordinates": {
+          "cv_capacity": 0.24305146384650778,
+          "cv_cost": 0.11482367167366478,
+          "cv_degradation": 0.037037037037037035,
+          "demand_concentration": 0.27145003953344543,
+          "demand_volatility": 0.3694343107239166,
+          "rho": 1.05,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.6299198683164311
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 308,
+        "levers": {
+          "capacity_scale": 0.8221785708953968,
+          "choice": "sparse_f2",
+          "h_cap": 0.906303041715857,
+          "h_cost": 0.548158538684798,
+          "h_deg": 0.06418149804674825,
+          "hit_magnitude": 0.7954754213173147,
+          "k_c": 2.4312286955950717,
+          "m_q": 7.167218600772358,
+          "outage_duration": 6,
+          "pattern": "seasonal",
+          "pattern_params": {
+            "amplitude": 0.5416320750148966,
+            "period": 28,
+            "phase": 1.834581883007302
+          },
+          "shock_rate": 1.964393130131343,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 683989985,
+        "pool_width": null,
+        "seed": 683989985,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0308"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "aaffe99dcf1c9c988d131ecdc8c46fe4a59a0d39910439d9a35fc8c72c25d822",
+        "coordinates": {
+          "cv_capacity": 0.5771498632333177,
+          "cv_cost": 0.4859022028969222,
+          "cv_degradation": 0.30270761576361704,
+          "demand_concentration": 0.29042269187259706,
+          "demand_volatility": 0.0832502673352008,
+          "rho": 1.008130081300813,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.44090853284223447
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 392,
+        "levers": {
+          "capacity_scale": 1.7415998289196195,
+          "choice": "sparse_f4",
+          "h_cap": 1.5442919507623742,
+          "h_cost": 1.588571729951871,
+          "h_deg": 1.1835792214930265,
+          "hit_magnitude": 0.5515905447113364,
+          "k_c": 2.889848988888382,
+          "m_q": 7.88401161523136,
+          "outage_duration": 10,
+          "pattern": "drift",
+          "pattern_params": {},
+          "shock_rate": 1.53187191910813,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1581181319,
+        "pool_width": null,
+        "seed": 1581181319,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0392"
+      }
+    ]
+  },
+  "pre_registered": {
+    "candidates": "whole order to each eligible producer + the trained orderer's row",
+    "depth": 2,
+    "floor": "round_robin",
+    "gate_margins_reference_only": {
+      "calm": 1.05,
+      "shocked": 1.1
+    },
+    "reduction": {
+      "hard": 4,
+      "name": "step2",
+      "note": "D5 reduction step 2 (8 world-episodes, 4 hard + 4 open by the same rule) with `ub` kept: a deviation from the written order (step 1, drop `ub`, first), decided by the supervisor on cost alone before any result was seen (sizing.md \u00a7EXP-0053): with step 2 the run fits the 10 vCPU-h stop with `ub`, the only measure of what the hidden information is worth",
+      "size": 8
+    },
+    "reference_arms": {
+      "ub": {
+        "hidden_information": true,
+        "label_source": false,
+        "teacher": false
+      }
+    },
+    "sample": "D5: train split, 12 producers, 6 hard by gain + 6 open by room, per class n // 2 shocked, patterns cyclic/iid/drift/burst/seasonal, the confirm's first episode seed",
+    "scenarios": "ADR-0056 posterior forks; one scenario (zero-variance rule) on a deterministic-future world",
+    "teacher_arms": [
+      "floor",
+      "d2"
+    ]
+  },
+  "result": {
+    "acceptance_read": false,
+    "contract_failures": 0,
+    "readings": {
+      "all": {
+        "below_bar": [],
+        "d2_deaths": 0,
+        "floor_deaths": 0,
+        "mean_unresolved_fraction": 0.0,
+        "worlds": 8
+      },
+      "hard": {
+        "beyond_trained": 1,
+        "candidate_or_depth_limited": [
+          "ws-atlas-v1-12-0060",
+          "ws-atlas-v1-12-0176",
+          "ws-atlas-v1-12-0348"
+        ],
+        "worlds": 4
+      },
+      "open": {
+        "d2_beats_bar": 2,
+        "readings": {
+          "ceiling_limited": 2,
+          "fork_limited": 0,
+          "search_headroom": 2
+        },
+        "search_headroom": true,
+        "teacher_label_candidates": [
+          "ws-atlas-v1-12-0344",
+          "ws-atlas-v1-12-0308"
+        ],
+        "worlds": 4
+      }
+    },
+    "rows": 133,
+    "status": "complete",
+    "teacher_decisions": 65700
+  },
+  "resumes": [],
+  "source": {
+    "commit": "6abb218d3c2c04b9ab6331c07bfdf73239abd06a",
+    "n_files": 68,
+    "tree_sha256": "8fa9dbdd45f472333cf89ce4c5858289050b38f67081868abf7008f728bbf100"
+  },
+  "started": "2026-10-29T12:43:49.938880+00:00",
+  "status": "complete",
+  "workers": 8
+}
