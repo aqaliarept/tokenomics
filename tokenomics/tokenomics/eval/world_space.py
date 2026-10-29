@@ -116,7 +116,10 @@ class LeverRange:
 LEVERS: dict[str, LeverRange] = {
     "k_c": LeverRange(0.5, 8.0, LOG, 1.0),
     "m_q": LeverRange(1.0, 8.0, LOG, 1.0),
-    "capacity_scale": LeverRange(0.25, 1.0, LOG, 1.0),
+    # c's upper end calibrated by task 4.6 (D10's initial range [0.25, 1]): with c <= 1 the
+    # screen sample's smallest sigma was 0.058 / 0.071 (12 / 42), short of the required 0.05;
+    # [0.25, 2] (families.check_capacity_scale's own limit) gives 0.032 / 0.038 (ADR-0057).
+    "capacity_scale": LeverRange(0.25, 2.0, LOG, 1.0),
     "h_cap": LeverRange(0.0, 2.0, LINEAR, 1.0),
     "h_deg": LeverRange(0.0, 2.0, LINEAR, 1.0),
     "h_cost": LeverRange(0.0, 2.0, LINEAR, 1.0),

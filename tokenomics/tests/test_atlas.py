@@ -566,10 +566,48 @@ def test_bound_columns_are_the_world_episodes_ceiling(dry_runs: dict) -> None:
             if "world_id" not in rec:
                 continue  # an anchor: covered by test_anchor_reproduces_exp0050_units
             cfg = config_from_record(rec)
-            assert rec["levers"]["pattern"] not in ("cyclic", "iid")  # a patterned world
             b = world_ceiling(cfg, 12, episode_demand(cfg, 12, int(row["episode"])))
             assert float(row["bound_b2"]) == b["B2"].units
             assert float(row["bound_base"]) == b[B_BASE].units
             assert row["bound_b2_binding"] == b["B2"].binding_constraint
             checked.add((stage, row["world"], row["episode"]))
     assert {s for s, _, _ in checked} == {"screen", "confirm"}
+
+
+def test_bound_columns_on_a_burst_world() -> None:
+    """Spec "Bound on a patterned world": the row's bounds use the episode's built schedule,
+    burst draws included."""
+    from tokenomics.eval.ceiling_bound import B_BASE, episode_demand, world_ceiling
+    from tokenomics.eval.world_space import Levers, WorldPoint, world_seed
+
+    point = WorldPoint("burst-test", 12, 0, world_seed("burst-test", 12, 0),
+                       Levers(pattern="burst", pattern_params=(("burst_p", 0.1),)))
+    entry = atlas.space_entry(point, episode_seeds(point.world_id, 2))
+    arms = [a for a in arm_table(load_roster(DEFAULT_ROSTER), SCREEN)
+            if a["router"] == "round_robin"]
+    cfg = point.config()
+    b2 = set()
+    for job in build_jobs([entry], arms, 1, 12):
+        row = run_atlas_job(job)
+        b = world_ceiling(cfg, 12, episode_demand(cfg, 12, job["episode"]))
+        assert float(row["bound_b2"]) == b["B2"].units
+        assert float(row["bound_base"]) == b[B_BASE].units
+        b2.add(b["B2"].units)
+    assert len(b2) == 2  # the two episodes' burst draws differ, and so do their bounds
+
+
+def test_screen_grid_is_the_reduced_sample() -> None:
+    """Task 4.6 applied D12's reduction step 1: a 512-point Latin hypercube at 12 (drawn with
+    n = 512, not the first 512 of 1,024), 128 at 42; categorical levels stay balanced."""
+    from collections import Counter
+
+    from tokenomics.eval.families import SHOCKS_I_WINDOW
+    from tokenomics.eval.world_space import sample_worlds
+
+    assert atlas.SCREEN_WORLDS == {12: 512, 42: 128}
+    pts = atlas.screen_points([12], None, SHOCKS_I_WINDOW)
+    assert [p.levers for p in pts] == [p.levers for p in sample_worlds(atlas.ATLAS, 12, 512)]
+    assert [p.levers for p in pts] != [p.levers for p in sample_worlds(atlas.ATLAS, 12, 1024)][:512]
+    assert set(Counter(p.levers.pattern for p in pts).values()) <= {73, 74}
+    assert set(Counter(p.levers.choice for p in pts).values()) <= {170, 171}
+    assert Counter(p.levers.shocks for p in pts) == {False: 256, True: 256}

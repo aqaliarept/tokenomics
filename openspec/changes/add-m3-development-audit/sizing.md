@@ -227,3 +227,258 @@ target, and the shocked cells carry the comparison; the supervisor may choose it
 **Uncertainties.** Only shocked worlds were timed; calm worlds have no shocks and fixed demand
 and may cost a little differently. One world per cell, one episode per arm. The 0.646 factor
 comes from EXP-0047's job mix at fanout 2; wider worlds may scale differently on the pod's CPUs.
+
+## §EXP-0051 (task 4.6)
+
+**Question.** How long will the atlas screen take on a `cpu16` pod (`python -m
+tokenomics.eval.atlas --mode screen`, design D12): a world-space sample of 1,024 worlds at 12
+producers and 128 at 42, 1 episode per world, 11 router jobs per world-episode (the six roster v2
+members with `random` × 1, `round_robin`, `random_whole` × 2, `makeable_split`,
+`makeable_weighted_whole` × 1) plus `entity_planner/trained_orderer` (13 router-equivalents),
+plus the 8 EXP-0050 anchors? And does the sample cover the lever space it should?
+
+**Local box.** 2 CPUs, `--workers 1`, one arm per command; load average 0.3 before the first
+command, about 1.0 after the last. Every command under 2 min (the longest 94 s); no
+horizon-50 fallback was needed.
+
+### (a) Calibration (no episodes)
+
+`/srv/research/tokenomics/openspec/changes/add-m3-development-audit/probes/calibrate_46.py
+--size 12|42 --loads` builds every screen config with its D10 world record (measured
+coordinates; data in `probes/calibrate_46.jsonl`). Requirement: per size, ρ and σ each span at
+least [0.05, 1.5], and every categorical level is present.
+
+With D10's initial capacity scale c ∈ [0.25, 1], σ (mean order size against the median
+declarer capacity) did not reach the low end: its minimum was 0.058 at 12 and 0.071 at 42, so no
+world had orders small against capacity. In-process trials: c ∈ [0.25, 1.5] gave a σ minimum of
+0.041 / 0.049 (42 barely short), c ∈ [0.25, 2] 0.032 / 0.038. **c's range is now [0.25, 2]**
+(log-uniform; 2 is `families.check_capacity_scale`'s own limit; neutral 1 unchanged) in
+`/srv/research/tokenomics/tokenomics/tokenomics/eval/world_space.py` `LEVERS`, recorded in
+ADR-0057's lever table and calibration note. `tests/test_world_space.py` (34 tests, including
+the lever corners with c = 2 and the all-high corner, contract monitor on, `round_robin` and the
+trained orderer) passes; the full suite is green.
+
+Coverage on the final ranges (min / median / max; level counts):
+
+| size | worlds | ρ | σ | cv capacity | cv degradation | cv cost | shock events / producer | demand concentration | demand volatility |
+|---|---|---|---|---|---|---|---|---|---|
+| 12 | 1,024 | 0.024 / 0.52 / 14.6 | 0.032 / 0.34 / 10.1 | 0.004 / 0.44 / 1.13 | 0 / 0.23 / 0.61 | 0 / 0.21 / 0.52 | 0 / 0.08 / 0.75 | 0.25 / 0.27 / 1.0 | 0 / 0.17 / 1.04 |
+| 42 | 128 | 0.028 / 0.45 / 13.0 | 0.038 / 0.35 / 7.1 | 0.008 / 0.50 / 0.89 | 0 / 0.28 / 0.59 | 0.007 / 0.24 / 0.51 | 0 / 0.07 / 0.74 | 0.074 / 0.089 / 0.32 | 0.029 / 0.092 / 0.46 |
+
+| size | choice | shocks off / on | pattern (cyclic, iid, drift, burst, hit, seasonal, switch) |
+|---|---|---|---|
+| 12 | sparse_f2 342, sparse_f4 341, dense 341 | 512 / 512 | 147, 146, 146, 147, 146, 146, 146 |
+| 42 | sparse_f2 26, f4 26, f7 25, f14 26, dense 25 | 64 / 64 | 19, 18, 18, 19, 18, 18, 18 |
+
+Both sizes pass: ρ and σ span [0.05, 1.5] with room on both sides, and every level is present.
+The bound (B2 + B_base, the env reset for the episode's demand included) costs 9 ms per
+world-episode at 12 (max 81 ms) and 33 ms at 42 (max 198 ms) at horizon 100: about 10 s for the
+whole 12-producer sample, negligible.
+
+### (b) Timing
+
+`probes/timing_46.py --size S --choice C --arm A --worlds ...` times one horizon-100 episode per
+world through the atlas's own job (`atlas.run_atlas_job`: tracer, contract monitor and bound
+columns on), replicate 0, the screen's first episode seed; checkpoint load (1.2–1.9 s per
+process) timed apart. Per size × choice level: the `neutral` world (every other lever neutral:
+the family world, calm, cyclic) and the 3 sample worlds of that level at the 50 / 75 / 95%
+quantiles of load = k_c × m_q (more consumers, larger orders). 34 commands, 134 episodes (raw
+lines in `probes/timing_46.jsonl`), every episode survived to horizon 100, no contract failure.
+Seconds per episode:
+
+| size, choice | world | id | load (k_c × m_q) | c | shocks, pattern | `round_robin` | `proportional` | `trained_orderer` | `portable` |
+|---|---|---|---|---|---|---|---|---|---|
+| 12 sparse_f2 | neutral | ws-neutral-12-0000 | 1.00 | 1.00 | off, cyclic | 0.78 | 0.72 | 1.68 | 2.58 |
+| 12 sparse_f2 | q50 | 12-0648 | 5.49 (0.87 × 6.28) | 0.79 | off, iid | 0.85 | 0.84 | 1.99 | 2.73 |
+| 12 sparse_f2 | q75 | 12-0396 | 11.90 (2.02 × 5.89) | 0.41 | off, cyclic | 1.14 | 1.15 | 2.33 | 3.13 |
+| 12 sparse_f2 | q95 | 12-0846 | 35.18 (6.63 × 5.31) | 0.96 | off, hit | 2.47 | 2.50 | 5.84 | 6.80 |
+| 12 sparse_f4 | neutral | ws-neutral-12-0000 | 1.00 | 1.00 | off, cyclic | 1.13 | 1.08 | 2.55 | 3.55 |
+| 12 sparse_f4 | q50 | 12-0912 | 5.88 (1.63 × 3.62) | 0.38 | off, drift | 1.46 | 1.82 | 3.31 | 4.29 |
+| 12 sparse_f4 | q75 | 12-0681 | 11.92 (1.68 × 7.11) | 0.40 | off, seasonal | 1.58 | 1.89 | 3.29 | 4.25 |
+| 12 sparse_f4 | q95 | 12-0885 | 32.72 (6.25 × 5.24) | 1.85 | on, switch | 2.96 | 3.49 | 6.72 | 8.00 |
+| 12 dense | neutral | ws-neutral-12-0000 | 1.00 | 1.00 | off, cyclic | 1.13 | 1.10 | 2.67 | 3.82 |
+| 12 dense | q50 | 12-0629 | 5.62 (3.38 × 1.66) | 0.67 | off, hit | 1.91 | 2.15 | 4.93 | 5.84 |
+| 12 dense | q75 | 12-0475 | 11.03 (2.77 × 3.98) | 0.59 | off, burst | 1.91 | 2.39 | 4.61 | 5.54 |
+| 12 dense | q95 | 12-0649 | 30.18 (7.65 × 3.94) | 0.72 | on, cyclic | 3.13 | 3.83 | 7.25 | 8.43 |
+| 42 sparse_f2 | neutral | ws-neutral-42-0000 | 1.00 | 1.00 | off, cyclic | 4.49 | 4.35 | 8.45 | 11.63 |
+| 42 sparse_f2 | q50 | 42-0040 | 6.79 (2.02 × 3.36) | 0.93 | on, burst | 6.04 | 6.08 | 10.88 | 13.85 |
+| 42 sparse_f2 | q75 | 42-0074 | 12.67 (4.31 × 2.94) | 0.31 | off, hit | 11.42 | 11.62 | 23.19 | 24.57 |
+| 42 sparse_f2 | q95 | 42-0057 | 30.55 (6.89 × 4.43) | 0.48 | off, seasonal | 11.23 | 11.60 | 22.02 | 25.38 |
+| 42 sparse_f4 | neutral | ws-neutral-42-0000 | 1.00 | 1.00 | off, cyclic | 6.52 | 6.36 | 13.09 | 16.43 |
+| 42 sparse_f4 | q50 | 42-0117 | 3.84 (0.61 × 6.30) | 1.38 | off, switch | 6.40 | 7.04 | 13.13 | 16.93 |
+| 42 sparse_f4 | q75 | 42-0086 | 13.29 (3.17 × 4.19) | 0.57 | on, iid | 10.01 | 11.61 | 19.50 | 22.78 |
+| 42 sparse_f4 | q95 | 42-0039 | 37.70 (7.26 × 5.19) | 1.98 | off, iid | 14.68 | 18.32 | 28.00 | 31.41 |
+| 42 sparse_f7 | neutral | ws-neutral-42-0000 | 1.00 | 1.00 | off, cyclic | 9.41 | 10.09 | 19.53 | 24.43 |
+| 42 sparse_f7 | q50 | 42-0095 | 6.27 (1.27 × 4.92) | 0.42 | off, drift | 11.89 | 14.43 | 23.56 | 28.30 |
+| 42 sparse_f7 | q75 | 42-0110 | 9.97 (3.42 × 2.91) | 0.52 | on, cyclic | 15.60 | 19.38 | 29.52 | 33.95 |
+| 42 sparse_f7 | q95 | 42-0107 | 32.95 (6.50 × 5.07) | 0.44 | off, burst | 19.91 | 29.86 | 42.14 | 47.05 |
+| 42 sparse_f14 | neutral | ws-neutral-42-0000 | 1.00 | 1.00 | off, cyclic | 17.87 | 17.89 | 35.00 | 42.88 |
+| 42 sparse_f14 | q50 | 42-0054 | 4.68 (3.77 × 1.24) | 0.80 | on, cyclic | 23.66 | 27.82 | 43.33 | 50.66 |
+| 42 sparse_f14 | q75 | 42-0084 | 11.10 (2.08 × 5.34) | 1.73 | off, cyclic | 22.56 | 34.66 | 44.14 | 52.78 |
+| 42 sparse_f14 | q95 | 42-0064 | 29.41 (5.28 × 5.57) | 1.00 | on, iid | 29.01 | 52.97 | 61.34 | 71.56 |
+| 42 dense | neutral | ws-neutral-42-0000 | 1.00 | 1.00 | off, cyclic | 6.57 | 6.58 | 14.14 | 17.22 |
+| 42 dense | q50 | 42-0097 | 6.06 (3.23 × 1.88) | 0.38 | on, drift | 12.64 | 17.70 | 24.21 | 27.27 |
+| 42 dense | q75 | 42-0102 | 13.75 (5.13 × 2.68) | 1.71 | on, burst | 16.02 | 25.67 | 32.56 | 35.91 |
+| 42 dense | q95 | 42-0062 | 26.62 (7.77 × 3.42) | 1.47 | off, hit | 21.43 | 33.94 | 44.93 | 47.87 |
+
+The neutral times match EXP-0050's (e.g. 42 sparse_f14 `round_robin` 17.9 s here, 18.1 s
+there). Load makes episodes slower, and makes splitting routers slower than whole-order ones:
+on loaded 42-producer worlds `proportional` costs up to 1.8 × `round_robin` (42 f14 q95: 53.0 against
+29.0 s). Two extra checks of the deciding-check routers: `makeable_split` 17.7 / 42.6 s on 42 f14
+neutral / q95 (between the two), `makeable_weighted_whole` 1.21–3.25 s on 12 dense (like
+`round_robin`).
+
+**Cost model.** Per world: a splitting router (the five deterministic roster rules, `random`,
+`makeable_split`) costs what `proportional` costs, a whole-order router (`round_robin`,
+`random_whole`, `makeable_weighted_whole`) what `round_robin` costs. Screen world-episode = 7 ×
+`proportional` + 4 × `round_robin` + `trained_orderer`; the bound adds 0.01–0.03 s (ignored).
+
+**Load factor L** = the sampled mix's cost ÷ the neutral world's cost, per size × choice level.
+The mix cost is the mean of the three load-quantile worlds (q50, q75, q95). By load alone that
+would overstate the mix (the cheaper lower half of each level's load distribution is not timed),
+but the other levers (c, shocks, pattern) move cost about as much as load does, and a random-world
+check puts the mix **about central**: the reviewer timed 5 random draws from the 42-producer
+sample (`random.Random(46)`, horizon 100, `atlas.run_atlas_job`, the same 7 × `proportional` +
+4 × `round_robin` proxy) against their level's mix: 42-0019 f14 0.92, 42-0102 dense 1.00,
+42-0010 f7 1.02, 42-0058 f4 0.68, 42-0038 f14 1.10; mean **0.95** (0.68–1.10). As a second
+check, a linear fit of cost on load through the 4 timed worlds, evaluated at the level's mean
+load (8.8–10.1), gives a lower L (about 0.78 × the mix); it would underestimate the f14 worlds,
+which dominate the 42-producer cost. Arithmetic in `probes/extrapolate_46.py`
+(`python3 extrapolate_46.py [--screen-12 N]`):
+
+| size, choice | screen s per world-episode: neutral / q50 / q75 / q95 | mix | L | L (fit check) | worlds | local s |
+|---|---|---|---|---|---|---|
+| 12 sparse_f2 | 9.9 / 11.3 / 14.9 / 33.2 | 19.8 | 2.01 | 1.48 | 341.3 | 6,758 |
+| 12 sparse_f4 | 14.6 / 21.9 / 22.8 / 43.0 | 29.2 | 2.00 | 1.55 | 341.3 | 9,980 |
+| 12 dense | 14.9 / 27.6 / 29.0 / 46.6 | 34.4 | 2.31 | 1.77 | 341.3 | 11,742 |
+| 42 sparse_f2 | 56.8 / 77.6 / 150.2 / 148.1 | 125.3 | 2.21 | 1.72 | 25.6 | 3,208 |
+| 42 sparse_f4 | 83.7 / 88.0 / 140.8 / 215.0 | 147.9 | 1.77 | 1.39 | 25.6 | 3,786 |
+| 42 sparse_f7 | 127.8 / 172.1 / 227.6 / 330.8 | 243.5 | 1.91 | 1.56 | 25.6 | 6,234 |
+| 42 sparse_f14 | 231.7 / 332.7 / 377.0 / 548.2 | 419.3 | 1.81 | 1.52 | 25.6 | 10,734 |
+| 42 dense | 86.5 / 198.7 / 276.3 / 368.2 | 281.1 | 3.25 | 2.40 | 25.6 | 7,195 |
+
+L lies at 1.8–3.3 (fit check 1.4–2.4), above D12's provisional [1, 2] in places: the loaded dense
+42 worlds cost most relative to neutral (dense neutral has 4 products per layer and is cheap). The
+8 anchors add 648 local s (EXP-0050's per-cell times, same job mix).
+
+| screen grid | local s | local vCPU-h | pod vCPU-h (× 0.646) | `cpu16` wall | fit check (pod vCPU-h) |
+|---|---|---|---|---|---|
+| 1,024 at 12 + 128 at 42 + 8 anchors | 28,480 + 31,157 + 648 = 60,285 | 16.75 | **10.82** | 41 min | 8.49 |
+| **512 at 12** + 128 at 42 + 8 anchors | 14,240 + 31,157 + 648 = 46,045 | 12.79 | **8.26** | **31 min** | 6.54 |
+
+**Reduction (D12 order).** The full grid, 10.82 pod vCPU-h (≈ 11.1 billed with pod start-up,
+install and pull, as EXP-0049's 2.50 billed for 2.25 executed), is above the **10 vCPU-h hard
+stop**. Step 1 of D12's reduction order, 512 worlds at 12, brings it to **8.26** (≈ 8.6 billed;
+the fit check gives 6.54): under the stop, and the run can launch. Step 2 (64 worlds at 42) is
+not needed. The 512-world sample (a Latin hypercube drawn with n = 512, not the first 512 of
+1,024) still covers: ρ 0.027–14.2, σ 0.021–7.3, choice 171 / 171 / 170, shocks 256 / 256,
+patterns 73–74 each; its mean load per choice level (8.5–9.0) is no higher than the 1,024
+sample's, so the per-world cost above holds. Applied in
+`/srv/research/tokenomics/tokenomics/tokenomics/eval/atlas.py` (`SCREEN_WORLDS[12] = 512`; a real
+run refuses `--worlds-per-size`). The calibration and timing above were taken on the 1,024-world
+sample at 12: both probes now default to `atlas.SCREEN_WORLDS` (512), and reproduce the recorded
+lines with `calibrate_46.py --size 12 --worlds 1024` and `timing_46.py --worlds-in-sample 1024`
+(the 42-producer lines use the unchanged default, 128).
+
+**Estimator used for the decision.** The run is planned against the mix estimator (mean of the
+three load-quantile worlds per level; about central, above): 10.82 for the full grid, 8.26 after
+step 1. The linear-fit estimator (8.49 / 6.54) is reported as a check only; it would have let the
+full grid pass, but it rests on 4 points per level and a load-only model, and underestimates the
+random worlds above. **Margin:** 8.26 is 1.74 vCPU-h (17%) under the stop; the random-world
+check's worst ratio, + 10%, gives about 9.1, still under 10. The router pricing is on the safe
+side: on 42-0102 (dense q75) the reviewer measured the other splitting routers at `blend_0.5`
+1.02, `shock_reactive` 1.01, `even_split` 0.87, `random` 0.76, `obs_price` 0.23 × `proportional`
+(mean of the six splitting arms 0.81 ×), so pricing every splitting router at `proportional`
+overstates them. (An earlier message to the
+supervisor quoted 10.53 / 8.01 and 8.32 / 6.39: those used the plain mean of `round_robin` and
+`proportional` for every router; the figures here weight the splitting routers at
+`proportional`'s cost, which is higher on loaded worlds.) The 42-producer sample stays at 128
+worlds, and EXP-0051's hard stop stays **10 vCPU-h**.
+
+**Final screen grid:** 512 worlds at 12 + 128 at 42 (1 episode each) + 8 anchors, 11 router
+jobs + the trained orderer per world-episode, `cpu16`, `--workers 16`: **8.26 pod vCPU-h,
+≈ 31 min wall** (≈ 8.6 billed). The longest single job (42 f14 q95 `trained_orderer`, 61 s
+local, ≈ 40 s on the pod) is far below the wall, so the pool's tail stays short.
+
+**Provisional spreads for the screen** (D12 "Screen": σ_ep and σ_rep per size × fanout, dense
+its own, from EXP-0050's `artifacts/episodes.csv`, computed by `atlas.provisional_spreads`, which
+the screen recomputes from `--exp0050-episodes` and records in its `spec.json`). σ_ep: pooled
+SD of the paired per-episode gain (trained orderer − best blind arm) over the 4 shocked worlds
+per cell, df 4 each. σ_rep: pooled SD between replicates of the stochastic argmax arms; a cell
+whose argmax arms were all deterministic has no df and takes its size's pool (the atlas's
+recorded driver choice):
+
+| cell | σ_ep (df) | σ_rep (df) |
+|---|---|---|
+| 12 sparse_f2 | 14.20 (4) | 2.61 (4, size pool) |
+| 12 sparse_f4 | 6.28 (4) | 2.61 (4, size pool) |
+| 12 dense | 5.89 (4) | 2.61 (4) |
+| 42 sparse_f2 | 30.78 (4) | 13.88 (40, size pool) |
+| 42 sparse_f4 | 5.76 (4) | 9.67 (4) |
+| 42 sparse_f7 | 16.22 (4) | 10.09 (8) |
+| 42 sparse_f14 | 36.58 (4) | 21.28 (8) |
+| 42 dense | 20.54 (4) | 12.02 (20) |
+
+With the screen's 2 × SE and 1 episode, the floor on a stochastic world is about 2 × σ_ep:
+12–28 units at 12, 12–73 at 42.
+
+**Uncertainties.** One episode per timed world and 4 worlds per level; the levers other than
+load (c, shocks, pattern) vary between the timed worlds and explain some of the spread (42 f2
+q75 costs as much as q95). The 0.646 local-to-pod factor comes from EXP-0047's fanout-2 job
+mix. The splitting / whole assignment of routers is approximate (`random` and the roster rules
+were not timed here; §EXP-0048 found nine routers within ±10% at neutral load).
+
+## §EXP-0052 (task 4.6)
+
+**Question.** How long will the atlas confirm take (`--mode confirm`, D12): K = 64 selected
+worlds at 12 and 32 at 42, 2 episodes per world (1 for cyclic demand without shocks), 13 router
+jobs per world-episode (`random`, `random_whole`, `makeable_weighted_whole` at R = 2), the trained
+orderer and `portable` (18 router-equivalents)?
+
+**Cost model.** From the same timed worlds (§EXP-0051 table): confirm world-episode = 8 ×
+`proportional` (5 roster rules, `random` × 2, `makeable_split`) + 5 × `round_robin`
+(`round_robin`, `random_whole` × 2, `makeable_weighted_whole` × 2) + `trained_orderer` +
+`portable`. The selected worlds are drawn at the screen's lever distribution (equal choice
+shares; the load mix of §EXP-0051), and every world is counted at 2 episodes (the 1-episode
+cyclic, shock-free worlds are about 1/14 of a uniform draw; ignoring them is conservative).
+
+| size, choice | confirm s per world-episode: neutral / q50 / q75 / q95 | mix | worlds | local s (× 2 episodes) |
+|---|---|---|---|---|
+| 12 sparse_f2 | 13.9 / 15.7 / 20.3 / 45.0 | 27.0 | 21.3 | 1,152 |
+| 12 sparse_f4 | 20.4 / 29.5 / 30.5 / 57.4 | 39.1 | 21.3 | 1,670 |
+| 12 dense | 21.0 / 37.5 / 38.8 / 62.0 | 46.1 | 21.3 | 1,967 |
+| 42 sparse_f2 | 77.3 / 103.5 / 197.8 / 196.4 | 165.9 | 6.4 | 2,123 |
+| 42 sparse_f4 | 113.0 / 118.4 / 185.2 / 279.4 | 194.3 | 6.4 | 2,487 |
+| 42 sparse_f7 | 171.7 / 226.8 / 296.5 / 427.7 | 317.0 | 6.4 | 4,057 |
+| 42 sparse_f14 | 310.3 / 434.8 / 487.0 / 701.7 | 541.2 | 6.4 | 6,927 |
+| 42 dense | 116.8 / 256.3 / 353.9 / 471.4 | 360.5 | 6.4 | 4,615 |
+
+| confirm grid | local s | local vCPU-h | pod vCPU-h (× 0.646) | `cpu16` wall | fit check (pod vCPU-h) |
+|---|---|---|---|---|---|
+| 64 at 12 + 32 at 42, 2 episodes | 4,790 + 20,210 = 25,000 | 6.94 | **4.49** | **17 min** | 3.59 |
+
+**Final confirm grid:** as designed, no reduction: **4.49 pod vCPU-h, ≈ 17 min wall**
+(≈ 4.8 billed), under the **6 vCPU-h hard stop**. Longest single job: 42 f14 q95 `portable`,
+72 s local (≈ 46 s on the pod).
+
+**Uncertainties.** The confirm worlds are the screen's hard and open worlds, not a uniform draw;
+if the selection favours loaded worlds the cost rises. Worst case, every selected world at its
+level's q95 cost: 64 × 2 × 54.8 + 32 × 2 × 415.3 = 33,594 local s = **6.03** pod vCPU-h, just
+above the stop. The selection's actual load mix is known when the screen ends, so EXP-0052 is
+**rechecked before launch** against it:
+```
+python3 /srv/research/tokenomics/openspec/changes/add-m3-development-audit/probes/extrapolate_46.py \
+  --selection /srv/research/tokenomics/experiments/EXP-0051-<title>
+```
+It reads the screen's `selection.csv` and the selected worlds' records in its `spec.json`
+(k_c, m_q, pattern, shocks), prices each world at its size × choice level's confirm cost,
+interpolated piecewise-linearly in load = k_c × m_q through the level's 4 timed worlds (beyond the
+highest timed load, extended at the level's least-squares slope), counts 1 episode for cyclic
+demand without shocks and 2 otherwise, and prints the pod vCPU-h against the 6 vCPU-h stop.
+**If the recheck is above 6, EXP-0052 does not launch and the implementer reports to the
+supervisor** (D8): no reduction is pre-registered for the confirm, so any cut (fewer 42-producer
+worlds, 1 episode per world, a smaller K) is the supervisor's or the user's decision.
+
+**Budget.** Planned: screen 8.26 + confirm 4.49 = 12.75 pod vCPU-h (≈ 13.4 billed), against
+D8's central 11.5 for the two and their stops' sum of 16. With ≈ 10.8 billed so far, M3 would
+stand at ≈ 24.2 of 40 after the atlas.

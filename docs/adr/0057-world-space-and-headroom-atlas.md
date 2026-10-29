@@ -35,10 +35,18 @@ realized value depends on the world's draws.
 | Size | P ∈ {12, 42}; any other size is refused | — | producers |
 | Choice | 12: sparse_f2, sparse_f4, dense; 42: sparse_f2, f4, f7, f14, dense (equal shares) | sparse_f2 | declarers per product |
 | Capacity tightness | k_c ∈ [0.5, 8], log-uniform; consumers = max(1, round_half_up(k_c · 3P/12)) | 1 | ρ = `demand_units_per_cycle` / `top_layer_throughput` |
-| Order size | m_q ∈ [1, 8], log-uniform; capacity scale c ∈ [0.25, 1], log-uniform | 1, 1 | σ = mean over orders of quantity × capacity units per unit ÷ median declarer capacity |
+| Order size | m_q ∈ [1, 8], log-uniform; capacity scale c ∈ [0.25, 2], log-uniform (D10's initial [0.25, 1] widened by the task 4.6 calibration, below) | 1, 1 | σ = mean over orders of quantity × capacity units per unit ÷ median declarer capacity |
 | Heterogeneity | h_cap, h_deg, h_cost ∈ [0, 2], uniform; v → med + h·(v − med) per layer | 1 | within-layer spread: mean over layers of the population CV of capacity, of degradation, of restoration and upgrade cost (0 at h = 0) |
 | Shocks | off / on; r ∈ [0.5, 3], m ∈ [0.2, 0.8], d ∈ {2..10} | off, or (1, 0.45, 3) | expected events per producer per 100 cycles, mean hit magnitude, mean outage duration |
 | Demand pattern | cyclic, iid, drift (j = 0.34), burst, hit, seasonal, switch (equal shares); D11 parameters drawn per world | cyclic (calm), drift (shocked) | Herfindahl concentration and CV volatility of the realized demand |
+
+**Calibration (task 4.6).** The screen sample (atlas-v1: 1,024 worlds at 12, 128 at 42) must
+span ρ and σ each over at least [0.05, 1.5] per size. With D10's initial c ∈ [0.25, 1], ρ spanned
+[0.038, 15.8] / [0.047, 13.0] but σ only [0.058, 11.6] / [0.071, 7.4] (12 / 42): no world with
+orders small against capacity. c's upper end was raised to 2, the limit `families` already
+accepts (c > 1 scales capacity, restoration and upgrade amounts up); σ then spans
+[0.032, 10.1] / [0.038, 7.1] and ρ [0.024, 14.6] / [0.028, 13.0]. c = 1.5 was not enough (σ
+minimum 0.049 at 42). The lever-corner contract test covers c = 2 (sizing.md §EXP-0051).
 
 Implementation choices that the design leaves open, recorded here:
 - **Drift j is fixed at 0.34.** This is the registered `shocks-i` value. D11 gives no range for
@@ -104,8 +112,9 @@ horizon:
 - every pattern kind at its parameter ends.
 
 Each was played with `entity_planner/round_robin` and `entity_planner/trained_orderer`. The
-contract monitor recorded **no failure**, so no lever range was narrowed. Task 4.6 may
-recalibrate the ranges within D10's rules and will update this table.
+contract monitor recorded **no failure**, so no lever range was narrowed. Task 4.6 widened c to
+[0.25, 2] (Calibration, above); the same corner test, now with c = 2 at its upper end and in the
+all-high corner, again recorded no failure.
 
 ### Demand patterns are demand (D11)
 

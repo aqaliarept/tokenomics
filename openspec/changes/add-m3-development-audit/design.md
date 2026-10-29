@@ -665,7 +665,7 @@ the implementer reports to the supervisor.
 | 0048 | random-routing diagnosis | 2.1 | done: 4.4 | 8 | billed |
 | 0049 | informed routing + trained trace | 3.2 | done: 2.5 | 6 | billed |
 | 0050 | routing vs fanout | 3.4 | done: 3.9 | 6 | billed |
-| 0051 | atlas screen, 1,024 + 128 worlds | 4.6 | 6–12 (central ≈ 8) | 10 | per-cell router times (Context) × 13 router-equivalents × load factor 1–2 (D12) × 0.646 |
+| 0051 | atlas screen, 1,024 + 128 worlds (512 + 128 after reduction step 1, task 4.6: 8.26 pod vCPU-h) | 4.6 | 6–12 (central ≈ 8) | 10 | per-cell router times (Context) × 13 router-equivalents × load factor 1–2 (D12) × 0.646 |
 | 0052 | atlas confirm, 64 + 32 worlds | 4.6 | 2.6–5.3 (central ≈ 3.5) | 6 | the same, 18 router-equivalents, 2 episodes |
 | 0053 | PoC-A, 12 world-episodes at 12 | 6.3 | 1.5–9 (central ≈ 4, a priori) | 8 | EXP-0042 per-stream cost × D5 arithmetic |
 | 0054 | PoC-C, 6 world-episodes at 12 | 8.2 | 0.7–4.2 (central ≈ 2, a priori) | 4 | the same |
@@ -711,7 +711,7 @@ consumers, order size and capacity) and the realized value depends on the world'
 | Size | producers P | P ∈ {12, 42}, a separate sample per size | — |
 | Choice | eligible producers per product E, family | 12: sparse E ∈ {2, 4}, dense (E = 4); 42: sparse E ∈ {2, 4, 7, 14}, dense (E = 14); equal shares | sparse E = 2 |
 | Capacity tightness | ρ = expected consumer demand units per cycle ÷ initial top-layer throughput (`demand_units_per_cycle` / `top_layer_throughput`) | consumer multiplier k_c ∈ [0.5, 8] (consumers = max(1, round(k_c · 3P/12))), with m_q and c below; log-uniform | k_c = 1 (ρ ≈ 0.06) |
-| Order size vs capacity | σ = mean over orders of (quantity × capacity units per unit) ÷ the median capacity of the product's declarers | quantity multiplier m_q ∈ [1, 8] (quantity range [m_q, m_q · q_max], rounded half up), capacity scale c ∈ [0.25, 1] (`capacity_scale`); log-uniform | m_q = 1, c = 1 |
+| Order size vs capacity | σ = mean over orders of (quantity × capacity units per unit) ÷ the median capacity of the product's declarers | quantity multiplier m_q ∈ [1, 8] (quantity range [m_q, m_q · q_max], rounded half up), capacity scale c ∈ [0.25, 1] (`capacity_scale`; widened to [0.25, 2] by task 4.6 so σ reaches 0.05, sizing.md §EXP-0051, ADR-0057); log-uniform | m_q = 1, c = 1 |
 | Producer heterogeneity | coefficient of variation among producers of capacity, of degradation and of restoration/upgrade cost | h_cap, h_deg, h_cost ∈ [0, 2]: each drawn value v becomes med + h · (v − med) (med = the median of the drawn values in the world's layer), rounded half up and clamped to the valid range, after every draw | h = 1 (no transform) |
 | Shocks | expected shock events per producer per 100 cycles, mean hit magnitude, mean outage duration | off / on (equal shares); on: `shocks-i` with counts × r, r ∈ [0.5, 3], hit magnitude range centred at m ∈ [0.2, 0.8] (width 0.3), outage duration range [d, d + 3], d ∈ [2, 10] | off, or `shocks-i` (r = 1, m = 0.45, d = 3) |
 | Demand pattern | pattern kind and parameters; realized demand concentration (Herfindahl of demanded units over products) and volatility (coefficient of variation of per-cycle demanded units) | kind ∈ {cyclic, iid, drift, burst, hit, seasonal, switch} (equal shares) and its parameters (D11) | cyclic (calm) or drift j = 0.34 (shocked) |
@@ -868,7 +868,8 @@ equal demand and shock digests):
    says how often that happens;
 5. *flat*: the rest.
 
-**Screen (EXP-0051).** Per size, a Latin hypercube sample (D10): **1,024 worlds at 12 producers,
+**Screen (EXP-0051).** Per size, a Latin hypercube sample (D10): **1,024 worlds at 12 producers
+(512 after reduction step 1, applied by task 4.6: sizing.md §EXP-0051),
 128 at 42**, 1 episode per world, the blind arms (`random` R = 1, `random_whole` R = 2) and the
 reach arms without `portable`: 13 router-equivalent episodes per world (the trained orderer counts
 2). Plus 8 **anchor** world-episodes: world 0 of each EXP-0050 cell type, its first shocked

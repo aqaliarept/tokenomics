@@ -3,7 +3,7 @@ ADR-0057; development-audit "Per-world headroom" ... "Atlas evidence does not ch
 
 Two modes, one EXP directory each:
 - `--mode screen` (EXP-0051): a world-space Latin hypercube sample per size (`world_space`,
-  1,024 worlds at 12 producers, 128 at 42), 1 episode per world, plus the 8 EXP-0050 anchor
+  512 worlds at 12 producers, 128 at 42), 1 episode per world, plus the 8 EXP-0050 anchor
   world-episodes (world 0 of each fanout cell, its first shocked episode, rebuilt by
   `routing_audit.fanout_world`). Arms: the blind and hand-written arms (the roster v2 members
   with `random` at R = 1, `round_robin`, `random_whole` at R = 2) and the reach arms without
@@ -129,7 +129,9 @@ MODES = (SCREEN, CONFIRM)
 ATLAS = "atlas-v1"  # world seeds and ids hash this name (world_space.world_seed)
 ATLAS_FILE = "atlas_v1.json"
 HORIZON = 100
-SCREEN_WORLDS = {12: 1024, 42: 128}
+# D12 planned 1,024 at 12; task 4.6's probe put that at 10.8 pod vCPU-h, above the 10 stop,
+# so D12's reduction step 1 applies (sizing.md §EXP-0051): a 512-point Latin hypercube at 12.
+SCREEN_WORLDS = {12: 512, 42: 128}
 K = {12: 64, 42: 32}
 OPEN_SHARE = 0.25  # at least K/4 open worlds when that many exist
 SCREEN_EPISODES = 1
