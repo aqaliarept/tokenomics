@@ -84,6 +84,19 @@ on an idle box. Episode time at h = 12, `entity_planner/proportional`:
 The portable subject at h = 8 went from 40.0 s to 4.6 s (sparse) and from 47.4 s to 7.0 s
 (dense).
 
+**Seen in EXP-0055 (PoC-B, after the fix).** The portable stack, timed per stage on calm
+`sparse_wide` worlds up to 42 producers (the target; nothing larger is timed). The reading that
+bears on branch (a): at fixed fanout E = 2 the cost of one orderer decision grows with slope 0.34
+on producers (`obs` 0.52, ≈ √P), not the ≈ 1 of every stream rebuilding every producer's rows, so
+the blow-up has not come back on the deployed path. Per cycle the slope is 1.24 (10.3 → 49.3 pod
+ms from 12 to 42); the ≈ 2.2 above (12 → 120, `entity_planner/proportional`, local) is context only,
+not like-for-like (different subject, range and host). No per-decision stage is superlinear on
+fanout or consumers (max 0.54, the producer decision's `forward` on fanout; the orderer decision is
+flat in fanout, 0.03). `obs` + `forward` are ≈ 80% of the wall, `complete_cycle` 1.5–3.5% (not
+(b)). The remaining growth sits in branch (a)'s place, the orderer's observation. Read from stage
+timers, not a profile. If economies above
+42 return, profile the stream view first (eligible-only rows, the D2 refactor).
+
 ---
 
 ## 18. A family fails (or passes) the headroom check, and capacity cuts do not move it

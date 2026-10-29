@@ -1,0 +1,164 @@
+{
+  "acceptance_read": false,
+  "driver": "tokenomics.eval.deployed_cost",
+  "elapsed_s": 60.296,
+  "experiment": "exp0055",
+  "host": {
+    "affinity": 4,
+    "cgroup_cpu_quota": null,
+    "cgroup_cpu_raw": "max 100000",
+    "cpu_model": "AMD EPYC 9575F 64-Core Processor",
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "loadavg_end": [
+      334.41,
+      217.64,
+      153.87
+    ],
+    "loadavg_start": [
+      290.78,
+      185.59,
+      139.96
+    ],
+    "machine": "x86_64",
+    "node": "701befab6899",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "os_cpu_count": 128,
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730",
+    "vcpu": 4
+  },
+  "inputs": {
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "producer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/producer_candidate.pt",
+      "sha256": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    }
+  },
+  "kind": "measurement",
+  "pins": {
+    "cells": [
+      "P12-E2-k1",
+      "P24-E2-k1",
+      "P42-E2-k1",
+      "P42-E4-k1",
+      "P42-E7-k1",
+      "P42-E14-k1",
+      "P42-E4-k2",
+      "P42-E4-k4"
+    ],
+    "checkpoints": {
+      "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+      "producer": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    },
+    "episode_seed": 0,
+    "family": "sparse_wide",
+    "horizon": 20,
+    "regime": "calm",
+    "registered_checkpoints": {
+      "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+      "producer": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea"
+    },
+    "repeats": 3,
+    "workers": 2,
+    "world_seeds": [
+      1000,
+      1001,
+      1002
+    ]
+  },
+  "pre_registered": {
+    "aggregate": "per world the median over repeats of stage seconds / the measure's denominator; per cell the mean over worlds; log-log OLS over an axis's cells",
+    "axes": {
+      "consumers_per_producer": [
+        "P42-E4-k1",
+        "P42-E4-k2",
+        "P42-E4-k4"
+      ],
+      "fanout": [
+        "P42-E2-k1",
+        "P42-E4-k1",
+        "P42-E7-k1",
+        "P42-E14-k1"
+      ],
+      "producers": [
+        "P12-E2-k1",
+        "P24-E2-k1",
+        "P42-E2-k1"
+      ]
+    },
+    "flag": "slope > 1.1 on fanout, consumers_per_producer for the measures decision, prod_decision, order_decision (pooled and per-role per-decision; per-cycle rows reported, never flagged): 'Superlinear stage'",
+    "max_producers": 42,
+    "measures": {
+      "cycle": {
+        "denominator": "cycles",
+        "flagged": false,
+        "stages": [
+          "obs",
+          "forward",
+          "decode",
+          "domain",
+          "harness",
+          "total"
+        ]
+      },
+      "decision": {
+        "denominator": "decisions",
+        "flagged": true,
+        "stages": [
+          "obs",
+          "forward",
+          "decode",
+          "domain",
+          "harness",
+          "total"
+        ]
+      },
+      "order_decision": {
+        "denominator": "order_decisions",
+        "flagged": true,
+        "stages": [
+          "obs",
+          "forward",
+          "decode",
+          "total"
+        ]
+      },
+      "prod_decision": {
+        "denominator": "prod_decisions",
+        "flagged": true,
+        "stages": [
+          "obs",
+          "forward",
+          "decode",
+          "total"
+        ]
+      }
+    },
+    "stages": [
+      "obs",
+      "forward",
+      "decode",
+      "domain",
+      "harness"
+    ]
+  },
+  "result": {
+    "episodes": 72,
+    "flagged": []
+  },
+  "source": {
+    "commit": "5520746476622f6aa5079a198219201b9d5ed906",
+    "tree_sha256": "bd5b0c5cb1f4880f30ea5c211e982044a2eda25bc1662392ae949bbdf34aa14b"
+  },
+  "started": "2026-10-29T18:56:25+00:00",
+  "status": "complete"
+}

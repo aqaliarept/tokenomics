@@ -699,3 +699,25 @@ with a split of the selected worlds recorded before confirm reads them.
   exactly, units and search counts. Limits: the producer reference is hand-written, not a
   teacher; 3 worlds, one episode each, 12 producers only. ≈ 2.6 vCPU-h billed; M3 ≈ 27.6 of 40
   (≈ 30.4 upper).
+
+### Deployed-path cost (PoC-B)
+
+- **EXP-0055 — PoC-B. No stage of the deployed path is superlinear up to 42 producers.** The
+  portable stack (EXP-0035 producer + EXP-0012 orderer) was timed per stage (`obs`, `forward`,
+  `decode`, `domain`, `harness`) on calm `sparse_wide` worlds along three separate axes
+  (producers 12 / 24 / 42; fanout 2 / 4 / 7 / 14 at 42; consumers × 1 / 2 / 4 at 42, fanout 4),
+  3 world seeds × 3 repeats, horizon 20. Against D7's rule (a per-decision slope > 1.1 on the
+  fanout or the consumer axis is a "Superlinear stage"), nothing is flagged in any measure:
+  per orderer decision the cost is flat in fanout (slope 0.03, ≈ 280 µs), per producer decision
+  it grows 0.48 (399 → 1,016 µs; its `forward` 0.54 is the run's largest flagged-axis slope,
+  0.52–0.56 under per-repeat / min-max refits; why it grows is not profiled), and every
+  consumer-axis per-decision slope is ≤ 0.25. Observation build and network forward are ≈ 80%
+  of the time; the simulation is 1.5–3.5%. On producers at fixed fanout the orderer decision
+  grows with slope 0.34 (`obs` 0.52), not the ≈ 1 that every stream rebuilding every producer's
+  rows would give, so the DIAGNOSTICS 17 blow-up has not come back (per cycle 1.24; DIAGNOSTICS
+  17's pre-fix ≈ 2.2 is context only, not like-for-like: different subject, range and host). The
+  bounded per-decision cost rule holds at the 12 → 42 target, so the D2
+  refactor (eligible-only rows) is not needed for cost there; it would matter only if economies
+  above 42 return (capped by the user, 2026-10-28). A horizon-100 portable episode at 42 producers
+  costs ≈ 5–19 pod s, so M4/M5's cost will be the teacher's, not the deployed path's. Fresh
+  4 vCPU pod (no 8 vCPU secure capacity), ≈ 0.23 vCPU-h; M3 ≈ 27.8 of 40 (≈ 30.6 upper).
