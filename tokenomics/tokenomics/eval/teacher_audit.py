@@ -42,13 +42,25 @@ moving-hit or regime-switch world. A real run needs the registered atlas (conten
 sample or a pre-registered reduction of it (`--reduction step2`: D5 step 2, 8 world-episodes with
 `ub` kept, the EXP-0053 sample of sizing.md §EXP-0053), every arm, horizon 100, the registered shock window, the frozen roster, B_lp (scipy) and
 a 40-hex source commit; anything else needs `--dry-run` (marked "not an acceptance read").
+
+`--poc c` runs PoC-C (design D6, EXP-0054) on the shocked worlds of PoC-A's sample as run (D5
+step 2: 3 worlds, not the full sample's 6): S = the portable stack (EXP-0035
+`producer_candidate.pt` + EXP-0012 `orderer_scorer.pt`, SHA-256 pinned in `spec.json`), A =
+portable producer + the `d2` teacher, B = `entity_planner` + the portable orderer, T =
+`entity_planner` + `d2`. T reuses EXP-0053's rows (`--reuse-t`) only when the teacher-path
+fingerprint (`teacher_path_fingerprint`) and the T-shaping pins equal EXP-0053's, else it is
+rerun and compared with them. `attribution.csv` holds the gap G, the closures c_O / c_P, the
+interaction and the reading (`role_attribution`).
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
+import hashlib
 import json
+import subprocess
 import sys
 import time
 from dataclasses import asdict, replace
@@ -107,8 +119,11 @@ from .gate_cli import (
 from .provenance import resolve_verified_commit, sha256_file, source_fingerprint
 from .roster import DEFAULT_ROSTER, JOINT_STACK, Roster, load_roster
 from .routing_audit import (
+    PORTABLE,
     PRODUCER,
+    TRAINED_ORDERER,
     _is_commit,
+    _trained_entry,
     build_jobs,
     execute,
     expected_keys,
@@ -161,15 +176,42 @@ FLOOR_CHECK = "floor_reproduction"
 # EXP-0052's reclassified atlas (task 5.3); a real run reads exactly this manifest
 REGISTERED_ATLAS_HASH = "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23"
 
+# PoC-C, role attribution (design D6, EXP-0054): which role's swap to the reference closes more
+# of the gap between the portable stack and the teacher stack.
+POC_A, POC_C = "a", "c"
+ROLE_S, ROLE_A, ROLE_B, ROLE_T = "S", "A", "B", "T"
+ROLE_ARMS = (ROLE_S, ROLE_A, ROLE_B, ROLE_T)
+ROLE_SUBJECT = {ROLE_S: PORTABLE, ROLE_A: "teacher/d2_portable",
+                ROLE_B: f"{PRODUCER}/{TRAINED_ORDERER}", ROLE_T: SUBJECT[D2]}
+# D6: the shocked worlds of PoC-A's sample as EXP-0053 ran it (D5 reduction step 2)
+ROLE_SAMPLE_REDUCTION = STEP2
+# EXP-0035 `producer_candidate.pt`, EXP-0012 `orderer_scorer.pt`; a real PoC-C run reads these
+ROLE_CHECKPOINTS = {
+    "producer": "8b51b77cb5ac763114120d3bcbcbc9cd2c566362fe6e599d67e8c8ac883e36ea",
+    "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"}
+TIE_BAND = 0.15  # D6: |c_O - c_P| < 0.15 is a tie and goes to the user
+# T reuse (D6): EXP-0053's commit and its teacher-path fingerprint (`teacher_path_fingerprint`
+# over `git_package_files(EXP0053_COMMIT)`; a test re-derives it from git, the pod has no .git).
+EXP0053_COMMIT = "6abb218d3c2c04b9ab6331c07bfdf73239abd06a"
+EXP0053_TEACHER_PATH = "13e63e4e23246351edf186a962fd0801f3a7b2b6e1b2f7abc56ebcd99664d8e6"
+TEACHER_AUDIT_FILE = "eval/teacher_audit.py"
+# The definitions of this module a teacher episode runs; the rest of the module is PoC-A / PoC-C
+# driver code a T row does not depend on, so it stays out of the fingerprint.
+# A test asserts it is closed under the module-level names these definitions load.
+TEACHER_PATH_DEFS = ("DEPTH", "FLOOR_ROUTER", "FLOOR", "D2", "UB", "TEACHER", "BOUND", "SUBJECT",
+                     "DECISION_COLUMNS", "teacher_arm", "world_entry", "first_confirm_seed",
+                     "_decision_row", "run_teacher_episode", "run_audit_job")
+
 TEACHER_COLUMNS = ("arm", "side", "hidden_information", "scenario_source", "decisions",
                    "unresolved_decisions", "unresolved_fraction", "posterior_cycles",
                    "unresolved_cycles", "mean_acceptance_rate", "searched_streams",
                    "override_streams", "rollouts", "search_seconds")
 COLUMNS = ATLAS_COLUMNS + TEACHER_COLUMNS
-DECISION_COLUMNS = ("world", "episode", "arm", "hidden_information", "scenario_source", "cycle",
-                    "agent", "posterior_draws", "posterior_accepted", "acceptance_rate",
-                    "unresolved", "slots", "contested", "searched_streams", "candidates",
-                    "scenarios", "rollouts", "overrides", "confident_base",
+DECISION_COLUMNS = ("world", "episode", "subject", "arm", "hidden_information",
+                    "scenario_source", "cycle", "agent", "posterior_draws",
+                    "posterior_accepted", "acceptance_rate", "unresolved", "slots", "contested",
+                    "searched_streams", "candidates", "scenarios", "rollouts", "overrides",
+                    "confident_base",
                     "deterministic_zero", "unresolved_streams", "capped", "seconds",
                     "base_seconds", "stream_seconds", "seconds_per_searched_stream")
 RATIO_COLUMNS = (
@@ -316,7 +358,7 @@ def world_arms(view: Mapping, baseline: Sequence[dict], teachers: Sequence[str])
 
 def _decision_row(job: Job, arm: str, source: str, rec: object | None,
                   sample: object | None, cycle: int, agent: str) -> dict:
-    d = {"world": job["world"], "episode": job["episode"], "arm": arm,
+    d = {"world": job["world"], "episode": job["episode"], "subject": job["subject"], "arm": arm,
          "hidden_information": arm == UB, "scenario_source": source, "cycle": cycle,
          "agent": agent}
     if sample is not None:
@@ -337,7 +379,9 @@ def _decision_row(job: Job, arm: str, source: str, rec: object | None,
 
 def run_teacher_episode(job: Job, *, max_search_actions: int | None = None
                         ) -> tuple[dict[str, str], list[dict]]:
-    """One `floor` / `d2` / `ub` episode: (row, teacher decision rows)."""
+    """One `floor` / `d2` / `ub` episode: (row, teacher decision rows). The producer is the
+    job's: `entity_planner`, or the portable producer for PoC-C's arm A (design D6), which then
+    also plays the search's rollouts."""
     from ..env.shock_posterior import (
         HistoryRecorder,
         PosteriorScenarioSource,
@@ -365,7 +409,8 @@ def run_teacher_episode(job: Job, *, max_search_actions: int | None = None
     # system, which `deepcopy` shares, so every fork (and the recorder's stripped copies) would
     # complete the live system's cycle. Teacher rows leave the `trace_*` cells empty.
     monitor = ContractMonitor(env)
-    prod = PRODUCING_BASELINES[PRODUCER]
+    prod = (trained_policy(job, "producer") if job["producing"] == PORTABLE
+            else PRODUCING_BASELINES[PRODUCER])
     floor = ordering_policy(FLOOR_ROUTER)
     decisions: list[dict] = []
     posterior = None
@@ -438,8 +483,10 @@ def decisions_path(out: Path, job: Job) -> Path:
 
 
 def run_audit_job(job: Job) -> dict[str, str]:
-    """A teacher job (row + its decision file) or the atlas job of a baseline arm; a failure
-    stays a failure row."""
+    """A teacher job (row + its decision file), a reused EXP-0053 `T` row (PoC-C, design D6) or
+    the atlas job of a baseline arm; a failure stays a failure row."""
+    if job.get("reused_row"):
+        return dict(job["reused_row"])
     if not job.get("teacher"):
         return run_atlas_job(job)
     try:
@@ -455,13 +502,22 @@ def run_audit_job(job: Job) -> dict[str, str]:
 
 
 def checked_orderer(out: Path, path: str, log: Callable[[str], None]) -> dict[str, str]:
-    """{path, sha256} of the trained orderer after a trial load in the parent; a checkpoint that
-    does not hash or load is a `run` row and `ContractRunError` before any job runs."""
+    """{path, sha256} of the trained orderer after a trial load in the parent."""
+    return checked_inputs(out, {"orderer": path}, log)["orderer"]
+
+
+def checked_inputs(out: Path, paths: Mapping[str, str], log: Callable[[str], None]
+                   ) -> dict[str, dict[str, str]]:
+    """role -> {path, sha256} of each trained checkpoint after a trial load in the parent; a
+    checkpoint that does not hash or load is a `run` row and `ContractRunError` before any job
+    runs."""
     from .contract import CHECKPOINT
 
     try:
-        pin = {"path": str(path), "sha256": sha256_file(path)}
-        load_trained_policy("orderer", path)
+        pins = {role: {"path": str(path), "sha256": sha256_file(path)}
+                for role, path in paths.items()}
+        for role, path in paths.items():
+            load_trained_policy(role, path)
     except Exception as exc:  # noqa: BLE001 - recorded, then the run ends invalid
         out.mkdir(parents=True, exist_ok=True)
         append_failure(out, run_failure(CHECKPOINT, exc))
@@ -471,10 +527,10 @@ def checked_orderer(out: Path, path: str, log: Callable[[str], None]) -> dict[st
         spec["status"] = INVALID
         spec["result"] = {"status": INVALID, "contract_failures": len(read_failures(out))}
         _write_spec(out, spec)
-        log(f"[teacher_audit] INVALID: orderer checkpoint failed to hash or load ({exc})")
-        raise ContractRunError(f"orderer checkpoint failed to hash or load "
+        log(f"[teacher_audit] INVALID: a checkpoint failed to hash or load ({exc})")
+        raise ContractRunError(f"checkpoint failed to hash or load "
                                f"({type(exc).__name__}: {exc})") from exc
-    return pin
+    return pins
 
 
 # --- pure analysis ---
@@ -618,6 +674,198 @@ def floor_failures(dicts: Sequence[Mapping[str, str]]) -> list[Failure]:
     return out
 
 
+# --- PoC-C: role-swap arms and attribution (design D6) ---
+
+
+def role_swap_sample(atlas: Mapping) -> list[tuple[str, str]]:
+    """(class, world) of D6's sample: the shocked worlds of PoC-A's sample as run (EXP-0053 ran
+    D5 reduction step 2, so 3 shocked worlds, not the full sample's 6)."""
+    views = {v["world"]: v for v in map(world_view, atlas["worlds"])}
+    return [(c, w) for c, w in pre_registered_sample(atlas, ROLE_SAMPLE_REDUCTION)
+            if views[w]["shocks"]]
+
+
+def role_arm(role: str) -> dict:
+    """S = the portable stack, A = portable producer + the `d2` teacher (the search's rollouts
+    use the portable producer too), B = `entity_planner` + the portable orderer, T =
+    `entity_planner` + `d2` (PoC-A's `d2` arm as is)."""
+    if role == ROLE_S:
+        arm = _trained_entry(PORTABLE)
+    elif role == ROLE_B:
+        arm = _trained_entry(TRAINED_ORDERER)
+    elif role == ROLE_T:
+        arm = teacher_arm(D2)
+    elif role == ROLE_A:
+        arm = {**teacher_arm(D2), "subject": ROLE_SUBJECT[ROLE_A], "producing": PORTABLE}
+    else:
+        raise ValueError(f"unknown role arm {role!r}; known: {ROLE_ARMS}")
+    return {**arm, "role": role}
+
+
+def role_attribution(units: Mapping[str, Mapping[str, float]]) -> dict:
+    """D6's arithmetic over world mean units `units[world][role]`: the gap G = Σ (T - S), the
+    closures c_O = Σ (A - S) / G (orderer swapped to the teacher) and c_P = Σ (B - S) / G
+    (producer swapped to `entity_planner`), the interaction T - A - B + S, and the reading:
+    `orderer` / `producer` by the larger closure, `tie` when |c_O - c_P| < 0.15 (goes to the
+    user), `undefined` when G <= 0 (recorded and diagnosed), `incomplete` when a world lacks an
+    arm (only worlds with all four enter the sums)."""
+    full = sorted(w for w, u in units.items() if all(r in u for r in ROLE_ARMS))
+    missing = sorted({r for u in units.values() for r in ROLE_ARMS if r not in u})
+    tot = {r: sum(units[w][r] for w in full) if full else None for r in ROLE_ARMS}
+    out: dict = {"worlds": len(full), **tot, "G": None, "c_O": None, "c_P": None,
+                 "interaction": None, "closure_difference": None, "band": TIE_BAND,
+                 "reading": "incomplete", "missing_arms": ",".join(missing)}
+    if not full:
+        return out
+    s, a, b, t = (tot[r] for r in ROLE_ARMS)
+    g = t - s
+    out.update(G=g, interaction=t - a - b + s)
+    if g <= 0:
+        out["reading"] = "undefined"
+        return out
+    c_o, c_p = (a - s) / g, (b - s) / g
+    out.update(c_O=c_o, c_P=c_p, closure_difference=c_o - c_p,
+               reading="tie" if abs(c_o - c_p) < TIE_BAND
+               else "orderer" if c_o > c_p else "producer")
+    return out
+
+
+ATTRIBUTION_COLUMNS = ("scope", "size", "world", "worlds", *ROLE_ARMS, "G", "c_O", "c_P",
+                       "interaction", "closure_difference", "band", "reading", "missing_arms")
+
+
+def world_role_units(dicts: Sequence[Mapping[str, str]], views: Mapping[str, Mapping]
+                     ) -> dict[str, dict[str, float]]:
+    """world -> role -> mean units over its episodes and replicates (failed jobs have no row)."""
+    by_subject = {sub: r for r, sub in ROLE_SUBJECT.items()}
+    acc: dict[str, dict[str, list[float]]] = {}
+    for d in dicts:
+        role = by_subject.get(d["subject"])
+        if role is not None and d["world"] in views:
+            acc.setdefault(d["world"], {}).setdefault(role, []).append(float(d["units"]))
+    return {w: {r: fmean(v) for r, v in rs.items()} for w, rs in acc.items()}
+
+
+def attribution_rows(dicts: Sequence[Mapping[str, str]], views: Mapping[str, Mapping]
+                     ) -> list[dict]:
+    """One `size` row per producer count (D6's reading) and one `world` row per world (the
+    same arithmetic on one world, for the diagnosis)."""
+    units = world_role_units(dicts, views)
+    rows = []
+    for size in sorted({int(v["size"]) for v in views.values()}):
+        ws = {w: u for w, u in units.items() if int(views[w]["size"]) == size}
+        rows.append({"scope": "size", "size": size, "world": "", **role_attribution(ws)})
+        rows += [{"scope": "world", "size": size, "world": w, **role_attribution({w: ws[w]})}
+                 for w in sorted(ws)]
+    return rows
+
+
+# --- PoC-C: T reuse (design D6) ---
+
+
+def _defined_names(node: ast.stmt) -> list[str]:
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [node.name]
+    targets = (node.targets if isinstance(node, ast.Assign)
+               else [node.target] if isinstance(node, ast.AnnAssign) else [])
+    return [n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)]
+
+
+def teacher_path_source(source: str) -> str:
+    """The source text of `TEACHER_PATH_DEFS` in this module's `source` (text, not `ast.dump`,
+    so the fingerprint does not depend on the Python version); an absent name is marked."""
+    tree = ast.parse(source)
+    seg = {n: ast.get_source_segment(source, node) for node in tree.body
+           for n in _defined_names(node) if n in TEACHER_PATH_DEFS}
+    return "\n".join(f"# {n}\n{seg.get(n, '<absent>')}" for n in TEACHER_PATH_DEFS)
+
+
+def teacher_path_fingerprint(files: Mapping[str, bytes]) -> str:
+    """SHA-256 over the package's `.py` files (`files`: package-relative path -> bytes), each
+    whole as in `provenance.source_fingerprint` (domain, env incl. demand patterns and the shock
+    posterior, the search, the policies), except this module, which enters by its
+    `TEACHER_PATH_DEFS` only: its PoC-C code is not on a T episode's path."""
+    h = hashlib.sha256()
+    for rel in sorted(files):
+        data = files[rel]
+        if rel == TEACHER_AUDIT_FILE:
+            data = teacher_path_source(data.decode()).encode()
+        h.update(rel.encode())
+        h.update(b"\0")
+        h.update(data)
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def package_files(root: Path | None = None) -> dict[str, bytes]:
+    """The live package tree's `.py` files (what the run executes, on the pod too)."""
+    root = root or Path(__file__).resolve().parents[1]
+    return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*.py"))
+            if "__pycache__" not in p.parts}
+
+
+def git_package_files(commit: str, repo: Path | None = None) -> dict[str, bytes]:
+    """The package's `.py` files at `commit` (needs git: local only, never on the pod)."""
+    repo = repo or Path(__file__).resolve().parents[3]
+    prefix = "tokenomics/tokenomics/"
+
+    def git(*a: str) -> bytes:
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True,
+                              check=True).stdout
+
+    names = [n for n in git("ls-tree", "-r", "--name-only", commit, prefix).decode().split("\n")
+             if n.endswith(".py")]
+    return {n[len(prefix):]: git("show", f"{commit}:{n}") for n in names}
+
+
+def _source_rows(source_dir: Path) -> Path:
+    for p in (source_dir / "episodes.csv", source_dir / "artifacts" / "episodes.csv"):
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"{source_dir}: no episodes.csv (or artifacts/episodes.csv)")
+
+
+def t_reuse_problems(source_spec: Mapping, fingerprint: str, *, horizon: int,
+                     shock_profile: str | None, max_search_actions: int | None,
+                     orderer_sha: str | None, atlas_hash: str) -> list[str]:
+    """Why EXP-0053's `T` rows must not stand in for this run's (empty = reuse): its commit is
+    not the registered one, the teacher-path fingerprint differs from the one registered for it
+    (D6), or a pin that shapes a T episode differs."""
+    pins = source_spec.get("pins", {})
+    checks = (
+        ((source_spec.get("source") or {}).get("commit") != EXP0053_COMMIT,
+         f"source run's commit {str((source_spec.get('source') or {}).get('commit'))[:12]} is "
+         f"not EXP-0053's {EXP0053_COMMIT[:12]}"),
+        (fingerprint != EXP0053_TEACHER_PATH,
+         f"teacher-path fingerprint {fingerprint[:12]} != EXP-0053's "
+         f"{EXP0053_TEACHER_PATH[:12]}"),
+        (pins.get("horizon") != horizon, f"horizon {horizon} != the source's "
+                                         f"{pins.get('horizon')}"),
+        (pins.get("shock_profile") != shock_profile,
+         f"shock profile {shock_profile} != the source's {pins.get('shock_profile')}"),
+        (pins.get("max_search_actions") != max_search_actions,
+         f"search cap {max_search_actions} != the source's {pins.get('max_search_actions')}"),
+        (pins.get("depth") != DEPTH, f"depth {DEPTH} != the source's {pins.get('depth')}"),
+        ((pins.get("checkpoints") or {}).get("orderer") != orderer_sha,
+         "the trained orderer differs from the source's"),
+        ((pins.get("atlas") or {}).get("content_hash") != atlas_hash,
+         "the atlas differs from the source's"),
+    )
+    return [msg for bad, msg in checks if bad]
+
+
+def t_reference_rows(source_dir: Path, keys: Sequence[tuple[str, int]]
+                     ) -> tuple[dict[tuple[str, int], dict[str, str]], list[str]]:
+    """The source run's `teacher/d2` rows of the sampled world-episodes, and the keys it lacks."""
+    with _source_rows(source_dir).open(newline="") as fh:
+        have = {(d["world"], int(d["episode"])): d for d in csv.DictReader(fh)
+                if d["subject"] == ROLE_SUBJECT[ROLE_T]}
+    return ({k: have[k] for k in keys if k in have},
+            [f"{w} episode {ep}: no {ROLE_SUBJECT[ROLE_T]} row in the source" for w, ep in keys
+             if (w, ep) not in have])
+
+
+
 # --- driver ---
 
 
@@ -668,6 +916,38 @@ def real_run_problems(*, atlas: Mapping, roster: Roster, horizon: int, source_co
     ) if bad]
     problems += [f"--{k.replace('_', '-')} is set" for k, v in filters.items() if v is not None]
     return problems
+
+
+def _run_jobs(out: Path, spec: dict, jobs: list[Job], grid: dict, expected: set[Key],
+              done: Sequence, workers: int, run_job_fn: Callable[[Job], dict[str, str]],
+              log: Callable[[str], None]) -> tuple[list, list[dict[str, str]], set[Key],
+                                                   list[dict], list]:
+    """Execute the jobs not done, then the run-level checks (bounds, the floor) and the merged
+    `teacher_decisions.csv`: (rows, row dicts, missing keys, decision rows, failures)."""
+    if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
+        raise AssertionError("job list and pinned grid disagree")  # internal invariant
+    episodes = out / "episodes.csv"
+    done_keys = {job_key(r.world, r.episode, r.subject, r.replicate) for r in done}
+    execute(out, spec, done_keys, read_episode_dicts(episodes), jobs, workers, run_job_fn, log,
+            columns=COLUMNS)
+
+    rows = read_rows(episodes)
+    check_rows(rows, grid, expected, complete=False)
+    missing = expected - {job_key(r.world, r.episode, r.subject, r.replicate) for r in rows}
+    dicts = read_episode_dicts(episodes)
+    recorded = {f["message"] for f in read_failures(out)}
+    for f in bound_violations(dicts) + floor_failures(dicts):
+        if f.message not in recorded:
+            append_failure(out, f)
+            log(f"[teacher_audit] {f.check} {f.message}")
+    merged: list[dict] = []
+    for j in jobs:
+        p = Path(j["decisions_file"]) if j.get("decisions_file") else None
+        if p is not None and p.exists() and p.stat().st_size:
+            with p.open(newline="") as fh:
+                merged += list(csv.DictReader(fh))
+    write_csv(out / "teacher_decisions.csv", DECISION_COLUMNS, merged)
+    return rows, dicts, missing, merged, read_failures(out)
 
 
 def run_teacher_audit(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckpt: str,
@@ -770,30 +1050,8 @@ def run_teacher_audit(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
             j["decisions_file"] = str(decisions_path(out, j))
     if lp_available():
         flag_lp_jobs(jobs)
-    if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
-        raise AssertionError("job list and pinned grid disagree")  # internal invariant
-    episodes = out / "episodes.csv"
-    done_keys = {job_key(r.world, r.episode, r.subject, r.replicate) for r in done}
-    execute(out, spec, done_keys, read_episode_dicts(episodes), jobs, workers, run_job_fn, log,
-            columns=COLUMNS)
-
-    rows = read_rows(episodes)
-    check_rows(rows, grid, expected, complete=False)
-    missing = expected - {job_key(r.world, r.episode, r.subject, r.replicate) for r in rows}
-    dicts = read_episode_dicts(episodes)
-    recorded = {f["message"] for f in read_failures(out)}
-    for f in bound_violations(dicts) + floor_failures(dicts):
-        if f.message not in recorded:
-            append_failure(out, f)
-            log(f"[teacher_audit] {f.check} {f.message}")
-    merged: list[dict] = []
-    for j in jobs:
-        p = Path(j["decisions_file"]) if j.get("decisions_file") else None
-        if p is not None and p.exists() and p.stat().st_size:
-            with p.open(newline="") as fh:
-                merged += list(csv.DictReader(fh))
-    write_csv(out / "teacher_decisions.csv", DECISION_COLUMNS, merged)
-    failures = read_failures(out)
+    rows, dicts, missing, merged, failures = _run_jobs(out, spec, jobs, grid, expected, done,
+                                                       workers, run_job_fn, log)
     ratios = world_ratios(dicts, {v["world"]: v for v in views}, base_table)
     write_csv(out / "ratios.csv", RATIO_COLUMNS, ratios)
     if failures or missing:
@@ -823,6 +1081,214 @@ def run_teacher_audit(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
     return code
 
 
+ROLE_QUESTION = ("On the shocked mined worlds of PoC-A's sample, which role's swap to the "
+                 "reference closes more of the gap between the portable stack and the teacher "
+                 "stack: the orderer (portable orderer -> the `d2` teacher) or the producer "
+                 "(portable producer -> `entity_planner`)? (design D6)")
+ROLE_RESULT_SKELETON = """# {title}
+
+{banner}**Status: {status}.** Not an acceptance read. {n_rows} episode rows over {n_worlds}
+shocked world-episodes, arms {arms} (S = portable stack, A = portable producer + teacher `d2`,
+B = `entity_planner` + portable orderer, T = `entity_planner` + teacher `d2`; T {t_source}),
+horizon {horizon}. Produced by `python -m {driver} --poc c` (see `spec.json`).
+
+## Question
+
+{question}
+
+## Result
+
+TODO: plain-English reading of `attribution.csv`: the gap G = Σ (T - S), the orderer closure
+c_O = Σ (A - S) / G, the producer closure c_P = Σ (B - S) / G, the interaction T - A - B + S;
+|c_O - c_P| < 0.15 is a tie and goes to the user; G <= 0 = undefined, diagnosed. The producer
+reference is a hand-written producer, not a teacher: c_P measures the portable producer's distance
+from `entity_planner`. 12-producer worlds only.
+
+## Conclusions
+
+TODO.
+"""
+
+
+def role_swap_problems(*, atlas: Mapping, horizon: int, source_commit: str,
+                       pins: Mapping[str, dict[str, str]], filters: Mapping[str, object]
+                       ) -> list[str]:
+    problems = [msg for bad, msg in (
+        (atlas.get("content_hash") != REGISTERED_ATLAS_HASH,
+         f"atlas {str(atlas.get('content_hash'))[:12]} is not the registered EXP-0052 "
+         f"reclassified atlas {REGISTERED_ATLAS_HASH[:12]}"),
+        (not _is_commit(source_commit),
+         "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
+        (horizon != HORIZON, f"horizon {horizon} != {HORIZON}"),
+    ) if bad]
+    problems += [f"{role} checkpoint {pins[role]['sha256'][:12]} is not the registered "
+                 f"{want[:12]}" for role, want in ROLE_CHECKPOINTS.items()
+                 if pins[role]["sha256"] != want]
+    problems += [f"--{k.replace('_', '-')} is set" for k, v in filters.items() if v is not None]
+    return problems
+
+
+def run_role_swap_audit(*, atlas_path: str | Path, out_dir: str | Path, prod_ckpt: str,
+                        orderer_ckpt: str, workers: int = 1, horizon: int = HORIZON,
+                        worlds: Sequence[str] | None = None, max_worlds: int | None = None,
+                        arms: Sequence[str] | None = None, shock_profile: str | None = None,
+                        max_search_actions: int | None = None,
+                        reuse_t: str | Path | None = None, source_commit: str = "",
+                        dry_run: bool = False,
+                        run_job_fn: Callable[[Job], dict[str, str]] = run_audit_job,
+                        log: Callable[[str], None] = print) -> int:
+    """Run (or resume) PoC-C (design D6) into `out_dir`; return the exit status (0, or
+    `CONTRACT_INVALID` on contract failures, a digest mismatch, a bound violation or missing
+    rows). `reuse_t` = EXP-0053's directory: its `T` rows stand in for a rerun only when
+    `t_reuse_problems` finds nothing, else T is rerun and compared with them."""
+    if shock_profile not in (None, SHOCKS_I_SMOKE):
+        raise ValueError(f"--shock-profile takes {SHOCKS_I_SMOKE} only (a dry run's window)")
+    roles = tuple(arms) if arms is not None else ROLE_ARMS
+    if set(roles) - set(ROLE_ARMS):
+        raise ValueError(f"unknown role arms {sorted(set(roles) - set(ROLE_ARMS))}; "
+                         f"known: {ROLE_ARMS}")
+    atlas_path = Path(atlas_path)
+    atlas = load_atlas(atlas_path)
+    views = {v["world"]: v for v in map(world_view, atlas["worlds"])}
+    if worlds:
+        unknown = sorted(set(worlds) - set(views))
+        if unknown:
+            raise ValueError(f"worlds {unknown} are not in the atlas")
+        chosen = [views[w] for w in worlds]
+    else:
+        chosen = [views[w] for _, w in role_swap_sample(atlas)]
+    for v in chosen:
+        why = refusal(v) or (None if v["shocks"] else f"{v['world']} has no shocks (D6: "
+                                                       "the shocked worlds only)")
+        if why:
+            raise ValueError(f"refused: {why}")
+    chosen = chosen[:max_worlds] if max_worlds is not None else chosen
+    out = Path(out_dir)
+    paths = {"producer": prod_ckpt, "orderer": orderer_ckpt}
+    checkpoints = checked_inputs(out, paths, log)
+    if not dry_run:
+        problems = role_swap_problems(
+            atlas=atlas, horizon=horizon, source_commit=source_commit, pins=checkpoints,
+            filters={"worlds": worlds, "max_worlds": max_worlds, "arms": arms,
+                     "shock_profile": shock_profile, "max_search_actions": max_search_actions})
+        if problems:
+            raise ValueError("not a valid PoC-C run (" + "; ".join(problems)
+                             + "); pass --dry-run for a smoke run")
+    entries = [world_entry(v, shock_profile) for v in chosen]
+    table = [role_arm(r) for r in roles]
+    grid = job_grid(entries, None)
+    expected: set[Key] = set()
+    for e in entries:
+        expected |= expected_keys({e.id: grid[e.id]}, table, 1)
+    fingerprint = teacher_path_fingerprint(package_files())
+    reuse: dict = {"source": None, "reused": False, "fingerprint": fingerprint,
+                   "registered": EXP0053_TEACHER_PATH, "problems": [],
+                   "decisions": "a reused T row's teacher decisions stay in the source run's "
+                                "artifacts/decisions/"}
+    reference: dict[tuple[str, int], dict[str, str]] = {}
+    if reuse_t is not None and ROLE_T in roles:
+        src = Path(reuse_t)
+        keys = [(e.id, int(ep)) for e in entries for ep in grid[e.id]["episodes"]]
+        reference, lacking = t_reference_rows(src, keys)
+        reuse["source"] = str(src)
+        reuse["problems"] = t_reuse_problems(
+            json.loads((src / "spec.json").read_text()), fingerprint, horizon=horizon,
+            shock_profile=shock_profile, max_search_actions=max_search_actions,
+            orderer_sha=checkpoints["orderer"]["sha256"],
+            atlas_hash=atlas["content_hash"]) + lacking
+        reuse["reused"] = not reuse["problems"]
+        log(f"[teacher_audit] T {'reused from ' + str(src) if reuse['reused'] else 'rerun'}"
+            + ("" if reuse["reused"] else f" ({'; '.join(reuse['problems'])})"))
+    source = source_fingerprint(source_commit or None)
+    pins = {
+        "driver": DRIVER, "poc": POC_C, "horizon": horizon, "dry_run": dry_run, "depth": DEPTH,
+        "atlas": {"path": str(atlas_path), "sha256": sha256_file(atlas_path),
+                  "content_hash": atlas["content_hash"]},
+        "checkpoints": {r: c["sha256"] for r, c in checkpoints.items()},
+        "producer": PRODUCER, "floor": FLOOR_ROUTER, "role_arms": list(roles),
+        "role_subjects": {r: ROLE_SUBJECT[r] for r in roles}, "shock_profile": shock_profile,
+        "max_search_actions": max_search_actions,
+        "t_reuse": {"source": reuse["source"], "reused": reuse["reused"]},
+        "sample": [{"world": v["world"], "class": v["class"], "shocks": v["shocks"],
+                    "pattern": v["pattern"]} for v in chosen],
+        "worlds": [v["record"] for v in chosen],
+        "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
+        "teacher_path_fingerprint": fingerprint,
+        "grid": grid,
+    }
+    old_spec, done = _prepare_resume(out, pins, grid, expected)
+    spec = _open_spec(out, old_spec, workers, {
+        "experiment": out.name, "driver": DRIVER, "kind": "dry-run" if dry_run else "audit",
+        "acceptance_read": False, "pins": pins, "inputs": checkpoints, "source": source,
+        "pre_registered": {
+            "sample": "D6: the shocked worlds of PoC-A's sample as run (EXP-0053, D5 "
+                      "reduction step 2), 1 episode per world, the confirm's first seed",
+            "arms": {ROLE_S: "portable producer + portable orderer",
+                     ROLE_A: "portable producer + teacher d2 (rollouts with the portable "
+                             "producer)",
+                     ROLE_B: "entity_planner + portable orderer",
+                     ROLE_T: "entity_planner + teacher d2"},
+            "arithmetic": "G = sum(T - S); c_O = sum(A - S) / G; c_P = sum(B - S) / G; "
+                          "interaction = T - A - B + S; per size",
+            "tie_band": TIE_BAND, "undefined": "G <= 0",
+            "t_reuse": "EXP-0053's T rows only when the teacher-path fingerprint and the "
+                       "T-shaping pins equal EXP-0053's; else T is rerun"},
+        "t_reuse": reuse,
+    })
+    ensure_failures_file(out)
+    jobs = build_jobs(entries, table, 1, horizon, None, checkpoints)
+    by_subject = {a["subject"]: a for a in table}
+    for j in jobs:
+        arm = by_subject[j["subject"]]
+        if not arm.get("teacher"):
+            continue
+        key = (j["world"], int(j["episode"]))
+        if arm["role"] == ROLE_T and reuse["reused"]:
+            j["reused_row"] = reference[key]
+            continue
+        j["teacher"] = arm["teacher"]
+        j["max_search_actions"] = max_search_actions
+        j["decisions_file"] = str(decisions_path(out, j))
+    rows, dicts, missing, merged, failures = _run_jobs(out, spec, jobs, grid, expected, done,
+                                                       workers, run_job_fn, log)
+    view_map = {v["world"]: v for v in chosen}
+    attribution = attribution_rows(dicts, view_map)
+    write_csv(out / "attribution.csv", ATTRIBUTION_COLUMNS, attribution)
+    if reference and not reuse["reused"]:
+        spec["t_reproduction"] = [
+            {"world": d["world"], "episode": int(d["episode"]), "rerun": float(d["units"]),
+             "source": float(reference[(d["world"], int(d["episode"]))]["units"]),
+             "equal": float(d["units"]) == float(
+                 reference[(d["world"], int(d["episode"]))]["units"])}
+            for d in dicts if d["subject"] == ROLE_SUBJECT[ROLE_T]
+            and (d["world"], int(d["episode"])) in reference]
+    if failures or missing:
+        spec["status"] = INVALID
+        spec["result"] = {"status": INVALID, "contract_failures": len(failures),
+                          "missing_rows": len(missing)}
+        status = f"INVALID ({len(failures)} contract failure(s), {len(missing)} missing row(s))"
+        code = CONTRACT_INVALID
+    else:
+        spec["status"] = "complete"
+        spec["result"] = {"status": "complete", "rows": len(rows), "contract_failures": 0,
+                          "acceptance_read": False,
+                          "attribution": [r for r in attribution if r["scope"] == "size"],
+                          "teacher_decisions": len(merged)}
+        status = "complete"
+        code = 0
+    _write_spec(out, spec)
+    if not (out / "RESULT.md").exists():
+        (out / "RESULT.md").write_text(ROLE_RESULT_SKELETON.format(
+            title=out.name, banner=DRY_BANNER if dry_run else "", status=status,
+            n_rows=len(rows), n_worlds=sum(len(g["episodes"]) for g in grid.values()),
+            arms=", ".join(roles),
+            t_source=("reused from EXP-0053" if reuse["reused"] else "rerun in this run"
+                      if ROLE_T in roles else "not run"),
+            horizon=horizon, driver=DRIVER, question=ROLE_QUESTION))
+    log(f"[teacher_audit] PoC-C {'DRY RUN ' if dry_run else ''}{status}")
+    return code
+
+
 def _csv_strs(s: str | None) -> list[str] | None:
     return None if s is None else [x for x in s.split(",") if x]
 
@@ -830,7 +1296,13 @@ def _csv_strs(s: str | None) -> list[str] | None:
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--atlas", required=True, help="atlas_v2.json (EXP-0052 reclassified)")
+    p.add_argument("--poc", choices=(POC_A, POC_C), default=POC_A,
+                   help="a = PoC-A teacher audit (EXP-0053, D5); c = PoC-C role-swap arms "
+                        "S, A, B, T and attribution (EXP-0054, D6)")
     p.add_argument("--orderer-ckpt", required=True, help="the trained orderer (EXP-0012)")
+    p.add_argument("--prod-ckpt", help="PoC-C: the portable producer (EXP-0035)")
+    p.add_argument("--reuse-t", help="PoC-C: EXP-0053's directory; its T rows are reused only "
+                                     "when the teacher-path fingerprint matches (D6)")
     p.add_argument("--out-dir", required=True)
     p.add_argument("--roster", default=str(DEFAULT_ROSTER))
     p.add_argument("--workers", type=int, default=1)
@@ -839,7 +1311,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--worlds", help="dry run: comma-separated atlas world ids")
     p.add_argument("--max-worlds", type=int, help="dry run: the first N sampled worlds")
-    p.add_argument("--arms", help=f"dry run: teacher arms out of {','.join(TEACHER_ARMS)}")
+    p.add_argument("--arms", help=f"dry run: teacher arms out of {','.join(TEACHER_ARMS)} "
+                                  f"(PoC-C: role arms out of {','.join(ROLE_ARMS)})")
     p.add_argument("--baseline", help="dry run: blind / reach routers to keep ('' = none)")
     p.add_argument("--replicates", type=int, help="dry run: R of every stochastic arm")
     p.add_argument("--horizon", type=int, default=HORIZON)
@@ -850,6 +1323,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                    help="dry run: search at most N decisions per teacher episode")
     a = p.parse_args(argv)
     commit = resolve_verified_commit() if a.verify_source_commit else a.source_commit
+    if a.poc == POC_C:
+        if not a.prod_ckpt:
+            p.error("--poc c needs --prod-ckpt")
+        for flag, v in (("--baseline", a.baseline), ("--replicates", a.replicates),
+                        ("--reduction", a.reduction)):
+            if v is not None:
+                p.error(f"{flag} is a PoC-A option (PoC-C's sample and arms are fixed by D6)")
+        try:
+            return run_role_swap_audit(
+                atlas_path=a.atlas, out_dir=a.out_dir, prod_ckpt=a.prod_ckpt,
+                orderer_ckpt=a.orderer_ckpt, workers=a.workers, horizon=a.horizon,
+                worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds, arms=_csv_strs(a.arms),
+                shock_profile=a.shock_profile, max_search_actions=a.max_search_actions,
+                reuse_t=a.reuse_t, source_commit=commit, dry_run=a.dry_run)
+        except ContractRunError:
+            return CONTRACT_INVALID
+    if a.prod_ckpt or a.reuse_t:
+        p.error("--prod-ckpt and --reuse-t are PoC-C options (--poc c)")
     try:
         return run_teacher_audit(
             atlas_path=a.atlas, out_dir=a.out_dir, orderer_ckpt=a.orderer_ckpt,

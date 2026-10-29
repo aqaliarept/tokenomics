@@ -640,6 +640,30 @@ bound leaves room, does a lookahead search reach more than the best cheap arm?
 - **Sizing.** Task 8.2 probe, with the same composed-cost method as task 6.3. Only A (and T when
   not reusable) costs search: 6 × 0.12–0.7 ≈ 0.7–4.2 vCPU-h a priori. **Hard stop 4 vCPU-h.**
   Reduction: 4 shocked world-episodes; then nothing launches and the implementer reports.
+- **As implemented (task 8.1).**
+  - *Sample.* The shocked worlds of PoC-A's sample **as run**: EXP-0053 ran D5 reduction step 2
+    (8 world-episodes), so the shocked set shrank from about 6 to 3: 12-0060 (hard), 12-0111 and
+    12-0344 (open), all burst demand, the confirm's first seeds 1295251592 / 195303600 /
+    1680874617. The reduction above (4 shocked world-episodes) is moot at 3.
+  - *Teacher-path fingerprint.* SHA-256 over every `.py` file of the package, each whole as in
+    `provenance.source_fingerprint` (so `domain/`, `env/` with `demand_patterns.py`,
+    `shock_posterior.py`, `future_fork.py`, the search and the policies are all in), except
+    `eval/teacher_audit.py`, which enters by the source text of the definitions a T episode runs
+    (`TEACHER_PATH_DEFS`: the worker, its decision row, the T arm and world entry, their
+    constants), because 8.1 adds PoC-C code to that module. EXP-0053's `spec.json` records only
+    the whole-tree hash, so its reference value is recomputed from `git show 6abb218:<file>` and
+    registered as a constant (`EXP0053_TEACHER_PATH`; a test re-derives it from git; the pod has
+    no `.git`). Reuse also needs EXP-0053's commit and equal T-shaping pins (horizon, shock
+    profile, search cap, depth, orderer checkpoint, atlas).
+  - *T at EXP-0054 is rerun.* Arm A needs the search worker to take the producer from the job
+    (the portable producer then also plays the rollouts), so 8.1 changes `run_teacher_episode`
+    and the fingerprint no longer equals EXP-0053's: by the rule T is rerun, not reused. When
+    `--reuse-t` names EXP-0053, the rerun T units are compared with its rows (`t_reproduction` in
+    `spec.json`, reported). A priori cost of T: EXP-0053's `d2` search seconds on these 3 worlds,
+    937 + 487 + 1,117 s ≈ 0.7 vCPU-h (task 8.2 sizes it with A).
+  - *Dry run.* Uncapped A at horizon 12 did not finish within 2 min locally (the portable
+    producer is batch-1 torch inside every rollout); the 8.1 dry run uses `--max-search-actions
+    3` (PoC-A's uses 20) and finishes in about 10 s. Input for 8.2's composed-cost probe.
 
 ### D7. PoC-B, deployed-path cost (EXP-0055)
 

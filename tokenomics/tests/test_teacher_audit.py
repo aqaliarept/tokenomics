@@ -545,3 +545,316 @@ def test_dry_run_layout(tmp_path: Path, orderer_ckpt: str) -> None:
     assert len(ratios) == 1 and ratios[0]["world"] == SHOCKED_WORLD
     assert ratios[0]["bar"] != "" and ratios[0]["d2_units"] != ""
     assert (out / "contract_failures.csv").read_text().count("\n") == 1  # header only
+
+
+# --- PoC-C: role-swap arms and attribution (task 8.1, design D6) ---
+
+
+REPO_CKPTS = {
+    "producer": REPO / "experiments/EXP-0035-distill-epochs/replay/artifacts/producer_candidate.pt",
+    "orderer": REPO / "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt"}
+
+
+def _lfs_present(p: Path) -> bool:
+    return p.exists() and not p.read_bytes()[:40].startswith(b"version https://git-lfs")
+
+
+needs_ckpts = pytest.mark.skipif(not all(_lfs_present(p) for p in REPO_CKPTS.values()),
+                                 reason="git-lfs checkpoints absent")
+
+
+def _units(s: float, a: float, b: float, t: float) -> dict[str, float]:
+    return {"S": s, "A": a, "B": b, "T": t}
+
+
+def test_orderer_swap_closes_more() -> None:
+    """c_O 0.6, c_P 0.2 -> orderer; G, interaction by D6's arithmetic."""
+    out = ta.role_attribution({"w": _units(1000, 1060, 1020, 1100)})
+    assert out["G"] == 100 and out["c_O"] == pytest.approx(0.6)
+    assert out["c_P"] == pytest.approx(0.2) and out["reading"] == "orderer"
+    assert out["interaction"] == 1100 - 1060 - 1020 + 1000
+    assert ta.role_attribution({"w": _units(1000, 1020, 1060, 1100)})["reading"] == "producer"
+
+
+def test_closures_within_the_band() -> None:
+    """|c_O - c_P| < 0.15 is a tie (goes to the user); exactly 0.15 is not."""
+    out = ta.role_attribution({"w": _units(1000, 1050, 1040, 1100)})
+    assert out["c_O"] == pytest.approx(0.5) and out["c_P"] == pytest.approx(0.4)
+    assert out["reading"] == "tie" and out["band"] == 0.15
+    edge = ta.role_attribution({"w": _units(1000, 1015, 1000, 1100)})
+    assert edge["closure_difference"] == ta.TIE_BAND and edge["reading"] == "orderer"
+
+
+def test_gap_not_positive_is_undefined() -> None:
+    for t in (1000, 900):
+        out = ta.role_attribution({"w": _units(1000, 1050, 1040, t)})
+        assert out["reading"] == "undefined" and out["G"] == t - 1000
+        assert out["c_O"] is None and out["c_P"] is None
+
+
+def test_attribution_sums_over_worlds_per_size() -> None:
+    """G, c_O, c_P are ratios of sums over worlds (not means of per-world ratios); a world
+    lacking an arm stays out of the sums and marks the arm missing."""
+    out = ta.role_attribution({"w1": _units(1000, 1100, 1000, 1100),
+                               "w2": _units(500, 500, 600, 800),
+                               "w3": {"S": 1, "A": 2, "B": 3}})
+    assert out["worlds"] == 2 and out["G"] == 400
+    assert out["c_O"] == pytest.approx(100 / 400) and out["c_P"] == pytest.approx(100 / 400)
+    assert out["reading"] == "tie" and out["missing_arms"] == "T"
+    dicts = [{"world": "w1", "subject": ta.ROLE_SUBJECT[r], "units": str(u)}
+             for r, u in _units(1000, 1060, 1020, 1100).items()]
+    rows = ta.attribution_rows(dicts, {"w1": {"size": 12}})
+    assert [r["scope"] for r in rows] == ["size", "world"]
+    assert rows[0]["reading"] == "orderer" and rows[1]["world"] == "w1"
+    inc = ta.role_attribution({"w": {"S": 1.0, "A": 2.0}})
+    assert inc["reading"] == "incomplete" and inc["S"] is None and inc["G"] is None
+
+
+def test_role_arms() -> None:
+    arms = {r: ta.role_arm(r) for r in ta.ROLE_ARMS}
+    assert arms["S"]["subject"] == "portable" and arms["S"]["producing"] == "portable"
+    assert arms["B"]["subject"] == "entity_planner/trained_orderer"
+    assert arms["B"]["producing"] == "entity_planner"
+    assert {k: v for k, v in arms["T"].items() if k != "role"} == ta.teacher_arm(ta.D2)
+    assert arms["A"]["teacher"] == "d2" and arms["A"]["producing"] == "portable"
+    assert arms["A"]["subject"] == "teacher/d2_portable"
+    assert len({a["subject"] for a in arms.values()}) == 4
+
+
+@needs_atlas
+def test_role_swap_sample_is_poc_a_shocked_as_run() -> None:
+    """D6: the shocked worlds of EXP-0053's step-2 sample (3, not the full sample's 6)."""
+    assert ta.role_swap_sample(_atlas()) == [
+        ("hard", "ws-atlas-v1-12-0060"), ("open", "ws-atlas-v1-12-0111"),
+        ("open", "ws-atlas-v1-12-0344")]
+
+
+def test_teacher_path_fingerprint_reads_only_the_teacher_path() -> None:
+    """Driver code of this module outside `TEACHER_PATH_DEFS` does not move the fingerprint; a
+    T-path definition or any other package file does."""
+    src = (Path(ta.__file__)).read_text()
+    files = {"eval/teacher_audit.py": src.encode(), "domain/x.py": b"A = 1\n"}
+    ref = ta.teacher_path_fingerprint(files)
+    extra = src + "\n\ndef poc_c_only() -> None:\n    pass\n"
+    assert ta.teacher_path_fingerprint({**files, "eval/teacher_audit.py": extra.encode()}) == ref
+    moved = src.replace("DEPTH = 2", "DEPTH = 3", 1)
+    assert ta.teacher_path_fingerprint({**files, "eval/teacher_audit.py": moved.encode()}) != ref
+    assert ta.teacher_path_fingerprint({**files, "domain/x.py": b"A = 2\n"}) != ref
+
+
+def test_exp0053_teacher_path_reference() -> None:
+    """The registered EXP-0053 fingerprint is the teacher-path fingerprint of its commit."""
+    try:
+        files = ta.git_package_files(ta.EXP0053_COMMIT)
+    except Exception:  # noqa: BLE001 - no git or no history: nothing to re-derive
+        pytest.skip("git history with EXP-0053's commit absent")
+    assert ta.teacher_path_fingerprint(files) == ta.EXP0053_TEACHER_PATH
+
+
+def _source_run(tmp_path: Path, horizon: int, units: str = "2617.0") -> Path:
+    src = tmp_path / "EXP-0053"
+    (src / "artifacts").mkdir(parents=True)
+    spec = {"source": {"commit": ta.EXP0053_COMMIT},
+            "pins": {"horizon": horizon, "shock_profile": "shocks-i-smoke",
+                     "max_search_actions": 3, "depth": ta.DEPTH,
+                     "checkpoints": {"orderer": "o" * 64}, "atlas": {"content_hash": None}}}
+    (src / "spec.json").write_text(json.dumps(spec))
+    with (src / "artifacts" / "episodes.csv").open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["world", "episode", "subject", "units"])
+        w.writeheader()
+        w.writerow({"world": SHOCKED_WORLD, "episode": 1295251592, "subject": "teacher/d2",
+                    "units": units})
+    return src
+
+
+@needs_atlas
+@pytest.mark.parametrize("matches", [True, False])
+def test_t_reuse_refused_on_fingerprint_mismatch(tmp_path: Path, matches: bool,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    """T rows of the source run stand in for T only when the teacher-path fingerprint equals
+    EXP-0053's; on a mismatch T is rerun (a search job) and the reason is in spec.json."""
+    path = _manifest(tmp_path)
+    atlas_hash = json.loads(path.read_text())["content_hash"]
+    src = _source_run(tmp_path, 12)
+    spec = json.loads((src / "spec.json").read_text())
+    spec["pins"]["atlas"]["content_hash"] = atlas_hash
+    (src / "spec.json").write_text(json.dumps(spec))
+    monkeypatch.setattr(ta, "checked_inputs", lambda out, paths, log: {
+        r: {"path": str(p), "sha256": ("o" if r == "orderer" else "p") * 64}
+        for r, p in paths.items()})
+    monkeypatch.setattr(ta, "teacher_path_fingerprint", lambda files: (
+        ta.EXP0053_TEACHER_PATH if matches else "f" * 64))
+    seen: list[dict] = []
+
+    def fake(job: dict) -> dict:
+        seen.append(job)
+        return ta.job_failure(job, RuntimeError("not run")).to_dict()
+
+    out = tmp_path / "EXP-c"
+    ta.run_role_swap_audit(atlas_path=path, out_dir=out, prod_ckpt="p.pt", orderer_ckpt="o.pt",
+                           horizon=12, worlds=[SHOCKED_WORLD], arms=["S", "T"],
+                           shock_profile="shocks-i-smoke", max_search_actions=3,
+                           reuse_t=src, dry_run=True, run_job_fn=fake, log=lambda m: None)
+    t = next(j for j in seen if j["subject"] == "teacher/d2")
+    reuse = json.loads((out / "spec.json").read_text())["t_reuse"]
+    if matches:
+        assert t["reused_row"]["units"] == "2617.0" and "teacher" not in t
+        assert reuse["reused"] and reuse["problems"] == []
+    else:
+        assert "reused_row" not in t and t["teacher"] == "d2"
+        assert not reuse["reused"] and any("fingerprint" in p for p in reuse["problems"])
+
+
+def test_t_reuse_problems_pins() -> None:
+    spec = {"source": {"commit": ta.EXP0053_COMMIT},
+            "pins": {"horizon": 100, "shock_profile": None, "max_search_actions": None,
+                     "depth": ta.DEPTH, "checkpoints": {"orderer": "o"},
+                     "atlas": {"content_hash": "h"}}}
+    kw = dict(horizon=100, shock_profile=None, max_search_actions=None, orderer_sha="o",
+              atlas_hash="h")
+    assert ta.t_reuse_problems(spec, ta.EXP0053_TEACHER_PATH, **kw) == []
+    assert any("horizon" in p for p in ta.t_reuse_problems(
+        spec, ta.EXP0053_TEACHER_PATH, **{**kw, "horizon": 12}))
+    assert any("orderer" in p for p in ta.t_reuse_problems(
+        spec, ta.EXP0053_TEACHER_PATH, **{**kw, "orderer_sha": "x"}))
+    other = {**spec, "source": {"commit": "a" * 40}}
+    assert any("commit" in p for p in ta.t_reuse_problems(other, ta.EXP0053_TEACHER_PATH, **kw))
+    assert any("fingerprint" in p for p in ta.t_reuse_problems(spec, "f" * 64, **kw))
+    for key, value, word in (("shock_profile", "shocks-i-smoke", "shock profile"),
+                             ("max_search_actions", 3, "search cap"),
+                             ("atlas_hash", "g", "atlas")):
+        got = ta.t_reuse_problems(spec, ta.EXP0053_TEACHER_PATH, **{**kw, key: value})
+        assert len(got) == 1 and word in got[0], (key, got)
+    deeper = {**spec, "pins": {**spec["pins"], "depth": ta.DEPTH + 1}}
+    got = ta.t_reuse_problems(deeper, ta.EXP0053_TEACHER_PATH, **kw)
+    assert len(got) == 1 and "depth" in got[0]
+
+
+@needs_atlas
+def test_role_swap_refusals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unshocked world is refused; a real run needs the registered checkpoints."""
+    path = _manifest(tmp_path)
+    monkeypatch.setattr(ta, "checked_inputs", lambda out, paths, log: {
+        r: {"path": str(p), "sha256": "0" * 64} for r, p in paths.items()})
+    kw = dict(atlas_path=path, out_dir=tmp_path / "o", prod_ckpt="p.pt", orderer_ckpt="o.pt")
+    with pytest.raises(ValueError, match="no shocks"):
+        ta.run_role_swap_audit(**kw, worlds=[CYCLIC_WORLD], dry_run=True)
+    with pytest.raises(ValueError, match="checkpoint .* is not the registered"):
+        ta.run_role_swap_audit(**kw, source_commit="a" * 40)
+
+
+@needs_atlas
+def test_role_swap_real_run_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real PoC-C run needs the registered atlas, a 40-hex commit, horizon 100 and no dry-run
+    filter: each one alone is refused, naming it."""
+    monkeypatch.setattr(ta, "checked_inputs", lambda out, paths, log: {
+        r: {"path": str(p), "sha256": ta.ROLE_CHECKPOINTS[r]} for r, p in paths.items()})
+    kw = dict(atlas_path=ATLAS_V2, out_dir=tmp_path / "o", prod_ckpt="p.pt",
+              orderer_ckpt="o.pt", source_commit="a" * 40)
+    cases = [({"worlds": [SHOCKED_WORLD]}, "--worlds is set"),
+             ({"max_worlds": 1}, "--max-worlds is set"),
+             ({"arms": ["S"]}, "--arms is set"),
+             ({"shock_profile": "shocks-i-smoke"}, "--shock-profile is set"),
+             ({"max_search_actions": 3}, "--max-search-actions is set"),
+             ({"horizon": 12}, "horizon 12 != 100"),
+             ({"source_commit": ""}, "no full 40-hex source commit"),
+             ({"atlas_path": _manifest(tmp_path)}, "not the registered EXP-0052")]
+    for edit, msg in cases:
+        with pytest.raises(ValueError, match="not a valid PoC-C run") as err:
+            ta.run_role_swap_audit(**{**kw, **edit})
+        assert msg in str(err.value), (edit, str(err.value))
+        inner = str(err.value).split("(", 1)[1].rsplit("); pass", 1)[0]
+        assert ";" not in inner, str(err.value)  # that problem alone
+
+
+@needs_atlas
+def test_arm_a_plays_the_portable_producer(tmp_path: Path, orderer_ckpt: str,
+                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    """Arm A's episode and the search's rollouts run the job's portable producer; T's run
+    `entity_planner` and never load a producer checkpoint."""
+    import tokenomics.eval.bounded_rollout_orderer as bro
+
+    calls = {"producer": 0}
+    real = ta.trained_policy
+
+    def portable(env: object, agent: str):  # noqa: ANN202 - a Policy
+        calls["producer"] += 1
+        return PROD(env, agent)
+
+    def spy_policy(job: dict, role: str):  # noqa: ANN202
+        return portable if role == "producer" else real(job, role)
+
+    seen: list[object] = []
+    orig = bro.BoundedScenarioOrderer
+
+    class Spy(orig):  # type: ignore[misc, valid-type]
+        def __init__(self, *a: object, **k: object) -> None:
+            seen.append(k["prod"])
+            super().__init__(*a, **k)
+
+    monkeypatch.setattr(ta, "trained_policy", spy_policy)
+    monkeypatch.setattr(bro, "BoundedScenarioOrderer", Spy)
+    view = ta.world_view(_entry(_atlas(), SHOCKED_WORLD))
+    e = ta.world_entry(view, "shocks-i-smoke")
+    pins = {"orderer": {"path": orderer_ckpt, "sha256": sha256_file(orderer_ckpt)},
+            "producer": {"path": "p.pt", "sha256": "0" * 64}}
+    for role in (ta.ROLE_A, ta.ROLE_T):
+        job = build_jobs([e], [ta.role_arm(role)], 1, 6, None, pins)[0]
+        job["teacher"] = ta.D2
+        job["max_search_actions"] = 2
+        before = calls["producer"]
+        ta.run_teacher_episode(job, max_search_actions=2)
+        if role == ta.ROLE_A:
+            assert seen[-1] is portable and calls["producer"] > before
+        else:
+            assert seen[-1] is PROD and calls["producer"] == before
+
+
+@needs_atlas
+@needs_ckpts
+def test_role_swap_dry_run_layout(tmp_path: Path) -> None:
+    """`--poc c --dry-run`, arms S, A, B: 1 shocked atlas world at 12 from a dry-run manifest, 1
+    episode, horizon 12, shocks-i-smoke, --workers 1 -> zero contract failures in under 2 min,
+    checkpoint SHA-256 pins in spec.json, attribution.csv written (incomplete without T)."""
+    path = _manifest(tmp_path)
+    out = tmp_path / "EXP-c-dry"
+    started = time.perf_counter()
+    code = ta.main(["--poc", "c", "--atlas", str(path), "--prod-ckpt", str(REPO_CKPTS["producer"]),
+                    "--orderer-ckpt", str(REPO_CKPTS["orderer"]), "--out-dir", str(out),
+                    "--dry-run", "--worlds", SHOCKED_WORLD, "--arms", "S,A,B",
+                    "--horizon", "12", "--shock-profile", "shocks-i-smoke",
+                    "--max-search-actions", "3", "--workers", "1"])
+    assert time.perf_counter() - started < 120
+    assert code == 0
+    assert (out / "contract_failures.csv").read_text().count("\n") == 1  # header only
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["kind"] == "dry-run" and spec["status"] == "complete"
+    assert spec["pins"]["checkpoints"] == ta.ROLE_CHECKPOINTS
+    assert {r: c["sha256"] for r, c in spec["inputs"].items()} == ta.ROLE_CHECKPOINTS
+    episodes = list(csv.DictReader((out / "episodes.csv").open()))
+    assert {e["subject"] for e in episodes} == {"portable", "teacher/d2_portable",
+                                                "entity_planner/trained_orderer"}
+    decisions = list(csv.DictReader((out / "teacher_decisions.csv").open()))
+    assert decisions and {d["subject"] for d in decisions} == {"teacher/d2_portable"}
+    rows = list(csv.DictReader((out / "attribution.csv").open()))
+    assert rows[0]["scope"] == "size" and rows[0]["reading"] == "incomplete"
+    assert rows[0]["missing_arms"] == "T"
+    assert "not an acceptance read" in (out / "RESULT.md").read_text()
+
+
+def test_teacher_path_defs_closed() -> None:
+    """Every module-level name of `teacher_audit.py` loaded by a `TEACHER_PATH_DEFS` definition
+    is itself in `TEACHER_PATH_DEFS` (transitively), so the fingerprint cannot miss one."""
+    import ast
+
+    tree = ast.parse(Path(ta.__file__).read_text())
+    defs = {n: node for node in tree.body for n in ta._defined_names(node)}
+    closure, todo = set(), list(ta.TEACHER_PATH_DEFS)
+    while todo:
+        name = todo.pop()
+        if name in closure or name not in defs:
+            continue
+        closure.add(name)
+        todo += [x.id for x in ast.walk(defs[name])
+                 if isinstance(x, ast.Name) and isinstance(x.ctx, ast.Load) and x.id in defs]
+    assert closure <= set(ta.TEACHER_PATH_DEFS), sorted(closure - set(ta.TEACHER_PATH_DEFS))
