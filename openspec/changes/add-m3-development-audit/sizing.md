@@ -662,3 +662,227 @@ the wall, it reports rather than extends), never community. No driver change.
 first episode seed each, horizon 100; `floor` and `d2` on all 8, `ub` on the 5 with shocks or
 stochastic demand (0060, 0111, 0344, 0308, 0392); **2.12 pod vCPU-h compute (× 2: 4.24); 8 vCPU ≈
 33 min wall, ≈ 4.4 billed vCPU-h (× 2: ≈ 67 min, 8.9) against the 10 vCPU-h / 75 min stop.**
+
+## §EXP-0054 (task 8.2)
+
+**Question.** What will the PoC-C role-swap run cost (`eval/teacher_audit.py --poc c`, design D6)?
+It has 4 arms (S, A, B, T) on the 3 shocked world-episodes of EXP-0053's sample as run (12-0060
+hard, 12-0111 and 12-0344 open; burst demand; the confirm's first seeds), horizon 100. That is
+12 jobs. Which pod shape runs it under the **4 vCPU-h hard stop**? Only A and T search. T is
+rerun, not reused (notes/8.1.md: 8.1 generalized `run_teacher_episode`, so the teacher-path
+fingerprint no longer equals EXP-0053's).
+
+**Probe.** `probes/timing_82.py` (run from `/srv/research/tokenomics/tokenomics` with
+`../.venv/bin/python`; `--workers 1`; one cell per command, each under 2 min; output in
+`probes/timing_82.jsonl`). It is 6.3's `timing_63.py` with the producer taken from the role's job.
+For A that is the EXP-0035 portable producer, which plays both the live episode and every
+rollout. For T it is `entity_planner`. The search acts only on the chosen cycles (the floor
+elsewhere). Seconds per searched stream = the decision's seconds over its streams, with forks and
+the shared floor rollouts included. So the scenario mix (4 / 8 / 16) is in the measured time, not
+assumed. Every shocked world is priced from its own cells (the 6.3 lesson). All 3 were measured,
+not the task's minimum of 2, because pricing an unmeasured world from the measured ones is the
+error concern #346 caught.
+
+**Timed cells** (local; orderer turns per cycle = decisions per cycle):
+
+| cell | world | role | cycles | turns | streams per cycle | candidates per stream | decisions by scenarios used | s per searched stream | search s per cycle |
+|---|---|---|---|---|---|---|---|---|---|
+| h12 (`shocks-i-smoke`, budget 80 s) | 0060 | A | 0–3 timed (4–11 counted) | 54 | 42, 36, 36, 42; 40, 33, 29, 31, 31, 31, 29, 30 | 4 | 4: 94, 8: 1, 16: 5 | 0.58, 0.58, 0.82, 1.02 | 24.4, 20.8, 29.6 (cycle 3 capped) |
+| h100 | 0060 | A | 30, 60, 90 | 54 | 24, 25, 17 | 4 | 4: 42, 8: 4, 16: 20 | 1.43, 1.08, 1.45 | 34.4, 27.0, 24.6 (mean **28.7**) |
+| h100 | 0111 | A | 10, 50, 80 | 40 | 25, 23, 25 | 2 | 4: 58, 8: 2, 16: 7 | 0.56, 0.43, 0.48 | 14.0, 9.9, 11.9 (mean **11.9**) |
+| h100 | 0344 | A | 30, 60, 90 | 62 | 34, 36, 36 | 2 | 4: 74, 8: 2, 16: 24 | 1.00, 0.92, 0.86 | 34.1, 33.2, 30.8 (mean **32.7**) |
+| h100 (cross-check) | 0060 | T | 30 | 54 | 21 | 4 | 4: 9, 8: 1, 16: 11 | 1.16 | 24.3 (6.3: 23.6) |
+
+Posterior acceptance rate was 1.0, with no unresolved decision in any cell. The 0111 cycles match
+6.3's choice for that world (10 / 50 / 80).
+
+Search-free cells (`plain`, one whole horizon-100 episode through `run_audit_job`, checkpoint load
+included): S 0060 7.96 s and 9.25 s (two runs), 2,094 units; S 0344 8.87 s, 2,592 units;
+B 0060 7.88 s, 2,155 units. Sampler at a horizon-100 history played with the portable producer
+(`sampler`, 0060): 21 / 24 / 19 ms at cycles 30 / 60 / 90 (16 of 16 accepted). In the search
+cells it took 4–48 ms per cycle. Played episode with the recorder (portable producer +
+`round_robin`, to cycle 90): 7.88 s. 0.646 factor check (`timing_63.py rr`,
+dev-sparse_wide-12-calm-03): 0.83 s, as in §EXP-0048 / §EXP-0053. The box runs at the speed the
+factor was derived at.
+
+**A against T.** At the same cycle (0060, cycle 30), A's per-stream cost is 1.43 s against T's
+1.16 s (1.24×). The cause is the portable producer, a batch-1 torch policy, playing inside every
+rollout. A's per-cycle cost against 6.3's `d2` on the same worlds is 1.20× on 0060 (28.7 / 24.0),
+1.43× on 0111 (11.9 / 8.3) and 1.23× on 0344 (32.7 / 26.6). The horizon-12 cell understates it
+(0.58 s per stream at cycles 0–1, when nearly every decision stops at 4 scenarios). As in 6.3, it
+is not used to extrapolate.
+
+**Per-cycle cost is not flat over the history (review concern 1, round 1).** The probe's three
+cycles show little spread (0344: 34.1 / 33.2 / 30.8). T's own pod trajectory in EXP-0053
+`artifacts/teacher_decisions.csv` (`d2`, every cycle) shows a different profile. Pod search
+seconds per 10-cycle decile:
+- 0060: 129 / 122 / 116, then 77–87.
+- 0344: 139 / 144 / 98, then 95–118.
+- 0111: 50–61 over cycles 0–59, then 35–37.
+
+The early cycles carry more streams (0060's first decile: 33 per cycle, about 24 later; 0344's:
+39 against 35–39). The probe's cycles therefore sample the episode's mean cost unevenly. The
+**cycle-pick factor** is the mean search seconds of the probe's cycles divided by the episode's
+mean per-cycle search seconds, on T:
+- 0060 (cycles 30 / 60 / 90): 0.84.
+- 0344 (30 / 60 / 90): 0.88.
+- 0111 (10 / 50 / 80): 1.33.
+
+A was not profiled over its own trajectory. If A's profile follows T's, the probe undersizes A on
+0060 and 0344 and oversizes it on 0111. That correction is the `cycle-pick` case below: each
+world's central A divided by its factor.
+
+**Arithmetic** (`probes/extrapolate_82.py`, stdlib only).
+- **A episode** (pod s) = (100 × the world's own search s per cycle + 100 × 21 ms sampler +
+  7.88 × 100 / 90 s played with the recorder) × 0.646. Central uses the world's mean cycle and
+  high uses its most expensive cycle.
+- **T episode** = EXP-0053's recorded pod `search_seconds` (the whole `d2` episode on the pod):
+  0060 937 s, 0111 487 s, 0344 1,117 s. The 0.646 factor is not applied.
+- **S and B** = the slowest `plain` episode (9.25 s) × 0.646 = 6.0 s each.
+
+| case | A pod min (0060 / 0111 / 0344) | T pod min (0060 / 0111 / 0344) | S + B pod s | compute pod vCPU-h | × 2 | longest job |
+|---|---|---|---|---|---|---|
+| central | 31.0 / 13.0 / **35.3** | 15.6 / 8.1 / 18.6 | 36 | **2.04** | **4.08** | 0344 A 35.3 pod min (× 2: 70.7) |
+| high | 37.2 / 15.2 / 36.8 | 15.6 / 8.1 / 18.6 | 36 | 2.20 | 4.41 | 0060 A 37.2 (× 2: 74.4) |
+| calibrated (cross-check only) | 18.7 / 11.7 / 23.0 | 15.6 / 8.1 / 18.6 | 36 | 1.61 | 3.21 | 0344 A 23.0 (× 2: 46.0) |
+| cycle-pick (review concern 1) | 36.9 / 9.8 / **40.2** | 15.6 / 8.1 / 18.6 | 36 | 2.16 | 4.33 | 0344 A 40.2 (× 2: 80.3) |
+
+`Calibrated` scales each world's A by that world's ratio of EXP-0053's pod-measured T to 6.3's
+composed-cost prediction for the same `d2` episode: 0060 937 s / 25.9 min = 0.60, 0111 0.90,
+0344 0.65. On these three worlds the composed-cost method overestimated T's pod time by 10–40%.
+That overestimate is an offsetting bias, not a measurement for A, and it more than cancels the
+cycle-pick undersizing on T (0.60 against 0.84 on 0060, 0.65 against 0.88 on 0344).
+- **What it does not show.** That the central is conservative for A. That rests only on this T
+  calibration carrying over, and A's trajectory and rollouts are not T's.
+- **The 0.646 factor.** It was measured on a torch-free job mix (`round_robin` and the
+  hand-written orderers, EXP-0047). A is torch-heavy: the portable producer plays in every
+  rollout. Pod/local speed for batch-1 torch was not measured separately.
+
+The calibrated case is a cross-check, not the sizing basis. The reviewer's independent cross-check
+priced A as EXP-0053's pod T × A's per-scenario-rollout cost over T's at matched cells (1.48 /
+1.45 / 1.22). It gives 23.1 / 11.8 / 22.7 pod min against the central 31.0 / 13.0 / 35.3.
+
+**Job granularity and pod shape.** The run has 12 jobs: per world S, A, B, T, in the driver's
+order, with a FIFO `ProcessPoolExecutor`. 6 of them search (3 A, 3 T). One episode is one
+sequential job, so the wall is at least the longest job (0344's A). Billed vCPU-h = vCPU × (wall +
+2 min of pod overhead). The overhead is EXP-0053's pod life minus its driver wall, 1.1 min,
+rounded up, and the × 2 factor is not applied to it. Shapes are secure CPU pods with workers =
+vCPU. The stop of 4 vCPU-h expressed as a wall including overhead: 16 vCPU 15 min, 8 vCPU 30 min,
+4 vCPU 60 min, 2 vCPU 120 min.
+
+| shape | central wall / billed | × 2 wall / billed | high wall / billed (× 2 billed) | calibrated × 2 billed |
+|---|---|---|---|---|
+| 16 vCPU (tasks.md 9.1's `cpu16`) | 35.3 min / 9.96 | 70.7 min / 19.38 | 37.2 / 10.45 (20.37) | 12.80 |
+| 8 vCPU | 35.4 min / 4.99 | 70.9 min / 9.72 | 37.2 / 5.23 (10.19) | 6.43 |
+| **4 vCPU** | **43.9 min / 3.06** | **87.7 min / 5.98** | 45.4 / 3.16 (6.18) | 4.34 |
+| 2 vCPU | 66.4 min / 2.28 | 132.9 min / 4.50 | 74.1 / 2.54 (5.01) | 3.40 |
+
+Cycle-pick case (review concern 1), driver order:
+
+| shape | wall / billed | × 2 wall / billed |
+|---|---|---|
+| 8 vCPU | 40.3 min / 5.63 | 80.5 min / 11.00 |
+| 4 vCPU | 48.7 min / 3.38 | **97.3 min / 6.62** |
+
+On 4 vCPU the cycle-pick × 2 case needs 97.3 min of driver wall + 2 min overhead = **99.3 min of
+pod life** (6.62 billed vCPU-h; 99.6 min with the exact factors). The decided 97.5 min wall is pod
+life including that overhead (6.5 × 60 / 4), so the case is **just above it**. A fixed 4 vCPU pod
+has one limit, wall and bill alike: a kill at 97.5 min stops the run about 2 min before 0344's A
+completes, and that job is lost. The margin from the central wall to the stop
+falls from 2.12× (97.5 / 45.9, central wall + 2 min overhead) to 1.92× (97.5 / 50.7).
+
+Submitting the searching jobs first, longest first, would cut the 4 vCPU run to 35.3 min / 2.49
+(× 2: 70.7 min / 4.84). That needs a driver change, which was not made.
+
+On 16 and 8 vCPU, at most 6 workers ever hold a job. After the S and B jobs (seconds), 6 of 16
+(or 8) workers run. 0111's T ends at 8.1 pod min, 0111's A at 13.0, 0060's T at 15.6 and 0344's T
+at 18.6. From then on only the two A jobs run, until 31.0 and 35.3. Utilization is 2.04 vCPU-h of
+compute over the billed figure: 16 vCPU 22%, 8 vCPU 43%. The larger pods pay for idle workers.
+4 vCPU in the driver's order keeps all 4 workers busy until 15.6 min (0060's T) and 3 until 31.0
+(0060's A). For the last 12 min only 0344's A runs: it starts at 8.5 min, after 0111's S / B / T
+free a worker. Utilization is 70%.
+
+**D6 reduction order.** D6's only reduction step is "4 shocked world-episodes". The sample is 3
+already, so the step is moot. After it, "nothing launches and the implementer reports". Search
+cost cannot be cut inside a real run: `--max-search-actions` is a dry-run flag, and the arms are
+the attribution's arithmetic. Dropping T (reusing EXP-0053's rows) is refused by the fingerprint
+rule. Even if it were allowed, it would not change the wall, which A sets.
+
+**Result.**
+- **Compute:** 2.04 pod vCPU-h central, **4.08 at × 2**, 4.41 at × 2 on the high case.
+- **Longest job:** 0344's A at 35.3 pod min (× 2: 70.7).
+- **Against the 4 vCPU-h stop, after the reduction order:**
+  - At × 2 billed, no shape fits. The smallest figure is 4.50 on 2 vCPU over 133 min. On 4 vCPU
+    it is 5.98 over 88 min. On tasks.md's `cpu16` it is 19.4.
+  - At × 1 billed, the run fits on 4 vCPU (3.06 over 44 min) and on 2 vCPU (2.28).
+  - So the run stays **above the 4 vCPU-h stop**, and this goes to the supervisor. Nothing
+    launches.
+- **Recommended shape, if the supervisor raises the stop:** a 4 vCPU secure CPU pod,
+  `--workers 4`, no driver change, hard stop **6.5 billed vCPU-h = a 97 min wall** on that shape.
+  It covers the × 2 central case (88 min / 5.98) and the × 2 high case (91 min / 6.18). Expected
+  spend is ≈ 3.1 (central) and ≈ 2.2 (calibrated).
+- **M3 spend:** ≈ 25.0 vCPU-h billed (≈ 27.8 upper) + 6.5 worst case = 31.5 (34.3) of 40.
+- **Alternatives:**
+  - 8 vCPU with a 10 vCPU-h stop (75 min): central 35 min / 5.0, × 2 9.7.
+  - tasks.md 9.1's `cpu16`, which needs a 20 vCPU-h stop at × 2 and is not recommended.
+
+**Final grid (as sized; decided — pod and stops per the supervisor re-decision at the end of this section).** The grid is 3 world-episodes (12-0060,
+12-0111, 12-0344; seeds 1295251592 / 195303600 / 1680874617) × arms S, A, B, T, horizon 100,
+registered shock windows, T rerun (`--reuse-t` EXP-0053 for `t_reproduction`). Cost:
+**2.04 pod vCPU-h compute (× 2: 4.08). On 4 vCPU: ≈ 44 min wall, ≈ 3.1 billed vCPU-h (× 2:
+≈ 88 min, 6.0), against a 4 vCPU-h stop that it does not meet at × 2.**
+
+**Supervisor decision (2026-10-29, on the figures above; its stops are superseded by the re-decision below).**
+- **Grid:** EXP-0054 runs the **full grid**: arms S, A, B, T on the 3 shocked world-episodes
+  (12-0060, 12-0111, 12-0344), horizon 100, T rerun.
+- **Pod:** a **4 vCPU secure CPU pod, `--workers 4`**.
+- **Stop:** the hard stop is raised from 4 to **6.5 billed vCPU-h = a 97 min wall** on that shape.
+  It covers the × 2 central case (88 min / 5.98) and the × 2 high case (91 min / 6.18).
+- **Why the stop is raised:** D6's reduction is moot at 3 worlds, and the × 2 wall is set by one
+  indivisible job (0344's A).
+- **Why not the larger pods the user prefers:** they leave workers idle (at most 6 of the 12 jobs
+  search), so that preference does not apply here.
+- **Fallback:** if no 4 vCPU secure capacity is available, an 8 vCPU secure pod with the same
+  6.5 vCPU-h stop (a 49 min wall). If the longest job would exceed that wall, the run reports
+  rather than extends. Never community.
+- **Fallback gap, as recorded (review concern 2, round 1).** The 8 vCPU fallback does **not**
+  cover × 2.
+  - **The wall.** 6.5 vCPU-h on 8 vCPU is 48.75 min of pod life including the 2 min overhead,
+    so ≈ 46.75 min of driver wall.
+  - **Against the estimates.** The central driver wall is 35.4 min (headroom 1.32×); the
+    cycle-pick central is 40.3 min (1.16×). The × 2 central needs 70.9 min, and the longest job
+    alone at × 2 needs 70.7 min. So the fallback covers only up to ≈ 1.3× the central estimate
+    (≈ 1.16× under the cycle-pick correction), not × 2.
+  - **Why "reports rather than extends" can't be applied before launch.** Job lengths are known
+    only during the run, and a job is indivisible. Hitting the wall loses the A job still running
+    (0344's, and 0060's if it is late).
+  - **Action at the wall, as the record reads it.** Stop the pod at 48.75 min of pod life, pull
+    the partial rows, and do not resume or rerun without a new supervisor decision.
+  - **Alternative.** The other choice is giving the fallback its own stop: 8 vCPU with 10 vCPU-h
+    = 75 min, which covers × 2 central (70.9 min / 9.72) but not cycle-pick × 2 (80.5 min /
+    11.00).
+  - Resolved by the supervisor re-decision below: the fallback gets its own stop, 10 billed
+    vCPU-h = 75 min of pod life.
+- **4 vCPU primary against concern 1, as recorded (review concern 3, round 2).**
+  - **The case.** Under cycle-pick × 2 the 4 vCPU run needs 99.3 min of pod life (97.3 min of
+    driver wall + 2 min overhead; 6.62 billed vCPU-h).
+  - **Against the stop.** That is above both the decided 97.5 min wall and the 6.5 vCPU-h stop,
+    which on a fixed 4 vCPU pod are the same limit. The decided stop does not cover this case.
+  - **Covering it** needs a stop of ≈ 6.7 billed vCPU-h (100.5 min on 4 vCPU).
+  - Resolved by the supervisor re-decision below: the stop is raised to 7.0 billed vCPU-h =
+    105 min of pod life.
+- **No driver change.**
+- **Budget:** M3 ≈ 25–28 + 6.5 ≤ 34.3 of 40.
+
+**Supervisor re-decision (2026-10-29, after review concerns 1–3; replaces the stops above).**
+- **Pod:** a **4 vCPU secure CPU pod, `--workers 4`**.
+- **Stop:** **7.0 billed vCPU-h = 105 min of pod life**. It covers the cycle-pick × 2 case
+  (99.3 min / 6.62) with margin.
+- **Fallback:** if no 4 vCPU secure capacity is available, an **8 vCPU secure pod, `--workers 8`,
+  with its own stop of 10 billed vCPU-h = 75 min of pod life**. It covers the × 2 longest job
+  (70.7 min).
+- **At the wall:** stop the pod, pull the partial rows, and do not resume without a new decision.
+- **Never community.**
+- **Unchanged:** the full grid (S, A, B, T on the 3 shocked world-episodes, horizon 100, T rerun)
+  and no driver change.
+- **Budget:** M3 ≈ 25–28 + ≤ 10 worst case ≤ 38 of 40 (≤ 35 on the 4 vCPU path).
