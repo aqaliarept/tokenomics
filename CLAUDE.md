@@ -44,6 +44,10 @@ When reporting an experiment/diagnostic result to the user, explain it in **plai
 ## File links in chat (RULE)
 When referencing a file to the user, always give the **absolute path** (e.g. `/srv/research/tokenomics/openspec/changes/<name>/specs/<cap>/spec.md`, optionally `:line`). Never a path relative to the repo root, the package dir, or a change dir — the working directory shifts between `tokenomics/`, `tokenomics/tokenomics/` and the repo root, so relative links resolve wrong. Applies to tables and lists too. (Failure seen: spec files listed as `specs/project-mission/spec.md` — unclickable.)
 
+## Approvals + blocking questions (RULE)
+- **Experiments ≤ 40 vCPU-h auto-approved.** A pod run whose hard stop is ≤ 40 vCPU-h launches without asking; tell the user it started, report the result. Per-run limit only: still ask before a single run > 40 vCPU-h and before cumulative spend passes the milestone's authorized pod budget. Pushes, champion promotion, gate world / roster / registry / parameter changes stay human gates.
+- **Blocking question → AskUserQuestion tool.** When work waits on the user's decision, ask with the tool (concrete options, recommended first), never a question buried at the end of a chat message. Non-blocking offers may stay as text. (Failure seen: "Shall I launch EXP-0051?" in plain text sat unanswered for hours.)
+
 ## Where training + experiments run (HARD RULE)
 **All real training AND every experiment run on cloud infra (Runpod), never locally.** Wrap every real run with `run_pod_training.py` (see "Remote GPU training" / "Experiments" below — `--cpu` for CPU pods). "Real" = anything beyond a smoke check: `clone_fidelity` DAgger, scorer distillation, EXP-0042 bounded-rollout search, any multi-topology or multi-iter run.
 
