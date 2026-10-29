@@ -346,6 +346,42 @@ against σ_ep; at 12 producers all ≤ 1.1×, at 42 three hard worlds exceed 2×
 
 ---
 
+## 22. A rollout on a fork advances the live episode (traced env)
+
+**Problem (plain English):** a lookahead search plays copies ("forks") of the running game
+forward to score its choices. The routing tracer records each cycle by replacing the game's
+end-of-cycle step with its own function, and that function remembers the *original* game. Python's
+deep copy does not copy functions, so every fork keeps calling the original game's end-of-cycle
+step: playing a fork forward finishes cycles of the live episode. Sometimes this crashes at once
+(`WrongStateError` inside a rollout, seen in task 6.2's first teacher dry run); at other stop
+points it silently skips an agent's action in the live episode and moves it to the next cycle
+(the 6.2 reviewer's repro: a fork taken at the last agent's turn of cycle 2 advanced the live env
+to cycle 3 before raising). The same applies to anything that deep-copies the system and runs it,
+e.g. the ADR-0056 history recorder's stripped copies.
+
+**Discriminating check (local):** on the env the search runs on,
+`"complete_cycle" in vars(env.system)` (an instance hook is present), or after
+`fork = copy.deepcopy(env)`, `fork.system.complete_cycle is env.system.complete_cycle`.
+`bounded_rollout_orderer.assert_forkable` runs the first check at every search call and refuses
+the env (test `test_teacher_audit::test_traced_env_refused`).
+
+**Outcome branches:**
+- **hook present on a searched / forked env**: the run's search results are invalid; rerun the
+  search untraced (the teacher audit's `floor` / `d2` / `ub` episodes run without the tracer, so
+  their `trace_*` cells are empty);
+- **no hook**: forks are independent of the live episode; look elsewhere.
+
+**Seen in:** task 6.2 (teacher audit dry run, `ws-atlas-v1-12-0060`). Not in any recorded result:
+no deepcopy user (`env/future_fork`, `env/shock_posterior`, `eval/bounded_rollout_orderer`,
+`eval/orderer_oracle`, `train/orderer_improve`; `eval/registry` copies configs,
+`train/producer_scorer` a view) is on the routing_audit / atlas / gate job paths, which trace
+but never fork; traced and untraced episodes give identical `episode_stats`
+(dev-sparse_wide-12-shocked-00 / -calm-00, horizon 12), and a horizon-100 rerun of
+ws-atlas-v1-12-0060 seed 1295251592 reproduces EXP-0052 (`round_robin` 2,429, trained 2,155,
+`makeable_weighted_whole` 2,609 / 2,648; reviewer check). EXP-0048–0052 are unaffected.
+
+---
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

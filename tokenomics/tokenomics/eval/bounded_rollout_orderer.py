@@ -15,6 +15,18 @@ At each ordering-agent action the planner:
 
 The experiment compares rollout depths 1, 2, and 3 on fresh paired episode seeds.  It
 is an evaluator and model-based planner, not a trainer or an observation-only actor.
+
+Task 6.2 (add-m3-development-audit design D5, ADR-0056) makes three parts pluggable, with the
+EXP-0042 defaults unchanged (same decisions on the same seed, pinned by a test):
+* the scenario source (`ScenarioSource`): EXP-0040's demand fork (default), the posterior fork
+  of `env/shock_posterior.py` (`PosteriorSource`), one deterministic scenario on a world with
+  nothing hidden (`DeterministicSource`), or the true future (`ClairvoyantSource`, the
+  clairvoyant bound; hidden information, never a teacher);
+* the floor (`base`) and the candidate set (`CandidateSet`): the default +1-logit bumps on
+  ambiguous streams (`BumpCandidates`), or PoC-A's whole order to each eligible producer plus
+  a trained orderer's row (`WholeOrderCandidates`);
+* one scenario is read by the zero-variance confidence rule (D4 "Deterministic futures"): a
+  unique best candidate with a strictly positive gain over every alternative.
 """
 
 from __future__ import annotations
@@ -27,14 +39,15 @@ import math
 import statistics
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Mapping, Protocol, Sequence
 
 import numpy as np
 
 from ..env import TokenomicsAECEnv
 from ..env.future_fork import fork_future_demand
+from ..env.shock_posterior import PosteriorScenarioSource, stripped_env
 from .baselines import Policy, ordering_blend
 from .joint_stack import joint_stack_env
 from .orderer_oracle import _rollout_units
@@ -78,11 +91,34 @@ REGISTERED_INPUT_SHA256 = {
 SMOKE_SEED = 3299
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class StreamCandidate:
+    """One searched stream. Without `rows` its candidates are +delta bumps on `eligible_cols`
+    (EXP-0042); with `rows` they are whole replacement rows of the stream's logits (PoC-A),
+    `labels` naming each (e.g. `whole:<col>`, `trained`)."""
+
     stream_index: int
     order_id: str
     eligible_cols: tuple[int, ...]
+    rows: tuple[np.ndarray, ...] | None = None
+    labels: tuple[str, ...] = ()
+
+    @property
+    def n_candidates(self) -> int:
+        return len(self.rows) if self.rows is not None else len(self.eligible_cols)
+
+    @property
+    def choices(self) -> tuple[int, ...]:
+        """What `resolve_stream` returns for each candidate: the producer column of a bump,
+        the row index of a replacement row."""
+        return self.eligible_cols if self.rows is None else tuple(range(len(self.rows)))
+
+    def policy(self, base: Policy, agent: str, index: int, delta: float, at_cycle: int
+               ) -> Policy:
+        if self.rows is None:
+            return _one_cycle_bump(base, agent, self.stream_index, self.eligible_cols[index],
+                                   delta, at_cycle)
+        return _one_cycle_row(base, agent, self.stream_index, self.rows[index], at_cycle)
 
 
 @dataclass(frozen=True)
@@ -114,10 +150,121 @@ class SearchTelemetry:
     search_seconds: float = 0.0
 
 
+@dataclass
+class DecisionRecord:
+    """One ordering decision of the search (teacher_decisions.csv). `stream_seconds` times the
+    candidate rollouts of each searched stream (summed over scenarios); `base_seconds` the
+    floor rollouts the streams share."""
+
+    cycle: int
+    agent: str
+    slots: int = 0
+    contested: int = 0
+    searched: int = 0
+    candidates: int = 0
+    scenarios: int = 0
+    rollouts: int = 0
+    overrides: int = 0
+    confident_base: int = 0
+    deterministic_zero: int = 0
+    unresolved_streams: int = 0
+    capped: bool = False
+    seconds: float = 0.0
+    base_seconds: float = 0.0
+    stream_seconds: dict[int, float] = field(default_factory=dict)
+
+
 ScenarioScorer = Callable[
     [TokenomicsAECEnv, str, Sequence[StreamCandidate], int],
     Mapping[int, np.ndarray],
 ]
+
+
+class ScenarioSource(Protocol):
+    """Where a decision's rollout scenarios come from (D5). `checkpoints` = the scenario
+    counts at which streams are resolved; `hidden_information` = the source reads the true
+    future (the clairvoyant bound: never a teacher)."""
+
+    name: str
+    checkpoints: tuple[int, ...]
+    hidden_information: bool
+
+    def fork(self, env: TokenomicsAECEnv, agent: str, continuation_id: int
+             ) -> TokenomicsAECEnv: ...
+
+
+@dataclass
+class DemandForkSource:
+    """EXP-0042's scenarios: EXP-0040's future-demand fork of the true env per agent decision."""
+
+    task_id: str
+    episode_seed: int
+    checkpoints: tuple[int, ...] = SCENARIO_CHECKPOINTS
+    name: str = "demand_fork"
+    hidden_information: bool = False
+
+    def fork(self, env: TokenomicsAECEnv, agent: str, continuation_id: int
+             ) -> TokenomicsAECEnv:
+        digest = decision_digest(
+            self.task_id, self.episode_seed, env.current_cycle, f"agent:{agent}")
+        return fork_future_demand(
+            env, task_id=self.task_id, decision_digest=digest,
+            continuation_id=continuation_id, experiment=EXPERIMENT)
+
+
+@dataclass
+class PosteriorSource:
+    """ADR-0056 posterior forks (task 6.1): hidden shock state and future demand redrawn from
+    the public history, one sample per decision cycle. Unresolved cycles never reach the search
+    (`shock_posterior.with_floor`)."""
+
+    source: PosteriorScenarioSource
+    checkpoints: tuple[int, ...] = SCENARIO_CHECKPOINTS
+    name: str = "posterior"
+    hidden_information: bool = False
+
+    def fork(self, env: TokenomicsAECEnv, agent: str, continuation_id: int
+             ) -> TokenomicsAECEnv:
+        return self.source.fork(env, continuation_id)
+
+
+def deterministic_future(config: object) -> bool:
+    """Nothing is hidden (D4 "Deterministic futures"): no shocks and no randomized consumer
+    (fixed cyclic schedules), so every scenario equals the stripped env."""
+    shocks = getattr(config, "shocks", None)
+    has_shocks = shocks is not None and bool(shocks.generators or shocks.events)
+    return not has_shocks and not any(c.is_randomized for c in config.consumers)  # type: ignore[attr-defined]
+
+
+@dataclass
+class DeterministicSource:
+    """One scenario on a deterministic-future world: the stripped env (D4). Refuses a world
+    with shocks or stochastic demand."""
+
+    checkpoints: tuple[int, ...] = (1,)
+    name: str = "deterministic"
+    hidden_information: bool = False
+
+    def fork(self, env: TokenomicsAECEnv, agent: str, continuation_id: int
+             ) -> TokenomicsAECEnv:
+        if not deterministic_future(env.config):
+            raise ValueError("a deterministic scenario needs a world without shocks or "
+                             "stochastic demand (D4)")
+        return stripped_env(env)
+
+
+@dataclass
+class ClairvoyantSource:
+    """The true future, one scenario: the clairvoyant bound (D5 `ub`). Reads hidden
+    information, so it is an upper reference only, never a teacher or a label source."""
+
+    checkpoints: tuple[int, ...] = (1,)
+    name: str = "clairvoyant"
+    hidden_information: bool = True
+
+    def fork(self, env: TokenomicsAECEnv, agent: str, continuation_id: int
+             ) -> TokenomicsAECEnv:
+        return copy.deepcopy(env)
 
 
 def _one_cycle_bump(
@@ -134,6 +281,24 @@ def _one_cycle_bump(
         if agent == target_agent and env.current_cycle == at_cycle:
             mat = logits.reshape(env.spec_.k_stream, env.spec_.num_producers)
             mat[k, col] += delta
+            logits = mat.flatten()
+        return logits
+
+    return pol
+
+
+def _one_cycle_row(
+    base: Policy, target_agent: str, k: int, row: np.ndarray, at_cycle: int
+) -> Policy:
+    """`base` routing, but stream `k`'s logits replaced by `row` only for `target_agent` at
+    `at_cycle` (PoC-A's whole-order and trained candidates; isolation as `_one_cycle_bump`)."""
+    fixed = np.asarray(row, dtype=np.float32)
+
+    def pol(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        logits = np.asarray(base(env, agent), dtype=np.float32).copy()
+        if agent == target_agent and env.current_cycle == at_cycle:
+            mat = logits.reshape(env.spec_.k_stream, env.spec_.num_producers)
+            mat[k] = fixed
             logits = mat.flatten()
         return logits
 
@@ -166,11 +331,16 @@ def resolve_stream(
     when its paired lower confidence bound beats every alternative.  A producer bump
     must additionally clear ``min_expected_gain``. Exact all-zero matrices are a safe
     early base stop; every other inconclusive read remains unresolved.
+
+    One scenario (K = 1) is the zero-variance rule of D4 "Deterministic futures": the
+    standard error is 0, so a unique best candidate is accepted when its gain over every
+    alternative is strictly positive. ``eligible_cols`` labels the candidates (a producer
+    column, or a replacement row's index).
     """
     arr = np.asarray(gains, dtype=np.float64)
-    if arr.ndim != 2 or arr.shape[1] != len(eligible_cols) or arr.shape[0] < 2:
+    if arr.ndim != 2 or arr.shape[1] != len(eligible_cols) or arr.shape[0] < 1:
         raise ValueError(
-            f"gains must have shape [K,{len(eligible_cols)}] with K>=2, got {arr.shape}")
+            f"gains must have shape [K,{len(eligible_cols)}] with K>=1, got {arr.shape}")
     if not np.isfinite(arr).all():
         raise ValueError("gains contain a non-finite value")
     n = int(arr.shape[0])
@@ -189,7 +359,7 @@ def resolve_stream(
         if other == best:
             continue
         diff = scores[:, best] - scores[:, other]
-        se = float(np.std(diff, ddof=1) / math.sqrt(n))
+        se = float(np.std(diff, ddof=1) / math.sqrt(n)) if n > 1 else 0.0
         lcbs.append(float(np.mean(diff) - z * se))
     min_lcb = min(lcbs)
     if min_lcb <= 0.0:
@@ -201,6 +371,135 @@ def resolve_stream(
     return Resolution(
         True, int(eligible_cols[best - 1]), "confident_override", n,
         float(means[best]), min_lcb)
+
+
+def assert_forkable(env: TokenomicsAECEnv) -> None:
+    """Refuse an env whose system carries an instance-level `complete_cycle` (the routing
+    tracer's hook): the hook is a closure over the live system, `deepcopy` shares it, so a
+    rollout on any fork would complete the LIVE system's cycle, silently at some stop points
+    (DIAGNOSTICS 22)."""
+    if "complete_cycle" in vars(env.system):
+        raise ValueError("refusing to search a traced env: system.complete_cycle is an "
+                         "instance hook a fork would share with the live system "
+                         "(DIAGNOSTICS 22); run the search untraced")
+
+
+class CandidateSet(Protocol):
+    """The searched streams of one decision and their candidates (D5)."""
+
+    name: str
+
+    def __call__(self, env: TokenomicsAECEnv, agent: str, mat: np.ndarray,
+                 telemetry: SearchTelemetry, record: DecisionRecord | None
+                 ) -> list[StreamCandidate]: ...
+
+
+@dataclass
+class BumpCandidates:
+    """EXP-0042: contested streams (>= 2 eligible) whose top-two base probabilities are within
+    ``ambiguity_prob_gap``; candidates = +delta on each eligible producer's logit."""
+
+    ambiguity_prob_gap: float = AMBIGUITY_PROB_GAP
+    name: str = "bump"
+
+    def __call__(self, env: TokenomicsAECEnv, agent: str, mat: np.ndarray,
+                 telemetry: SearchTelemetry, record: DecisionRecord | None
+                 ) -> list[StreamCandidate]:
+        _, aid = env._role[agent]
+        view = env.system.ordering_agents[aid].view(env.system.producer_infos)
+        streams: list[StreamCandidate] = []
+        for k, oid in enumerate(sorted(view.incoming)[:env.spec_.k_stream]):
+            if record is not None:
+                record.slots += 1
+            elig = tuple(env.spec_.producer_ids.index(p) for p in view.eligible[oid])
+            if len(elig) < 2:
+                continue
+            telemetry.contested_streams += 1
+            if record is not None:
+                record.contested += 1
+            if _softmax_gap([float(mat[k, c]) for c in elig]) > self.ambiguity_prob_gap:
+                telemetry.ambiguity_gated_streams += 1
+                continue
+            streams.append(StreamCandidate(k, oid, elig))
+        return streams
+
+
+def whole_order_rows(env: TokenomicsAECEnv, agent: str
+                     ) -> list[tuple[int, str, tuple[int, ...], list[np.ndarray]]]:
+    """(slot, order id, eligible columns, rows) per addressed order: row j sends the whole
+    order to eligible producer j, built exactly as `round_robin` builds its rows, so the
+    floor's own receiver is byte-identical to one of them."""
+    from .routing_diagnostics import _slots, _whole
+
+    out = []
+    width = env.spec_.num_producers
+    for k, oid, q, elig in _slots(env, agent):
+        rows = []
+        for j in range(len(elig)):
+            row = np.zeros(width, dtype=np.float32)
+            row[elig] = _whole(elig, j, q)
+            rows.append(_clip_row(row))
+        out.append((k, str(oid), tuple(elig), rows))
+    return out
+
+
+def _clip_row(row: np.ndarray) -> np.ndarray:
+    from ..env.spaces import ACTION_LOGIT_BOUND
+
+    return np.clip(row, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND).astype(np.float32)
+
+
+@dataclass
+class WholeOrderCandidates:
+    """PoC-A (D5): every stream with >= 2 eligible producers is searched (no ambiguity gate: a
+    whole-order floor is never ambiguous); candidates = the whole order to each eligible
+    producer (E rows) plus `trained`'s row for the stream, at most E + 1. A candidate equal to
+    the floor's row, or to an earlier candidate, is dropped: it is the floor's action (or a
+    candidate already scored), and a zero-gain twin of the base would read as a tie."""
+
+    trained: Policy | None = None
+    name: str = "whole_order"
+
+    def candidates(self, env: TokenomicsAECEnv, agent: str
+                   ) -> list[tuple[int, str, tuple[int, ...], list[np.ndarray], list[str]]]:
+        """Per slot with >= 2 eligible producers: every candidate before de-duplication."""
+        trained = (np.asarray(self.trained(env, agent), dtype=np.float32).reshape(
+            env.spec_.k_stream, env.spec_.num_producers) if self.trained is not None else None)
+        out = []
+        for k, oid, elig, rows in whole_order_rows(env, agent):
+            if len(elig) < 2:
+                continue
+            labels = [f"whole:{c}" for c in elig]
+            if trained is not None:
+                rows = rows + [_clip_row(trained[k].copy())]
+                labels.append("trained")
+            out.append((k, oid, elig, rows, labels))
+        return out
+
+    def __call__(self, env: TokenomicsAECEnv, agent: str, mat: np.ndarray,
+                 telemetry: SearchTelemetry, record: DecisionRecord | None
+                 ) -> list[StreamCandidate]:
+        if record is not None:
+            record.slots += min(len(env.system.ordering_agents[env._role[agent][1]].view(
+                env.system.producer_infos).incoming), env.spec_.k_stream)
+        streams: list[StreamCandidate] = []
+        for k, oid, elig, rows, labels in self.candidates(env, agent):
+            telemetry.contested_streams += 1
+            if record is not None:
+                record.contested += 1
+            seen = [np.asarray(mat[k], dtype=np.float32).tobytes()]
+            keep_rows, keep_labels = [], []
+            for row, label in zip(rows, labels):
+                b = row.tobytes()
+                if b in seen:
+                    continue
+                seen.append(b)
+                keep_rows.append(row)
+                keep_labels.append(label)
+            if keep_rows:
+                streams.append(StreamCandidate(k, oid, elig, tuple(keep_rows),
+                                               tuple(keep_labels)))
+        return streams
 
 
 class BoundedScenarioOrderer:
@@ -221,6 +520,9 @@ class BoundedScenarioOrderer:
         min_expected_gain: float = MIN_EXPECTED_GAIN,
         scenario_scorer: ScenarioScorer | None = None,
         max_search_actions: int | None = None,
+        scenarios: ScenarioSource | None = None,
+        candidates: CandidateSet | None = None,
+        record_decisions: bool = False,
     ) -> None:
         if depth not in DEPTHS:
             raise ValueError(f"depth {depth} not in registered depths {DEPTHS}")
@@ -241,6 +543,19 @@ class BoundedScenarioOrderer:
         self.scenario_scorer = scenario_scorer or self._score_scenario
         self.max_search_actions = max_search_actions
         self.telemetry = SearchTelemetry()
+        self.scenarios: ScenarioSource = scenarios if scenarios is not None else DemandForkSource(
+            task_id, int(episode_seed), checkpoints)
+        if scenarios is not None:
+            checkpoints = tuple(int(k) for k in scenarios.checkpoints)
+            if not checkpoints or checkpoints[0] < 1 or (checkpoints[0] < 2 and len(
+                    checkpoints) > 1) or any(b <= a for a, b in zip(checkpoints, checkpoints[1:])):
+                raise ValueError("source checkpoints must be (1,) or strictly increasing from 2")
+            self.checkpoints = checkpoints
+        self.candidates: CandidateSet = (candidates if candidates is not None
+                                         else BumpCandidates(self.ambiguity_prob_gap))
+        self.record_decisions = record_decisions
+        self.decisions: list[DecisionRecord] = []
+        self._record: DecisionRecord | None = None
 
     def _score_scenario(
         self,
@@ -249,55 +564,69 @@ class BoundedScenarioOrderer:
         streams: Sequence[StreamCandidate],
         continuation_id: int,
     ) -> Mapping[int, np.ndarray]:
-        digest = decision_digest(
-            self.task_id, self.episode_seed, env.current_cycle, f"agent:{agent}")
-        forked = fork_future_demand(
-            env, task_id=self.task_id, decision_digest=digest,
-            continuation_id=continuation_id, experiment=EXPERIMENT)
+        rec = self._record
+        started = time.perf_counter()
+        forked = self.scenarios.fork(env, agent, continuation_id)
         base_units = _rollout_units(copy.deepcopy(forked), self.prod, self.base, self.depth)
         out: dict[int, np.ndarray] = {}
         self.telemetry.rollout_calls += 1
+        if rec is not None:
+            rec.rollouts += 1
+            rec.base_seconds += time.perf_counter() - started
         for stream in streams:
+            t0 = time.perf_counter()
             values = []
-            for col in stream.eligible_cols:
-                bumped = _one_cycle_bump(
-                    self.base, agent, stream.stream_index, col, self.delta,
-                    env.current_cycle)
-                units = _rollout_units(copy.deepcopy(forked), self.prod, bumped, self.depth)
+            for i in range(stream.n_candidates):
+                policy = stream.policy(self.base, agent, i, self.delta, env.current_cycle)
+                units = _rollout_units(copy.deepcopy(forked), self.prod, policy, self.depth)
                 values.append(float(units - base_units))
                 self.telemetry.rollout_calls += 1
             out[stream.stream_index] = np.asarray(values, dtype=np.float64)
+            if rec is not None:
+                rec.rollouts += stream.n_candidates
+                k = stream.stream_index
+                rec.stream_seconds[k] = (rec.stream_seconds.get(k, 0.0)
+                                         + time.perf_counter() - t0)
         return out
 
     def __call__(self, env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        assert_forkable(env)
         started = time.perf_counter()
+        rec = DecisionRecord(int(env.current_cycle), agent) if self.record_decisions else None
+        self._record = rec
+        try:
+            return self._decide(env, agent, started, rec)
+        finally:
+            self._record = None
+            if rec is not None:
+                rec.seconds = time.perf_counter() - started
+                self.decisions.append(rec)
+
+    def _decide(self, env: TokenomicsAECEnv, agent: str, started: float,
+                rec: DecisionRecord | None) -> np.ndarray:
         action = np.asarray(self.base(env, agent), dtype=np.float32).copy()
         self.telemetry.order_actions += 1
-        _, aid = env._role[agent]
-        view = env.system.ordering_agents[aid].view(env.system.producer_infos)
         mat = action.reshape(env.spec_.k_stream, env.spec_.num_producers)
-        streams: list[StreamCandidate] = []
-        for k, oid in enumerate(sorted(view.incoming)[:env.spec_.k_stream]):
-            elig = tuple(env.spec_.producer_ids.index(p) for p in view.eligible[oid])
-            if len(elig) < 2:
-                continue
-            self.telemetry.contested_streams += 1
-            if _softmax_gap([float(mat[k, c]) for c in elig]) > self.ambiguity_prob_gap:
-                self.telemetry.ambiguity_gated_streams += 1
-                continue
-            streams.append(StreamCandidate(k, oid, elig))
+        streams = self.candidates(env, agent, mat, self.telemetry, rec)
         self.telemetry.searched_streams += len(streams)
+        if rec is not None:
+            rec.searched = len(streams)
+            rec.candidates = sum(s.n_candidates for s in streams)
         if not streams:
             return action
         if (self.max_search_actions is not None and
                 self.telemetry.search_actions >= self.max_search_actions):
             self.telemetry.unresolved_fallback_streams += len(streams)
+            if rec is not None:
+                rec.capped = True
+                rec.unresolved_streams = len(streams)
             return action
 
         self.telemetry.search_actions += 1
         active = {s.stream_index: s for s in streams}
         rows: dict[int, list[np.ndarray]] = {s.stream_index: [] for s in streams}
         choices: dict[int, int] = {}
+        by_index = {s.stream_index: s for s in streams}
         previous = 0
         for checkpoint in self.checkpoints:
             if not active:
@@ -310,13 +639,13 @@ class BoundedScenarioOrderer:
                         f"scenario scorer returned streams {sorted(scored)} != {sorted(active)}")
                 for k, vals in scored.items():
                     arr = np.asarray(vals, dtype=np.float64)
-                    if arr.shape != (len(active[k].eligible_cols),) or not np.isfinite(arr).all():
+                    if arr.shape != (active[k].n_candidates,) or not np.isfinite(arr).all():
                         raise ValueError(f"invalid scenario gains for stream {k}: {arr}")
                     rows[k].append(arr)
                 self.telemetry.scenario_forks += 1
             for k, stream in list(active.items()):
                 resolution = resolve_stream(
-                    np.stack(rows[k]), stream.eligible_cols,
+                    np.stack(rows[k]), stream.choices,
                     z=self.z, min_expected_gain=self.min_expected_gain)
                 if not resolution.resolved:
                     continue
@@ -328,14 +657,26 @@ class BoundedScenarioOrderer:
                 else:
                     choices[k] = resolution.choice
                     self.telemetry.override_streams += 1
+                if rec is not None:
+                    rec.scenarios = max(rec.scenarios, resolution.scenarios)
+                    rec.deterministic_zero += resolution.reason == "deterministic_zero"
+                    rec.confident_base += resolution.reason == "confident_base"
+                    rec.overrides += resolution.choice is not None
                 del active[k]
             previous = checkpoint
 
         for k in active:
             self.telemetry.stream_scenarios += len(rows[k])
             self.telemetry.unresolved_fallback_streams += 1
-        for k, col in choices.items():
-            mat[k, col] += self.delta
+            if rec is not None:
+                rec.scenarios = max(rec.scenarios, len(rows[k]))
+                rec.unresolved_streams += 1
+        for k, choice in choices.items():
+            stream = by_index[k]
+            if stream.rows is None:
+                mat[k, choice] += self.delta
+            else:
+                mat[k] = stream.rows[choice]
         if not np.isfinite(action).all():
             raise ValueError("bounded rollout orderer emitted a non-finite action")
         self.telemetry.search_seconds += time.perf_counter() - started
