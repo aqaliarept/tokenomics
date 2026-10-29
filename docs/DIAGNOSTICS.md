@@ -264,7 +264,36 @@ A row above B2 is a bug (run invalid, naming world, episode and arm), never head
 - **collapse** (every arm dies before cycle 50 in every episode): a world-design problem, not
   headroom.
 
-**Seen in:** filled by EXP-0051 (screen) and EXP-0052 (confirm), tasks 5.1 / 5.2.
+**Seen in:** EXP-0051 (screen, provisional classes, run commit 92f3177): the branch depends on the region. Saturated only in the low-tightness, small-order corner where registry v2 and the EXP-0050 family worlds sit (10 of 512 worlds at 12 producers by fill, all ρ ≤ 0.23; the 12-f4 and three 42-producer anchors) plus 11 over-demanded worlds by the ceiling; elsewhere labelled hard (213 at 12, 68 at 42; mostly by `makeable_weighted_whole`, at lower ρ and, at 42, wide choice) or open (274 / 58; high ρ, bar fill ≈ 0.4). The hard labels are an upper bound: the screen's floor borrowed EXP-0050's spreads, 18–35× too small on these worlds (entry 21); with the screen's own replicate spread 63–71 / 34 stay hard. EXP-0052 (confirm, task 5.2) decides on fresh seeds with its own pooled spreads; the episode spread σ_ep on atlas worlds is unmeasured by the screen and likely larger than EXP-0050's.
+
+## 21. A noise floor borrowed from another world population
+
+**Problem (plain English):** a run that cannot measure its own chance variation (one episode per
+world, a stochastic policy played once) borrows a spread from an earlier run. If the earlier run
+played a different kind of world, the borrowed spread can be far too small (or large), and the
+"beats the bar by more than noise" call then counts noise as a gain. Seen when the atlas screen
+took EXP-0050's spreads, measured on easy-corner worlds that fill 97%+ of orders, for worlds
+that fill 40–60%.
+
+**Discriminating check:** find any replicated arm the run itself played and compare its pooled
+within-episode SD with the borrowed spread, per stratum. In the atlas screen `random_whole` runs
+R = 2 on every world: `python3 openspec/changes/add-m3-development-audit/probes/exp0051_check.py
+<EXP dir> --exp0050 <EXP-0050 episodes.csv>` prints "screen's own sigma_rep" against the
+provisional σ_rep, and the hard count recomputed with it (absolute and relative × bar, at 2 and
+3 × SE).
+
+**Outcome branches:**
+- **own spread ≈ borrowed** (within about 2×): the borrowed floor holds; read the classes;
+- **own spread ≫ borrowed**: the borrowed-floor classes are an upper bound (hard) / lower bound
+  (open, flat); report the recount with the run's own spread, keep the run (the selection may
+  still be useful), and let a stage with its own replicated spread decide (atlas confirm pools
+  σ_ep and σ_rep from its own episodes);
+- **no replicated arm in the run**: the floor is unverifiable; say so and do not quote hard
+  counts as measured.
+
+**Seen in:** EXP-0051 (screen): σ_rep 46–77 units at 12 producers and 156–343 at 42 against the
+borrowed 2.6 and 10–21 (18–35×); hard 213 → 63–71 at 12, 68 → 34 at 42 at 2 × SE. σ_ep (episode
+to episode) is not measurable in the screen.
 
 ---
 

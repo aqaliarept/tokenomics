@@ -578,3 +578,38 @@ baseline on most registry v2 development episodes (95 of 128 in EXP-0047, all 40
   whole-order version, and a trace of expired reservations by the producer's input stock. Registry v2's fanout 2 is where routing matters least; a registry v3 could add
   wider-fanout 42-producer worlds (12-producer fanout-4 and dense-12 worlds are near saturation).
   ≈ 3.9 vCPU-h billed.
+
+### The headroom atlas
+
+EXP-0048–0050 left the development bar in an easy corner: registry v2 gives every product two
+possible makers, where routing matters least, and on EXP-0050's 12-producer fanout-4 and dense
+family cells the best simple rule fills 97–99% of consumer orders, so a learner has little to
+show there; the differences between routers grew only as the number of possible makers grew. The atlas (design D10–D12, ADR-0057) asks where in a wider space
+of worlds a better policy is reachable at all, before any teacher or training is spent. It is not
+a reopening of the §7 mining arc (EXP-0023–0036), which mined topology and capacity tightness
+against a search bar and found none (EXP-0033: 98.3% of the bound). The atlas differs in the
+three places that arc failed: it varies seven axes (size, choice, tightness, order size,
+heterogeneity, shocks, demand pattern) instead of topology alone; it measures room per world
+against an analytic ceiling (the restored B2 and base-capacity bounds) before any training, so a
+saturated world is filtered rather than mined; and it calls a world hard only when a cheap reach
+arm already beats the bar by more than a pre-registered paired noise floor (EXP-0025's lesson),
+with a split of the selected worlds recorded before confirm reads them.
+
+- **EXP-0051 — atlas screen. Provisional: saturation is rare outside the easy corner; measured
+  headroom is narrower than the screen's labels.** 512 worlds at 12 producers and 128 at 42 (one episode each) plus 8 EXP-0050
+  anchors, played by the eight blind and hand-written bar arms and three reach arms, all with
+  `entity_planner`. Only 21 of 512 worlds at 12 producers and none of 128 at 42 are saturated: the
+  low-tightness, small-order corner (10 by fill, ρ ≤ 0.23) and 11 over-demanded worlds whose bar
+  already reaches 97% of the ceiling. 213 / 68 worlds are labelled hard (median gain ≈ 5–6% of the bar,
+  12% at 42 producers with 14 makers per product, where 22 of 26 worlds are hard against 2 of 26
+  with 2 makers) and 274 / 58 open (high tightness, bar fill ≈ 0.4). The reach argmax is
+  `makeable_weighted_whole` (whole orders to a maker drawn ∝ what it can finish now) on 226 of 281
+  hard worlds. The anchors reproduce EXP-0050 exactly (80 rows) and sit where EXP-0050 put them
+  (12-f4 and three 42-producer cells saturated; dense-12 just under the fill cut). 96 worlds are
+  selected (72 hard, 24 open) and split (train 60, validation 16, held-out 16, out-of-region 4).
+  The hard labels are an upper bound: the pre-registered floor borrowed EXP-0050's replicate
+  spread (2.6 units at 12, 10–21 at 42, from easy-corner worlds), while the screen's own
+  `random_whole` replicates differ by 46–77 and 156–343 units, 18–35 times more; with that spread
+  only 63–71 worlds at 12 and 34 at 42 stay hard (DIAGNOSTICS 21). The screen also rests on one
+  episode per world and a stochastic arm played once; EXP-0052 confirms on fresh seeds with its
+  own pooled spreads. ≈ 7.3 vCPU-h billed.
