@@ -338,7 +338,11 @@ def world_record(e: WorldEntry) -> dict:
 
 
 def replicates_of(router: Mapping[str, object], replicates: int) -> int:
-    return replicates if router["random"] else 1
+    """A deterministic router runs once; a random one `replicates` times, unless its entry
+    pins its own count (`replicates`, the atlas's per-arm R, design D12)."""
+    if not router["random"]:
+        return 1
+    return int(router.get("replicates", replicates))  # type: ignore[call-overload]
 
 
 def build_jobs(worlds: Sequence[WorldEntry], routers: Sequence[Mapping[str, object]],
@@ -455,10 +459,8 @@ def run_job(job: Job) -> dict[str, str]:
         return job_failure(job, exc).to_dict()
 
 
-def _run_job(job: Job) -> dict[str, str]:
-    from ..env import TokenomicsAECEnv
-    from .joint_stack import joint_stack_env
-    from .runner import run_episode
+def job_config(job: Job) -> object:
+    """The job's world configuration, rebuilt from its generator-ref once per process."""
     from .task_archive import REPRODUCERS
 
     key = json.dumps([job["world"], job["world_seed"], job["generator"]], sort_keys=True)
@@ -467,7 +469,15 @@ def _run_job(job: Job) -> dict[str, str]:
         cfg = REPRODUCERS[g["generator"]](job["world_seed"], **g.get("params", {}))
         cfg.validate()
         _CONFIGS[key] = cfg
-    cfg = _CONFIGS[key]
+    return _CONFIGS[key]
+
+
+def _run_job(job: Job) -> dict[str, str]:
+    from ..env import TokenomicsAECEnv
+    from .joint_stack import joint_stack_env
+    from .runner import run_episode
+
+    cfg = job_config(job)
     horizon = job["horizon"]
     env = (joint_stack_env(cfg, horizon) if job["contract"] == JOINT_STACK
            else TokenomicsAECEnv(config=cfg, horizon=horizon))
@@ -496,10 +506,11 @@ def trace_cells(tracer: RoutingTracer) -> dict[str, str]:
 # --- executor (the gate's `_execute`, with trace columns) ---
 
 
-def _append(path: Path, row: Mapping[str, str]) -> None:
+def _append(path: Path, row: Mapping[str, str],
+            columns: Sequence[str] = EPISODE_COLUMNS) -> None:
     new = not path.exists() or path.stat().st_size == 0
     with path.open("a", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=EPISODE_COLUMNS, lineterminator="\n")
+        w = csv.DictWriter(fh, fieldnames=list(columns), lineterminator="\n")
         if new:
             w.writeheader()
         w.writerow(row)
@@ -513,10 +524,11 @@ def _init_worker() -> None:
 
 def execute(out: Path, spec: dict, done_keys: set[Key], done_rows: Sequence[Mapping[str, str]],
             jobs: Sequence[Job], workers: int, run_job_fn: Callable[[Job], dict[str, str]],
-            log: Callable[[str], None]) -> None:
+            log: Callable[[str], None], columns: Sequence[str] = EPISODE_COLUMNS) -> None:
     """Run every job not in `done_keys`, appending each row as it lands. Rows of one (world,
     episode) are paired on demand and shock digests as they arrive; a mismatch is one `run`
-    row, `spec.json` invalid, and raises. A failed job is a `job` row; the others go on."""
+    row, `spec.json` invalid, and raises. A failed job is a `job` row; the others go on.
+    `columns` = the episodes.csv header (the atlas adds its bound columns)."""
     episodes = out / "episodes.csv"
     seen: dict[tuple[str, int], dict[str, tuple[str, str]]] = {}
 
@@ -554,7 +566,7 @@ def execute(out: Path, spec: dict, done_keys: set[Key], done_rows: Sequence[Mapp
             return
         row_from_dict(d)  # the gate's row validation
         pair(d)
-        _append(episodes, d)
+        _append(episodes, d, columns)
         log(f"[routing_audit] {d['world']} ep={d['episode']} {d['subject']} r{d['replicate']} "
             f"units={float(d['units']):g} dead={d['dead']}")
 

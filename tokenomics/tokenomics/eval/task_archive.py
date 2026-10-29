@@ -78,6 +78,15 @@ def _degenerate_variant(seed: int, *, variant: str, depth: int = 3, width: int =
     return fixtures.degenerate_suite(seed, depth=depth, width=width)[variant]
 
 
+def _world_space(seed: int, **params: object) -> Configuration:
+    """A world-space world (add-m3-development-audit D10; params {"producers", "levers",
+    "shock_window"}). Imported on call: `world_space` imports `routing_audit`, which imports
+    the registry, which imports this module."""
+    from .world_space import build_world
+
+    return build_world(seed, **params)  # type: ignore[arg-type]
+
+
 REPRODUCERS: dict[str, Reproducer] = {
     "build_scale_config": scale.build_scale_config,
     "build_forkjoin_config": fixtures.build_forkjoin_config,
@@ -89,6 +98,8 @@ REPRODUCERS: dict[str, Reproducer] = {
     # gate world families (design D9): params {"producers", "regime", "fanout"?, "schedule_length"?}
     "dense_family": families.build_dense_config,
     "sparse_wide_family": families.build_sparse_wide_config,
+    # the atlas's world space (design D10, D12): params {"producers", "levers", "shock_window"}
+    "world_space": _world_space,
 }
 
 

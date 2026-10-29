@@ -226,6 +226,46 @@ Open: why its parts complete. Its distillation target is input-aware (log of
 the teacher as a router (split by `makeable_qty_now`), its whole-order version, and a trace of
 expired reservations by producer input stock.
 
+## 20. A world set has no headroom
+
+**Problem (plain English):** on some worlds no better policy can be reached: every cheap policy
+already delivers about as much as the world allows, or nothing beats the best simple rule by
+more than the run-to-run noise. Training or mining on such worlds cannot show improvement,
+however good the learner. Registry v2 looks like this (EXP-0047, EXP-0050: fills of 0.97–0.99 on
+the 12-producer sparse f4 and dense cells). The question is where in the world space headroom
+exists, and of which kind.
+
+**Discriminating check:** the headroom atlas (`python -m tokenomics.eval.atlas`, design D12,
+ADR-0057). `--mode screen` plays a world-space sample with the blind and hand-written arms (the
+*atlas bar*: the best of them) and the reach arms (`makeable_split`, `makeable_weighted_whole`,
+the trained orderer); per world-episode it computes the restored bounds B2 (a demand cap) and
+B_base (the base-capacity ceiling). `--mode confirm` replays the selected worlds on fresh seeds.
+Per world: gain = best reach − bar from paired episodes; ceiling C = max(min(B2, B_base), best
+played arm); room = (C − bar) / C; noise floor = max(3 × SE from spreads pooled per size ×
+choice, 0.01 × bar) (2 × SE in the screen, from EXP-0050's spreads). Read `worlds.csv` classes
+per size × choice × pattern (and `coverage.csv` for where the sample is thin):
+```
+python -m tokenomics.eval.atlas --mode screen --exp0050-episodes <EXP-0050 episodes.csv> \
+  --prod-ckpt P.pt --orderer-ckpt O.pt --workers 16 --source-commit {SOURCE_COMMIT} --out-dir EXP-NNNN-title
+python -m tokenomics.eval.atlas --mode confirm --screen-dir <screen EXP dir> \
+  --prod-ckpt P.pt --orderer-ckpt O.pt --workers 16 --source-commit {SOURCE_COMMIT} --out-dir EXP-NNNN-title
+```
+A row above B2 is a bug (run invalid, naming world, episode and arm), never headroom.
+
+**Outcome branches:**
+- **saturated** (bar fills ≥ 0.95 of consumer orders, or reaches 0.97 of C): nothing to gain;
+  filter these worlds out of mining and of any acceptance set that should measure improvement;
+- **flat** (no reach arm beats the bar beyond the floor, and room < 0.10): no lever was found
+  cheaply; leave the region unless a new reach arm or a cause says otherwise;
+- **open** (room ≥ 0.10, not hard): the ceiling leaves room no cheap arm reached; send these to
+  the teacher sample (PoC-A). B_base is not guaranteed, so check the count of arms above it;
+- **hard** (gain above the floor and positive in every episode and replicate): a better policy
+  is reachable and measured; mine and train here;
+- **collapse** (every arm dies before cycle 50 in every episode): a world-design problem, not
+  headroom.
+
+**Seen in:** filled by EXP-0051 (screen) and EXP-0052 (confirm), tasks 5.1 / 5.2.
+
 ---
 
 ## Unverified problems (plain-English inbox)
