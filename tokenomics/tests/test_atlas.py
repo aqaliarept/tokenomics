@@ -197,6 +197,58 @@ def test_two_episodes_that_agree_by_chance_use_the_pooled_spread() -> None:
     assert unmerged.merged_rep and unmerged.df_rep == 0  # no replicate df anywhere
 
 
+def test_residuals_and_mad_sigma_by_hand() -> None:
+    r2 = math.sqrt(2)
+    assert atlas.residuals([1.0, 3.0]) == pytest.approx([-r2, r2])  # +-(x1 - x2) / sqrt 2
+    k3 = math.sqrt(3 / 2)
+    assert atlas.residuals([0.0, 3.0, 6.0]) == pytest.approx([-3 * k3, 0.0, 3 * k3])
+    assert atlas.residuals([5.0]) == []
+    # pair differences 2, 4, 10: |r| = sqrt2, sqrt2, 2 sqrt2, 2 sqrt2, 5 sqrt2, 5 sqrt2
+    resid = [x for a, b in ((0, 2), (0, 4), (0, 10)) for x in atlas.residuals([a, b])]
+    assert atlas.mad_sigma(resid) == pytest.approx(2 * r2 / 0.6744897501960817)
+    assert atlas.mad_sigma([]) is None
+    with pytest.raises(ValueError, match="unknown spread estimator"):
+        pooled_spreads([], {}, estimator="trimmed")
+
+
+def _stratum(gains: list[tuple[float, float]], prefix: str = "o") -> tuple[list, dict]:
+    rows, infos = [], {}
+    for i, (g1, g2) in enumerate(gains):
+        w = f"{prefix}{i}"
+        rows += _world(w, {"bar_d": [[1000], [1000]], "reach_d": [[1000 + g1], [1000 + g2]]},
+                       ordered=1e5, b2=1e5, base=1e5)
+        infos[w] = _info(w)
+    return rows, infos
+
+
+def test_one_heavy_tailed_world_does_not_set_the_floor() -> None:
+    # 40 worlds whose paired gain moves by 10 between episodes, one that moves by 2,000, and a
+    # world with a consistent gain of 60 (spec "One heavy-tailed world in the pool")
+    calm, infos = _stratum([(-5.0, 5.0) if i % 2 else (5.0, -5.0) for i in range(40)])
+    wild, winfo = _stratum([(-1000.0, 1000.0)], prefix="wild")
+    good, ginfo = _stratum([(58.0, 62.0)], prefix="good")
+    rows, infos = calm + wild + good, infos | winfo | ginfo
+    ms = {w: measures(w, eps, ARMS) for w, eps in episode_values(rows).items()}
+    sp = pooled_spreads(list(ms.values()), infos)[(12, "sparse_f2")]
+    assert sp.estimator == atlas.POOLED_MAD and sp.df_ep == 42
+    # |r| = 10 / sqrt2 on 40 worlds, 2,000 / sqrt2 on one, 4 / sqrt2 on one: median 10 / sqrt2
+    assert sp.sigma_ep == pytest.approx(10 / math.sqrt(2) / 0.6744897501960817)
+    ss = 40 * 50.0 + 2 * 1000.0 ** 2 + 2 * 2.0 ** 2
+    assert sp.sd_ep == pytest.approx(math.sqrt(ss / 42))  # the pooled SD, reported only
+    se, floor = noise_floor(ms["good0"], infos["good0"], sp, FLOOR_SE[CONFIRM])
+    assert floor == pytest.approx(3 * sp.sigma_ep / math.sqrt(2)) and floor < 60
+    assert classify(ms["good0"], floor) == HARD
+    # under the pre-registered pooled SD the one world sets the floor and hides the gain
+    sd = pooled_spreads(list(ms.values()), infos, estimator=atlas.POOLED_SD)[(12, "sparse_f2")]
+    assert sd.sigma_ep == pytest.approx(sp.sd_ep)
+    _, floor_sd = noise_floor(ms["good0"], infos["good0"], sd, FLOOR_SE[CONFIRM])
+    assert floor_sd > 400 and classify(ms["good0"], floor_sd) != HARD
+    # the replicate spread uses the same estimator
+    reps = _world("r", {"bar_r": [[100, 104], [100, 96]], "reach_d": [[500], [500]]})
+    m = _measure(reps, "r")
+    assert m.rep_resid == pytest.approx([-2 * math.sqrt(2), 2 * math.sqrt(2), 2 * math.sqrt(2), -2 * math.sqrt(2)])
+
+
 # --- bound and ceiling ---
 
 
@@ -291,6 +343,39 @@ def test_collapse_open_and_flat_classes() -> None:
     tight = _world("w", {"bar_d": [[100]], "reach_d": [[90]]}, b2=105.0, base=1000.0,
                    ordered=1000.0)
     assert _class(tight, SPREAD) == atlas.FLAT
+
+
+def test_fixed_bar_arm_dies_is_collapse() -> None:
+    # spec "Fixed bar arm dies": the fixed bar arm dies at cycle 4 in every run, the reach arm
+    # and another blind arm survive; the gain beats the floor in every episode
+    rows = (_world("w", {"bar_r": [[0, 0], [0, 0]]}, dead=True, cycles=4, ordered=1e4)
+            + _world("w", {"bar_d": [[600], [620]], "reach_d": [[800], [790]]}, ordered=1e4))
+    infos = {"w": _info("w")}
+    m = _measure(rows, fixed=("bar_r", "reach_d"))
+    assert m.argmax_died and not m.collapse and atlas.sign_consistent(m)
+    _, floor = noise_floor(m, infos["w"], SPREAD, FLOOR_SE[CONFIRM])
+    assert m.gain > floor
+    assert classify(m, floor) == HARD  # without the rule
+    assert classify(m, floor, dead_arm=True) == atlas.COLLAPSE
+    _, _, wrows = analyse(rows, infos, ARMS, CONFIRM, {(12, "sparse_f2"): SPREAD},
+                          {"w": ("bar_r", "reach_d")})
+    assert wrows[0]["class"] == atlas.COLLAPSE and wrows[0]["argmax_died"]
+    # one dying replicate of the fixed reach arm is enough; any cycle counts
+    late = (_world("v", {"bar_d": [[600], [620]], "reach_d": [[800], [790]]}, ordered=1e4)
+            + [_row("v", e, "reach_r", 900, r, dead=(e, r) == (1, 1), cycles=95 if
+                    (e, r) == (1, 1) else 100, ordered=1e4) for e in (0, 1) for r in (0, 1)])
+    _, _, wrows = analyse(late, {"v": _info("v")}, ARMS, CONFIRM, {(12, "sparse_f2"): SPREAD},
+                          {"v": ("bar_d", "reach_r")})
+    assert wrows[0]["class"] == atlas.COLLAPSE
+    # an arm that is not fixed may die; the screen keeps the all-arms rule only
+    _, _, wrows = analyse(late, {"v": _info("v")}, ARMS, CONFIRM, {(12, "sparse_f2"): SPREAD},
+                          {"v": ("bar_d", "reach_d")})
+    assert wrows[0]["class"] == HARD and not wrows[0]["argmax_died"]
+    # the screen's own argmax reach arm is the dying reach_r (mean 900 > 795): the screen keeps
+    # rule 1's all-arms clause, so the same rows are not collapse there
+    ms, _, wrows = analyse(late, {"v": _info("v")}, ARMS, SCREEN, {(12, "sparse_f2"): SPREAD})
+    assert ms["v"].reach_arm == "reach_r" and wrows[0]["argmax_died"]
+    assert wrows[0]["class"] == HARD
 
 
 def test_fixed_argmax_arms_in_confirm() -> None:
@@ -434,7 +519,7 @@ def test_dry_runs_write_the_layout(dry_runs: dict) -> None:
                  "anchors.csv", "contract_failures.csv", "RESULT.md"):
         assert (base / "screen" / name).exists(), name
     for name in ("spec.json", "episodes.csv", "worlds.csv", "deciding_check.csv",
-                 "atlas_v1.json", "contract_failures.csv", "RESULT.md"):
+                 "atlas_v2.json", "contract_failures.csv", "RESULT.md"):
         assert (base / "confirm" / name).exists(), name
     if atlas.lp_available():  # task 4.7: one LP row per world-episode, B_lp in worlds.csv
         for mode in ("screen", "confirm"):
@@ -457,8 +542,41 @@ def test_dry_runs_write_the_layout(dry_runs: dict) -> None:
         worlds = list(csv.DictReader(fh))
     assert worlds and all(w["class"] in atlas.CLASSES and json.loads(w["arm_units"])
                           and w["b2"] and w["noise_floor"] for w in worlds)  # "Screen record"
-    doc = json.loads((base / "confirm" / "atlas_v1.json").read_text())
+    doc = json.loads((base / "confirm" / "atlas_v2.json").read_text())
     assert doc["content_hash"] == atlas.content_hash(doc)
+    assert doc["format"] == "atlas-v2" and doc["rules"]["spread_estimator"] == atlas.POOLED_MAD
+
+
+def test_recorded_confirm_reclassified(dry_runs: dict, tmp_path: Path) -> None:
+    # spec "Recorded confirm reclassified": nothing played, the confirm untouched, the previous
+    # class beside the new one, the hashes of the rows read
+    cdir = dry_runs["base"] / "confirm"
+    before = _snapshot(cdir)
+    out = tmp_path / "reclassified"
+    assert atlas.reclassify(cdir, out, log=lambda s: None) == 0
+    assert _snapshot(cdir) == before
+    with (cdir / "worlds.csv").open(newline="") as fh:
+        recorded = {r["world"]: r for r in csv.DictReader(fh)}
+    with (out / "worlds.csv").open(newline="") as fh:
+        derived = {r["world"]: r for r in csv.DictReader(fh)}
+    assert set(derived) == set(recorded)
+    for w, r in derived.items():
+        assert r["class_v1"] == recorded[w]["class"]
+        assert (r["bar_arm"], r["reach_arm"], r["split"]) == (
+            recorded[w]["bar_arm"], recorded[w]["reach_arm"], recorded[w]["split"])
+        assert r["class"] in atlas.CLASSES and r["estimator"] == atlas.POOLED_MAD
+    doc = json.loads((out / "atlas_v2.json").read_text())
+    assert doc["content_hash"] == atlas.content_hash(doc)
+    assert doc["reclassified_from"]["episodes_sha256"] == hashlib.sha256(
+        (cdir / "episodes.csv").read_bytes()).hexdigest()
+    assert all("class_v1" in x for x in doc["worlds"])
+    meta = json.loads((out / "reclassify.json").read_text())
+    assert meta["kind"] == atlas.RECLASSIFY and meta["not_an_acceptance_read"]  # a dry confirm
+    assert (out / "deciding_check.csv").exists()
+    with pytest.raises(ValueError, match="derived directory"):
+        atlas.reclassify(cdir, cdir, log=lambda s: None)
+    with pytest.raises(ValueError, match="not a complete atlas confirm"):
+        atlas.reclassify(dry_runs["base"] / "screen", tmp_path / "x", log=lambda s: None)
 
 
 def test_dry_confirm_runs_fresh_seeds(dry_runs: dict) -> None:
@@ -539,6 +657,13 @@ def test_provisional_spreads_from_exp0050() -> None:
                        (42, "sparse_f4"), (42, "sparse_f7"), (42, "sparse_f14"), (42, "dense")}
     assert all(v.sigma_ep is not None and v.sigma_rep is not None for v in sp.values())
     assert all(not v.merged_ep for v in sp.values())  # 4 shocked worlds x 1 df each
+    # the screen keeps the pooled SD (task 5.3): EXP-0051's recorded spreads reproduce
+    assert all(v.estimator == atlas.POOLED_SD and v.sigma_ep == v.sd_ep for v in sp.values())
+    spec = REPO / "experiments" / "EXP-0051-headroom-atlas-screen" / "spec.json"
+    recorded = json.loads(spec.read_text())["result"]["provisional_spreads"]
+    for (size, choice), v in sp.items():
+        r = recorded[f"{size}/{choice}"]
+        assert (v.sigma_ep, v.sigma_rep) == pytest.approx((r["sigma_ep"], r["sigma_rep"]))
 
 
 def test_anchor_reproduces_exp0050_units() -> None:

@@ -163,7 +163,10 @@ consumers only, so a cyclic world is never patterned.
   The rest is split 20/20/60 by sha256(world id) within size × choice × pattern. No M3 choice
   reads the held-out results.
 - **Confirm.** Confirm runs on fresh episode and replicate seeds and freezes `atlas_v1.json` in
-  its EXP directory.
+  its EXP directory. Revised after EXP-0052 (task 5.3): the confirm's pooled spreads use the
+  median absolute residual instead of the standard deviation (a few heavy-tailed worlds set the
+  pre-registered floor), a world whose fixed bar or reach arm dies is collapse, and EXP-0052's
+  rows were reclassified offline into `atlas_v2.json` (design D12 "Reclassification").
 - **Outside the gate.** The atlas never writes the gate registry, roster or parameters, and
   atlas worlds never enter a gate report. A v3 re-screen is the user's decision.
 

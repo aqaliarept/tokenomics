@@ -635,7 +635,12 @@ with a split of the selected worlds recorded before confirm reads them.
   the share of expired consumer reservations whose receiver lacked inputs from ≈ 0.89 to 0.71–0.73
   (more on investment orders). 12-0435's hard label is a rule gap (the fixed bar arm dies → bar 0),
   so PoC-A's pre-registered 12-producer train sample has only 2 hard worlds, one of them this
-  artifact. Open
+  artifact. **Task 5.3** fixed both causes and reclassified the recorded rows offline (atlas v2,
+  `reclassified/`): a median-based pooled spread (σ_ep 55 / 141, median floor 145 / 349) and a
+  dead-arm collapse rule give hard 11 / open 49 / collapse 4 at 12 producers and 13 / 17 / 2 at
+  42; headroom at 12 now appears at dense and f4 choice (5–22% of the bar), and PoC-A's train
+  sample has 4 hard worlds (0060, 0176, 0005, 0348) plus 8 open; the pre-registered counts stay
+  the run's recorded result. Open
   worlds (bar fill ≈ 0.46, room ≈ 0.5 under a ceiling ≈ demand) remain the teacher's sample, their
   reachable room unproven. `portable` sits below the bar (−10% / −31%). Atlas v1
   (`atlas_v1.json`, `f241464c4bc4…`) keeps EXP-0051's split; gate files untouched. ≈ 3.8 vCPU-h

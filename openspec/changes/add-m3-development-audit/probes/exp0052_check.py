@@ -12,11 +12,21 @@ own, per size x choice, merged within size below 30 df), every worlds.csv measur
 and class, deciding_check.csv and atlas_v1.json (content hash, classes, split) recomputed from
 episodes.csv; the split equals EXP-0051's; checkpoint sha256 pins; both run commits.
 
+Task 5.3 (`--reclassified DIR`, the derived dir of `atlas --mode reclassify`): recompute the
+revised classification independently (spreads = normal-consistent median absolute within-group
+residual, same strata and 30-df merge; dead-arm rule: a fixed bar or reach arm that dies in any
+episode or replicate makes the world collapse) and compare every class, spread and floor with
+DIR/worlds.csv, `class_v1` with the recorded worlds.csv, atlas_v2.json (content hash, classes,
+split, reclassified_from hashes); print the counts under both rules, the flips with their cause,
+each hard world's own episode spread against sigma_ep, and PoC-A's sample (design D5) under both
+rules.
+
 usage (from /srv/research/tokenomics):
   python3 openspec/changes/add-m3-development-audit/probes/exp0052_check.py \
       experiments/EXP-0052-headroom-atlas-confirm \
       --screen experiments/EXP-0051-headroom-atlas-screen \
-      [--ckpt producer=PATH --ckpt orderer=PATH] [--json OUT]
+      [--ckpt producer=PATH --ckpt orderer=PATH] [--json OUT] \
+      [--reclassified experiments/EXP-0052-headroom-atlas-confirm/reclassified]
 """
 
 from __future__ import annotations
@@ -381,6 +391,172 @@ def sensitivity(vals: dict, mine: dict, infos: dict, table: list[dict]) -> dict:
 
 
 SP_CACHE: dict = {}
+MAD_K = 0.6744897501960817  # Phi^-1(0.75)
+POC_PATTERNS = {"cyclic", "iid", "drift", "burst", "seasonal"}  # design D5
+
+
+def resid(xs: list[float]) -> list[float]:
+    n = len(xs)
+    if n < 2:
+        return []
+    mu = fmean(xs)
+    return [(x - mu) * math.sqrt(n / (n - 1)) for x in xs]
+
+
+def pooled_mad(vals: dict, mine: dict, infos: dict) -> dict:
+    """Task 5.3 spreads: per size x choice (merged within size below 30 df), sigma = median
+    |residual| / Phi^-1(0.75) over the episode gains of differing worlds (sigma_ep) and the
+    replicates of the stochastic fixed arms per episode (sigma_rep)."""
+    ep: dict = defaultdict(lambda: [[], 0])
+    rp: dict = defaultdict(lambda: [[], 0])
+    for w, m in mine.items():
+        s = (infos[w]["size"], infos[w]["choice"])
+        ep[s], rp[s]  # noqa: B018
+        if infos[w]["differing"] and len(m["d"]) >= 2:
+            ep[s][0] += resid(m["d"])
+            ep[s][1] += len(m["d"]) - 1
+        for arm in m["stoch"]:
+            for e in vals[w].values():
+                x = u(e["arms"][arm])
+                if len(x) >= 2:
+                    rp[s][0] += resid(x)
+                    rp[s][1] += len(x) - 1
+    out = {}
+    for s in sorted(set(ep) | set(rp)):
+        cells = {}
+        for name, pool in (("ep", ep), ("rep", rp)):
+            r, df = pool[s]
+            merged = df < MIN_DF
+            if merged:
+                r = [x for k, v in pool.items() if k[0] == s[0] for x in v[0]]
+                df = sum(v[1] for k, v in pool.items() if k[0] == s[0])
+            cells[f"sigma_{name}"] = median(abs(x) for x in r) / MAD_K if df else None
+            cells[f"df_{name}"], cells[f"merged_{name}"] = df, merged
+        out[f"{s[0]}/{s[1]}"] = cells
+    return out
+
+
+def poc_a_sample(worlds: dict, cls_key: str) -> list[tuple[str, str]]:
+    """Design D5: train split, 12 producers, patterns cyclic/iid/drift/burst/seasonal; 6 hard by
+    gain and 6 open by room, the other class filling a shortfall (12 in all); per class the best
+    n // 2 shocked and n - n // 2 unshocked, a shortfall on either side filled by the class's
+    best remaining worlds."""
+    pool = {w: x for w, x in worlds.items() if x["split"] == "train" and x["size"] == 12
+            and x["pattern"] in POC_PATTERNS}
+    ranked = {c: sorted((w for w, x in pool.items() if x[cls_key] == c),
+                        key=lambda w: -(pool[w]["gain"] if c == "hard" else pool[w]["room"]))
+              for c in ("hard", "open")}
+    n_hard = min(6, len(ranked["hard"]))
+    n = {"hard": n_hard, "open": min(12 - n_hard, len(ranked["open"]))}
+    n["hard"] = min(12 - n["open"], len(ranked["hard"]))
+    out = []
+    for c in ("hard", "open"):
+        want = {True: n[c] // 2, False: n[c] - n[c] // 2}
+        pick = []
+        for shocked in (True, False):
+            pick += [w for w in ranked[c] if pool[w]["shocks"] == shocked][:want[shocked]]
+        pick += [w for w in ranked[c] if w not in pick][:n[c] - len(pick)]
+        out += [(c, w) for w in sorted(pick, key=ranked[c].index)]
+    return out
+
+
+def reclassified_check(rdir: Path, d: Path, vals: dict, mine: dict, infos: dict,
+                       wcsv: dict) -> tuple[list[str], dict]:
+    problems: list[str] = []
+    sp = pooled_mad(vals, mine, infos)
+    got = {r["world"]: r for r in read(rdir / "worlds.csv")}
+    if set(got) != set(mine):
+        problems.append("reclassified worlds != confirm worlds")
+    new: dict = {}
+    for w, m in mine.items():
+        i = infos[w]
+        key = f"{i['size']}/{i['choice']}"
+        se = se_of(m["n"], i["differing"], m["stoch"], sp.get(key))
+        floor = max(3.0 * se, 0.01 * (m["bar"] or 0.0))
+        dead = died(vals[w], (m["bar_arm"], m["reach_arm"]))
+        sign, cls = classify(m, floor)
+        if dead:
+            cls = "collapse"
+        new[w] = {"cls": cls, "floor": floor, "se": se, "dead": dead, "v1": m["cls"],
+                  "gain": m["gain"], "room": m["room"], "split": m["split"],
+                  "size": i["size"], "pattern": i["pattern"], "shocks": i["shocks"],
+                  "choice": i["choice"], "bar": m["bar"], "d": m["d"],
+                  "sigma_ep": sp[key]["sigma_ep"]}
+        r = got.get(w)
+        if r is None:
+            continue
+        for col, val in (("class", cls), ("class_v1", m["cls"]),
+                         ("class_v1", wcsv[w]["class"]), ("split", m["split"])):
+            if r[col] != val:
+                problems.append(f"reclassified {w} {col}: csv {r[col]} probe {val}")
+        if r["argmax_died"].lower() != str(dead).lower():
+            problems.append(f"reclassified {w} argmax_died: csv {r['argmax_died']} probe {dead}")
+        for col, val in (("se", se), ("noise_floor", floor), ("gain", m["gain"]),
+                         ("room", m["room"]), ("sigma_ep", sp[key]["sigma_ep"]),
+                         ("sigma_rep", sp[key]["sigma_rep"])):
+            if not close(r[col], val):
+                problems.append(f"reclassified {w} {col}: csv {r[col]} probe {val}")
+    atlas = json.loads((rdir / "atlas_v2.json").read_text())
+    if canonical_hash(atlas) != atlas.get("content_hash"):
+        problems.append("atlas_v2.json content hash does not match its body")
+    if atlas.get("format") != "atlas-v2":
+        problems.append(f"atlas_v2.json format {atlas.get('format')}")
+    src = atlas.get("reclassified_from", {})
+    ep_path = d / "artifacts" / "episodes.csv"
+    for k, path in (("episodes_sha256", ep_path if ep_path.exists() else d / "episodes.csv"),
+                    ("worlds_sha256", d / "worlds.csv")):
+        if src.get(k) != hashlib.sha256(path.read_bytes()).hexdigest():
+            problems.append(f"atlas_v2.json reclassified_from.{k} differs")
+    v1 = json.loads((d / "atlas_v1.json").read_text())
+    if src.get("atlas_v1_content_hash") != v1.get("content_hash"):
+        problems.append("atlas_v2.json reclassified_from.atlas_v1_content_hash differs")
+    for x in atlas["worlds"]:
+        w = x["record"]["world_id"]
+        if w in new and (x["confirm_class"] != new[w]["cls"] or x["class_v1"] != new[w]["v1"]
+                         or x["split"] != new[w]["split"]):
+            problems.append(f"atlas_v2.json {w} differs")
+    # summary
+    print("\n== task 5.3 reclassification (robust spread + dead-arm rule)")
+    f = lambda x: "None" if x is None else f"{x:.1f}"  # noqa: E731
+    for k, v in sp.items():
+        print(f"  {k}: sigma_ep {f(v['sigma_ep'])} (df {v['df_ep']}"
+              f"{' merged' if v['merged_ep'] else ''}) sigma_rep {f(v['sigma_rep'])} "
+              f"(df {v['df_rep']}{' merged' if v['merged_rep'] else ''})")
+    summary: dict = {"spreads": sp, "counts": {}, "flips": [], "own_spread": [], "poc_a": {}}
+    for size in (12, 42):
+        ws = [w for w in new if new[w]["size"] == size]
+        c_old, c_new = Counter(new[w]["v1"] for w in ws), Counter(new[w]["cls"] for w in ws)
+        fl = sorted(new[w]["floor"] for w in ws if math.isfinite(new[w]["floor"]))
+        fo = sorted(mine[w]["floor"] for w in ws if math.isfinite(mine[w]["floor"]))
+        summary["counts"][size] = {"pre-registered": dict(c_old), "new": dict(c_new),
+                                   "median_floor_v1": median(fo), "median_floor": median(fl)}
+        print(f"  size {size}: pre-registered {dict(c_old)} -> new {dict(c_new)}; median floor "
+              f"{median(fo):.1f} -> {median(fl):.1f}")
+    for w, x in sorted(new.items()):
+        if x["cls"] != x["v1"]:
+            why = "fixed arm died" if x["dead"] else (
+                f"gain {x['gain']:.1f} > floor {x['floor']:.1f} (was {mine[w]['floor']:.1f})")
+            summary["flips"].append({"world": w, "from": x["v1"], "to": x["cls"], "why": why,
+                                     "split": x["split"]})
+            print(f"  flip {w}: {x['v1']} -> {x['cls']} ({why}; {x['split']})")
+        if x["cls"] == "hard" and len(x["d"]) == 2:
+            own = abs(x["d"][0] - x["d"][1]) / math.sqrt(2)
+            summary["own_spread"].append({"world": w, "own": own, "sigma_ep": x["sigma_ep"],
+                                          "ratio": own / x["sigma_ep"]})
+    noisy = [y for y in summary["own_spread"] if y["ratio"] > 2]
+    print(f"  hard worlds with 2 episodes: {len(summary['own_spread'])}; own episode spread > "
+          f"2 x sigma_ep: {[(y['world'], round(y['ratio'], 2)) for y in noisy]}")
+    v1w = {w: dict(x, cls=x["v1"]) for w, x in new.items()}
+    for name, src_ in (("pre-registered", v1w), ("new", new)):
+        sample = poc_a_sample(src_, "cls")
+        summary["poc_a"][name] = [{"class": c, "world": w, "shocks": src_[w]["shocks"],
+                                   "pattern": src_[w]["pattern"], "choice": src_[w]["choice"],
+                                   "gain": src_[w]["gain"], "room": src_[w]["room"]}
+                                  for c, w in sample]
+        print(f"  PoC-A sample ({name}): " + ", ".join(
+            f"{c}:{w.removeprefix('ws-atlas-v1-')}{'*' if src_[w]['shocks'] else ''}"
+            for c, w in sample))
+    return problems, summary
 
 
 def canonical_hash(doc: dict) -> str:
@@ -395,6 +571,7 @@ def main() -> int:
     ap.add_argument("--screen", type=Path, required=True, help="EXP-0051 dir")
     ap.add_argument("--ckpt", action="append", default=[], help="producer|orderer=PATH")
     ap.add_argument("--json", type=Path)
+    ap.add_argument("--reclassified", type=Path, help="task 5.3 derived dir")
     a = ap.parse_args()
     d, sd = a.exp_dir, a.screen
     problems: list[str] = []
@@ -629,6 +806,10 @@ def main() -> int:
             print(f"  ttl {x['scope']} {x['arm']}: inputs-short share "
                   f"{x['share_inputs_short']}")
     summary["sensitivity"] = sensitivity(vals, mine, infos, table)
+    if a.reclassified:
+        p5, summary["reclassified"] = reclassified_check(a.reclassified, d, vals, mine, infos,
+                                                         wcsv)
+        problems += p5
     for w, m in mine.items():
         summary["worlds"][w] = {k: m[k] for k in ("bar_arm", "bar", "reach_arm", "reach", "gain",
                                                   "se", "floor", "ceiling", "room", "fill",

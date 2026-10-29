@@ -76,7 +76,10 @@ only on a mined sample.
   - ADR-0057 "Multi-dimension world space and headroom atlas".
 - **Atlas screen (EXP-0051)** on about 1,150 worlds (1,024 at 12 producers, 128 at 42), cheap arms
   only, and **atlas confirm (EXP-0052)** on the selected worlds with more episodes, the full
-  portable stack and the deciding check read. Together they freeze atlas v1.
+  portable stack and the deciding check read. Together they freeze atlas v1; after EXP-0052,
+  task 5.3 revises the confirm's noise floor (a robust pooled spread) and adds a dead-arm
+  collapse rule, and reclassifies EXP-0052's recorded rows offline into atlas v2, which PoC-A
+  and PoC-C read.
 - **PoC-A, teacher on a mined sample (EXP-0053).** The EXP-0042 confidence-bounded rollout search
   with the design D4 fork rule (ADR-0056) runs only on a mined 12-producer sample (hard worlds,
   where cheap arms already show headroom, and open worlds, where the ceiling leaves room no cheap

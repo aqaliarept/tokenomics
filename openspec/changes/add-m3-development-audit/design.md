@@ -165,6 +165,7 @@ routing diagnosis (1-3, EXP-0048) --> informed routing + trained trace (3.2-3.3,
         --> atlas instruments (4.1-4.6: docstring fix + deciding-check arms, bound,
             demand patterns, world space, atlas driver, calibration + timing probe)
         --> atlas screen (5.1, EXP-0051) --> atlas confirm (5.2, EXP-0052; atlas v1 frozen)
+        --> robust floor + dead-arm rule, offline reclassification (5.3; atlas v2)
         --> PoC-A code (6.1-6.3) --> PoC-A (7.1, EXP-0053)
         --> PoC-C code (8.1-8.2) --> PoC-C (9.1, EXP-0054)
 PoC-B (10.1-10.2 code, 11.1 EXP-0055): depends only on its own code
@@ -551,10 +552,13 @@ bound leaves room, does a lookahead search reach more than the best cheap arm?
   worlds it equals `d2` by construction, which a test asserts on a fixture). The world's blind arms
   and reach arms (D12) are rerun in the same driver on the same world-episodes, so the bar and the
   digests are checked in one run.
-- **Sample** (pre-registered, from atlas v1's **train** split, 12 producers only):
+- **Sample** (pre-registered, from atlas v2's **train** split (D12 "Reclassification"), 12
+  producers only):
   - 6 hard and 6 open worlds (D12 classes), in descending order of their confirm-stage gain (hard)
-    or room (open); if a class has fewer, the other fills;
-  - half of each class with shocks on, when available;
+    or room (open); if a class has fewer, the other fills (12 worlds in total);
+  - half of each class with shocks on, when available: of a class's n worlds, the best n // 2
+    shocked and the best n − n // 2 unshocked, a shortfall on either side filled by the best
+    remaining worlds of the class;
   - demand pattern cyclic, iid, drift, burst or seasonal only (D4: the moving hit and the regime
     switch carry hidden state the fork rule does not cover; recorded as a limitation);
   - 1 episode per world: the confirm stage's first episode seed.
@@ -872,19 +876,50 @@ equal demand and shock digests):
 - `noise floor` (pre-registered; a per-world standard error from 1–2 episodes has 0–1 degrees of
   freedom and cannot serve, so the spread is pooled):
   - d_{w,e} = the paired per-episode gain (reach argmax arm − bar argmax arm, replicate-averaged
-    for a stochastic arm); σ_ep(s) = the pooled within-world standard deviation of d_{w,e} over all
-    confirm worlds of stratum s = size × choice level that have ≥ 2 differing episodes (stochastic
-    demand or shocks), with df = Σ_w (n_w − 1) (≥ 30 expected: about 6–20 such worlds × 1 df per
+    for a stochastic arm); σ_ep(s) = the pooled within-world spread of d_{w,e} over all confirm
+    worlds of stratum s = size × choice level that have ≥ 2 differing episodes (stochastic demand
+    or shocks), with df = Σ_w (n_w − 1) (≥ 30 expected: about 6–20 such worlds × 1 df per
     stratum, pooled over the two regimes; strata below 30 df are merged within size, recorded);
-  - σ_rep(s) = the pooled within-episode standard deviation between the R = 2 replicates of the
-    stochastic argmax arm, when either argmax arm is stochastic (0 otherwise);
+  - σ_rep(s) = the pooled within-episode spread between the R = 2 replicates of the stochastic
+    argmax arms, when either argmax arm is stochastic (0 otherwise);
+  - **spread estimator (revised by task 5.3, after EXP-0052)**: each pool is a set of residuals
+    r = (x − x̄_g) · √(n_g / (n_g − 1)) within each group g (a world's episode gains for σ_ep, an
+    arm's replicates on one episode for σ_rep; n_g = 2 gives r = ±(x₁ − x₂) / √2, each with the
+    variance of one value), and σ = median |r| / Φ⁻¹(0.75) (Φ⁻¹(0.75) = 0.6745), the
+    normal-consistent median absolute residual (MAD). Pooling, strata, the 30-df merge, SE_w and
+    the floor are unchanged. Atlas v1 (EXP-0052 as run) used the pooled standard deviation
+    sqrt(Σ r² / df) of the same residuals; `worlds.csv` keeps both (`sigma_*` used, `sd_*`
+    reported). The screen keeps the pooled SD of EXP-0050's spreads as recorded in EXP-0051;
+    only confirm classes decide. Reasons, on statistical properties: (1) the pooled SD weights
+    each world by its squared residual, so its breakdown point is 0: one world can set every
+    floor of its stratum, which is what EXP-0052 showed (5 worlds carry 89% / 72% of the σ_ep sum
+    of squares, 69% / 87% of σ_rep's; floors 397 / 577 units against median per-world swings of
+    52 / 134); the MAD's breakdown point is 50%, so fewer than half the worlds, however wild, move
+    it only to the edge of the others; (2) its only assumption is the one the floor already
+    makes (roughly normal errors of a common scale within the stratum), with no trimming count,
+    tuning constant or model of how spread scales with volume (the alternatives considered:
+    dropping the top-k worlds needs a k; spread relative to the bar adds a scaling model and stays
+    a sum of squares; a Huber or Qn scale adds efficiency at the cost of a tuning constant or a
+    centre-free construction the paired residuals do not need; excluding worlds with a death was
+    checked and does not move σ_ep, EXP-0052 RESULT addendum); (3) the price is efficiency: about
+    37% of the pooled SD's at the normal, so 58 / 31 df act like about 21 / 11, and the
+    false-hard rate per world at 3 × SE rises from ≈ 0.2% to ≈ 0.3–0.6% (≈ 0.4 of 96 worlds,
+    before sign consistency and the 1% term). The residual risk is the opposite assumption
+    failing: when noise is genuinely heteroscedastic, a world noisier than its stratum's median
+    gets too low a floor; sign consistency in every episode and replicate is the per-world guard,
+    and the reclassification reports each hard world's own episode spread against σ_ep.
+    **Honesty note:** this revision was chosen after EXP-0052's sensitivity counts for eight
+    estimators were known (2–12 hard at 12 producers, 5–17 at 42; median-based 12 / 13). The
+    choice rests on the properties above, not on the count, and EXP-0052's addendum shows the
+    counts under the pre-registered rule and this one side by side;
   - SE_w = sqrt(σ_ep(s)² · [world has differing episodes] + σ_rep(s)² / R) / sqrt(n_w);
   - floor_w = max(3 × SE_w, 0.01 × bar). Worlds with cyclic demand, no shocks and two
     deterministic argmax arms replay identically, so their gain is exact and only the 1% term
     applies;
   - **hard additionally needs sign consistency**: the gain is positive in every episode (and, for a
     stochastic argmax arm, in each replicate) of the world.
-  - Expected false-hard rate: under a true gain of 0 and roughly normal errors with ≥ 30 pooled df,
+  - Expected false-hard rate (as pre-registered, for the pooled SD; the revised estimator's is
+    above): under a true gain of 0 and roughly normal errors with ≥ 30 pooled df,
     P(gain > 3 · SE) ≈ 0.2% per world (one-sided t), before the sign-consistency and 1% terms; over
     the 96 confirmed worlds that is ≈ 0.2 expected false-hard worlds. EXP-0050's per-episode SD of
     paired arm differences (2.6–17.5 units, review of this revision) puts 3 × SE at 6–37 units for
@@ -895,7 +930,28 @@ equal demand and shock digests):
     confirm decides.
 
 **Classes** (pre-registered, evaluated in this order):
-1. *collapse*: every arm reaches system death before cycle 50 in every episode;
+1. *collapse*: every arm reaches system death before cycle 50 in every episode; or (confirm,
+   **dead-arm rule**, task 5.3) the fixed bar or reach arm reaches system death, at any cycle, in
+   any episode or replicate. A death cuts that episode's units short, so a gain over a dying bar
+   arm measures the death, not routing, and the room under a dying bar is inflated the same way
+   (EXP-0052's 12-0435: `random_whole` dies at cycle 4 in all 4 runs, bar 0, gain +874, room 1.00,
+   while other blind arms deliver 470–790). Such a world is reported as collapse with the dying
+   arm named (`argmax_died`), never hard or open; the screen, whose argmax arms are not fixed,
+   keeps rule 1's first clause only. The rule is deliberately wider than the bar-death case that
+   motivated it (user decision 2026-10-29: "a world whose fixed bar or reach arm dies … is
+   collapse, never hard"), and the trade-off is accepted: (a) a reach-arm death does not bias
+   room (C − bar) / C, so it costs worlds that would read open (EXP-0052: 12-0312, 12-0423,
+   42-0051); it is still excluded because the open class feeds the teacher sample (D5), whose
+   readings compare the teacher with the reach arms on the same world-episodes, and a world where
+   a cheap input-aware policy can drive the economy to system death mixes routing headroom with
+   death risk that neither the gain nor the ceiling measures; (b) a late or single-replicate
+   death biases the bar by little (12-0140: one replicate at cycle 84), and the alternatives,
+   dropping the dying run or counting only deaths before cycle 50, are not taken: the first
+   changes the paired design and the replicate count per world, the second needs a cut-off
+   with no stated basis for a fixed arm, and both keep worlds whose reference arm is fragile in
+   the teacher sample. Collapse therefore has two meanings, every-arm failure (a world-design
+   problem) and a dying fixed arm (a fragile world, other arms may deliver normally); readers of
+   atlas v2 tell them apart by `argmax_died`;
 2. *saturated*: bar fill ≥ 0.95 (the registry's saturation ceiling) or bar ≥ 0.97 × C. This is
    the saturation filter: EXP-0050's 12-f4 sparse and dense-12 cells (fill 0.97–0.99) fall here by
    fill; a capacity-infeasible world (demand far above what base capacity can make) falls here by
@@ -946,6 +1002,18 @@ class changes is reported as such. EXP-0052 freezes **atlas v1**: `atlas_v1.json
 directory (content hash; per world the record of D10, screen and confirm classes, gain, room,
 noise floor, split; the run commits of EXP-0051/0052). It is never written into the package's
 registry directory.
+
+**Reclassification (task 5.3, after EXP-0052).** EXP-0052's confirm floor was dominated by a few
+worlds and one hard world had a dying fixed bar arm (DIAGNOSTICS 20, 21). The revised estimator
+and the dead-arm rule above are applied offline to EXP-0052's recorded rows (`python -m
+tokenomics.eval.atlas --mode reclassify --confirm-dir <EXP-0052> --out-dir <EXP-0052>/reclassified`;
+nothing is played, the confirm's own files and `atlas_v1.json` are not edited). It writes
+`reclassified/worlds.csv` (with the recorded `class_v1`), `deciding_check.csv`,
+`reclassify.json` (inputs' hashes, rules, counts, flips) and **atlas v2** (`atlas_v2.json`,
+format `atlas-v2`, content hash, `reclassified_from` = the hashes of `episodes.csv`,
+`worlds.csv` and atlas v1); the split, the fixed arms and the world records are atlas v1's. Every
+later reader of the atlas (PoC-A, PoC-C) reads atlas v2. A future confirm run writes
+`atlas_v2.json` directly.
 
 **Deciding check read in confirm** (EXP-0050's, pre-registered there): on hard worlds with E ≥ 4,
 `makeable_split` within the noise floor of the trained orderer on at least 2/3 of them →

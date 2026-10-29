@@ -16,9 +16,15 @@ Two modes, one EXP directory each:
   2 episodes per world (1 for cyclic demand without shocks), `random`, `random_whole` and
   `makeable_weighted_whole` at R = 2, `portable` added (reported, never an argmax). The bar and
   reach argmax arms are fixed from the screen; gain, room and the pooled noise floor (3 x SE)
-  are re-estimated and every world reclassified. Writes `deciding_check.csv` (EXP-0050's
-  deciding check) and freezes `atlas_v1.json` (content hash) into its own out dir only, never
-  into the package registry.
+  are re-estimated and every world reclassified (task 5.3 rules: the spreads are the
+  normal-consistent median absolute residual, `mad_sigma`, and a world whose fixed bar or reach
+  arm dies is collapse). Writes `deciding_check.csv` (EXP-0050's deciding check) and freezes
+  `atlas_v2.json` (content hash) into its own out dir only, never into the package registry.
+- `--mode reclassify --confirm-dir <confirm> --out-dir <derived>` (task 5.3): a recorded
+  confirm's rows classified again under the current rules, offline, into a derived directory
+  (`worlds.csv` with the recorded `class_v1`, `deciding_check.csv`, `atlas_v2.json`,
+  `reclassify.json`); the confirm's own files are never written. EXP-0052's `atlas_v1.json`
+  was frozen under the pre-registered pooled SD without the dead-arm rule.
 
 Jobs run through `routing_audit`'s job path (tracer and contract monitor on, the gate's
 replicate seeds, demand/shock digest pairing per world-episode). Each row also carries the
@@ -54,7 +60,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from statistics import fmean
+from statistics import fmean, median
 from typing import Callable, Iterable, Mapping, Sequence
 
 from .ceiling_bound import (
@@ -132,9 +138,11 @@ from ..domain.config import PATTERN_SWITCH
 DRIVER = "tokenomics.eval.atlas"
 SCREEN = "screen"
 CONFIRM = "confirm"
+RECLASSIFY = "reclassify"  # offline: a recorded confirm's rows under the current rules (5.3)
 MODES = (SCREEN, CONFIRM)
 ATLAS = "atlas-v1"  # world seeds and ids hash this name (world_space.world_seed)
-ATLAS_FILE = "atlas_v1.json"
+ATLAS_FILE = "atlas_v2.json"  # the confirm rules of task 5.3; EXP-0052's atlas_v1.json predates
+ATLAS_FORMAT = "atlas-v2"
 HORIZON = 100
 # D12 planned 1,024 at 12; task 4.6's probe put that at 10.8 pod vCPU-h, above the 10 stop,
 # so D12's reduction step 1 applies (sizing.md §EXP-0051): a 512-point Latin hypercube at 12.
@@ -169,6 +177,13 @@ COLLAPSE_CYCLE = 50
 FLOOR_SE = {SCREEN: 2.0, CONFIRM: 3.0}
 FLOOR_BAR_SHARE = 0.01
 MIN_POOLED_DF = 30
+# spread estimators (D12 "noise floor", task 5.3): the screen keeps EXP-0050's pooled SD as
+# recorded in EXP-0051; the confirm's own spreads use the normal-consistent median absolute
+# residual, robust to the few heavy-tailed worlds that carried EXP-0052's sums of squares
+POOLED_SD = "pooled_sd"
+POOLED_MAD = "pooled_mad"
+SPREAD_ESTIMATOR = {SCREEN: POOLED_SD, CONFIRM: POOLED_MAD}
+NORMAL_MAD = 0.6744897501960817  # Phi^-1(0.75): median |X| of a standard normal
 DECIDING_SHARE = 2 / 3
 DECIDING_MIN_CHOICE = 4  # hard worlds with E >= 4 producers per product
 SPLIT_SHARES = (0.2, 0.2)  # held-out, validation; the rest train
@@ -390,6 +405,7 @@ class ArmEpisode:
     units: list[float] = field(default_factory=list)
     fills: list[float | None] = field(default_factory=list)
     collapsed: list[bool] = field(default_factory=list)
+    dead: list[bool] = field(default_factory=list)  # system death at any cycle
     ttl_short: float = 0.0
     ttl_ok: float = 0.0
 
@@ -427,8 +443,9 @@ def episode_values(dicts: Iterable[Mapping[str, str]]) -> dict[str, dict[int, Ep
         ordered, fulfilled = _num(d.get("ordered_units")), _num(d.get("fulfilled_units"))
         a.fills.append(fulfilled / ordered if ordered and fulfilled is not None else None)
         cycles = _cycles(d)
-        a.collapsed.append(str(d["dead"]).lower() == "true" and cycles is not None
-                           and cycles < COLLAPSE_CYCLE)
+        dead = str(d["dead"]).lower() == "true"
+        a.dead.append(dead)
+        a.collapsed.append(dead and cycles is not None and cycles < COLLAPSE_CYCLE)
         for k, v in d.items():
             if k.startswith(TTL_PREFIX) and v not in ("", None):
                 if k.endswith("_inputs_short"):
@@ -463,6 +480,8 @@ class Measures:
     lp_base: float | None = None  # mean B_lp_base
     rep_ss: float = 0.0  # sum of squared replicate deviations of the stochastic argmax arms
     rep_df: int = 0
+    rep_resid: list[float] = field(default_factory=list)  # their scaled residuals (residuals())
+    argmax_died: bool = False  # the bar or reach argmax arm died in some episode / replicate
     arm_means: dict[str, float] = field(default_factory=dict)
 
 
@@ -497,6 +516,7 @@ def measures(world: str, episodes: Mapping[int, Episode], arms: Sequence[Mapping
     d_reps: list[list[float]] = []
     stochastic: dict[str, int] = {}
     rep_ss, rep_df = 0.0, 0
+    rep_resid: list[float] = []
     if bar_arm and reach_arm:
         for e in eps:
             r, b = episodes[e].arms[reach_arm], episodes[e].arms[bar_arm]
@@ -514,6 +534,7 @@ def measures(world: str, episodes: Mapping[int, Episode], arms: Sequence[Mapping
                     m = fmean(u)
                     rep_ss += sum((x - m) ** 2 for x in u)
                     rep_df += len(u) - 1
+                    rep_resid += residuals(u)
     ceilings, fills = [], []
     above: dict[str, int] = defaultdict(int)
     for e in eps:
@@ -537,6 +558,8 @@ def measures(world: str, episodes: Mapping[int, Episode], arms: Sequence[Mapping
     lp_bases = [episodes[e].lp_base for e in eps if episodes[e].lp_base is not None]
     collapse = bool(eps) and all(c for e in eps for a in episodes[e].arms.values()
                                  for c in a.collapsed)
+    died = any(x for s in (bar_arm, reach_arm) if s for e in eps
+               for x in episodes[e].arms[s].dead)
     return Measures(
         world=world, episodes=len(eps), bar_arm=bar_arm, bar=bar, reach_arm=reach_arm,
         reach=reach, gain=fmean(d) if d else None, d=d, d_reps=d_reps,
@@ -544,13 +567,14 @@ def measures(world: str, episodes: Mapping[int, Episode], arms: Sequence[Mapping
         base=fmean(bases) if bases else None, ceiling=ceiling, room=room, collapse=collapse,
         above_base=dict(above), stochastic=stochastic, lp=fmean(lps) if lps else None,
         lp_base=fmean(lp_bases) if lp_bases else None, rep_ss=rep_ss, rep_df=rep_df,
-        arm_means=means)
+        rep_resid=rep_resid, argmax_died=died, arm_means=means)
 
 
 @dataclass(frozen=True)
 class Spread:
     """Pooled spreads of one stratum (D12 "noise floor"); `merged_*` = pooled within size
-    because the stratum had fewer than `MIN_POOLED_DF` degrees of freedom."""
+    because the stratum had fewer than `MIN_POOLED_DF` degrees of freedom. `sigma_*` are the
+    `estimator`'s and enter the floor; `sd_*` are the pooled SDs of the same pools, reported."""
 
     sigma_ep: float | None
     df_ep: int
@@ -558,58 +582,92 @@ class Spread:
     df_rep: int
     merged_ep: bool = False
     merged_rep: bool = False
+    estimator: str = POOLED_SD
+    sd_ep: float | None = None
+    sd_rep: float | None = None
 
     def to_dict(self) -> dict:
         return {"sigma_ep": self.sigma_ep, "df_ep": self.df_ep, "sigma_rep": self.sigma_rep,
                 "df_rep": self.df_rep, "merged_ep": self.merged_ep,
-                "merged_rep": self.merged_rep}
+                "merged_rep": self.merged_rep, "estimator": self.estimator,
+                "sd_ep": self.sd_ep, "sd_rep": self.sd_rep}
 
     @classmethod
     def from_dict(cls, d: Mapping) -> Spread:
         return cls(**{k: d[k] for k in ("sigma_ep", "df_ep", "sigma_rep", "df_rep",
-                                         "merged_ep", "merged_rep")})
+                                         "merged_ep", "merged_rep")},
+                   **{k: d[k] for k in ("estimator", "sd_ep", "sd_rep") if k in d})
 
 
 def _sigma(ss: float, df: int) -> float | None:
     return math.sqrt(ss / df) if df > 0 else None
 
 
+def residuals(xs: Sequence[float]) -> list[float]:
+    """(x - mean) * sqrt(n / (n - 1)) per value: each has the variance of one value, so a pool of
+    them estimates the within-group sigma (n = 2: +-(x1 - x2) / sqrt 2)."""
+    n = len(xs)
+    if n < 2:
+        return []
+    m, k = fmean(xs), math.sqrt(n / (n - 1))
+    return [(x - m) * k for x in xs]
+
+
+def mad_sigma(resid: Sequence[float]) -> float | None:
+    """Normal-consistent median absolute residual: median |r| / Phi^-1(0.75). Its breakdown
+    point is 50%, so fewer than half the residuals, however large, cannot move it past the
+    others (task 5.3); at the normal it is about 37% efficient against the pooled SD."""
+    return median(abs(r) for r in resid) / NORMAL_MAD if resid else None
+
+
 def pooled_spreads(ms: Sequence[Measures], infos: Mapping[str, WorldInfo], *,
-                   merge_below: int = MIN_POOLED_DF) -> dict[Stratum, Spread]:
-    """sigma_ep(s): pooled within-world SD of the paired per-episode gain over the worlds of
+                   merge_below: int = MIN_POOLED_DF,
+                   estimator: str = POOLED_MAD) -> dict[Stratum, Spread]:
+    """sigma_ep(s): pooled within-world spread of the paired per-episode gain over the worlds of
     stratum s = size x choice with >= 2 differing episodes, df = sum(n_w - 1); sigma_rep(s):
-    pooled within-episode SD between the replicates of the stochastic argmax arms. A stratum
+    pooled within-episode spread between the replicates of the stochastic argmax arms. A stratum
     below `merge_below` df takes its size's pool (recorded): `MIN_POOLED_DF` in confirm (D12);
-    the screen's EXP-0050 spreads stay per size x fanout and merge only with no df at all."""
-    ep: dict[Stratum, list[float]] = defaultdict(lambda: [0.0, 0])
-    rep: dict[Stratum, list[float]] = defaultdict(lambda: [0.0, 0])
+    the screen's EXP-0050 spreads stay per size x fanout and merge only with no df at all.
+    `estimator`: `POOLED_MAD` (the confirm's, task 5.3) = `mad_sigma` of the pool's residuals;
+    `POOLED_SD` (the screen's, as recorded in EXP-0051) = sqrt(sum of squares / df)."""
+    if estimator not in (POOLED_SD, POOLED_MAD):
+        raise ValueError(f"unknown spread estimator {estimator!r}")
+    ep: dict[Stratum, list] = {}
+    rep: dict[Stratum, list] = {}
     for m in ms:
         info = infos[m.world]
         s = info.stratum
-        ep.setdefault(s, [0.0, 0])  # every stratum present gets an entry
-        rep.setdefault(s, [0.0, 0])
+        e_, r_ = ep.setdefault(s, [0.0, 0, []]), rep.setdefault(s, [0.0, 0, []])
         if info.differing and len(m.d) >= 2:
             mean = fmean(m.d)
-            ep[s][0] += sum((x - mean) ** 2 for x in m.d)
-            ep[s][1] += len(m.d) - 1
-        rep[s][0] += m.rep_ss
-        rep[s][1] += m.rep_df
+            e_[0] += sum((x - mean) ** 2 for x in m.d)
+            e_[1] += len(m.d) - 1
+            e_[2] += residuals(m.d)
+        r_[0] += m.rep_ss
+        r_[1] += m.rep_df
+        r_[2] += m.rep_resid
 
-    def by_size(pool: Mapping[Stratum, list[float]], size: int) -> tuple[float, int]:
+    def by_size(pool: Mapping[Stratum, list], size: int) -> list:
         cells = [v for k, v in pool.items() if k[0] == size]
-        return sum(v[0] for v in cells), int(sum(v[1] for v in cells))
+        return [sum(v[0] for v in cells), int(sum(v[1] for v in cells)),
+                [x for v in cells for x in v[2]]]
+
+    def spread(cell: list) -> tuple[float | None, float | None]:
+        sd = _sigma(cell[0], int(cell[1]))
+        return (sd if estimator == POOLED_SD or sd is None else mad_sigma(cell[2])), sd
 
     out: dict[Stratum, Spread] = {}
     for s in sorted(set(ep) | set(rep)):
-        (ess, edf), (rss, rdf) = ep[s], rep[s]
-        merged_ep = edf < merge_below
-        merged_rep = rdf < merge_below
+        e_, r_ = ep[s], rep[s]
+        merged_ep = e_[1] < merge_below
+        merged_rep = r_[1] < merge_below
         if merged_ep:
-            ess, edf = by_size(ep, s[0])
+            e_ = by_size(ep, s[0])
         if merged_rep:
-            rss, rdf = by_size(rep, s[0])
-        out[s] = Spread(_sigma(ess, int(edf)), int(edf), _sigma(rss, int(rdf)), int(rdf),
-                        merged_ep, merged_rep)
+            r_ = by_size(rep, s[0])
+        (se_, sde), (sr_, sdr) = spread(e_), spread(r_)
+        out[s] = Spread(se_, int(e_[1]), sr_, int(r_[1]), merged_ep, merged_rep, estimator,
+                        sde, sdr)
     return out
 
 
@@ -642,9 +700,11 @@ def sign_consistent(m: Measures) -> bool:
     return bool(m.d_reps) and all(x > 0 for reps in m.d_reps for x in reps)
 
 
-def classify(m: Measures, floor: float) -> str:
-    """D12 classes, in order: collapse, saturated, hard, open, flat."""
-    if m.collapse:
+def classify(m: Measures, floor: float, *, dead_arm: bool = False) -> str:
+    """D12 classes, in order: collapse, saturated, hard, open, flat. `dead_arm` (the confirm's
+    rule, task 5.3): a world whose fixed bar or reach arm reaches system death in any episode or
+    replicate is collapse, so a gain over a dying reference arm is never hard."""
+    if m.collapse or (dead_arm and m.argmax_died):
         return COLLAPSE
     if (m.bar_fill is not None and m.bar_fill >= SATURATION_FILL) or (
             m.bar is not None and m.bar >= SATURATION_SHARE * m.ceiling):
@@ -847,7 +907,7 @@ def provisional_spreads(dicts: Sequence[Mapping[str, str]], arms: Sequence[Mappi
     infos = exp0050_infos()
     values = episode_values(d for d in dicts if d["world"] in infos)
     ms = [measures(w, eps, arms) for w, eps in sorted(values.items())]
-    return pooled_spreads(ms, infos, merge_below=1)
+    return pooled_spreads(ms, infos, merge_below=1, estimator=SPREAD_ESTIMATOR[SCREEN])
 
 
 def anchor_rows(dicts: Sequence[Mapping[str, str]], reference: Sequence[Mapping[str, str]],
@@ -940,7 +1000,8 @@ WORLD_COLUMNS = ("world", "size", "choice", "pattern", "shocks", "anchor", "epis
                  "bar_arm", "bar", "bar_fill", "reach_arm", "reach", "gain", "b2", "b_base",
                  "b_lp", "b_lp_base",
                  "ceiling", "room", "sigma_ep", "df_ep", "merged_ep", "sigma_rep", "df_rep",
-                 "merged_rep", "se", "noise_floor", "sign_consistent", "class",
+                 "merged_rep", "estimator", "sd_ep", "sd_rep", "se", "noise_floor",
+                 "sign_consistent", "argmax_died", "class",
                  "arms_above_base", "screen_class", "class_changed", "split", "arm_units",
                  *COORDINATES)
 SELECTION_COLUMNS = ("size", "rank", "world", "class", "score_gain_over_bar", "room", "pass",
@@ -955,11 +1016,12 @@ def analyse(dicts: Sequence[Mapping[str, str]], infos: Mapping[str, WorldInfo],
             fixed: Mapping[str, tuple[str | None, str | None]] | None = None
             ) -> tuple[dict[str, Measures], dict[Stratum, Spread], list[dict]]:
     """Measures, the spreads used (the screen's provisional ones, or the confirm's pooled
-    ones) and one `worlds.csv` row per world with its floor and class."""
+    ones, `SPREAD_ESTIMATOR[mode]`) and one `worlds.csv` row per world with its floor and class
+    (the dead-arm rule in confirm)."""
     values = episode_values(dicts)
     ms = {w: measures(w, eps, arms, (fixed or {}).get(w)) for w, eps in sorted(values.items())}
     if spreads is None:
-        spreads = pooled_spreads(list(ms.values()), infos)
+        spreads = pooled_spreads(list(ms.values()), infos, estimator=SPREAD_ESTIMATOR[mode])
     rows = []
     for w, m in ms.items():
         info = infos[w]
@@ -975,7 +1037,8 @@ def analyse(dicts: Sequence[Mapping[str, str]], infos: Mapping[str, WorldInfo],
             "room": m.room,
             **({k: v for k, v in sp.to_dict().items()} if sp else {}),
             "se": se, "noise_floor": floor, "sign_consistent": sign_consistent(m),
-            "class": classify(m, floor), "arms_above_base": sum(m.above_base.values()),
+            "argmax_died": m.argmax_died,
+            "class": classify(m, floor, dead_arm=mode == CONFIRM), "arms_above_base": sum(m.above_base.values()),
             "arm_units": json.dumps(m.arm_means, sort_keys=True),
             **{c: coords.get(c) for c in COORDINATES}})
     return ms, dict(spreads), rows
@@ -1002,7 +1065,7 @@ the hard and open worlds are selected and split for the confirm stage.""",
     CONFIRM: """\
 Do the screen's selected worlds keep their class on fresh episode and replicate seeds, with the
 pooled noise floor (design D12)? Plus EXP-0050's deciding check on the hard worlds with E >= 4
-and the freeze of atlas v1.""",
+and the freeze of the atlas (`atlas_v2.json`).""",
 }
 
 RESULT_SKELETON = """# {title}
@@ -1205,6 +1268,7 @@ def run_atlas(*, mode: str, out_dir: str | Path, roster: Roster, workers: int = 
             "saturation_fill": SATURATION_FILL, "saturation_share": SATURATION_SHARE,
             "open_room": OPEN_ROOM, "collapse_cycle": COLLAPSE_CYCLE, "floor_se": FLOOR_SE,
             "floor_bar_share": FLOOR_BAR_SHARE, "min_pooled_df": MIN_POOLED_DF,
+            "spread_estimator": SPREAD_ESTIMATOR, "dead_arm_rule": CONFIRM_RULES["dead_arm"],
             "deciding_share": DECIDING_SHARE, "split_shares": SPLIT_SHARES},
         "driver_choices": {
             "two_stochastic_argmax_arms": "SE_w replicate term = sum of sigma_rep^2 / R over "
@@ -1279,7 +1343,7 @@ def run_atlas(*, mode: str, out_dir: str | Path, roster: Roster, workers: int = 
         extra = ("; `selection.csv` / `coverage.csv` (the selection and split), `anchors.csv` "
                  "(EXP-0050 reproduction)" if mode == SCREEN else
                  "; class changes against the screen; `deciding_check.csv` (EXP-0050's "
-                 "deciding check, for DIAGNOSTICS entry 19); `atlas_v1.json`")
+                 "deciding check, for DIAGNOSTICS entry 19); `atlas_v2.json`")
     if not (out / "RESULT.md").exists():
         (out / "RESULT.md").write_text(RESULT_SKELETON.format(
             title=out.name, banner=banner, status=status, mode=mode, n_rows=len(rows),
@@ -1335,33 +1399,130 @@ def _finish(mode: str, out: Path, dicts: Sequence[Mapping[str, str]],
                 "provisional_spreads": {f"{s[0]}/{s[1]}": v.to_dict()
                                         for s, v in spreads.items()},
                 "arms_above_base": above_base_summary(ms, infos)}
+    header = {
+        "screen": {k: screen_pins.get(k) for k in ("experiment", "source_commit", "spec_kind",
+                                                   "selection_sha256")},
+        "confirm": {"experiment": spec.get("experiment"), "source_commit": source["commit"],
+                    "spec_kind": spec.get("kind")}}
+    return confirm_outputs(out, dicts, infos, table, fixed, splits, screen_classes, header)
+
+
+CONFIRM_RULES = {
+    "spread_estimator": SPREAD_ESTIMATOR[CONFIRM], "floor_se": FLOOR_SE[CONFIRM],
+    "floor_bar_share": FLOOR_BAR_SHARE, "min_pooled_df": MIN_POOLED_DF,
+    "dead_arm": "collapse when the fixed bar or reach arm dies in any episode or replicate",
+}
+
+
+def confirm_outputs(out: Path, dicts: Sequence[Mapping[str, str]],
+                    infos: Mapping[str, WorldInfo], table: Sequence[Mapping],
+                    fixed: Mapping[str, tuple[str | None, str | None]],
+                    splits: Mapping[str, str], screen_classes: Mapping[str, str],
+                    header: Mapping, previous: Mapping[str, str] | None = None) -> dict:
+    """The confirm's analysis files (`worlds.csv`, `deciding_check.csv`, the atlas file) under
+    the current rules; `previous` = each world's class from an earlier classification of the
+    same rows (reclassify), written beside the new one."""
     ms, spreads, wrows = analyse(dicts, infos, table, CONFIRM, None, fixed)
     for r in wrows:
         r["screen_class"] = screen_classes.get(r["world"])
         r["class_changed"] = r["screen_class"] != r["class"]
         r["split"] = splits.get(r["world"])
-    write_csv(out / "worlds.csv", WORLD_COLUMNS, wrows)
+        if previous is not None:
+            r["class_v1"] = previous.get(r["world"])
+    columns = WORLD_COLUMNS + (("class_v1",) if previous is not None else ())
+    write_csv(out / "worlds.csv", columns, wrows)
     classes = {r["world"]: r["class"] for r in wrows}
     write_csv(out / "deciding_check.csv", DECIDING_COLUMNS,
               deciding_rows(episode_values(dicts), infos, classes, ms, spreads, table))
     atlas = {
-        "name": ATLAS, "format": "atlas-v1",
-        "screen": {k: screen_pins.get(k) for k in ("experiment", "source_commit", "spec_kind",
-                                                   "selection_sha256")},
-        "confirm": {"experiment": spec.get("experiment"), "source_commit": source["commit"],
-                    "spec_kind": spec.get("kind")},
+        "name": ATLAS, "format": ATLAS_FORMAT, **header, "rules": CONFIRM_RULES,
         "spreads": {f"{s[0]}/{s[1]}": v.to_dict() for s, v in spreads.items()},
         "worlds": [{"record": infos[r["world"]].record, "screen_class": r["screen_class"],
                     "confirm_class": r["class"], "gain": r["gain"], "room": r["room"],
                     "noise_floor": _jsonable_float(r["noise_floor"]), "split": r["split"],
-                    "bar_arm": r["bar_arm"], "reach_arm": r["reach_arm"]} for r in wrows],
+                    "bar_arm": r["bar_arm"], "reach_arm": r["reach_arm"],
+                    "argmax_died": r["argmax_died"],
+                    **({"class_v1": r["class_v1"]} if previous is not None else {})}
+                   for r in wrows],
     }
     atlas["content_hash"] = content_hash(atlas)
     (out / ATLAS_FILE).write_text(json.dumps(atlas, indent=1, sort_keys=True) + "\n")
-    return {"classes": _class_counts(wrows),
-            "class_changed": sum(bool(r["class_changed"]) for r in wrows),
-            "atlas_content_hash": atlas["content_hash"],
-            "spreads": atlas["spreads"], "arms_above_base": above_base_summary(ms, infos)}
+    result = {"classes": _class_counts(wrows),
+              "class_changed": sum(bool(r["class_changed"]) for r in wrows),
+              "atlas_content_hash": atlas["content_hash"],
+              "spreads": atlas["spreads"], "arms_above_base": above_base_summary(ms, infos)}
+    if previous is not None:
+        result["classes_v1"] = _class_counts([{"size": r["size"], "anchor": r["anchor"], "class": r["class_v1"]}
+                                              for r in wrows])
+        result["flipped"] = [{"world": r["world"], "class_v1": r["class_v1"],
+                              "class": r["class"], "argmax_died": r["argmax_died"]}
+                             for r in wrows if r["class_v1"] != r["class"]]
+    return result
+
+
+def _episodes_file(d: Path) -> Path:
+    p = d / "artifacts" / "episodes.csv"
+    p = p if p.exists() else d / "episodes.csv"
+    if p.read_bytes()[:40].startswith(b"version https://git-lfs"):
+        raise ValueError(f"{p} is a git-lfs pointer; run git lfs pull first")
+    return p
+
+
+def reclassify(confirm_dir: str | Path, out_dir: str | Path, source_commit: str | None = None,
+               log: Callable[[str], None] = print) -> int:
+    """Classify a recorded confirm's rows again under the current rules (task 5.3: the robust
+    spread estimator and the dead-arm rule), offline: reads its `spec.json`, `worlds.csv` (fixed
+    arms, split, screen and recorded classes) and `episodes.csv`, plays nothing and never writes
+    into `confirm_dir`. Writes `worlds.csv` (with `class_v1`), `deciding_check.csv`,
+    `atlas_v2.json` and `reclassify.json` (inputs' hashes, rules, counts, flips)."""
+    cdir, out = Path(confirm_dir), Path(out_dir)
+    if out.resolve() == cdir.resolve():
+        raise ValueError("reclassify writes a derived directory, never the confirm's own")
+    spec = json.loads((cdir / "spec.json").read_text())
+    pins = spec.get("pins", {})
+    if pins.get("mode") != CONFIRM or spec.get("status") != "complete":
+        raise ValueError(f"{cdir} is not a complete atlas confirm "
+                         f"({pins.get('mode')} / {spec.get('status')})")
+    if read_failures(cdir):
+        raise ValueError(f"{cdir} has contract failures; an invalid run is not reclassified")
+    episodes = _episodes_file(cdir)
+    with (cdir / "worlds.csv").open(newline="") as fh:
+        recorded = list(csv.DictReader(fh))
+    infos = {r["world_id"]: space_info(r) for r in pins["worlds"] if "world_id" in r}
+    fixed = {r["world"]: (r["bar_arm"] or None, r["reach_arm"] or None) for r in recorded}
+    splits = {r["world"]: r["split"] for r in recorded}
+    screen_classes = {r["world"]: r["screen_class"] for r in recorded}
+    previous = {r["world"]: r["class"] for r in recorded}
+    dicts = read_episode_dicts(episodes)
+    if {d["world"] for d in dicts} != set(previous) or set(previous) - set(infos):
+        raise ValueError("episodes.csv, worlds.csv and the pinned world records disagree")
+    out.mkdir(parents=True, exist_ok=True)
+    screen = pins.get("screen") or {}
+    old_atlas = cdir / "atlas_v1.json"
+    header = {
+        "screen": {k: screen.get(k) for k in ("experiment", "source_commit", "spec_kind",
+                                              "selection_sha256")},
+        "confirm": {"experiment": spec.get("experiment"),
+                    "source_commit": pins.get("source", {}).get("commit"),
+                    "spec_kind": spec.get("kind")},
+        "reclassified_from": {
+            "episodes_sha256": sha256_file(episodes),
+            "worlds_sha256": sha256_file(cdir / "worlds.csv"),
+            "atlas_v1_content_hash": (json.loads(old_atlas.read_text()).get("content_hash")
+                                      if old_atlas.exists() else None)}}
+    result = confirm_outputs(out, dicts, infos, pins["arms"], fixed, splits, screen_classes,
+                             header, previous)
+    doc = {"experiment": out.name, "driver": DRIVER, "kind": RECLASSIFY,
+           "not_an_acceptance_read": spec.get("kind") != CONFIRM,
+           **header, "rules": CONFIRM_RULES,
+           "source": {k: v for k, v in source_fingerprint(source_commit).items()
+                      if k in ("tree_sha256", "commit")},
+           "result": result}
+    (out / "reclassify.json").write_text(json.dumps(doc, indent=1, sort_keys=True,
+                                                    default=str) + "\n")
+    log(f"[atlas] reclassified {len(previous)} worlds of {cdir.name}: "
+        f"{result['classes_v1']} -> {result['classes']}")
+    return 0
 
 
 def _counts(values: Iterable[str]) -> dict[str, int]:
@@ -1391,11 +1552,12 @@ def _csv_strs(s: str | None) -> list[str] | None:
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog=f"python -m {DRIVER}", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", choices=MODES, required=True)
+    ap.add_argument("--mode", choices=MODES + (RECLASSIFY,), required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--roster", default=str(DEFAULT_ROSTER))
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--screen-dir", help="confirm: the screen's EXP dir (its selection)")
+    ap.add_argument("--confirm-dir", help="reclassify: a recorded confirm's EXP dir (read only)")
     ap.add_argument("--exp0050-episodes",
                     help="screen: EXP-0050's artifacts/episodes.csv (provisional spreads, "
                          "anchor reproduction)")
@@ -1418,6 +1580,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     help="smoke run: filters allowed, marked as not an acceptance read")
     args = ap.parse_args(argv)
     source_commit = resolve_verified_commit() if args.verify_source_commit else args.source_commit
+    if args.mode == RECLASSIFY:
+        if not args.confirm_dir:
+            ap.error("--mode reclassify needs --confirm-dir")
+        return reclassify(args.confirm_dir, args.out_dir, source_commit or None)
     try:
         return run_atlas(
             mode=args.mode, out_dir=args.out_dir, roster=load_roster(args.roster),

@@ -1,0 +1,292 @@
+{
+ "confirm": {
+  "experiment": "exp0052",
+  "source_commit": "9d442202d2184837d3f4c5408d194a6102b37042",
+  "spec_kind": "confirm"
+ },
+ "driver": "tokenomics.eval.atlas",
+ "experiment": "reclassified",
+ "kind": "reclassify",
+ "not_an_acceptance_read": false,
+ "reclassified_from": {
+  "atlas_v1_content_hash": "f241464c4bc4c605fd621e12241cf168ca51c994284b30a76f8957498c2e4d53",
+  "episodes_sha256": "0e22ddd0546da404b098045d87737550ce06d9574c66ceb58762fc14ce9a5b12",
+  "worlds_sha256": "14e9e132747e3393e06046c6fe971611e3327c92ba516a7b62dee4948791d2b4"
+ },
+ "result": {
+  "arms_above_base": {
+   "entity_planner/blend_0.5": {
+    "12/sparse_f4": 1
+   },
+   "entity_planner/makeable_split": {
+    "12/sparse_f4": 2
+   },
+   "entity_planner/makeable_weighted_whole": {
+    "12/sparse_f4": 2
+   },
+   "entity_planner/proportional": {
+    "12/sparse_f4": 2
+   },
+   "entity_planner/random": {
+    "12/sparse_f4": 2
+   },
+   "entity_planner/round_robin": {
+    "12/sparse_f4": 1
+   },
+   "entity_planner/shock_reactive": {
+    "12/sparse_f4": 2
+   },
+   "entity_planner/trained_orderer": {
+    "12/sparse_f4": 2
+   },
+   "portable": {
+    "12/sparse_f4": 2
+   }
+  },
+  "atlas_content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+  "class_changed": 50,
+  "classes": {
+   "12": {
+    "collapse": 4,
+    "flat": 0,
+    "hard": 11,
+    "open": 49,
+    "saturated": 0
+   },
+   "42": {
+    "collapse": 2,
+    "flat": 0,
+    "hard": 13,
+    "open": 17,
+    "saturated": 0
+   }
+  },
+  "classes_v1": {
+   "12": {
+    "collapse": 0,
+    "flat": 0,
+    "hard": 4,
+    "open": 60,
+    "saturated": 0
+   },
+   "42": {
+    "collapse": 0,
+    "flat": 0,
+    "hard": 10,
+    "open": 22,
+    "saturated": 0
+   }
+  },
+  "flipped": [
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0005"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0060"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0091"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0092"
+   },
+   {
+    "argmax_died": true,
+    "class": "collapse",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0140"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0176"
+   },
+   {
+    "argmax_died": true,
+    "class": "collapse",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0312"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0330"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0350"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0356"
+   },
+   {
+    "argmax_died": true,
+    "class": "collapse",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-12-0423"
+   },
+   {
+    "argmax_died": true,
+    "class": "collapse",
+    "class_v1": "hard",
+    "world": "ws-atlas-v1-12-0435"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-42-0005"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-42-0041"
+   },
+   {
+    "argmax_died": true,
+    "class": "collapse",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-42-0045"
+   },
+   {
+    "argmax_died": true,
+    "class": "collapse",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-42-0051"
+   },
+   {
+    "argmax_died": false,
+    "class": "hard",
+    "class_v1": "open",
+    "world": "ws-atlas-v1-42-0093"
+   }
+  ],
+  "spreads": {
+   "12/dense": {
+    "df_ep": 58,
+    "df_rep": 65,
+    "estimator": "pooled_mad",
+    "merged_ep": true,
+    "merged_rep": false,
+    "sd_ep": 163.91554543264883,
+    "sd_rep": 131.15923968156477,
+    "sigma_ep": 54.77670981101847,
+    "sigma_rep": 44.03103946531629
+   },
+   "12/sparse_f2": {
+    "df_ep": 58,
+    "df_rep": 46,
+    "estimator": "pooled_mad",
+    "merged_ep": true,
+    "merged_rep": false,
+    "sd_ep": 163.91554543264883,
+    "sd_rep": 90.09819522392608,
+    "sigma_ep": 54.77670981101847,
+    "sigma_rep": 72.86088673427338
+   },
+   "12/sparse_f4": {
+    "df_ep": 58,
+    "df_rep": 43,
+    "estimator": "pooled_mad",
+    "merged_ep": true,
+    "merged_rep": false,
+    "sd_ep": 163.91554543264883,
+    "sd_rep": 92.1712258989807,
+    "sigma_ep": 54.77670981101847,
+    "sigma_rep": 40.8859652177937
+   },
+   "42/dense": {
+    "df_ep": 31,
+    "df_rep": 73,
+    "estimator": "pooled_mad",
+    "merged_ep": true,
+    "merged_rep": true,
+    "sd_ep": 155.6649628052546,
+    "sd_rep": 315.0061751949617,
+    "sigma_ep": 140.4799830560091,
+    "sigma_rep": 121.60953757087356
+   },
+   "42/sparse_f14": {
+    "df_ep": 31,
+    "df_rep": 73,
+    "estimator": "pooled_mad",
+    "merged_ep": true,
+    "merged_rep": true,
+    "sd_ep": 155.6649628052546,
+    "sd_rep": 315.0061751949617,
+    "sigma_ep": 140.4799830560091,
+    "sigma_rep": 121.60953757087356
+   },
+   "42/sparse_f2": {
+    "df_ep": 31,
+    "df_rep": 73,
+    "estimator": "pooled_mad",
+    "merged_ep": true,
+    "merged_rep": true,
+    "sd_ep": 155.6649628052546,
+    "sd_rep": 315.0061751949617,
+    "sigma_ep": 140.4799830560091,
+    "sigma_rep": 121.60953757087356
+   },
+   "42/sparse_f4": {
+    "df_ep": 31,
+    "df_rep": 73,
+    "estimator": "pooled_mad",
+    "merged_ep": true,
+    "merged_rep": true,
+    "sd_ep": 155.6649628052546,
+    "sd_rep": 315.0061751949617,
+    "sigma_ep": 140.4799830560091,
+    "sigma_rep": 121.60953757087356
+   },
+   "42/sparse_f7": {
+    "df_ep": 31,
+    "df_rep": 73,
+    "estimator": "pooled_mad",
+    "merged_ep": true,
+    "merged_rep": true,
+    "sd_ep": 155.6649628052546,
+    "sd_rep": 315.0061751949617,
+    "sigma_ep": 140.4799830560091,
+    "sigma_rep": 121.60953757087356
+   }
+  }
+ },
+ "rules": {
+  "dead_arm": "collapse when the fixed bar or reach arm dies in any episode or replicate",
+  "floor_bar_share": 0.01,
+  "floor_se": 3.0,
+  "min_pooled_df": 30,
+  "spread_estimator": "pooled_mad"
+ },
+ "screen": {
+  "experiment": "exp0051",
+  "selection_sha256": "84505523d5733e35d728955ecc97e5c430a51e7d5d351db95b417452aba3d6d4",
+  "source_commit": "92f317725ca4fe02bd703b950008ee2a3cb64335",
+  "spec_kind": "screen"
+ },
+ "source": {
+  "commit": null,
+  "tree_sha256": "30c2b35274d1a6c7f8449dc8deec32aa6f0f657b45afcd444e7b428fecb30f45"
+ }
+}

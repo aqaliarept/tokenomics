@@ -12,6 +12,11 @@ cyclic demand and no shocks; 15 rows per world-episode), horizon 100. 0 contract
 
 ## In plain English
 
+> **Revised by task 5.3** (addendum below Conclusions): a robust (median-based) noise floor and
+> a dead-arm collapse rule, applied offline to these rows, give hard 11 / open 49 / collapse 4 at
+> 12 producers and hard 13 / open 17 / collapse 2 at 42 (atlas v2, `reclassified/`). The counts
+> below are the pre-registered rule's.
+
 **The question.** The screen (EXP-0051) played 640 worlds once each and labelled most of them
 *hard* (a cheap better policy beats the best simple rule by more than chance) or *open* (the
 world's ceiling leaves room nobody cheap reached), but its "more than chance" test borrowed a
@@ -413,6 +418,109 @@ values in brackets; m_split = `makeable_split`, mww = `makeable_weighted_whole`,
 - Atlas v1 is frozen (`atlas_v1.json`, `f241464c4bc4…`; split train 60 / validation 16 /
   held-out 16 / held-out-region 4). Gate registry, roster and parameters are untouched; adding
   atlas worlds to a gate is the user's decision.
+
+## Addendum (task 5.3, 2026-10-29): robust noise floor, dead-arm rule, atlas v2
+
+**What was asked.** The user's decision after this run was "fix the floor, then sample". Two
+defects were diagnosed above (DIAGNOSTICS 20 and 21): the noise floor was set by a handful of
+worlds, and one "hard" world (12-0435) was hard only because the arm it was compared against
+died. Task 5.3 changes the two classification rules and classifies this run's recorded rows again,
+offline: no episode was replayed, and the raw files (`artifacts/episodes.csv`, `worlds.csv`,
+`deciding_check.csv`, `atlas_v1.json`) are unchanged. The derived files are in
+`reclassified/` (`worlds.csv` with the old class in `class_v1`, `deciding_check.csv`,
+`atlas_v2.json`, `reclassify.json`).
+
+**The two rule changes, in plain words.**
+- *Noise floor.* The floor says how much of a gain could be luck. It is built from how much the
+  gain moves between a world's two episodes (σ_ep) and between two runs of a random arm on the
+  same episode (σ_rep), pooled over many worlds. The pre-registered rule pooled them as a
+  standard deviation, which squares every swing, so a few worlds with huge swings set the floor
+  for everyone: 5 worlds carried 89% (12 producers) and 72% (42) of σ_ep's sum of squares. The
+  new rule takes the **median** swing instead (the median absolute residual, scaled so that it
+  equals the standard deviation when the swings are normal). A median ignores how extreme the
+  wildest minority is, which is the property needed here; it costs precision (it behaves like a
+  standard deviation from about 37% as many worlds), which the design's false-alarm estimate
+  accounts for (≈ 0.3–0.6% per world instead of ≈ 0.2%). Excluding only worlds with a death was
+  checked first and does not help: σ_ep without them is 168 / 159 units against 164 / 156, because
+  the big swings are whole-episode differences, not deaths.
+- *Dead-arm rule.* Confirm compares each world against two arms fixed from the screen: the best
+  blind arm (the bar) and the best reach arm. If either of them reaches system death in any
+  episode or replicate, the world is now **collapse**, never hard or open: the dead episode's
+  units measure the death, not the routing, and a dying bar also inflates the room under the
+  ceiling. The rule is wider than the bar-death case: a dying *reach* arm does not bias the room,
+  so three worlds that read open (12-0312, 12-0423, 42-0051) are excluded on purpose (they would
+  otherwise feed the teacher sample with worlds where a cheap input-aware policy can kill the
+  economy), and a single late death counts too (12-0140, one replicate at cycle 84). "Collapse"
+  now has two meanings: every arm fails (none here), or a fixed arm dies while others may deliver
+  normally (all 6 here; `argmax_died` = true). Design D12 "Classes" states the trade-off.
+
+**Honesty note.** The robust estimator was chosen after the sensitivity counts of this run were
+known (the "median-based" row gave 12 / 13 hard worlds). It is justified in design D12 by its
+statistical properties (a 50% breakdown point against a 0% one, no tuning constant, no scaling
+model), not by the count, and both counts are shown side by side below. The pre-registered count
+stays the run's recorded result; the new one is the revised rule's reading of the same rows.
+
+**What changed.**
+- The pooled spreads shrink where outliers carried them: σ_ep 164 → 55 units at 12 producers,
+  156 → 141 at 42; σ_rep 131 / 90 / 92 → 44 / 73 / 41 at 12 (dense / f2 / f4) and 315 → 122 at 42.
+  The median floor falls from 397 to 145 units at 12 producers and from 577 to 349 at 42.
+- Counts per size, pre-registered → new:
+
+  | size | hard | open | collapse | saturated / flat |
+  |---|---|---|---|---|
+  | 12 producers | 4 → **11** | 60 → **49** | 0 → **4** | 0 / 0 |
+  | 42 producers | 10 → **13** | 22 → **17** | 0 → **2** | 0 / 0 |
+
+- **Flips at 12 producers (12 worlds).** Eight open worlds become hard because their gain now
+  clears the smaller floor: 0005 (+98 against a floor of 93; was 278), 0060 (+185 / 145; was
+  399), 0091 (+121 / 116), 0092 (+188 / 134), 0176 (+156 / 87), 0330 (+159 / 132), 0350
+  (+150 / 131), 0356 (+167 / 116); two of these are marginal (0005, 0091 within 5% of the
+  floor). Four worlds become collapse because a fixed arm died: 0435 (was hard; its bar arm
+  `random_whole` dies at cycle 4 in all 4 runs, bar 0, while `shock_reactive` delivers 656), 0140
+  (bar `random_whole` dies at cycle 84 in one replicate), 0312 (reach `makeable_weighted_whole`
+  dies at cycle 77 in one replicate) and 0423 (reach `makeable_weighted_whole` dies at cycle 13 in
+  one replicate).
+- **Flips at 42 producers (5 worlds).** Three open worlds become hard (0005 +449 against 349,
+  0041 +648 against 258, 0093 +526 against 349); two become collapse: 0045 (bar `random` dies at
+  cycles 17–23 in one replicate per episode, the death that led σ_rep) and 0051 (reach
+  `makeable_split` dies at cycle 29 in both episodes, gain −944).
+- **Where headroom is.** 12 producers: 6 dense and 5 f4 worlds, none at f2; 42 producers: 11 f14,
+  1 f7, 1 dense. The 42-producer wide-choice reading holds; at 12 producers the earlier "isolated"
+  reading came from the floor, and hard worlds now appear at dense and f4 choice with gains of
+  5–22% of the bar (12-0273, held-out, 83%).
+- **Per-world check of the new floor's assumption.** A pooled median assumes the stratum shares
+  one noise scale. On every 12-producer hard world the world's own episode-to-episode swing is at
+  most 1.1× the pooled σ_ep; at 42 producers three hard worlds swing more than 2× (0066 2.1×,
+  0076 2.1×, 0098 3.4×; all hard under the pre-registered rule too), so their margin is thinner
+  than the floor says.
+- **EXP-0050's deciding check** under the new classes (24 hard worlds with E ≥ 4): input-aware
+  weighting 5 / 24, splitting costs 15 / 24, scorer beyond target 7 / 24; still no branch at 2/3.
+- **Atlas v2** (`reclassified/atlas_v2.json`, content hash `220886a7cf12…`; `reclassified_from`
+  pins `episodes.csv` `0e22ddd0…`, `worlds.csv` `14e9e132…` and atlas v1 `f241464c…`). Split,
+  fixed arms and world records are atlas v1's. PoC-A and PoC-C read atlas v2.
+
+**PoC-A candidates** (design D5: train split, 12 producers, patterns cyclic / iid / drift / burst
+/ seasonal; 6 hard by gain + 6 open by room, the other class filling a shortfall; half of each
+class shocked when available; * = shocked):
+
+| rule | hard (by gain) | open (by room) |
+|---|---|---|
+| pre-registered (atlas v1) | 0435* (artifact), 0348 | 0111*, 0344*, 0230*, 0254*, 0436*, 0308, 0392, 0423, 0155, 0408 |
+| new (atlas v2) | 0060* (+185), 0176 (+156), 0005 (+98), 0348 (+79) | 0111* (0.77), 0344* (0.72), 0230* (0.67), 0254* (0.65), 0308 (0.66), 0392 (0.66), 0155 (0.64), 0408 (0.55) |
+
+With 4 hard train worlds at 12 producers, open worlds fill to 12 (4 hard + 8 open); only one hard
+train world has shocks, so the shocked half of the sample comes from the open class (5 of 12
+shocked). The pre-registered sample would have carried 12-0435 and 12-0423, both worlds whose
+fixed arm dies.
+
+**Verification.** `python3 openspec/changes/add-m3-development-audit/probes/exp0052_check.py
+experiments/EXP-0052-headroom-atlas-confirm --screen experiments/EXP-0051-headroom-atlas-screen
+--reclassified experiments/EXP-0052-headroom-atlas-confirm/reclassified` recomputes the spreads,
+floors, classes, flips, the atlas v2 hash and both PoC-A samples independently of
+`tokenomics.eval.atlas` and prints ALL CHECKS PASS. Command that wrote `reclassified/`:
+`python -m tokenomics.eval.atlas --mode reclassify --confirm-dir
+experiments/EXP-0052-headroom-atlas-confirm --out-dir
+experiments/EXP-0052-headroom-atlas-confirm/reclassified` (local, about 1 s).
 
 ## Details
 

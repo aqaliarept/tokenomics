@@ -89,14 +89,41 @@ by more than the noise floor and in every episode; failure of every arm SHALL NO
 - **THEN** the world is not classed hard
 
 
+### Requirement: A dying reference arm is collapse
+In the confirm stage, a world whose fixed bar arm or fixed reach arm reaches system death in any
+episode or replicate SHALL be classed collapse, never hard or open, with the dying arm recorded.
+
+#### Scenario: Fixed bar arm dies
+- **WHEN** in the confirm stage the bar arm fixed from the screen reaches system death at cycle 4
+  in every run while the reach arm and other blind arms survive, so the gain exceeds the noise
+  floor in every episode
+- **THEN** the world is classed collapse, not hard, and its record names the dying arm
+
+
 ### Requirement: Noise floor is pooled
 The noise floor SHALL be pre-registered and SHALL use a spread pooled over the episodes of many
-worlds of the same stratum, not a standard error from the world's own one or two episodes.
+worlds of the same stratum, not a standard error from the world's own one or two episodes. In the
+confirm stage the pooled spread SHALL be a robust scale estimate, the normal-consistent median
+absolute within-group residual, so that a minority of heavy-tailed worlds cannot set the floor of
+their stratum; the pooled standard deviation of the same residuals SHALL be reported beside it.
 
 #### Scenario: Two episodes that agree by chance
 - **WHEN** a world's two episodes give nearly equal gains, so their own standard error is near
   zero
 - **THEN** the noise floor still uses the pooled spread of its stratum
+
+#### Scenario: One heavy-tailed world in the pool
+- **WHEN** a stratum pools 40 worlds whose paired gains move by about 10 units between episodes
+  and one world whose gain moves by 2,000 units
+- **THEN** the pooled spread stays near that of the 40 worlds, the pooled standard deviation is
+  reported beside it, and a world of the stratum with a consistent gain of 60 units is classed
+  hard
+
+#### Scenario: Recorded confirm reclassified
+- **WHEN** a recorded confirm is classified again under revised rules
+- **THEN** nothing is played, the confirm's recorded files and frozen atlas are not edited, and the
+  derived classification records each world's previous class beside the new one and the hashes of
+  the rows it read
 
 ### Requirement: Upper bound stays above every played arm
 The offline achievable-units upper bounds SHALL be computed from the demand schedule the
