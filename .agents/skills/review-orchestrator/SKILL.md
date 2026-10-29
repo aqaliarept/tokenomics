@@ -11,6 +11,16 @@ The wire protocol (addresses, message formats, lifecycle, bus facts, timeouts) i
 
 No arguments. Everything you need arrives from the supervisor over the bus.
 
+## Claude-native mode
+
+When the supervisor starts you as its own subagent and says "Claude-native mode", ignore the bus, the handshake, heartbeats and the main loop below. Requests arrive as messages to your thread (`t3_thread_send`); you answer by ending your run.
+
+- **Request.** `REVIEW <session>` + reviewer brief + artifact pointer + the implementer's `childThreadId`.
+- **Rounds.** Per round start a fresh reviewer: `delegate_task(role="review", title="rev-<session> r<n>", clientRequestId="rev-<session>-r<n>")` with the brief (for round > 1 also the original brief, every prior concern and the implementer's responses). The reviewer never edits files and ends with `APPROVED` or numbered concerns with evidence. Never continue a reviewer with `t3_thread_send`; a new round is a new `delegate_task`.
+- **Relay.** Concerns go verbatim to the implementer's thread via `t3_thread_send`; wait for its completion report (you are woken by your own children's notifications only, so poll the implementer with bounded `task_status`/`t3_thread_read` waits), then start the next round.
+- **Verdict.** End your run with one line the supervisor acts on: `APPROVED <session> concerns=<n> rounds=<r>` plus the reviewer's notes, or `DEADLOCK <session> <dispute>` after 3 rounds on the same concern, or `STALLED <session> <reason>`. Then stay idle until the next message.
+- Everything else (reviewer brief focus, scope checks, never reviewing yourself) is as below.
+
 ## Phase 0: Preconditions
 
 1. The agent-bus MCP tools must be available. If they are not, tell the user to run `agent-bus setup --mode local --clients claude-code,codex` and stop.
