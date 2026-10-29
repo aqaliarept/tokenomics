@@ -268,13 +268,35 @@ diagnosed). On the 3 shocked, burst-demand 12-producer world-episodes of PoC-A's
 consumer orders 0.36 / 0.23 / 0.26 against 0, `wasted_units_consumer` 190 / 428 / 345 (sum 963
 of the 1,754); (b) `receiver_change_share_consumer` 0.83 / 0.46 / 0.55 against 0.94 / 0.71 /
 0.68, `rejected_bid_units_consumer_displaced` 493 / 3,489 / 2,886 against 68 / 1,346 / 1,749.
-Check (not yet run; needs a new diagnostic router, a code task): the trained orderer forced to
-route each order whole to its argmax receiver, against the trained orderer as-is and against
-`round_robin`, on these 3 world-episodes (`entity_planner` producer, routing tracer on). Branches:
-the whole version recovers most of the 1,754 units → (f), splitting is the cost, and M4's
-orderer must be able to route whole; it does not → read its `receiver_change_share_consumer`
-against `round_robin`'s: lower and losing → (b), the orderer's receiver variation is the lever;
-neither → a new cause, diagnose before M4 designs orderer training.
+Check (driver built in task 11.2, run as EXP-0056; design D13 pre-registers it):
+`python -m tokenomics.eval.teacher_audit --poc split --reference <EXP-0053> --reference
+<EXP-0054>`, a 2 × 2 over the same scorer on these 3 world-episodes (`entity_planner`, routing
+tracer on): TR the trained orderer as is, TW its scores with each order whole to the argmax, RS
+its split profile on `round_robin`'s receivers (largest part to `round_robin`'s pick), RR
+`round_robin`; `random_whole` as reference. The forced-whole arm alone does not decide: it also
+pins each stream to its argmax (lead receiver change 0 in the 11.2 dry run), and the tracer's
+`receiver_change_share` compares receiver sets, which a split order keeps. The receiver rule has
+two sides, read from each order's lead receiver (largest part): rotation over time,
+`lead_receiver_change_share_*`, and spread across concurrent orders of a product,
+`lead_concurrent_top_share_*` (the scorer tiles one score row over its slots, so its argmax
+sends them all to one producer: 1.0 for TR and TW against 0.55 for `round_robin` in the dry
+run). RS changes both sides; the columns say which one differs. Branches (`split_check.csv`; a
+change recovers the gap RR − TR on a world when its gain from TR clears 164.3 and is ≥ 2/3 of
+the gap; ≥ 2 of 3 worlds each): TW recovers it → (f), the whole-routing rule recovers the gap
+(splitting under the scorer's rule is the cost at the rule level; TW also changes realized
+rotation, so not shown to be the mechanism), and M4's orderer must be able to route whole (with
+RS too → f+b); else RS does → (b), the receiver rule is the
+lever (concurrent spread and / or rotation over time), M4's orderer must spread / rotate
+receivers; else neither single change recovers it and only both together do → `joint`, M4's
+orderer needs whole routing and spread receivers together (the interaction tells complements
+from additive halves); else the worlds disagree → `neither`, diagnose world by world; the gap
+does not clear the floor on 2 worlds → `no_gap`, EXP-0053's finding did not reproduce. The
+factors are rules held by construction (TW keeps the scorer's receiver rule, RS its split rule);
+realized rotation and splitting follow each arm's trajectory and are read from
+`manipulation.csv` as how a change worked, never as a gate. Limits: a cause outside the two rule
+changes is not detectable here; `joint` is the remainder (not proof of complements); the
+receiver factor also covers which producers are picked, so (b) / `joint` do not pin spread or
+rotation (design D13).
 
 ## 20. A world set has no headroom
 

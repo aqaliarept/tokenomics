@@ -51,6 +51,18 @@ portable producer + the `d2` teacher, B = `entity_planner` + the portable ordere
 fingerprint (`teacher_path_fingerprint`) and the T-shaping pins equal EXP-0053's, else it is
 rerun and compared with them. `attribution.csv` holds the gap G, the closures c_O / c_P, the
 interaction and the reading (`role_attribution`).
+
+`--poc split` runs the DIAGNOSTICS 19 split check (design D13, EXP-0056) on PoC-C's 3 shocked
+world-episodes, every arm with `entity_planner` and the routing tracer (no arm forks): TR = the
+trained orderer as is (PoC-C's B), TW = its scores with each order whole to the argmax, RS = its
+split profile on `round_robin`'s receivers, RR = `round_robin`, RW = `random_whole` (R as
+EXP-0053). A 2 x 2 (split profile x receiver rule) asks whether the trained orderer's shortfall
+to `round_robin` is its split rule (19 (f); a rule-level finding), its receiver rule (19 (b):
+spread across concurrent orders and / or rotation over time) or only both together (`joint`);
+`split_check.csv` holds the per-world gains, recovered shares and the pre-registered reading
+(`split_reading`).
+`--reference` (EXP-0053 / EXP-0054 directories) pairs digests (a mismatch invalidates the run)
+and compares units of the rows both played (`spec.json` `reproduction`).
 """
 
 from __future__ import annotations
@@ -91,7 +103,9 @@ from .atlas import (
     space_info,
 )
 from .ceiling_bound import lp_available
+from .baselines import Policy
 from .contract import (
+    DIGEST,
     RUN,
     ContractMonitor,
     ContractRunError,
@@ -117,8 +131,9 @@ from .gate_cli import (
     read_rows,
 )
 from .provenance import resolve_verified_commit, sha256_file, source_fingerprint
-from .roster import DEFAULT_ROSTER, JOINT_STACK, Roster, load_roster
+from .roster import DEFAULT_ROSTER, JOINT_STACK, Roster, load_roster, member_id
 from .routing_audit import (
+    EPISODE_COLUMNS,
     PORTABLE,
     PRODUCER,
     TRAINED_ORDERER,
@@ -128,13 +143,17 @@ from .routing_audit import (
     execute,
     expected_keys,
     job_config,
+    job_policies,
     load_trained_policy,
     ordering_policy,
     read_episode_dicts,
+    trace_cells,
     trained_policy,
     write_csv,
 )
 from .routing_diagnostics import DETERMINISTIC
+from .routing_trace import CONSUMER as CONSUMER_CLASS
+from .routing_trace import PRODUCER as PRODUCER_CLASS
 from .shock_profiles import SHOCKS_I_SMOKE, SMOKE_START_WINDOW
 from .world_space import (
     DRIFT,
@@ -178,7 +197,7 @@ REGISTERED_ATLAS_HASH = "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec5
 
 # PoC-C, role attribution (design D6, EXP-0054): which role's swap to the reference closes more
 # of the gap between the portable stack and the teacher stack.
-POC_A, POC_C = "a", "c"
+POC_A, POC_C, POC_SPLIT = "a", "c", "split"  # split: DIAGNOSTICS 19 check (D13)
 ROLE_S, ROLE_A, ROLE_B, ROLE_T = "S", "A", "B", "T"
 ROLE_ARMS = (ROLE_S, ROLE_A, ROLE_B, ROLE_T)
 ROLE_SUBJECT = {ROLE_S: PORTABLE, ROLE_A: "teacher/d2_portable",
@@ -1289,6 +1308,518 @@ def run_role_swap_audit(*, atlas_path: str | Path, out_dir: str | Path, prod_ckp
     return code
 
 
+# --- DIAGNOSTICS 19 split check (task 11.2, design D13, EXP-0056) ---
+#
+# Why the trained orderer trails whole-order `round_robin` on PoC-C's shocked worlds (EXP-0054:
+# 72% of G). A 2 x 2 over the same scorer: split profile (the scorer's split / whole) x receiver
+# rule (the scorer's choice / `round_robin`'s rotation); `random_whole` is a reference.
+
+SPLIT_TR, SPLIT_TW, SPLIT_RS, SPLIT_RR, SPLIT_RW = "TR", "TW", "RS", "RR", "RW"
+SPLIT_ARMS = (SPLIT_TR, SPLIT_TW, SPLIT_RS, SPLIT_RR, SPLIT_RW)
+SPLIT_FACTORIAL = (SPLIT_TR, SPLIT_TW, SPLIT_RS, SPLIT_RR)  # the arms the reading needs
+TRAINED_WHOLE, TRAINED_SPLIT_ROTATING = "trained_whole", "trained_split_rotating"
+SPLIT_ROUTER = {SPLIT_TR: TRAINED_ORDERER, SPLIT_TW: TRAINED_WHOLE,
+                SPLIT_RS: TRAINED_SPLIT_ROTATING, SPLIT_RR: FLOOR_ROUTER,
+                SPLIT_RW: "random_whole"}
+SPLIT_SUBJECT = {a: member_id(PRODUCER, r) for a, r in SPLIT_ROUTER.items()}
+SPLIT_RECOVERY = 2 / 3  # D13: share of the RR - TR gap one factor must recover on a world
+SPLIT_MIN_WORLDS = 2  # D13: of PoC-C's 3 shocked worlds
+LEAD_COLUMNS = tuple(f"lead_{m}_{c}" for c in (CONSUMER_CLASS, PRODUCER_CLASS)
+                     for m in ("receiver_change_share", "pairs", "concurrent_top_share",
+                               "concurrent_groups"))
+SPLIT_COLUMNS = EPISODE_COLUMNS + ("arm",) + LEAD_COLUMNS
+
+
+def split_arm(arm: str, roster: Roster) -> dict:
+    """TR = `entity_planner` + the trained orderer (PoC-C's B); TW = its scores, each order whole
+    to the argmax; RS = its split profile on `round_robin`'s receivers; RR / RW = the atlas
+    confirm's `round_robin` / `random_whole` arms (same R and replicate seeds as EXP-0053)."""
+    if arm == SPLIT_TR:
+        entry = _trained_entry(TRAINED_ORDERER)
+    elif arm in (SPLIT_TW, SPLIT_RS):
+        name = SPLIT_ROUTER[arm]
+        entry = {"router": name, "subject": SPLIT_SUBJECT[arm], "producing": PRODUCER,
+                 "ordering": name, "contract": JOINT_STACK, "random": False, "roster": False,
+                 "kind": DETERMINISTIC, "trained": True}
+    elif arm in (SPLIT_RR, SPLIT_RW):
+        entry = arm_table(roster, CONFIRM, [SPLIT_ROUTER[arm]])[0]
+    else:
+        raise ValueError(f"unknown split-check arm {arm!r}; known: {SPLIT_ARMS}")
+    return {**entry, "split_arm": arm}
+
+
+class LeadReceivers:
+    """Order policy wrapper (reads only) measuring the two sides of D13's receiver rule from
+    each order's *lead receiver*, the producer that receives its largest part (decoded units,
+    ties to the lowest index), for every order the policy routes through a slot:
+    - rotation over time: per stream (ordering agent, product), in (cycle, order id) order, the
+      share of consecutive pairs whose lead receiver differs (`lead_receiver_change_share_*`).
+      The routing tracer's `receiver_change_share` compares receiver *sets*, which a split
+      order keeps fixed;
+    - spread across concurrent orders: per group of orders routed in the same cycle for the same
+      product over the same eligible set (all ordering agents), the share of the group whose lead
+      receiver is the group's most common one, averaged over groups of >= 2 orders and >= 2
+      eligible producers (`lead_concurrent_top_share_*`; 1 = every concurrent order to one
+      producer; only comparable across arms: 2 orders evenly over 2 producers already score
+      0.5). The scorer tiles one score row over its slots, so its argmax sends all of them to
+      one producer."""
+
+    def __init__(self, policy: Policy) -> None:
+        self.policy = policy
+        self.last: dict[tuple[str, str], int] = {}
+        self.pairs: dict[str, int] = {CONSUMER_CLASS: 0, PRODUCER_CLASS: 0}
+        self.changes: dict[str, int] = {CONSUMER_CLASS: 0, PRODUCER_CLASS: 0}
+        # (class, cycle, product, eligible set) -> lead receiver -> orders
+        self.groups: dict[tuple[str, int, str, tuple[int, ...]], dict[int, int]] = {}
+
+    def __call__(self, env: object, agent: str) -> object:
+        import numpy as np
+
+        from ..domain.system import order_kind
+        from .routing_diagnostics import _slots, decoded_units
+        from .routing_trace import order_class
+
+        action = self.policy(env, agent)
+        sp = env.spec_  # type: ignore[attr-defined]
+        raw = np.asarray(action, dtype=np.float64).reshape(sp.k_stream, sp.num_producers)
+        for k, oid, q, elig in _slots(env, agent):  # type: ignore[arg-type]
+            if not elig or q <= 0:
+                continue
+            units = decoded_units(raw[k, elig], q)
+            lead = elig[int(np.argmax(units))]
+            order = env.system.orders[oid]  # type: ignore[attr-defined]
+            self.record(agent, order_class(order_kind(order)),
+                        int(env.system.cycle_counter),  # type: ignore[attr-defined]
+                        order.product, elig, lead)
+        return action
+
+    def record(self, agent: str, cls: str, cycle: int, product: str, elig: Sequence[int],
+               lead: int) -> None:
+        """One routed order: its stream's rotation pair, and its concurrent group (only with
+        >= 2 eligible producers: with one, every arm scores 1)."""
+        stream = (agent, product)
+        if len(elig) >= 2:
+            group = self.groups.setdefault((cls, cycle, product, tuple(elig)), {})
+            group[lead] = group.get(lead, 0) + 1
+        if stream in self.last:
+            self.pairs[cls] += 1
+            self.changes[cls] += int(lead != self.last[stream])
+        self.last[stream] = lead
+
+    def cells(self) -> dict[str, str]:
+        out = {}
+        for cls in (CONSUMER_CLASS, PRODUCER_CLASS):
+            n = self.pairs[cls]
+            out[f"lead_receiver_change_share_{cls}"] = repr(self.changes[cls] / n if n else 0.0)
+            out[f"lead_pairs_{cls}"] = str(n)
+            tops = [max(g.values()) / sum(g.values()) for (c, *_), g in self.groups.items()
+                    if c == cls and sum(g.values()) >= 2]
+            out[f"lead_concurrent_top_share_{cls}"] = repr(fmean(tops) if tops else 0.0)
+            out[f"lead_concurrent_groups_{cls}"] = str(len(tops))
+        return out
+
+
+def run_split_job(job: Job) -> dict[str, str]:
+    """One traced split-check episode (routing tracer + lead receivers; these arms never
+    fork), or its failure row."""
+    try:
+        from .gate import row_from_stats, row_to_dict
+        from .joint_stack import joint_stack_env
+        from .routing_trace import RoutingTracer
+        from .runner import run_episode
+
+        env = joint_stack_env(job_config(job), job["horizon"])
+        tracer = RoutingTracer()
+        tracer.attach(env)
+        monitor = ContractMonitor(env)
+        prod, order = job_policies(job)
+        lead = LeadReceivers(order)
+        run_episode(env, prod, lead, seed=job["episode"], action_seed=job["action_seed"],
+                    monitor=monitor)
+        stats = env.episode_stats
+        monitor.verify(dead=bool(stats["dead"]), cycles=stats["cycles"], horizon=job["horizon"])
+        row = row_to_dict(row_from_stats(job["world"], job["size"], job["regime"],
+                                         job["episode"], job["subject"], job["replicate"],
+                                         stats))
+        row.update(trace_cells(tracer))
+        row.update(lead.cells())
+        row["arm"] = job["split_arm"]
+        return row
+    except Exception as exc:  # noqa: BLE001 - recorded as the job's failure, never fatal
+        return job_failure(job, exc).to_dict()
+
+
+def one_episode_floor(atlas: Mapping, view: Mapping) -> float:
+    """The atlas's one-episode noise yardstick for a paired difference of two arms on one
+    world-episode: `floor_se` x the pooled episode spread sigma_ep of the world's size/choice
+    cell (164.3 units on PoC-C's worlds, as EXP-0053/0054 read)."""
+    cell = atlas["spreads"][f"{view['size']}/{view['choice']}"]
+    return float(atlas["rules"]["floor_se"]) * float(cell["sigma_ep"])
+
+
+def split_world(u: Mapping[str, float], floor: float) -> dict:
+    """D13's arithmetic on one world (mean units per arm): the gap RR - TR, each factor's gain
+    from TR (whole: TW - TR; receiver rule: RS - TR) and its recovered share of the gap, the
+    matched contrasts at the other factor level (RR - RS, RR - TW) with their shares, and the
+    interaction. A change *recovers the gap* on a world when the gap clears the floor and the
+    change's gain clears the floor and is at least `SPLIT_RECOVERY` of the gap. The world is
+    `joint` when the gap clears the floor and neither single change from TR recovers it: only
+    both changes together (RR) do."""
+    tr, tw, rs, rr = (u[a] for a in SPLIT_FACTORIAL)
+    gap, whole, rot = rr - tr, tw - tr, rs - tr
+    at_rot, at_whole = rr - rs, rr - tw
+    gap_ok = gap > floor
+
+    def hit(gain: float) -> bool:
+        return gap_ok and gain > floor and gain >= SPLIT_RECOVERY * gap
+
+    def share(gain: float) -> float | None:
+        return gain / gap if gap > 0 else None
+
+    return {"floor": floor, **{a: u.get(a) for a in SPLIT_ARMS}, "gap": gap,
+            "gap_clears": gap_ok, "whole_gain": whole, "rotation_gain": rot,
+            "whole_recovery": share(whole), "rotation_recovery": share(rot),
+            "split_cost_at_rotation": at_rot, "receiver_gain_whole": at_whole,
+            "split_cost_at_rotation_share": share(at_rot),
+            "receiver_gain_whole_share": share(at_whole),
+            "interaction": tr - tw - rs + rr, "whole_recovers": hit(whole),
+            "rotation_recovers": hit(rot),
+            "joint": gap_ok and not hit(whole) and not hit(rot)}
+
+
+def split_reading(worlds: Sequence[Mapping]) -> str:
+    """D13's pre-registered reading over the per-world rows (>= 2 of the 3 worlds each):
+    `no_gap` when the trained orderer does not trail `round_robin` beyond the floor; `f`
+    (whole-routing rule; not the mechanism, D13 limit (iii)) when the whole variant recovers
+    the gap, `f+b` when the receiver-rule contrast also does; `b` (receiver rule) when only it
+    does; `joint` when on >= 2 worlds neither single change recovers the gap and only both
+    together do (M4's orderer needs whole routing and round_robin-like receivers; the
+    interaction tells complements from additive halves); `neither` when the worlds disagree (no
+    pattern on >= 2 worlds): diagnose further before M4 designs orderer training."""
+    n = {k: sum(bool(w[k]) for w in worlds)
+         for k in ("gap_clears", "whole_recovers", "rotation_recovers", "joint")}
+    if n["gap_clears"] < SPLIT_MIN_WORLDS:
+        return "no_gap"
+    f, b, j = (n[k] >= SPLIT_MIN_WORLDS for k in ("whole_recovers", "rotation_recovers", "joint"))
+    return ("f+b" if f and b else "f" if f else "b" if b else "joint" if j else "neither")
+
+
+SPLIT_CHECK_COLUMNS = ("scope", "world", "worlds", "floor", *SPLIT_ARMS, "gap", "gap_clears",
+                       "whole_gain", "rotation_gain", "whole_recovery", "rotation_recovery",
+                       "split_cost_at_rotation", "receiver_gain_whole",
+                       "split_cost_at_rotation_share", "receiver_gain_whole_share",
+                       "interaction", "whole_recovers", "rotation_recovers", "joint", "reading",
+                       "missing_arms")
+
+
+def split_check_rows(dicts: Sequence[Mapping[str, str]], floors: Mapping[str, float]
+                     ) -> list[dict]:
+    """One `world` row per world with every factorial arm, then the `all` row: sums over those
+    worlds, the counts and the reading (`incomplete` when a world lacks a factorial arm)."""
+    by_subject = {s: a for a, s in SPLIT_SUBJECT.items()}
+    acc: dict[str, dict[str, list[float]]] = {}
+    for d in dicts:
+        arm = by_subject.get(d["subject"])
+        if arm is not None and d["world"] in floors:
+            acc.setdefault(d["world"], {}).setdefault(arm, []).append(float(d["units"]))
+    units = {w: {a: fmean(v) for a, v in arms.items()} for w, arms in acc.items()}
+    missing = sorted({f"{w}:{a}" for w in floors for a in SPLIT_FACTORIAL
+                      if a not in units.get(w, {})})
+    rows = [{"scope": "world", "world": w, "worlds": 1, **split_world(units[w], floors[w])}
+            for w in sorted(floors) if all(a in units.get(w, {}) for a in SPLIT_FACTORIAL)]
+    total = {"scope": "all", "world": "", "worlds": len(rows),
+             "missing_arms": ",".join(missing),
+             **{k: sum(r[k] for r in rows) if rows else None
+                for k in (*SPLIT_FACTORIAL, "gap", "whole_gain", "rotation_gain",
+                          "split_cost_at_rotation", "receiver_gain_whole", "interaction")},
+             **{k: sum(bool(r[k]) for r in rows)
+                for k in ("gap_clears", "whole_recovers", "rotation_recovers", "joint")},
+             "reading": "incomplete" if missing else split_reading(rows)}
+    return rows + [total]
+
+
+# Realized factor levels (D13 "Realized levels"): the rule each contrast holds is held by
+# construction (tested); these are the outcomes of the arms' trajectories, reported next to TR's.
+REALIZED_MEASURES = ("trace_split_share_consumer", "trace_split_degree_consumer",
+                     "lead_concurrent_top_share_consumer", "lead_receiver_change_share_consumer")
+HELD_RULE = {SPLIT_TW: "receiver rule (scorer argmax)", SPLIT_RS: "split rule (scorer profile)"}
+MANIPULATION_COLUMNS = ("world", "arm", "held_by_construction", "replicates",
+                        *REALIZED_MEASURES, *(f"d_{m}" for m in REALIZED_MEASURES))
+
+
+def manipulation_rows(dicts: Sequence[Mapping[str, str]]) -> list[dict]:
+    """Per world and arm, the realized split and receiver measures (mean over replicates) and
+    their difference from TR's. Never gates and never changes the reading (D13): TW keeps the
+    scorer's receiver *rule* and RS its split *rule*; how often receivers rotate or orders split
+    then follows from each arm's own trajectory and is reported as how the change worked."""
+    by_subject = {s: a for a, s in SPLIT_SUBJECT.items()}
+    acc: dict[tuple[str, str], list[Mapping[str, str]]] = {}
+    for d in dicts:
+        arm = by_subject.get(d["subject"])
+        if arm is not None:
+            acc.setdefault((d["world"], arm), []).append(d)
+    means = {k: {m: fmean(float(d[m]) for d in ds) for m in REALIZED_MEASURES}
+             for k, ds in acc.items()}
+    rows = []
+    for (world, arm) in sorted(means, key=lambda k: (k[0], SPLIT_ARMS.index(k[1]))):
+        tr = means.get((world, SPLIT_TR))
+        rows.append({"world": world, "arm": arm, "held_by_construction": HELD_RULE.get(arm, ""),
+                     "replicates": len(acc[(world, arm)]), **means[(world, arm)],
+                     **{f"d_{m}": means[(world, arm)][m] - tr[m] if tr else None
+                        for m in REALIZED_MEASURES}})
+    return rows
+
+
+def reference_pairing(dicts: Sequence[Mapping[str, str]], references: Mapping[str, Path]
+                      ) -> tuple[list[dict], list[str]]:
+    """Against each reference run (EXP-0053 / EXP-0054 directory): the digest pairing of every
+    sampled world-episode (a world-episode the reference lacks, or a demand / shock digest that
+    differs, is a problem: the run is invalid) and, per row whose (world, episode, subject,
+    replicate) the reference also played, the units of both (reported: deterministic arms on an
+    unchanged path reproduce)."""
+    problems: list[str] = []
+    units: list[dict] = []
+    for name, src in references.items():
+        with _source_rows(src).open(newline="") as fh:
+            ref = list(csv.DictReader(fh))
+        digests: dict[tuple[str, int], set[tuple[str, str]]] = {}
+        for d in ref:
+            digests.setdefault((d["world"], int(d["episode"])), set()).add(
+                (d["demand_digest"], d.get("shock_digest", "")))
+        keyed = {(d["world"], int(d["episode"]), d["subject"], int(d["replicate"])): d
+                 for d in ref}
+        for where in sorted({(d["world"], int(d["episode"])) for d in dicts}):
+            if where not in digests:
+                problems.append(f"{name}: no row of {where[0]} episode {where[1]}")
+            elif len(digests[where]) > 1:
+                problems.append(f"{name}: its rows of {where[0]} episode {where[1]} disagree "
+                                "on digests")
+        for d in dicts:
+            where = (d["world"], int(d["episode"]))
+            mine = (d["demand_digest"], d.get("shock_digest", ""))
+            if where in digests and mine not in digests[where]:
+                problems.append(f"{name}: {where[0]} episode {where[1]} {d['subject']} "
+                                f"r{d['replicate']} digests differ from the reference's")
+            other = keyed.get((*where, d["subject"], int(d["replicate"])))
+            if other is not None:
+                units.append({"reference": name, "world": where[0], "episode": where[1],
+                              "subject": d["subject"], "replicate": int(d["replicate"]),
+                              "units": float(d["units"]), "reference_units":
+                              float(other["units"]),
+                              "equal": float(d["units"]) == float(other["units"])})
+    return units, problems
+
+
+SPLIT_QUESTION = ("On PoC-C's three shocked atlas worlds, why does the trained orderer trail "
+                  "whole-order `round_robin` (EXP-0054: 72% of the portable stack's gap)? Is "
+                  "it splitting (DIAGNOSTICS 19 (f)) or its receiver choice / rotation (19 (b))? "
+                  "(design D13)")
+SPLIT_RESULT_SKELETON = """# {title}
+
+{banner}**Status: {status}.** Not an acceptance read. {n_rows} episode rows over {n_worlds}
+shocked world-episodes, arms {arms} (TR = `entity_planner` + trained orderer, TW = the same
+scores with every order whole to the argmax, RS = the trained split profile on `round_robin`'s
+receivers, RR = `round_robin`, RW = `random_whole`), horizon {horizon}. Produced by
+`python -m {driver} --poc split` (see `spec.json`).
+
+## Question
+
+{question}
+
+## Result
+
+TODO: first the realized levels per world (`manipulation.csv`: RS's split share and degree and
+TW's lead-receiver columns against TR's; reported as how each change worked, never a gate, D13),
+then the plain-English reading of
+`split_check.csv` per D13, restating its limits (an outside cause is not detectable; `joint` is
+the remainder, not evidence of complements; the receiver factor includes which producers are
+picked; (f) is about the whole-routing rule, not proof that incomplete split orders are the
+mechanism): the gap RR - TR per world; the whole
+variant's gain TW - TR and the rotation contrast's RS - TR, each as a share of the gap, against
+the one-episode floor; the matched contrasts RR - RS (splitting at `round_robin`'s rotation) and
+RR - TW (receiver rule with whole orders); the interaction; the trace columns (split share,
+`receiver_change_share_*`, `lead_receiver_change_share_*` (rotation over time),
+`lead_concurrent_top_share_*` (spread across concurrent orders), TTL losses by input stock); the
+reproduction of EXP-0053 / EXP-0054 rows (`spec.json`).
+
+## Conclusions
+
+TODO.
+"""
+
+
+def split_check_problems(*, atlas: Mapping, roster: Roster, horizon: int, source_commit: str,
+                         orderer_sha: str, references: Mapping[str, Path],
+                         filters: Mapping[str, object]) -> list[str]:
+    problems = [msg for bad, msg in (
+        (atlas.get("content_hash") != REGISTERED_ATLAS_HASH,
+         f"atlas {str(atlas.get('content_hash'))[:12]} is not the registered EXP-0052 "
+         f"reclassified atlas {REGISTERED_ATLAS_HASH[:12]}"),
+        (not roster.frozen, f"roster {roster.version[:12]} is not frozen"),
+        (not _is_commit(source_commit),
+         "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
+        (horizon != HORIZON, f"horizon {horizon} != {HORIZON}"),
+        (orderer_sha != ROLE_CHECKPOINTS["orderer"],
+         f"orderer checkpoint {orderer_sha[:12]} is not the registered "
+         f"{ROLE_CHECKPOINTS['orderer'][:12]}"),
+        (not references, "no --reference run (EXP-0053 / EXP-0054) to pair digests with"),
+    ) if bad]
+    problems += [f"--{k.replace('_', '-')} is set" for k, v in filters.items() if v is not None]
+    return problems
+
+
+def run_split_check(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckpt: str,
+                    roster: Roster, workers: int = 1, horizon: int = HORIZON,
+                    worlds: Sequence[str] | None = None, max_worlds: int | None = None,
+                    arms: Sequence[str] | None = None, shock_profile: str | None = None,
+                    references: Sequence[str | Path] = (), source_commit: str = "",
+                    dry_run: bool = False,
+                    run_job_fn: Callable[[Job], dict[str, str]] = run_split_job,
+                    log: Callable[[str], None] = print) -> int:
+    """Run (or resume) D13's split check into `out_dir`; return the exit status (0, or
+    `CONTRACT_INVALID` on contract failures, a digest mismatch within the run or against a
+    reference, or missing rows)."""
+    if shock_profile not in (None, SHOCKS_I_SMOKE):
+        raise ValueError(f"--shock-profile takes {SHOCKS_I_SMOKE} only (a dry run's window)")
+    chosen_arms = tuple(arms) if arms is not None else SPLIT_ARMS
+    if set(chosen_arms) - set(SPLIT_ARMS):
+        raise ValueError(f"unknown split-check arms {sorted(set(chosen_arms) - set(SPLIT_ARMS))}"
+                         f"; known: {SPLIT_ARMS}")
+    atlas_path = Path(atlas_path)
+    atlas = load_atlas(atlas_path)
+    views = {v["world"]: v for v in map(world_view, atlas["worlds"])}
+    if worlds:
+        unknown = sorted(set(worlds) - set(views))
+        if unknown:
+            raise ValueError(f"worlds {unknown} are not in the atlas")
+        chosen = [views[w] for w in worlds]
+    else:
+        chosen = [views[w] for _, w in role_swap_sample(atlas)]
+    for v in chosen:
+        why = refusal(v) or (None if v["shocks"] else f"{v['world']} has no shocks (D13: "
+                                                       "PoC-C's shocked worlds)")
+        if why:
+            raise ValueError(f"refused: {why}")
+    chosen = chosen[:max_worlds] if max_worlds is not None else chosen
+    refs = {Path(r).name: Path(r) for r in references}
+    if len(refs) != len(list(references)):
+        raise ValueError("--reference directories must have distinct names")
+    out = Path(out_dir)
+    pin = checked_orderer(out, orderer_ckpt, log)
+    if not dry_run:
+        problems = split_check_problems(
+            atlas=atlas, roster=roster, horizon=horizon, source_commit=source_commit,
+            orderer_sha=pin["sha256"], references=refs,
+            filters={"worlds": worlds, "max_worlds": max_worlds, "arms": arms,
+                     "shock_profile": shock_profile})
+        if problems:
+            raise ValueError("not a valid split-check run (" + "; ".join(problems)
+                             + "); pass --dry-run for a smoke run")
+    checkpoints = {"orderer": pin}
+    entries = [world_entry(v, shock_profile) for v in chosen]
+    table = [split_arm(a, roster) for a in chosen_arms]
+    grid = job_grid(entries, None)
+    expected: set[Key] = set()
+    for e in entries:
+        expected |= expected_keys({e.id: grid[e.id]}, table, 1)
+    floors = {v["world"]: one_episode_floor(atlas, v) for v in chosen}
+    source = source_fingerprint(source_commit or None)
+    pins = {
+        "driver": DRIVER, "poc": POC_SPLIT, "horizon": horizon, "dry_run": dry_run,
+        "atlas": {"path": str(atlas_path), "sha256": sha256_file(atlas_path),
+                  "content_hash": atlas["content_hash"]},
+        "roster_version": roster.version, "checkpoints": {"orderer": pin["sha256"]},
+        "producer": PRODUCER, "split_arms": list(chosen_arms),
+        "split_subjects": {a: SPLIT_SUBJECT[a] for a in chosen_arms}, "arm_table": table,
+        "shock_profile": shock_profile,
+        "references": {n: str(p) for n, p in sorted(refs.items())},
+        "sample": [{"world": v["world"], "class": v["class"], "shocks": v["shocks"],
+                    "pattern": v["pattern"], "choice": v["choice"],
+                    "floor": floors[v["world"]]} for v in chosen],
+        "worlds": [v["record"] for v in chosen],
+        "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
+        "grid": grid,
+    }
+    old_spec, done = _prepare_resume(out, pins, grid, expected)
+    spec = _open_spec(out, old_spec, workers, {
+        "experiment": out.name, "driver": DRIVER, "kind": "dry-run" if dry_run else "audit",
+        "acceptance_read": False, "pins": pins, "inputs": checkpoints, "source": source,
+        "pre_registered": {
+            "sample": "D13: PoC-C's sample (the shocked worlds of PoC-A's sample as run, D5 "
+                      "step 2), the confirm's first seed, 1 episode per world",
+            "arms": {SPLIT_TR: "entity_planner + trained orderer (as is)",
+                     SPLIT_TW: "the same scores, each order whole to the argmax eligible "
+                               "producer",
+                     SPLIT_RS: "the trained split profile (decoded units, largest first) on "
+                               "round_robin's receivers in its rotation order",
+                     SPLIT_RR: "entity_planner + round_robin",
+                     SPLIT_RW: "entity_planner + random_whole (reference, R as EXP-0053)"},
+            "floor": "atlas floor_se x sigma_ep of the world's size/choice cell (one episode)",
+            "recovery": SPLIT_RECOVERY, "min_worlds": SPLIT_MIN_WORLDS,
+            "reading": "gap = RR - TR clears the floor on < 2 worlds -> no_gap; TW - TR clears "
+                       "the floor and >= 2/3 of the gap on >= 2 worlds -> f (with RS - TR "
+                       "likewise -> f+b); else RS - TR does -> b; else on >= 2 worlds neither "
+                       "single change does (only both together) -> joint; else neither (worlds "
+                       "disagree, diagnose further)",
+            "thresholds_fixed": "before any horizon-100 TW / RS data; only the horizon-12 dry "
+                                "run's lead-receiver columns were seen (task 11.2)",
+            "realized_levels": "manipulation.csv reports each arm's realized split and receiver "
+                               "measures against TR's; it never gates and never changes the "
+                               "reading or the world count: TW holds the scorer's receiver "
+                               "rule and RS its split rule by construction"},
+    })
+    ensure_failures_file(out)
+    jobs = build_jobs(entries, table, 1, horizon, None, checkpoints)
+    by_subject = {a["subject"]: a for a in table}
+    for j in jobs:
+        j["split_arm"] = by_subject[j["subject"]]["split_arm"]
+    if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
+        raise AssertionError("job list and pinned grid disagree")  # internal invariant
+    episodes = out / "episodes.csv"
+    done_keys = {job_key(r.world, r.episode, r.subject, r.replicate) for r in done}
+    execute(out, spec, done_keys, read_episode_dicts(episodes), jobs, workers, run_job_fn, log,
+            columns=SPLIT_COLUMNS)
+    rows = read_rows(episodes)
+    check_rows(rows, grid, expected, complete=False)
+    missing = expected - {job_key(r.world, r.episode, r.subject, r.replicate) for r in rows}
+    dicts = read_episode_dicts(episodes)
+    reproduction, pairing = reference_pairing(dicts, refs)
+    recorded = {f["message"] for f in read_failures(out)}
+    for msg in pairing:
+        if msg not in recorded:
+            append_failure(out, run_failure(DIGEST, ValueError(msg)))
+            log(f"[teacher_audit] {DIGEST} {msg}")
+    spec["reproduction"] = reproduction
+    check = split_check_rows(dicts, floors)
+    write_csv(out / "split_check.csv", SPLIT_CHECK_COLUMNS, check)
+    write_csv(out / "manipulation.csv", MANIPULATION_COLUMNS, manipulation_rows(dicts))
+    failures = read_failures(out)
+    if failures or missing:
+        spec["status"] = INVALID
+        spec["result"] = {"status": INVALID, "contract_failures": len(failures),
+                          "missing_rows": len(missing)}
+        status = f"INVALID ({len(failures)} contract failure(s), {len(missing)} missing row(s))"
+        code = CONTRACT_INVALID
+    else:
+        spec["status"] = "complete"
+        spec["result"] = {"status": "complete", "rows": len(rows), "contract_failures": 0,
+                          "acceptance_read": False, "split_check": check[-1],
+                          "reproduced": sum(r["equal"] for r in reproduction),
+                          "compared": len(reproduction)}
+        status = "complete"
+        code = 0
+    _write_spec(out, spec)
+    if not (out / "RESULT.md").exists():
+        (out / "RESULT.md").write_text(SPLIT_RESULT_SKELETON.format(
+            title=out.name, banner=DRY_BANNER if dry_run else "", status=status,
+            n_rows=len(rows), n_worlds=sum(len(g["episodes"]) for g in grid.values()),
+            arms=", ".join(chosen_arms), horizon=horizon, driver=DRIVER,
+            question=SPLIT_QUESTION))
+    log(f"[teacher_audit] split check {'DRY RUN ' if dry_run else ''}{status}"
+        + (f", reading {check[-1]['reading']}" if code == 0 else ""))
+    return code
+
+
 def _csv_strs(s: str | None) -> list[str] | None:
     return None if s is None else [x for x in s.split(",") if x]
 
@@ -1296,13 +1827,17 @@ def _csv_strs(s: str | None) -> list[str] | None:
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--atlas", required=True, help="atlas_v2.json (EXP-0052 reclassified)")
-    p.add_argument("--poc", choices=(POC_A, POC_C), default=POC_A,
+    p.add_argument("--poc", choices=(POC_A, POC_C, POC_SPLIT), default=POC_A,
                    help="a = PoC-A teacher audit (EXP-0053, D5); c = PoC-C role-swap arms "
-                        "S, A, B, T and attribution (EXP-0054, D6)")
+                        "S, A, B, T and attribution (EXP-0054, D6); split = the DIAGNOSTICS 19 "
+                        "split check on PoC-C's worlds (EXP-0056, D13)")
     p.add_argument("--orderer-ckpt", required=True, help="the trained orderer (EXP-0012)")
     p.add_argument("--prod-ckpt", help="PoC-C: the portable producer (EXP-0035)")
     p.add_argument("--reuse-t", help="PoC-C: EXP-0053's directory; its T rows are reused only "
                                      "when the teacher-path fingerprint matches (D6)")
+    p.add_argument("--reference", action="append", default=[],
+                   help="split: an EXP-0053 / EXP-0054 directory (spec.json + episodes.csv) to "
+                        "pair digests and compare units with; repeatable, needed in a real run")
     p.add_argument("--out-dir", required=True)
     p.add_argument("--roster", default=str(DEFAULT_ROSTER))
     p.add_argument("--workers", type=int, default=1)
@@ -1312,7 +1847,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--worlds", help="dry run: comma-separated atlas world ids")
     p.add_argument("--max-worlds", type=int, help="dry run: the first N sampled worlds")
     p.add_argument("--arms", help=f"dry run: teacher arms out of {','.join(TEACHER_ARMS)} "
-                                  f"(PoC-C: role arms out of {','.join(ROLE_ARMS)})")
+                                  f"(PoC-C: role arms out of {','.join(ROLE_ARMS)}; split: "
+                                  f"out of {','.join(SPLIT_ARMS)})")
     p.add_argument("--baseline", help="dry run: blind / reach routers to keep ('' = none)")
     p.add_argument("--replicates", type=int, help="dry run: R of every stochastic arm")
     p.add_argument("--horizon", type=int, default=HORIZON)
@@ -1323,6 +1859,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                    help="dry run: search at most N decisions per teacher episode")
     a = p.parse_args(argv)
     commit = resolve_verified_commit() if a.verify_source_commit else a.source_commit
+    if a.reference and a.poc != POC_SPLIT:
+        p.error("--reference is a split-check option (--poc split)")
+    if a.poc == POC_SPLIT:
+        for flag, v in (("--prod-ckpt", a.prod_ckpt), ("--reuse-t", a.reuse_t),
+                        ("--baseline", a.baseline), ("--replicates", a.replicates),
+                        ("--reduction", a.reduction),
+                        ("--max-search-actions", a.max_search_actions)):
+            if v is not None:
+                p.error(f"{flag} is not a split-check option (its arms and sample are fixed "
+                        "by D13; no arm searches)")
+        try:
+            return run_split_check(
+                atlas_path=a.atlas, out_dir=a.out_dir, orderer_ckpt=a.orderer_ckpt,
+                roster=load_roster(a.roster), workers=a.workers, horizon=a.horizon,
+                worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds, arms=_csv_strs(a.arms),
+                shock_profile=a.shock_profile, references=a.reference, source_commit=commit,
+                dry_run=a.dry_run)
+        except ContractRunError:
+            return CONTRACT_INVALID
     if a.poc == POC_C:
         if not a.prod_ckpt:
             p.error("--poc c needs --prod-ckpt")

@@ -103,7 +103,13 @@ from .provenance import resolve_verified_commit, sha256_file, source_fingerprint
 from .families import CALM, DENSE, DEPTH, SHOCKED, SPARSE_WIDE
 from .registry import DEFAULT_REGISTRY, DEVELOPMENT, Registry, WorldEntry, load_registry
 from .roster import DEFAULT_ROSTER, JOINT_STACK, RANDOM_POLICY, Roster, load_roster, member_id
-from .routing_diagnostics import DETERMINISTIC, DIAGNOSTIC_ROUTERS, ROUTER_KIND, STOCHASTIC
+from .routing_diagnostics import (
+    DETERMINISTIC,
+    DIAGNOSTIC_ROUTERS,
+    ROUTER_KIND,
+    STOCHASTIC,
+    TRAINED_WRAPPERS,
+)
 from .routing_trace import RoutingTracer
 from .seeding import replicate_seed
 from .shock_profiles import SHOCKS_I
@@ -418,8 +424,12 @@ def trained_policy(job: Job, role: str) -> Policy:
 def job_policies(job: Job) -> tuple[Policy, Policy]:
     prod = (trained_policy(job, "producer") if job["producing"] == PORTABLE
             else PRODUCING_BASELINES[job["producing"]])
-    order = (trained_policy(job, "orderer") if job["ordering"] == TRAINED_ORDERER
-             else ordering_policy(job["ordering"]))
+    if job["ordering"] == TRAINED_ORDERER:
+        order = trained_policy(job, "orderer")
+    elif job["ordering"] in TRAINED_WRAPPERS:  # D13: the trained orderer, routed differently
+        order = TRAINED_WRAPPERS[job["ordering"]](trained_policy(job, "orderer"))
+    else:
+        order = ordering_policy(job["ordering"])
     return prod, order
 
 

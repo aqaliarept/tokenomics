@@ -346,6 +346,42 @@ pre-registered band SHALL go to the user.
 - **WHEN** the two closures differ by less than the pre-registered band
 - **THEN** the audit records no automatic choice and the decision goes to the user
 
+### Requirement: Splitting separated from the receiver rule
+When the trained orderer trails a whole-order rotation on the role-attribution worlds, the audit
+SHALL decide between splitting and the receiver rule with a matched contrast that changes one
+factor of the same trained scores while holding the other at its trained level. A factor SHALL
+count only when its gain clears the one-episode noise floor and recovers most of the gap on
+most worlds.
+
+#### Scenario: Whole routing recovers the gap
+- **WHEN** routing the trained orderer's orders whole to its argmax receiver recovers at least
+  two thirds of its gap to `round_robin`, beyond the noise floor, on two of the three worlds
+- **THEN** the audit records the whole-routing rule as recovering the gap (splitting under the
+  scorer's rule is the cost, not shown to be the mechanism), and M4's orderer must be able to
+  route an order whole
+
+#### Scenario: Forced-whole variant loses its rotation
+- **WHEN** the forced-whole variant does not recover the gap but the trained split profile on
+  `round_robin`'s receivers does
+- **THEN** the audit records the receiver rule (spread across concurrent orders and / or
+  rotation over time) as the cause, not that splitting is harmless
+
+#### Scenario: Only both changes together recover the gap
+- **WHEN** on two of the worlds the gap clears the floor and neither single change recovers two
+  thirds of it
+- **THEN** the audit records that whole routing and the rotation's receivers are needed
+  together, and reports the interaction
+
+#### Scenario: Worlds disagree
+- **WHEN** no reading holds on two of the three worlds
+- **THEN** the audit records no cause and the worlds are diagnosed further before M4 designs
+  orderer training
+
+#### Scenario: Rotation contrast holds the split
+- **WHEN** the rotation contrast routes an order
+- **THEN** its parts have the sizes the trained orderer would route, the largest goes to the
+  producer `round_robin` picks, and a whole order is routed exactly as `round_robin` routes it
+
 ### Requirement: Deployed-path cost on independent axes
 The cost audit SHALL time each stage of the deployed portable path per decision. It SHALL
 vary total producers at fixed fanout, fanout at fixed total producers, and consumers per producer

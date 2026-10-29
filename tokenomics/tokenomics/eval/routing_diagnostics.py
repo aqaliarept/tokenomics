@@ -15,6 +15,10 @@ EXP-0050's deciding check adds the reach arms of the headroom atlas (add-m3-deve
 task 4.1, design D12 "Reach arms"): the portable scorer's distillation target used directly as a
 router, split (`makeable_split`) and whole (`makeable_weighted_whole`), both steered by each
 producer's `makeable_qty_now` (capacity and inputs in stock).
+DIAGNOSTICS 19's split check (task 11.2, design D13) adds two wrappers over a trained orderer
+(`TRAINED_WRAPPERS`, used through `routing_audit.job_policies`): its scores routed whole to the
+argmax (`trained_whole`), and its split profile on `round_robin`'s receivers
+(`trained_split_rotating`).
 
 They are white-box `Policy`s like `proportional` / `blend_0.5` and emit the raw ordering action
 decode reads (ADR-0025/0026). A router that wants an exact integer split (a whole order, a
@@ -34,7 +38,7 @@ from __future__ import annotations
 import hashlib
 import math
 import weakref
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -42,7 +46,7 @@ import numpy as np
 from ..domain.common import OrderId, ProducerId, Product
 from ..domain.metrics import accept_qty_now, makeable_qty_now
 from ..domain.system import order_kind
-from ..env.allocator import _allocate_int
+from ..env.allocator import _allocate_int, _softmax
 from ..env.spaces import ACTION_LOGIT_BOUND
 from .baselines import Policy, ordering_blend, ordering_proportional, random_action
 from .routing_trace import CONSUMER, PRODUCER, order_class
@@ -391,6 +395,70 @@ def ordering_makeable_weighted_whole(env: "TokenomicsAECEnv", agent: str) -> np.
         probs = made / total if total > 0 else np.full(len(elig), 1.0 / len(elig))
         mat[k, elig] = _whole(elig, int(rng.choice(len(elig), p=probs)), q)
     return _flat(mat)
+
+
+# --- DIAGNOSTICS 19 split check (task 11.2, design D13): wrappers over a trained orderer ---
+
+
+def decoded_units(scores: np.ndarray, quantity: int) -> list[int]:
+    """Integer units per eligible producer that decode makes of one slot's logits (`scores`
+    over the eligible producers, decode order): `allocate_suborders`' softmax + largest
+    remainder, so a wrapper sees exactly the split the wrapped policy would have routed."""
+    return _allocate_int(_softmax(np.asarray(scores, dtype=np.float64)), quantity)
+
+
+def _slot_scores(base: Policy, env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    sp = env.spec_
+    return np.asarray(base(env, agent), dtype=np.float64).reshape(sp.k_stream, sp.num_producers)
+
+
+def ordering_forced_whole(base: Policy) -> Policy:
+    """`base`'s scores, but each order whole to its argmax eligible producer (ties to the
+    lowest index), never split: D13's `trained_whole` (DIAGNOSTICS 19 (f))."""
+
+    def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        raw = _slot_scores(base, env, agent)
+        mat = _matrix(env)
+        for k, _, q, elig in _slots(env, agent):
+            if elig:
+                mat[k, elig] = _whole(elig, int(np.argmax(raw[k, elig])), q)
+        return _flat(mat)
+
+    return policy
+
+
+def ordering_split_rotating(base: Policy) -> Policy:
+    """`base`'s split profile on `round_robin`'s receivers: D13's `trained_split_rotating`. The
+    parts `base` would route (decoded units, largest first) go to the eligible producers in
+    `round_robin`'s rotation order, the largest to the producer `round_robin` picks this cycle.
+    It keeps the multiset of part sizes (split degree and shares) and takes the receiver rule
+    from `round_robin`; a whole order is routed exactly as `round_robin` routes it."""
+
+    def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        raw = _slot_scores(base, env, agent)
+        mat = _matrix(env)
+        cycle = env.system.cycle_counter
+        for k, _, q, elig in _slots(env, agent):
+            if elig:
+                n = len(elig)
+                profile = sorted(decoded_units(raw[k, elig], q), reverse=True)
+                start = (cycle + stable_hash(agent, k)) % n  # round_robin's pick
+                units = [0] * n
+                for i, u in enumerate(profile):
+                    units[(start + i) % n] = u
+                mat[k, elig] = split_logits(units)
+        return _flat(mat)
+
+    return policy
+
+
+# Policy wrappers over the trained orderer (`job["ordering"]` names; `routing_audit.job_policies`
+# wraps the job's orderer checkpoint). Not routers on their own: neither here nor in
+# DIAGNOSTIC_ROUTERS / ORDERING_BASELINES.
+TRAINED_WRAPPERS: dict[str, Callable[[Policy], Policy]] = {
+    "trained_whole": ordering_forced_whole,
+    "trained_split_rotating": ordering_split_rotating,
+}
 
 
 # Design D2 table (+ EXP-0049's informed routers, + the D12 deciding-check routers). Not in

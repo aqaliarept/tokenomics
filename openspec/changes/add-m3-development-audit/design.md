@@ -169,7 +169,8 @@ routing diagnosis (1-3, EXP-0048) --> informed routing + trained trace (3.2-3.3,
         --> PoC-A code (6.1-6.3) --> PoC-A (7.1, EXP-0053)
         --> PoC-C code (8.1-8.2) --> PoC-C (9.1, EXP-0054)
 PoC-B (10.1-10.2 code, 11.1 EXP-0055): depends only on its own code
-M3 exit record (12.1)
+        --> DIAGNOSTICS 19 split check (11.2 code, 11.3 EXP-0056; D13, after PoC-C)
+M3 exit record (12.1, after 11.3)
 [user, any time: roster v3 (D3); atlas families into a gate registry (D12)]
 ```
 
@@ -711,9 +712,12 @@ the implementer reports to the supervisor.
 | 0053 | PoC-A, 12 world-episodes at 12 | 6.3 | 1.5–9 (central ≈ 4, a priori) | 8 | EXP-0042 per-stream cost × D5 arithmetic |
 | 0054 | PoC-C, 6 world-episodes at 12 | 8.2 | 0.7–4.2 (central ≈ 2, a priori) | 4 | the same |
 | 0055 | PoC-B, 8 cells | 10.2 | ≤ 0.5 | 1 | DIAGNOSTICS 17 timings |
+| 0056 | DIAGNOSTICS 19 split check, 18 router episodes (D13, added 2026-10-29) | 11.2 | 0.3–0.5 | 1 | local horizon-12 timings, pod set-up (EXP-0055) |
 
 - **Planned remainder:** expected ≈ 11–31 vCPU-h, central ≈ 18; the hard stops sum to **29**,
   inside the remaining 29.2. M3 total: central ≈ 29 of 40, worst case (every stop hit) 39.8.
+  (As planned before EXP-0053. Billed through EXP-0055: ≈ 27.8, ≈ 30.6 upper; with EXP-0056's
+  added 1 vCPU-h stop, D13, the worst case is ≤ 31.6 of 40.)
 - **Needs the user's approval (not planned):** any run above its stop after its reduction order;
   a 42-producer teacher read for PoC-A or PoC-C (a priori 3–30 vCPU-h per shocked d2 episode, plus
   a profile-and-optimize task); a second batch of 42-producer atlas worlds; the roster v3
@@ -737,7 +741,8 @@ branches); EXP-0051/0052 add its "Seen in". EXP-0052 adds the deciding-check res
 Task 6.1 writes ADR-0056 (D4). New domain terms go to the CLAUDE.md Domain Language: "World
 space" and "Demand pattern" (task 4.3/4.4), "Headroom", "Atlas bar" and "Headroom atlas" (task
 4.5), "Unresolved label" (6.1), "Clairvoyant bound" (6.2), "Closure (role attribution)" (8.1).
-Probes write `sizing.md` sections in this change directory. Task 12.1 writes the M3 exit summary.
+Probes write `sizing.md` sections in this change directory. EXP-0056 (D13) adds the split check's
+result to DIAGNOSTICS entry 19. Task 12.1 writes the M3 exit summary.
 
 ### D10. World space
 
@@ -1074,6 +1079,151 @@ analytic bound before any training (a saturated world is filtered, not mined); i
 axes including demand patterns and choice, where EXP-0050 showed routing differences grow; and it
 calls a world hard only when a cheaper-than-search policy already demonstrates a gain above the
 paired noise floor (EXP-0025's lesson).
+
+### D13. DIAGNOSTICS 19 split check on PoC-C's worlds (EXP-0056)
+
+Added 2026-10-29 (user decision): before the M3 exit summary (12.1), run the discriminating
+check for EXP-0054's open finding. Root-cause rule: M4 must not design orderer training before
+the cause is known.
+
+- **Question.** On PoC-C's 3 shocked world-episodes (12-0060, 12-0111, 12-0344; burst demand,
+  `shocks-i`, the confirm's first seeds), the trained orderer (EXP-0012 scorer) with
+  `entity_planner` trails whole-order `round_robin` by 274 / 891 / 589 units (EXP-0053 rows;
+  72% of PoC-C's gap G). Is the cost **splitting** (DIAGNOSTICS 19 (f): the scorer splits
+  23–36% of consumer orders, and a split order completes only if every part does) or its
+  **receiver rule** (19 (b): it varies receivers less than `round_robin`, set change share
+  0.46–0.83 against 0.68–0.94)? EXP-0053's traces fit both. The receiver rule has two sides:
+  *spread across concurrent orders* (the scorer tiles one score row over all its slots and its
+  producer features are per product, so it sends concurrent orders of a product to the same
+  producer) and *rotation over time* within a stream.
+- **Why a matched contrast, not the single forced-whole arm.** Routing the scorer's orders
+  whole to its argmax changes two things at once: it removes splitting, and it pins every order
+  of a stream to one producer for as long as the argmax holds (in the 11.2 dry run its lead
+  receiver never changed in 12 cycles, against 0.92 for `round_robin`). A whole variant that
+  fails could therefore fail for its rotation, not because splitting is harmless. It also
+  differs from TR on only the 23–36% of consumer orders TR splits (TR routes the rest whole to
+  its argmax already). The tracer's
+  `receiver_change_share` does not separate the two either: it compares receiver *sets*, and a
+  split order sent to the same producers keeps its set. So the check is a 2 × 2 over the same
+  scorer, crossing the split profile with the receiver rule:
+
+  | | receivers by the scorer | receivers by `round_robin`'s rotation |
+  |---|---|---|
+  | the scorer's split profile | **TR** trained orderer as is | **RS** `trained_split_rotating` |
+  | whole orders | **TW** `trained_whole` | **RR** `round_robin` |
+
+  - TR = PoC-C's arm B (`entity_planner/trained_orderer`).
+  - TW = the same scores, each order whole to the argmax eligible producer (ties to the lowest
+    index); never splits.
+  - RS = the rotation contrast. For each order, the units the scorer would route (its decoded
+    split: softmax + largest remainder, as decode does), largest first, go to the eligible
+    producers in `round_robin`'s rotation order: the largest part to the producer
+    `round_robin` picks this cycle, the next to the next one. It holds the split profile fixed
+    (the multiset of part sizes, so split share and degree) and takes the receiver rule from
+    `round_robin`; on a whole order it is `round_robin` exactly. Chosen over the alternative
+    (`round_robin` with the scorer's receiver frequencies) because it holds one factor at
+    exactly the trained level instead of matching a marginal statistic, and it completes the
+    2 × 2 with arms that exist.
+  - RR = `round_robin`; RW = `random_whole` (reference only, R = 2 with the confirm's replicate
+    seeds, as EXP-0053).
+  - The receiver-rule factor (scorer → `round_robin`) changes both sides at once: RS spreads
+    concurrent orders (`round_robin`'s pick depends on the slot) and rotates them over time. The
+    check does not separate the two; the manipulation columns show which side the arms differ
+    on.
+  - Each factor is read at both levels of the other: splitting costs RR − RS at `round_robin`'s
+    rotation and TW − TR at the scorer's receivers; the receiver rule is worth RS − TR at the
+    trained split and RR − TW with whole orders; interaction TR − TW − RS + RR.
+  - Manipulation check, from each order's *lead receiver* (the producer receiving its largest
+    part): rotation over time, `lead_receiver_change_share_*` (per stream, consecutive pairs
+    whose lead receiver differs); spread across concurrent orders,
+    `lead_concurrent_top_share_*` (per cycle × product × eligible set with ≥ 2 orders, the
+    share sent to the group's most common lead receiver; 1 = all to one producer). Next to the
+    tracer's split share, set change share and TTL losses by input stock. Every arm runs traced:
+    none forks (DIAGNOSTICS 22 does not apply). 11.2 dry run (12-0060, horizon 12; realized
+    outcomes of each arm's trajectory, not held levels): concurrent top share TR 1.0, TW 1.0,
+    RS 0.63, RR 0.55; lead change TR 0.44, TW 0.0, RS 0.78, RR 0.92.
+- **Noise yardstick.** Each arm is played once per world (deterministic; RW's two replicates
+  are averaged), so a difference between two arms on one world counts when it exceeds the
+  atlas's one-episode floor 3 σ_ep = **164.3** units (atlas v2 `floor_se` × σ_ep of the 12/f2
+  and 12/f4 cells, 54.8; the yardstick EXP-0053 and EXP-0054 read). The atlas's per-world floors
+  for a 2-episode mean (145.0 / 159.5 / 159.5) are reported alongside.
+- **Pre-registered reading** (per world w, gap_w = RR − TR; X = 2/3):
+  - a factor *recovers the gap* on w when gap_w > 164.3, its gain from TR (TW − TR for
+    splitting, RS − TR for the receiver rule) > 164.3, and the gain ≥ X · gap_w;
+  - gap_w > 164.3 on fewer than 2 worlds → **no_gap**: EXP-0053's finding did not reproduce;
+    diagnose that first;
+  - TW recovers the gap on ≥ 2 of 3 worlds → **(f) whole-routing rule**: routing whole to
+    the scorer's argmax recovers the gap, i.e. splitting under the scorer's rule is the cost
+    at the rule level (limit (iii): not that incomplete split orders are the mechanism); M4's
+    orderer must be able to route whole (a whole-order rule is a roster v3 candidate, D3); if
+    RS also recovers it on ≥ 2 worlds the reading is **f+b** (either rule change closes it);
+  - else RS recovers it on ≥ 2 of 3 worlds → **(b) receiver rule**: how the scorer picks
+    receivers is the lever, not its split rule; M4's orderer must spread concurrent orders across
+    producers and / or rotate them over time (the two manipulation columns say which side TR
+    differs from RS on; the check itself does not separate them);
+  - else, on ≥ 2 worlds the gap clears the floor and neither single change recovers it →
+    **joint**: only both changes together (whole orders *and* `round_robin`'s receivers, i.e.
+    RR) close it; M4's orderer needs both. The interaction TR − TW − RS + RR tells complements
+    (positive: each change pays only once the other is made, e.g. TW ≤ TR, RS ≈ TR) from additive
+    partial halves (≈ 0); RR − RS and RR − TW, each as a share of the gap, are reported;
+  - else → **neither**: the worlds disagree (no pattern on ≥ 2 worlds); diagnose further, world
+    by world, before M4 designs orderer training. The matched contrasts and the interaction are
+    reported in every case.
+  - **The factors are rules; realized levels are outcomes (review round 3).** Each contrast
+    holds one factor *as a rule*, by construction and tested: TW keeps the scorer's receiver
+    rule (its argmax over the scores it computes from the state it sees) and changes only the
+    split; RS keeps the scorer's split rule (its decoded profile) and changes only the
+    receivers. How often receivers then rotate, or orders split, is not held and is not
+    expected to be: the scorer reads the state, and the changed factor changes the state.
+    Evidence (reviewer's `ties.py`, 12-0060, horizon 12, consumer orders): in TR the scorer's
+    argmax itself changes on 45 of 108 consecutive pairs, in TW on 0 of 77; whole routing
+    changes the states the same rule answers. A tolerance on realized rotation would therefore
+    mark TW "drifted" on likely every world and remove branch (f) by construction, testing
+    something no rule-level factor can hold. It is also the wrong level for M4, which chooses
+    rules (route whole or not; pick receivers like the scorer or like a rotation) and gets their
+    realized consequences with them. So: no tolerance, no drift flag; the driver writes
+    `manipulation.csv` (per world and arm: realized split share and degree, concurrent top
+    share and lead change, each with its difference from TR's), which RESULT reports before the
+    reading as *how* each change worked. Pre-registered: it never gates, never changes a world's
+    branch or the ≥ 2-world count.
+  - **Limits the RESULT must restate.** (o) A cause outside the two rule changes is not
+    detectable by this design: every gap is split between the two rules and their interaction;
+    `manipulation.csv` describes mechanisms, it does not test for an outside cause.
+    (i) `joint` is the remainder: whenever the gap clears
+    and no single change recovers it, the world is joint by construction, so the branch is not
+    separate evidence that the two changes are complements; only the interaction's sign and
+    size speak to that. (ii) The "receiver rule" factor is every way `round_robin`'s receivers
+    differ from the scorer's: concurrent spread and rotation over time, but also *which*
+    producers get orders (e.g. the capacity or makeable-stock profile of the scorer's picks).
+    (b) and `joint` therefore do not pin the cause to spread or rotation; the lead-receiver
+    columns describe the difference, they do not isolate it. (iii) (f) is a finding about the
+    whole-routing rule with the scorer's argmax. TW also changes realized rotation and
+    concurrency (its argmax never moved in the dry run), so (f) does not show that splitting
+    per se (incomplete split orders) is the mechanism; `manipulation.csv` and the trace's
+    wasted and TTL units describe it. Symmetrically, RS's realized splitting follows its own
+    trajectory, so (b) is a finding about the receiver rule, not about realized splitting.
+  - X = 2/3 because "most of the gap" must leave at most a third to the other factor and the
+    interaction; 2 of 3 worlds as D5/D6's per-world majority.
+  - The thresholds, branches and floor were fixed in task 11.2 before any horizon-100 TW or RS
+    data existed; the only TW / RS data seen were the horizon-12 dry run's units and
+    lead-receiver columns on 12-0060 (above), which carry no gap at that horizon.
+- **Pairing.** Same world-episodes, seeds and demand + shock digests as EXP-0053 and EXP-0054
+  (`--reference` on both directories; a world-episode missing from a reference or with other
+  digests invalidates the run). TR, RR and RW reproduce EXP-0053's rows and TR EXP-0054's B
+  when the code path is unchanged; their units are compared in `spec.json` `reproduction`
+  (reported; the reading uses this run's rows).
+- **Driver.** `teacher_audit --poc split` (task 11.2): the 3-world sample is PoC-C's
+  (`role_swap_sample`); writes `spec.json`, `episodes.csv` (gate + `trace_*` + lead-receiver
+  columns), `split_check.csv`, `contract_failures.csv`, `RESULT.md`. A real run needs the
+  registered atlas and orderer checkpoint (`d25388bf…`), the frozen roster, horizon 100, a
+  40-hex commit, at least one `--reference` and no filter. The wrappers stay out of the
+  roster, `ORDERING_BASELINES` and `DIAGNOSTIC_ROUTERS` (D3).
+- **Sizing (task 11.2, sizing.md §EXP-0056).** 18 router episodes (3 worlds × TR, TW, RS, RR, RW
+  × 2), no search. Local horizon 12: 8.0 s for all 18 (incl. the torch load). Horizon 100 ≈ × 8.3
+  ≈ 67 s single-core, × 2 safety ≈ 2.2 min; on a 4 vCPU pod (`--workers 4`) under 1 min of
+  driver. Pod life is set-up bound (EXP-0055: 2.1 min to driver start, 3.4 min total): expected
+  ≈ 4–7 min × 4 vCPU ≈ **0.3–0.5 billed vCPU-h** (× 2: ≈ 1.0). **Hard stop 1 vCPU-h** = 15 min
+  of 4 vCPU pod life. M3: ≈ 27.8 billed (≈ 30.6 upper) through EXP-0055 + ≤ 1 → ≤ 31.6 of 40.
 
 ## Risks / Trade-offs
 

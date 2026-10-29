@@ -90,6 +90,11 @@ only on a mined sample.
 - **PoC-C, role attribution (EXP-0054)** on the shocked worlds of PoC-A's mined sample instead of
   v2's shocked subset, because attribution needs a gap to attribute, and v2's easy corner gives
   little.
+- **DIAGNOSTICS 19 split check (EXP-0056, added 2026-10-29 by the user's decision)** before the
+  exit summary: PoC-C found that most of the orderer gap is the trained orderer trailing
+  whole-order `round_robin` on its shocked worlds, cause undiagnosed. A matched 2 × 2 over the
+  same scorer (split profile × receiver rule) decides between splitting and receiver rotation
+  before M4 designs orderer training (design D13).
 - **PoC-B, deployed-path cost (EXP-0055)**, capped at 42 producers (user decision, 2026-10-28),
   plus a load axis (consumers per producer), because the atlas varies it.
 - **Compute.** M3 budget 40 vCPU-h, ≈ 10.8 used. The planned remainder expects about 11–31

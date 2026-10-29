@@ -858,3 +858,530 @@ def test_teacher_path_defs_closed() -> None:
         todo += [x.id for x in ast.walk(defs[name])
                  if isinstance(x, ast.Name) and isinstance(x.ctx, ast.Load) and x.id in defs]
     assert closure <= set(ta.TEACHER_PATH_DEFS), sorted(closure - set(ta.TEACHER_PATH_DEFS))
+
+
+# --- DIAGNOSTICS 19 split check (task 11.2, design D13) ---
+
+from collections.abc import Callable  # noqa: E402
+
+from tokenomics.env.allocator import allocate_suborders  # noqa: E402
+from tokenomics.eval.baselines import Policy  # noqa: E402
+from tokenomics.eval.roster import build_roster_v2  # noqa: E402
+from tokenomics.eval.routing_diagnostics import (  # noqa: E402
+    TRAINED_WRAPPERS,
+    _slots,
+    decoded_units,
+    ordering_forced_whole,
+    ordering_split_rotating,
+    stable_hash,
+)
+
+# Rows of PoC-C's S and B arms (EXP-0054) on SHOCKED_WORLD, horizon 12, shocks-i-smoke, the
+# registered checkpoints, recorded before task 11.2 (commit 8208a09): sha256 of the sorted row.
+ROLE_ROW_GOLDEN = {"S": "b0ada33c45d43fae63205affc00e9ca9ec7cd099bb864e42da64d6deb938b484",
+                   "B": "42e71b5a99d294139798d96a67f560be60e8a933226f45572628d2e356bc1a4f"}
+
+
+def _random_scores(seed: int) -> Policy:
+    """A Policy with fresh normal scores per call."""
+    rng = np.random.default_rng(seed)
+
+    def policy(env: object, agent: str) -> np.ndarray:
+        sp = env.spec_  # type: ignore[attr-defined]
+        return rng.normal(0.0, 3.0, sp.k_stream * sp.num_producers).astype(np.float32)
+
+    return policy
+
+
+def _slot_units(env: object, agent: str, action: np.ndarray) -> dict[int, list[int]]:
+    sp = env.spec_  # type: ignore[attr-defined]
+    raw = np.asarray(action, dtype=np.float64).reshape(sp.k_stream, sp.num_producers)
+    return {k: decoded_units(raw[k, elig], q) for k, _, q, elig in _slots(env, agent) if elig}
+
+
+def _play_checked(check: Callable[[object, str], int], horizon: int = 8,
+                  order_policy: Policy = ROUND_ROBIN) -> int:
+    """Play SHOCKED_WORLD (shocks-i-smoke) with `entity_planner` and an orderer that calls
+    `check(env, agent)` and routes `order_policy`; returns the number of checked slots."""
+    view = ta.world_view(_entry(_atlas(), SHOCKED_WORLD))
+    e = ta.world_entry(view, "shocks-i-smoke")
+    job = build_jobs([e], [ta.split_arm(ta.SPLIT_RR, load_roster(ta.DEFAULT_ROSTER))], 1,
+                     horizon, None)[0]
+    env = joint_stack_env(ta.job_config(job), horizon)
+    n = [0]
+
+    def order(env_: object, agent: str) -> np.ndarray:
+        n[0] += check(env_, agent)
+        return order_policy(env_, agent)
+
+    run_episode(env, PROD, order, seed=job["episode"], action_seed=None)
+    return n[0]
+
+
+def test_decoded_units_match_decode() -> None:
+    """`decoded_units` is the decode's own split (softmax + largest remainder)."""
+    rng = np.random.default_rng(3)
+    for _ in range(200):
+        n, q = int(rng.integers(1, 8)), int(rng.integers(1, 20))
+        scores = rng.normal(0, 3, n)
+        subs = allocate_suborders([f"p{i}" for i in range(n)], scores, np.ones(n, bool), q, q)
+        got = {s.producer_id: s.quantity for s in subs}
+        assert decoded_units(scores, q) == [got.get(f"p{i}", 0) for i in range(n)]
+
+
+@needs_atlas
+def test_forced_whole_never_splits_and_picks_argmax() -> None:
+    """`trained_whole`: every slot's order goes whole to the argmax of the base's scores over
+    its eligible producers; ties go to the lowest index."""
+    base = _random_scores(0)
+    whole = ordering_forced_whole(lambda env, agent: base_action[0])
+    base_action = [None]
+
+    def check(env: object, agent: str) -> int:
+        base_action[0] = base(env, agent)
+        sp = env.spec_  # type: ignore[attr-defined]
+        raw = np.asarray(base_action[0], np.float64).reshape(sp.k_stream, sp.num_producers)
+        out = _slot_units(env, agent, whole(env, agent))
+        for k, _, q, elig in _slots(env, agent):
+            if elig:
+                want = [0] * len(elig)
+                want[int(np.argmax(raw[k, elig]))] = q
+                assert out[k] == want
+        return len(out)
+
+    assert _play_checked(check) > 20
+    tie = ordering_forced_whole(lambda env, agent: np.zeros(
+        env.spec_.k_stream * env.spec_.num_producers, np.float32))
+
+    def check_tie(env: object, agent: str) -> int:
+        out = _slot_units(env, agent, tie(env, agent))
+        assert all(u[0] == sum(u) for u in out.values())
+        return len(out)
+
+    assert _play_checked(check_tie) > 20
+
+
+@needs_atlas
+def test_split_rotating_holds_profile_and_rotation() -> None:
+    """`trained_split_rotating` keeps the base's split profile (the multiset of part sizes) and
+    `round_robin`'s receiver rule: the parts, largest first, go to `round_robin`'s pick and then
+    the next producers in rotation order, and a whole base is routed exactly as `round_robin`
+    routes it."""
+    base = _random_scores(1)
+    base_action = [None]
+    rotating = ordering_split_rotating(lambda env, agent: base_action[0])
+    whole_then_rotating = ordering_split_rotating(
+        ordering_forced_whole(lambda env, agent: base_action[0]))
+    split_seen = [0]
+
+    def check(env: object, agent: str) -> int:
+        base_action[0] = base(env, agent)
+        mine = _slot_units(env, agent, base_action[0])
+        out = _slot_units(env, agent, rotating(env, agent))
+        rr = _slot_units(env, agent, ROUND_ROBIN(env, agent))
+        cycle = env.system.cycle_counter  # type: ignore[attr-defined]
+        for k, _, _, elig in _slots(env, agent):  # type: ignore[arg-type]
+            if not elig:
+                continue
+            n = len(elig)
+            start = (cycle + stable_hash(agent, k)) % n
+            assert int(np.argmax(rr[k])) == start
+            profile = sorted(mine[k], reverse=True)
+            assert [out[k][(start + i) % n] for i in range(n)] == profile
+            split_seen[0] += sum(u > 0 for u in mine[k]) > 1
+        np.testing.assert_array_equal(whole_then_rotating(env, agent), ROUND_ROBIN(env, agent))
+        return len(mine)
+
+    assert _play_checked(check) > 20 and split_seen[0] > 5
+
+
+@needs_atlas
+def test_lead_receivers_concurrent_spread_and_rotation() -> None:
+    """`LeadReceivers` only reads (the episode equals an unwrapped one), and it sees both sides
+    of the receiver rule: a constant-score argmax sends every concurrent order to one producer
+    and never rotates (top share 1, change 0); `round_robin` spreads and rotates."""
+    const = ordering_forced_whole(lambda env, agent: np.zeros(
+        env.spec_.k_stream * env.spec_.num_producers, np.float32))
+    cells = {}
+    for name, policy in (("const", const), ("rr", ROUND_ROBIN)):
+        lead = ta.LeadReceivers(policy)
+        units = []
+        for order in (lead, policy):
+            view = ta.world_view(_entry(_atlas(), SHOCKED_WORLD))
+            e = ta.world_entry(view, "shocks-i-smoke")
+            job = build_jobs([e], [ta.split_arm(ta.SPLIT_RR, load_roster(ta.DEFAULT_ROSTER))],
+                             1, 10, None)[0]
+            env = joint_stack_env(ta.job_config(job), 10)
+            run_episode(env, PROD, order, seed=job["episode"], action_seed=None)
+            units.append(env.episode_stats["consumer_fulfilled_units"])
+        assert units[0] == units[1]
+        cells[name] = lead.cells()
+    assert set(cells["rr"]) == {c for c in ta.LEAD_COLUMNS}
+    assert int(cells["const"]["lead_concurrent_groups_consumer"]) > 0
+    assert float(cells["const"]["lead_concurrent_top_share_consumer"]) == 1.0
+    assert float(cells["const"]["lead_receiver_change_share_consumer"]) == 0.0
+    assert float(cells["rr"]["lead_concurrent_top_share_consumer"]) < 0.9
+    assert float(cells["rr"]["lead_receiver_change_share_consumer"]) > 0.5
+
+
+def test_split_wrappers_outside_the_roster() -> None:
+    from tokenomics.eval.baselines import ORDERING_BASELINES
+
+    assert set(TRAINED_WRAPPERS) == {ta.TRAINED_WHOLE, ta.TRAINED_SPLIT_ROTATING}
+    assert not set(TRAINED_WRAPPERS) & (set(DIAGNOSTIC_ROUTERS) | set(ORDERING_BASELINES))
+
+
+def test_split_arms() -> None:
+    """RR / RW are the atlas confirm's arms as EXP-0053 ran them (RW R = 2); TR is PoC-C's B."""
+    table = {a: ta.split_arm(a, load_roster(ta.DEFAULT_ROSTER)) for a in ta.SPLIT_ARMS}
+    assert {a: t["subject"] for a, t in table.items()} == ta.SPLIT_SUBJECT
+    assert table["TR"]["subject"] == ta.ROLE_SUBJECT[ta.ROLE_B]
+    assert table["RW"]["random"] and table["RW"]["replicates"] == 2
+    assert not any(table[a]["random"] for a in ("TR", "TW", "RS", "RR"))
+    assert all(table[a]["trained"] for a in ("TR", "TW", "RS"))
+    assert not table["RR"]["trained"] and not table["RW"]["trained"]
+
+
+def _split_jobs(ckpt: str, horizon: int = 12) -> list[dict]:
+    view = ta.world_view(_entry(_atlas(), SHOCKED_WORLD))
+    e = ta.world_entry(view, "shocks-i-smoke")
+    table = [ta.split_arm(a, load_roster(ta.DEFAULT_ROSTER)) for a in ta.SPLIT_ARMS]
+    jobs = build_jobs([e], table, 1, horizon, None,
+                      {"orderer": {"path": ckpt, "sha256": sha256_file(ckpt)}})
+    for j in jobs:
+        j["split_arm"] = next(a["split_arm"] for a in table if a["subject"] == j["subject"])
+    return jobs
+
+
+@needs_atlas
+def test_split_arms_deterministic_per_seed(orderer_ckpt: str) -> None:
+    """Every arm's row is identical when its job is played twice (RW per replicate seed)."""
+    jobs = _split_jobs(orderer_ckpt)
+    assert len(jobs) == 6
+    for j in jobs:
+        first, second = ta.run_split_job(dict(j)), ta.run_split_job(dict(j))
+        assert "units" in first and first == second, j["subject"]
+
+
+@needs_atlas
+@needs_ckpts
+def test_role_arms_unchanged_golden() -> None:
+    """PoC-C's S and B rows equal the pre-11.2 rows; the split check's TR row equals B on every
+    gate and trace column (the lead-receiver wrapper only reads)."""
+    view = ta.world_view(_entry(_atlas(), SHOCKED_WORLD))
+    e = ta.world_entry(view, "shocks-i-smoke")
+    pins = {r: {"path": str(p), "sha256": sha256_file(p)} for r, p in REPO_CKPTS.items()}
+    rows = {}
+    for role in ("S", "B"):
+        job = build_jobs([e], [ta.role_arm(role)], 1, 12, None, pins)[0]
+        rows[role] = ta.run_audit_job(job)
+        digest = hashlib.sha256(json.dumps(rows[role], sort_keys=True).encode()).hexdigest()
+        assert digest == ROLE_ROW_GOLDEN[role], role
+    tr = next(j for j in _split_jobs(str(REPO_CKPTS["orderer"])) if j["split_arm"] == "TR")
+    split_row = ta.run_split_job(tr)
+    shared = [c for c in ta.EPISODE_COLUMNS if c in rows["B"]]
+    assert len(shared) > 40
+    assert {c: split_row[c] for c in shared} == {c: rows["B"][c] for c in shared}
+
+
+def _world_units(tr: float, tw: float, rs: float, rr: float) -> dict[str, float]:
+    return {"TR": tr, "TW": tw, "RS": rs, "RR": rr, "RW": rr}
+
+
+@pytest.mark.parametrize("worlds, reading", [
+    # whole recovers >= 2/3 of the gap (and > floor) on 2 of 3 worlds -> splitting (f)
+    ([(2000, 2600, 2100, 2800), (2000, 2700, 2000, 2900), (2000, 2050, 2000, 2400)], "f"),
+    # only the rotation contrast does -> receiver rotation (b)
+    ([(2000, 2050, 2600, 2800), (2000, 1900, 2700, 2900), (2000, 2600, 2100, 2800)], "b"),
+    ([(2000, 2600, 2700, 2800), (2000, 2700, 2650, 2900), (2000, 2000, 2000, 2400)], "f+b"),
+    # each single change recovers half the gap (additive): only both together -> joint
+    ([(2000, 2400, 2400, 2800), (2000, 2450, 2450, 2900), (2000, 2200, 2200, 2400)], "joint"),
+    # complements: whole alone loses, the split on rotation ~ TR, both together win -> joint
+    ([(2000, 1900, 2010, 2800), (2000, 1950, 1990, 2900), (2000, 2000, 2000, 2600)], "joint"),
+    # the worlds disagree (f, b, joint) -> neither
+    ([(2000, 2700, 2000, 2800), (2000, 2000, 2700, 2800), (2000, 2300, 2300, 2800)], "neither"),
+    # the trained orderer does not trail round_robin beyond the floor on 2 worlds
+    ([(2000, 2100, 2100, 2100), (2000, 2000, 2000, 2150), (2000, 2600, 2000, 2800)], "no_gap"),
+    # a gain under the floor never recovers, even at >= 2/3 of a small gap (so not f)
+    ([(2000, 2160, 2000, 2200), (2000, 2160, 2000, 2200), (2000, 2600, 2000, 2800)], "joint"),
+])
+def test_split_reading(worlds: list[tuple[float, ...]], reading: str) -> None:
+    rows = [{"scope": "world", **ta.split_world(_world_units(*w), 164.3)} for w in worlds]
+    assert ta.split_reading(rows) == reading
+
+
+def test_split_reading_boundaries() -> None:
+    """On a whole-number floor: a gap equal to the floor does not clear it; a gain equal to the
+    floor does not recover; a gain of exactly 2/3 of the gap does, one unit less does not."""
+    floor = 100.0
+    at = ta.split_world(_world_units(2000, 2100, 2000, 2100), floor)
+    assert not at["gap_clears"] and not at["whole_recovers"] and not at["joint"]
+    gain_at_floor = ta.split_world(_world_units(2000, 2100, 2000, 2150), floor)
+    assert gain_at_floor["gap_clears"] and not gain_at_floor["whole_recovers"]
+    exact = ta.split_world(_world_units(2000, 2200, 2000, 2300), floor)
+    assert exact["whole_recovers"] and not exact["joint"]
+    short = ta.split_world(_world_units(2000, 2199, 2000, 2300), floor)
+    assert not short["whole_recovers"] and short["joint"]
+
+
+def test_split_world_arithmetic() -> None:
+    r = ta.split_world(_world_units(2000, 2600, 2300, 2900), 164.3)
+    assert r["gap"] == 900 and r["whole_gain"] == 600 and r["rotation_gain"] == 300
+    assert r["whole_recovery"] == pytest.approx(2 / 3) and r["whole_recovers"]
+    assert not r["rotation_recovers"]
+    assert r["split_cost_at_rotation"] == 600 and r["receiver_gain_whole"] == 300
+    assert r["interaction"] == r["split_cost_at_rotation"] - r["whole_gain"] == 0
+    assert r["split_cost_at_rotation_share"] == pytest.approx(2 / 3)
+    assert r["receiver_gain_whole_share"] == pytest.approx(1 / 3) and not r["joint"]
+
+
+def _split_dicts(world: str, units: dict[str, float]) -> list[dict[str, str]]:
+    return [{"world": world, "episode": "7", "subject": ta.SPLIT_SUBJECT[a], "replicate": "0",
+             "units": str(u), "demand_digest": "d", "shock_digest": "s"}
+            for a, u in units.items()]
+
+
+def test_split_check_rows_incomplete_and_sums() -> None:
+    dicts = _split_dicts("w1", _world_units(2000, 2600, 2100, 2800))
+    dicts += _split_dicts("w2", {"TR": 1, "TW": 2, "RR": 3})
+    rows = ta.split_check_rows(dicts, {"w1": 164.3, "w2": 164.3})
+    assert [r["scope"] for r in rows] == ["world", "all"]
+    assert rows[-1]["reading"] == "incomplete" and rows[-1]["missing_arms"] == "w2:RS"
+    rows = ta.split_check_rows(dicts, {"w1": 164.3})
+    assert rows[-1]["gap"] == 800 and rows[-1]["whole_recovers"] == 1
+    assert rows[-1]["reading"] == "no_gap"  # one world cannot reach 2 of 3
+
+
+def test_reference_pairing(tmp_path: Path) -> None:
+    """A world-episode absent from the reference or with other digests is a problem; units of
+    rows both played are compared."""
+    mine = _split_dicts("w1", {"TR": 2155, "RR": 2429})
+    ref = tmp_path / "exp0053"
+    ref.mkdir()
+    fields = list(mine[0])
+    with (ref / "episodes.csv").open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fields)
+        w.writeheader()
+        w.writerows([{**mine[0]}, {**mine[1], "units": "2430"}])
+    units, problems = ta.reference_pairing(mine, {"exp0053": ref})
+    assert problems == []
+    assert [(u["subject"], u["equal"]) for u in units] == [
+        (ta.SPLIT_SUBJECT["TR"], True), (ta.SPLIT_SUBJECT["RR"], False)]
+    other = [{**d, "shock_digest": "x"} for d in mine] + _split_dicts("w9", {"TR": 1})
+    _, problems = ta.reference_pairing(other, {"exp0053": ref})
+    assert any("w9" in p and "no row" in p for p in problems)
+    assert sum("digests differ" in p for p in problems) == 2
+    with (ref / "episodes.csv").open("a", newline="") as fh:
+        csv.DictWriter(fh, fields).writerow({**mine[0], "replicate": "1", "demand_digest": "e"})
+    _, problems = ta.reference_pairing(mine, {"exp0053": ref})
+    assert problems == ["exp0053: its rows of w1 episode 7 disagree on digests"]
+
+
+@needs_atlas
+def test_split_check_real_run_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real split check needs the registered atlas and orderer, a 40-hex commit, horizon 100,
+    a reference run and no dry-run filter: each one alone is refused, naming it."""
+    monkeypatch.setattr(ta, "checked_orderer", lambda out, path, log: {
+        "path": path, "sha256": ta.ROLE_CHECKPOINTS["orderer"]})
+    kw = dict(atlas_path=ATLAS_V2, out_dir=tmp_path / "o", orderer_ckpt="o.pt",
+              roster=load_roster(ta.DEFAULT_ROSTER), source_commit="a" * 40,
+              references=[tmp_path / "exp0053"])
+    cases = [({"worlds": [SHOCKED_WORLD]}, "--worlds is set"),
+             ({"max_worlds": 1}, "--max-worlds is set"),
+             ({"arms": ["TR"]}, "--arms is set"),
+             ({"shock_profile": "shocks-i-smoke"}, "--shock-profile is set"),
+             ({"horizon": 12}, "horizon 12 != 100"),
+             ({"source_commit": ""}, "no full 40-hex source commit"),
+             ({"references": []}, "no --reference run"),
+             ({"roster": build_roster_v2()}, "is not frozen"),
+             ({"atlas_path": _manifest(tmp_path)}, "not the registered EXP-0052")]
+    for edit, msg in cases:
+        with pytest.raises(ValueError, match="not a valid split-check run") as err:
+            ta.run_split_check(**{**kw, **edit})
+        assert msg in str(err.value), (edit, str(err.value))
+        inner = str(err.value).split("(", 1)[1].rsplit("); pass", 1)[0]
+        assert ";" not in inner, str(err.value)
+    monkeypatch.setattr(ta, "checked_orderer", lambda out, path, log: {
+        "path": path, "sha256": "0" * 64})
+    with pytest.raises(ValueError, match="orderer checkpoint 000000000000 is not the registered"):
+        ta.run_split_check(**kw)
+    with pytest.raises(ValueError, match="no shocks"):
+        ta.run_split_check(**{**kw, "worlds": [CYCLIC_WORLD], "dry_run": True})
+
+
+def test_split_check_flags_refused() -> None:
+    base = ["--atlas", "a.json", "--orderer-ckpt", "o.pt", "--out-dir", "o"]
+    for extra in (["--prod-ckpt", "p.pt"], ["--reuse-t", "r"], ["--reduction", "step2"],
+                  ["--max-search-actions", "3"], ["--baseline", ""], ["--replicates", "1"]):
+        with pytest.raises(SystemExit):
+            ta.main(["--poc", "split", *base, *extra])
+    with pytest.raises(SystemExit):
+        ta.main(["--poc", "c", *base, "--prod-ckpt", "p.pt", "--reference", "r"])
+
+
+@needs_atlas
+@needs_ckpts
+def test_split_check_dry_run_layout(tmp_path: Path) -> None:
+    """`--poc split --dry-run`: 1 shocked world, 1 episode, horizon 12, shocks-i-smoke, every
+    arm, --workers 1 -> the layout in under 2 min, traced rows with lead-receiver columns, the
+    reading row; a second run paired with the first as its reference reproduces every row, and
+    one with a tampered reference digest is invalid."""
+    path = _manifest(tmp_path)
+    out = tmp_path / "EXP-split-dry"
+    args = ["--poc", "split", "--atlas", str(path), "--orderer-ckpt", str(REPO_CKPTS["orderer"]),
+            "--dry-run", "--worlds", SHOCKED_WORLD, "--horizon", "12",
+            "--shock-profile", "shocks-i-smoke", "--workers", "1"]
+    started = time.perf_counter()
+    assert ta.main([*args, "--out-dir", str(out)]) == 0
+    assert time.perf_counter() - started < 120
+    assert (out / "contract_failures.csv").read_text().count("\n") == 1
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["kind"] == "dry-run" and spec["status"] == "complete"
+    assert spec["pins"]["checkpoints"] == {"orderer": ta.ROLE_CHECKPOINTS["orderer"]}
+    assert spec["pins"]["sample"][0]["floor"] == pytest.approx(164.33, abs=0.01)
+    episodes = list(csv.DictReader((out / "episodes.csv").open()))
+    assert sorted((e["arm"], e["replicate"]) for e in episodes) == [
+        ("RR", "0"), ("RS", "0"), ("RW", "0"), ("RW", "1"), ("TR", "0"), ("TW", "0")]
+    for e in episodes:
+        assert e["trace_split_share_consumer"] != "" and e["lead_pairs_consumer"] != ""
+        if e["arm"] in ("TW", "RR", "RW"):
+            assert float(e["trace_split_share_consumer"]) == 0.0
+    manip = list(csv.DictReader((out / "manipulation.csv").open()))
+    assert sorted(r["arm"] for r in manip) == ["RR", "RS", "RW", "TR", "TW"]
+    check = list(csv.DictReader((out / "split_check.csv").open()))
+    assert [r["scope"] for r in check] == ["world", "all"] and check[-1]["reading"]
+    assert "not an acceptance read" in (out / "RESULT.md").read_text()
+
+    again = tmp_path / "EXP-split-again"
+    assert ta.main([*args, "--out-dir", str(again), "--reference", str(out)]) == 0
+    spec = json.loads((again / "spec.json").read_text())
+    assert len(spec["reproduction"]) == 6 and all(r["equal"] for r in spec["reproduction"])
+
+    bad = tmp_path / "bad_ref"
+    bad.mkdir()
+    rows = [{**r, "shock_digest": "0" * 64} for r in csv.DictReader((out / "episodes.csv").open())]
+    with (bad / "episodes.csv").open("w", newline="") as fh:
+        w = csv.DictWriter(fh, list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    assert ta.main([*args, "--out-dir", str(tmp_path / "EXP-split-bad"),
+                    "--reference", str(bad)]) == ta.CONTRACT_INVALID
+
+
+def test_lead_receivers_concurrent_groups_by_hand() -> None:
+    """`lead_concurrent_top_share_*` by hand: groups are per class x cycle x product x eligible
+    set, need >= 2 orders and >= 2 eligible producers, and score the most common receiver's
+    share; rotation pairs are per stream across cycles."""
+    lead = ta.LeadReceivers(ROUND_ROBIN)
+    c, p = ta.CONSUMER_CLASS, ta.PRODUCER_CLASS
+    # cycle 1, product x, eligible (0, 1): 2:1 -> 2/3 (min would give 1/3)
+    for agent, r in (("a", 0), ("b", 0), ("c", 1)):
+        lead.record(agent, c, 1, "x", (0, 1), r)
+    # same cycle and product, another eligible set: its own group, 1:1 -> 1/2
+    lead.record("d", c, 1, "x", (2, 3), 2)
+    lead.record("e", c, 1, "x", (2, 3), 3)
+    # same producer in two cycles: two single-order groups, not one group of 2 -> no group
+    lead.record("f", c, 2, "y", (0, 1), 0)
+    lead.record("f", c, 3, "y", (0, 1), 0)
+    # one eligible producer: never a group
+    lead.record("g", c, 1, "z", (4,), 4)
+    lead.record("h", c, 1, "z", (4,), 4)
+    # producer orders in the same cycle/product/set: their own class, 1:1 -> 1/2
+    lead.record("p1", p, 1, "x", (0, 1), 0)
+    lead.record("p2", p, 1, "x", (0, 1), 1)
+    cells = lead.cells()
+    assert cells["lead_concurrent_groups_consumer"] == "2"
+    assert float(cells["lead_concurrent_top_share_consumer"]) == pytest.approx((2 / 3 + 1 / 2) / 2)
+    assert cells["lead_concurrent_groups_producer"] == "1"
+    assert float(cells["lead_concurrent_top_share_producer"]) == pytest.approx(1 / 2)
+    # rotation: only stream f has a pair (cycle 2 -> 3, same receiver), so change share 0
+    assert cells["lead_pairs_consumer"] == "1"
+    assert float(cells["lead_receiver_change_share_consumer"]) == 0.0
+    lead.record("f", c, 4, "y", (0, 1), 1)
+    assert float(lead.cells()["lead_receiver_change_share_consumer"]) == pytest.approx(1 / 2)
+    # producer-order rotation is its own class: p1 changes, p3 keeps -> 1 of 2
+    lead.record("p1", p, 2, "x", (0, 1), 1)
+    lead.record("p3", p, 2, "w", (0, 1), 0)
+    lead.record("p3", p, 3, "w", (0, 1), 0)
+    cells = lead.cells()
+    assert cells["lead_pairs_producer"] == "2"
+    assert float(cells["lead_receiver_change_share_producer"]) == pytest.approx(1 / 2)
+    assert cells["lead_pairs_consumer"] == "2"  # unchanged by producer orders
+
+
+@needs_atlas
+def test_lead_receivers_call_plumbing() -> None:
+    """`LeadReceivers.__call__` passes each slot's class, cycle, agent, product, eligible set and
+    lead receiver to `record`: on a `round_robin` episode its groups and cells equal an
+    independent recomputation, with groups over several cycles and both classes, several
+    agents per product and producer-order rotation pairs."""
+    from tokenomics.domain.system import order_kind
+    from tokenomics.eval.routing_trace import order_class
+
+    lead = ta.LeadReceivers(ROUND_ROBIN)
+    seen: list[tuple[str, str, int, str, tuple[int, ...], int]] = []
+
+    def order(env: object, agent: str) -> np.ndarray:
+        action = lead(env, agent)
+        sp = env.spec_  # type: ignore[attr-defined]
+        raw = np.asarray(action, np.float64).reshape(sp.k_stream, sp.num_producers)
+        for k, oid, q, elig in _slots(env, agent):  # type: ignore[arg-type]
+            if elig and q > 0:
+                o = env.system.orders[oid]  # type: ignore[attr-defined]
+                lead_r = elig[int(np.argmax(decoded_units(raw[k, elig], q)))]
+                seen.append((agent, order_class(order_kind(o)),
+                             int(env.system.cycle_counter), o.product,  # type: ignore[attr-defined]
+                             tuple(elig), lead_r))
+        return action
+
+    view = ta.world_view(_entry(_atlas(), SHOCKED_WORLD))
+    e = ta.world_entry(view, "shocks-i-smoke")
+    job = build_jobs([e], [ta.split_arm(ta.SPLIT_RR, load_roster(ta.DEFAULT_ROSTER))], 1, 10,
+                     None)[0]
+    env = joint_stack_env(ta.job_config(job), 10)
+    run_episode(env, PROD, order, seed=job["episode"], action_seed=None)
+    ref = ta.LeadReceivers(ROUND_ROBIN)
+    for rec in seen:
+        ref.record(*rec)
+    assert lead.groups == ref.groups and lead.cells() == ref.cells()
+    keys = list(lead.groups)
+    assert len({k[1] for k in keys}) > 1 and {k[0] for k in keys} == {
+        ta.CONSUMER_CLASS, ta.PRODUCER_CLASS}
+    agents_per_product: dict[str, set[str]] = {}
+    for agent, product in lead.last:
+        agents_per_product.setdefault(product, set()).add(agent)
+    assert max(len(a) for a in agents_per_product.values()) > 1
+    cells = lead.cells()
+    assert int(cells["lead_pairs_producer"]) > 0 and int(cells["lead_pairs_consumer"]) > 0
+    by_cls: dict[str, list[int]] = {ta.CONSUMER_CLASS: [0, 0], ta.PRODUCER_CLASS: [0, 0]}
+    last: dict[tuple[str, str], int] = {}
+    for agent, cls, _, product, _, r in seen:
+        if (agent, product) in last:
+            by_cls[cls][0] += 1
+            by_cls[cls][1] += int(r != last[(agent, product)])
+        last[(agent, product)] = r
+    for cls, (pairs, changes) in by_cls.items():
+        assert cells[f"lead_pairs_{cls}"] == str(pairs)
+        assert float(cells[f"lead_receiver_change_share_{cls}"]) == pytest.approx(changes / pairs)
+
+
+def test_manipulation_rows() -> None:
+    """Realized levels per world and arm, replicate means, and the difference from TR's."""
+    def row(arm: str, rep: int, share: float, change: float) -> dict[str, str]:
+        return {"world": "w", "subject": ta.SPLIT_SUBJECT[arm], "replicate": str(rep),
+                "trace_split_share_consumer": str(share), "trace_split_degree_consumer": "1.0",
+                "lead_concurrent_top_share_consumer": "1.0",
+                "lead_receiver_change_share_consumer": str(change)}
+
+    rows = ta.manipulation_rows([row("RS", 0, 0.30, 0.8), row("TR", 0, 0.36, 0.44),
+                                 row("TW", 0, 0.0, 0.0), row("RW", 0, 0.0, 0.7),
+                                 row("RW", 1, 0.0, 0.8)])
+    assert [r["arm"] for r in rows] == ["TR", "TW", "RS", "RW"]
+    by = {r["arm"]: r for r in rows}
+    assert by["RS"]["d_trace_split_share_consumer"] == pytest.approx(-0.06)
+    assert by["TW"]["d_lead_receiver_change_share_consumer"] == pytest.approx(-0.44)
+    assert by["RW"]["replicates"] == 2
+    assert by["RW"]["lead_receiver_change_share_consumer"] == pytest.approx(0.75)
+    assert by["TW"]["held_by_construction"].startswith("receiver rule")
+    assert by["RS"]["held_by_construction"].startswith("split rule")
+    assert by["TR"]["d_trace_split_share_consumer"] == 0.0

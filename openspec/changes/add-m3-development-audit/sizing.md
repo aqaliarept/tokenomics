@@ -992,3 +992,32 @@ overhead, not compute, decides the bill**.
 - **Fallback:** if no 8 vCPU secure capacity is available, a **4 vCPU secure pod,
   `--workers 2`**, same 1 vCPU-h stop = 15 min of pod life (expected ≈ 4.8 min, × 2 ≈ 6.5 min).
 - **M3 spend:** ≈ 27.6 billed through EXP-0054 (≈ 30.4 upper) + ≤ 1.0 = ≤ 28.6 (≤ 31.4) of 40.
+
+## §EXP-0056 (task 11.2)
+
+DIAGNOSTICS 19 split check (design D13): 3 shocked world-episodes (12-0060, 12-0111, 12-0344) ×
+TR, TW, RS, RR + RW × 2 = **18 router episodes**, `entity_planner`, routing tracer on, no search.
+
+**Timed cells** (local, this box, `--workers 1`, horizon 12, `shocks-i-smoke`, one process; per
+episode seconds, the first includes the torch import and checkpoint load):
+
+| world | TR | TW | RS | RR | RW r0 | RW r1 |
+|---|---|---|---|---|---|---|
+| 12-0060 | 2.40 | 0.41 | 0.59 | 0.23 | 0.24 | 0.24 |
+| 12-0111 | 0.33 | 0.34 | 0.37 | 0.17 | 0.17 | 0.18 |
+| 12-0344 | 0.49 | 0.49 | 0.56 | 0.26 | 0.27 | 0.26 |
+
+Sum 8.0 s; the `--poc split --dry-run` on 12-0060 (6 episodes) takes 7.4 s wall end to end.
+
+**Arithmetic.**
+- Horizon 100: × 100 / 12 = 8.3 → ≈ 67 s single-core for all 18; × 2 safety (backlogs grow over
+  the episode; the trained arms carry batch-1 torch) ≈ **2.2 min**, i.e. ≈ 0.04 vCPU-h of compute.
+  The longest single job ≈ 0.6 s × 8.3 × 2 ≈ 10 s. No pod/local factor is applied (D8's 0.646 or
+  EXP-0055's 0.37 would only shorten it).
+- On a 4 vCPU pod with `--workers 4`: < 1 min of driver.
+- Pod life is set-up bound: EXP-0055 (same launcher, 4 vCPU secure) took 2.1 min from creation to
+  driver start and 3.4 min in total for a 60 s driver. Here ≈ 4–7 min × 4 vCPU = **0.27–0.47
+  billed vCPU-h** (central ≈ 0.3; × 2 ≈ 1.0).
+- **Hard stop 1 billed vCPU-h** = 15 min of 4 vCPU pod life (fallback 8 vCPU secure: 7.5 min).
+- M3 spend: ≈ 27.8 billed (≈ 30.6 upper) through EXP-0055 + ≤ 1 → ≤ 31.6 of 40. Within the
+  40 vCPU-h per-run auto-approval and the milestone budget.
