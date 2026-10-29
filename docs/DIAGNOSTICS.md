@@ -259,8 +259,8 @@ clear but partial share of the input-shortage cause of consumer expiries (≈ 16
 consistent with the trained orderer's split parts completing more often (not a causal test). What
 it does not settle is whether splitting itself costs; the 42-producer evidence leans that way.
 
-**Seen in EXP-0054** (`experiments/EXP-0054-role-attribution-mined/`, PoC-C; open, not
-diagnosed). On the 3 shocked, burst-demand 12-producer world-episodes of PoC-A's sample
+**Seen in EXP-0054** (`experiments/EXP-0054-role-attribution-mined/`, PoC-C; resolved by
+EXP-0056 below: `joint`). On the 3 shocked, burst-demand 12-producer world-episodes of PoC-A's sample
 (12-0060, 12-0111, 12-0344), the trained orderer with `entity_planner` trails whole-order
 `round_robin` by 274 / 891 / 589 units (EXP-0053's rows; each above the one-episode floor
 3σ_ep = 164.3), 72% of the portable stack's gap to the teacher stack. EXP-0053's trace columns
@@ -297,6 +297,30 @@ realized rotation and splitting follow each arm's trajectory and are read from
 changes is not detectable here; `joint` is the remainder (not proof of complements); the
 receiver factor also covers which producers are picked, so (b) / `joint` do not pin spread or
 rotation (design D13).
+
+**Seen in EXP-0056** (`experiments/EXP-0056-split-vs-rotation/`, the check above; resolves the
+EXP-0054 note). Outcome: **`joint` on 3 of 3 worlds** — (f) and (b) combine, neither alone is
+the cause. Gap RR − TR 274 / 891 / 589 (reproduced exactly from EXP-0053). Whole routing at the
+scorer's receivers, TW − TR, recovers −0.48 / 0.61 / 0.34 of it; the receiver rule at the
+scorer's split, RS − TR, −0.02 / 0.23 / 0.09; neither ≥ 2/3 on any world. At the other level
+each change is large: RR − RS 280 / 689 / 537, RR − TW 405 / 347 / 387 (all above the floor);
+interaction +411 / +145 / +335 (above the floor on 0060, 0344), the complement pattern; but on
+0060 TW also fails on producers' own purchases (investment rejection 0.56, mean capacity 194.7
+against 227.9–242.3, the (d) channel), which RR − TW and the interaction absorb, so the clean
+above-floor consumer-side evidence is 0344 alone.
+`manipulation.csv`: RS keeps TR's split share (except 0060, 0.57 vs 0.36) and takes RR's
+concurrent top share (0.54–0.75 vs TR 0.98–0.99) and lead change; TW keeps TR's concurrency
+(0.99). Traces (descriptive): the scorer's single pick per product brings displaced bids and
+expiries with inputs in stock, which its splits partly relieve; under rotation the splits
+waste 260 / 310 / 508 units. Consequence (these 3 shocked burst 12-producer worlds, one
+episode each): the cheapest rule changes that close the gap are whole orders plus
+`round_robin`-like receivers together, so a learned orderer needs both abilities, route whole
+and vary receivers. Which receiver property matters (spread across concurrent orders, rotation
+over time, or *which* producers are picked, D13 limit (ii)) is open; both factors also change
+how producers' own purchases are routed. The pre-registered `joint` branch text above ("whole routing and
+spread receivers together") is narrowed by this result to "whole routing and varied receivers
+(property open)". No new cause
+registered: this is (f) + (b) combined, the case the (f) branch above already names.
 
 ## 20. A world set has no headroom
 

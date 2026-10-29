@@ -1,0 +1,565 @@
+{
+  "acceptance_read": false,
+  "blas_threads": 1,
+  "date": "2026-10-29",
+  "driver": "tokenomics.eval.teacher_audit",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "exp0056",
+  "inputs": {
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    }
+  },
+  "kind": "audit",
+  "pins": {
+    "arm_table": [
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "trained_orderer",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "trained_orderer",
+        "split_arm": "TR",
+        "subject": "entity_planner/trained_orderer",
+        "trained": true
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "trained_whole",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "trained_whole",
+        "split_arm": "TW",
+        "subject": "entity_planner/trained_whole",
+        "trained": true
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "trained_split_rotating",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "trained_split_rotating",
+        "split_arm": "RS",
+        "subject": "entity_planner/trained_split_rotating",
+        "trained": true
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "round_robin",
+        "producing": "entity_planner",
+        "random": false,
+        "roster": false,
+        "router": "round_robin",
+        "side": "blind",
+        "split_arm": "RR",
+        "subject": "entity_planner/round_robin",
+        "trained": false
+      },
+      {
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "random_whole",
+        "producing": "entity_planner",
+        "random": true,
+        "replicates": 2,
+        "roster": false,
+        "router": "random_whole",
+        "side": "blind",
+        "split_arm": "RW",
+        "subject": "entity_planner/random_whole",
+        "trained": false
+      }
+    ],
+    "atlas": {
+      "content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+      "path": "/workspace/tokenomics/_pod_ckpts/atlas_v2.json",
+      "sha256": "7517314f297ac39e1c00da3fb734bb40fcfecc9492ee2e67936fc910f8cf9568"
+    },
+    "checkpoints": {
+      "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "driver": "tokenomics.eval.teacher_audit",
+    "dry_run": false,
+    "grid": {
+      "ws-atlas-v1-12-0060": {
+        "episodes": [
+          1295251592
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0111": {
+        "episodes": [
+          195303600
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0344": {
+        "episodes": [
+          1680874617
+        ],
+        "regime": "shocked",
+        "size": 12
+      }
+    },
+    "horizon": 100,
+    "poc": "split",
+    "producer": "entity_planner",
+    "references": {
+      "exp0053": "/workspace/tokenomics/_pod_ckpts/exp0053",
+      "exp0054": "/workspace/tokenomics/_pod_ckpts/exp0054"
+    },
+    "roster_version": "5050508ecb25f0eda0ae0a61b0dde4ba948a6e9b0d901cd14cde28e0db161f38",
+    "sample": [
+      {
+        "choice": "sparse_f4",
+        "class": "hard",
+        "floor": 164.33012943305542,
+        "pattern": "burst",
+        "shocks": true,
+        "world": "ws-atlas-v1-12-0060"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "floor": 164.33012943305542,
+        "pattern": "burst",
+        "shocks": true,
+        "world": "ws-atlas-v1-12-0111"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "floor": 164.33012943305542,
+        "pattern": "burst",
+        "shocks": true,
+        "world": "ws-atlas-v1-12-0344"
+      }
+    ],
+    "shock_profile": null,
+    "source": {
+      "commit": "40dc1873ab9fd7a03ebc028eca1b5f2142331088",
+      "tree_sha256": "501e2b00ca6476d5f7a1b17438209dbe20ac222b06851ef2e6a7dacb2ff9fa2f"
+    },
+    "split_arms": [
+      "TR",
+      "TW",
+      "RS",
+      "RR",
+      "RW"
+    ],
+    "split_subjects": {
+      "RR": "entity_planner/round_robin",
+      "RS": "entity_planner/trained_split_rotating",
+      "RW": "entity_planner/random_whole",
+      "TR": "entity_planner/trained_orderer",
+      "TW": "entity_planner/trained_whole"
+    },
+    "worlds": [
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "63e01342ff973702199696249cd13b4b5af77b835ca6901e4c908d29d0d1616c",
+        "coordinates": {
+          "cv_capacity": 0.761370734135766,
+          "cv_cost": 0.13010740204643487,
+          "cv_degradation": 0.44796315092798794,
+          "demand_concentration": 0.2882786367940267,
+          "demand_volatility": 0.39501458770520387,
+          "rho": 0.32595993322203676,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.526653005,
+          "shock_outage_duration": 3.5,
+          "sigma": 0.22202301054650048
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 60,
+        "levers": {
+          "capacity_scale": 1.7168402703695202,
+          "choice": "sparse_f4",
+          "h_cap": 1.6206827036654499,
+          "h_cost": 0.6293675572479243,
+          "h_deg": 1.6380576544061731,
+          "hit_magnitude": 0.5266530051369962,
+          "k_c": 2.2563638175368332,
+          "m_q": 2.660848984714653,
+          "outage_duration": 2,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.03718936924320634
+          },
+          "shock_rate": 2.168557099348533,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 2063402108,
+        "pool_width": null,
+        "seed": 2063402108,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0060"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "be004c2c9815a3e942ed246cc5586b4dc58b22c14d93ecedf1dc68c1eb684982",
+        "coordinates": {
+          "cv_capacity": 0.026215664117916954,
+          "cv_cost": 0.09747659191043688,
+          "cv_degradation": 0.3214635991224449,
+          "demand_concentration": 0.2997412702861336,
+          "demand_volatility": 0.435605935137057,
+          "rho": 0.47089262613195343,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.215114969,
+          "shock_outage_duration": 4.5,
+          "sigma": 0.3720630987617415
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 111,
+        "levers": {
+          "capacity_scale": 1.4067219017939707,
+          "choice": "sparse_f2",
+          "h_cap": 0.07685417940550528,
+          "h_cost": 0.44379764805770766,
+          "h_deg": 1.511747867532156,
+          "hit_magnitude": 0.2151149685202031,
+          "k_c": 2.510022610111238,
+          "m_q": 6.347466426909869,
+          "outage_duration": 3,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.09673920388308244
+          },
+          "shock_rate": 1.9518477292138794,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1633498243,
+        "pool_width": null,
+        "seed": 1633498243,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0111"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "ddefffcf839154087f5673bdad35ee35efc7ece80cb8dfae53290d5d040f7247",
+        "coordinates": {
+          "cv_capacity": 0.20239637318196868,
+          "cv_cost": 0.28075287271515526,
+          "cv_degradation": 0.0996268797913759,
+          "demand_concentration": 0.28706013006782527,
+          "demand_volatility": 0.295606350165527,
+          "rho": 0.6003180492976411,
+          "shock_events_per_producer": 0.5833333333333334,
+          "shock_hit_magnitude": 0.663119394,
+          "shock_outage_duration": 3.5,
+          "sigma": 0.22194016249361265
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 344,
+        "levers": {
+          "capacity_scale": 1.4232796581475249,
+          "choice": "sparse_f2",
+          "h_cap": 0.8152513614418799,
+          "h_cost": 1.55563263043938,
+          "h_deg": 0.46886354780695577,
+          "hit_magnitude": 0.6631193941305201,
+          "k_c": 6.465851177202179,
+          "m_q": 2.4637357985118795,
+          "outage_duration": 2,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.07829314369626973
+          },
+          "shock_rate": 2.3705756598055983,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 128846000,
+        "pool_width": null,
+        "seed": 128846000,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0344"
+      }
+    ]
+  },
+  "pre_registered": {
+    "arms": {
+      "RR": "entity_planner + round_robin",
+      "RS": "the trained split profile (decoded units, largest first) on round_robin's receivers in its rotation order",
+      "RW": "entity_planner + random_whole (reference, R as EXP-0053)",
+      "TR": "entity_planner + trained orderer (as is)",
+      "TW": "the same scores, each order whole to the argmax eligible producer"
+    },
+    "floor": "atlas floor_se x sigma_ep of the world's size/choice cell (one episode)",
+    "min_worlds": 2,
+    "reading": "gap = RR - TR clears the floor on < 2 worlds -> no_gap; TW - TR clears the floor and >= 2/3 of the gap on >= 2 worlds -> f (with RS - TR likewise -> f+b); else RS - TR does -> b; else on >= 2 worlds neither single change does (only both together) -> joint; else neither (worlds disagree, diagnose further)",
+    "realized_levels": "manipulation.csv reports each arm's realized split and receiver measures against TR's; it never gates and never changes the reading or the world count: TW holds the scorer's receiver rule and RS its split rule by construction",
+    "recovery": 0.6666666666666666,
+    "sample": "D13: PoC-C's sample (the shocked worlds of PoC-A's sample as run, D5 step 2), the confirm's first seed, 1 episode per world",
+    "thresholds_fixed": "before any horizon-100 TW / RS data; only the horizon-12 dry run's lead-receiver columns were seen (task 11.2)"
+  },
+  "reproduction": [
+    {
+      "episode": 1295251592,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 2429.0,
+      "replicate": 0,
+      "subject": "entity_planner/round_robin",
+      "units": 2429.0,
+      "world": "ws-atlas-v1-12-0060"
+    },
+    {
+      "episode": 1295251592,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 2429.0,
+      "replicate": 0,
+      "subject": "entity_planner/random_whole",
+      "units": 2429.0,
+      "world": "ws-atlas-v1-12-0060"
+    },
+    {
+      "episode": 1295251592,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 2518.0,
+      "replicate": 1,
+      "subject": "entity_planner/random_whole",
+      "units": 2518.0,
+      "world": "ws-atlas-v1-12-0060"
+    },
+    {
+      "episode": 1295251592,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 2155.0,
+      "replicate": 0,
+      "subject": "entity_planner/trained_orderer",
+      "units": 2155.0,
+      "world": "ws-atlas-v1-12-0060"
+    },
+    {
+      "episode": 195303600,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 3255.0,
+      "replicate": 0,
+      "subject": "entity_planner/round_robin",
+      "units": 3255.0,
+      "world": "ws-atlas-v1-12-0111"
+    },
+    {
+      "episode": 195303600,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 3026.0,
+      "replicate": 0,
+      "subject": "entity_planner/random_whole",
+      "units": 3026.0,
+      "world": "ws-atlas-v1-12-0111"
+    },
+    {
+      "episode": 195303600,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 3051.0,
+      "replicate": 1,
+      "subject": "entity_planner/random_whole",
+      "units": 3051.0,
+      "world": "ws-atlas-v1-12-0111"
+    },
+    {
+      "episode": 195303600,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 2364.0,
+      "replicate": 0,
+      "subject": "entity_planner/trained_orderer",
+      "units": 2364.0,
+      "world": "ws-atlas-v1-12-0111"
+    },
+    {
+      "episode": 1680874617,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 3210.0,
+      "replicate": 0,
+      "subject": "entity_planner/round_robin",
+      "units": 3210.0,
+      "world": "ws-atlas-v1-12-0344"
+    },
+    {
+      "episode": 1680874617,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 2621.0,
+      "replicate": 0,
+      "subject": "entity_planner/trained_orderer",
+      "units": 2621.0,
+      "world": "ws-atlas-v1-12-0344"
+    },
+    {
+      "episode": 1680874617,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 3069.0,
+      "replicate": 0,
+      "subject": "entity_planner/random_whole",
+      "units": 3069.0,
+      "world": "ws-atlas-v1-12-0344"
+    },
+    {
+      "episode": 1680874617,
+      "equal": true,
+      "reference": "exp0053",
+      "reference_units": 3141.0,
+      "replicate": 1,
+      "subject": "entity_planner/random_whole",
+      "units": 3141.0,
+      "world": "ws-atlas-v1-12-0344"
+    },
+    {
+      "episode": 1295251592,
+      "equal": true,
+      "reference": "exp0054",
+      "reference_units": 2155.0,
+      "replicate": 0,
+      "subject": "entity_planner/trained_orderer",
+      "units": 2155.0,
+      "world": "ws-atlas-v1-12-0060"
+    },
+    {
+      "episode": 195303600,
+      "equal": true,
+      "reference": "exp0054",
+      "reference_units": 2364.0,
+      "replicate": 0,
+      "subject": "entity_planner/trained_orderer",
+      "units": 2364.0,
+      "world": "ws-atlas-v1-12-0111"
+    },
+    {
+      "episode": 1680874617,
+      "equal": true,
+      "reference": "exp0054",
+      "reference_units": 2621.0,
+      "replicate": 0,
+      "subject": "entity_planner/trained_orderer",
+      "units": 2621.0,
+      "world": "ws-atlas-v1-12-0344"
+    }
+  ],
+  "result": {
+    "acceptance_read": false,
+    "compared": 15,
+    "contract_failures": 0,
+    "reproduced": 15,
+    "rows": 18,
+    "split_check": {
+      "RR": 8894.0,
+      "RS": 7388.0,
+      "TR": 7140.0,
+      "TW": 7755.0,
+      "gap": 1754.0,
+      "gap_clears": 3,
+      "interaction": 891.0,
+      "joint": 3,
+      "missing_arms": "",
+      "reading": "joint",
+      "receiver_gain_whole": 1139.0,
+      "rotation_gain": 248.0,
+      "rotation_recovers": 0,
+      "scope": "all",
+      "split_cost_at_rotation": 1506.0,
+      "whole_gain": 615.0,
+      "whole_recovers": 0,
+      "world": "",
+      "worlds": 3
+    },
+    "status": "complete"
+  },
+  "resumes": [],
+  "source": {
+    "commit": "40dc1873ab9fd7a03ebc028eca1b5f2142331088",
+    "n_files": 69,
+    "tree_sha256": "501e2b00ca6476d5f7a1b17438209dbe20ac222b06851ef2e6a7dacb2ff9fa2f"
+  },
+  "started": "2026-10-29T21:14:39.765715+00:00",
+  "status": "complete",
+  "workers": 4
+}

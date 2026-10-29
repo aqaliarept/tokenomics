@@ -700,6 +700,35 @@ with a split of the selected worlds recorded before confirm reads them.
   teacher; 3 worlds, one episode each, 12 producers only. ≈ 2.6 vCPU-h billed; M3 ≈ 27.6 of 40
   (≈ 30.4 upper).
 
+### Why the trained orderer trails rotation (DIAGNOSTICS 19 split check)
+
+- **EXP-0056 — split check. Joint: neither whole routing nor `round_robin`-like receivers
+  alone recovers the trained orderer's loss to `round_robin`; both together do.** On PoC-C's 3
+  shocked burst world-episodes (D13), with `entity_planner`, the trained orderer (TR) trails
+  `round_robin` (RR) by 274 / 891 / 589 units, reproduced exactly from EXP-0053. A 2 × 2 over the
+  same scorer separates its split rule from its receiver rule: TW sends each order whole to the
+  scorer's top producer, RS keeps the scorer's split sizes but hands them out in
+  `round_robin`'s rotation. Removing splitting alone (TW − TR) recovers −0.48 / 0.61 / 0.34 of
+  the gap, changing receivers alone (RS − TR) −0.02 / 0.23 / 0.09; neither reaches D13's 2/3 on
+  any world, so the pre-registered reading is **`joint`** on 3 of 3. Each change pays mostly
+  once the other is made (RR − RS = 0.86 and RR − TW = 0.65 of the summed gap; interaction
+  +411 / +145 / +335, above the 164.3 floor on 2 worlds, but 12-0060's also carries TW's failure
+  on producers' own purchases there, investment rejection 0.56 and mean capacity 194.7 against
+  227.9–242.3, so the clean above-floor complement evidence is 12-0344 alone). The traces describe it (not a causal
+  test): the scorer sends 98–99% of a product's concurrent orders to one producer, which
+  brings displaced bids and expiries with inputs in stock; its splits move part of that load
+  elsewhere, so going whole under the same picks adds displacement, while under rotation the
+  splits mostly waste capacity on orders that do not complete. Limits (D13): an outside cause
+  is undetectable, `joint` is the remainder (the interaction's sign carries the complement
+  claim), the receiver factor covers spread, rotation and which producers alike, and the split
+  factor is the whole-routing rule, not the mechanism; both factors also change how producers'
+  own purchases are routed. For M4 this resolves DIAGNOSTICS 19's EXP-0054 note: on these 3
+  shocked burst-demand 12-producer worlds (one episode each) the cheapest rule changes that
+  close the gap are whole orders plus `round_robin`-like receivers together, so M4's orderer
+  needs both abilities available (route whole, vary receivers); which receiver property
+  matters (spread, rotation, which producers) is open. ≈ 0.1 vCPU-h
+  billed; M3 ≈ 27.9 of 40 (≈ 30.7 upper).
+
 ### Deployed-path cost (PoC-B)
 
 - **EXP-0055 — PoC-B. No stage of the deployed path is superlinear up to 42 producers.** The
