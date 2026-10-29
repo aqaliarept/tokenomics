@@ -886,3 +886,109 @@ registered shock windows, T rerun (`--reuse-t` EXP-0053 for `t_reproduction`). C
 - **Unchanged:** the full grid (S, A, B, T on the 3 shocked world-episodes, horizon 100, T rerun)
   and no driver change.
 - **Budget:** M3 ≈ 25–28 + ≤ 10 worst case ≤ 38 of 40 (≤ 35 on the 4 vCPU path).
+
+## §EXP-0055 (task 10.2)
+
+**Question.** What will the PoC-B deployed-path cost run cost (`eval/deployed_cost.py`, design
+D7)? The full grid is 8 cells (P 12 / 24 / 42 at E 2; E 2 / 4 / 7 / 14 at P 42; consumers × 1 /
+2 / 4 at P 42, E 4) × 3 world seeds × 3 repeats = **72 episodes**, horizon 20, workers ≤ vCPU − 2.
+Which pod shape runs it under D7's **1 vCPU-h hard stop**?
+
+**Probe.** `probes/timing_102.py` (run from `/srv/research/tokenomics/tokenomics` with
+`../.venv/bin/python`; output `probes/timing_102.jsonl`). Each cell is one
+`python -m tokenomics.eval.deployed_cost --dry-run --cells <cell> --seeds 1 --repeats 1
+--horizon 12 --workers 1` process (world seed 1000), with the registered checkpoints (EXP-0035
+`8b51b77c…`, EXP-0012 `d25388bf…`). The timed wall is the driver's own (`wall_s`, stage timers
+on), so the timer overhead the pod pays is in it. Two cross-checks: `h20` (P12-E2-k1 and
+P42-E14-k1 at horizon 20) and `seeds` (P42-E14-k1 at horizon 12 on seeds 1000 / 1001 / 1002).
+Local box: 2 vCPU AMD EPYC-Rome, load average 0.3–0.9 during the probe, no other job.
+
+**Timed cells** (local, horizon 12, seed 1000, 1 episode each):
+
+| cell | decisions | wall s | process s (start + imports + checkpoint load + episode + outputs) |
+|---|---|---|---|
+| P12-E2-k1 | 492 | 0.39 | 4.35 |
+| P24-E2-k1 | 1,008 | 0.74 | 3.67 |
+| P42-E2-k1 | 1,776 | 1.53 | 3.77 |
+| P42-E4-k1 | 2,436 | 2.31 | 4.54 |
+| P42-E7-k1 | 3,444 | 3.39 | 5.48 |
+| P42-E14-k1 | 5,796 | 6.02 | 8.19 |
+| P42-E4-k2 | 2,676 | 2.49 | 4.64 |
+| P42-E4-k4 | 3,180 | 3.38 | 5.45 |
+
+All 8 cells: **20.25 s** of episodes (40 s with the 8 process starts). Setup (config + env build,
+outside the timed wall) is 2–4 ms per episode.
+
+**Cross-checks.**
+- **Horizon.** At horizon 20, P12-E2-k1 took 0.66 s (1.69× its horizon-12 wall) and P42-E14-k1
+  9.45 s (1.57×); 20 / 12 = 1.67. Episodes scale linearly in cycles (calm worlds play a fixed
+  demand schedule, no death). The extrapolation uses the largest of the three, **1.69**.
+- **Seeds.** P42-E14-k1 on seeds 1000 / 1001 / 1002: 5.55 / 5.56 / 5.70 s (5,796 / 5,808 / 5,796
+  decisions). Seed 1000 prices the other two within 3%. The 6.02 s of the `cells` run against
+  5.55 s here is run-to-run noise (8%).
+- **Process overhead** (process wall − episode walls), local max **3.96 s**: interpreter start,
+  torch import, checkpoint load and the output files. On the pod every worker pays it once (the
+  pool's initializer loads the checkpoints), and the parent pays it once before the pool starts.
+
+**Arithmetic** (`probes/extrapolate_102.py`, stdlib only).
+- Episode, pod s = (horizon-12 wall × 1.69 + setup) × 0.646 (D8's local → pod factor).
+- Cell = episode × 3 seeds × 3 repeats.
+- Wall = parent init + a FIFO schedule of the 72 jobs in the driver's repeat-major order on
+  vCPU − 2 workers, each paying the worker init (3.96 × 0.646 = 2.6 pod s) first. The × 2 case
+  doubles every job and init.
+- Pod life = driver wall + **3 min** of pod overhead (create, SSH ready, rsync, venv +
+  `.[train,lp]` install, pull, stop). Measured: EXP-0053 1.1 min (8 vCPU), EXP-0054 2.9 min
+  (4 vCPU; 2.8 min from creation to driver start). The × 2 factor is not applied to it.
+- Billed vCPU-h = vCPU × pod life.
+
+| cell | episode h20 local s | episode h20 pod s | cell (9 episodes) pod s | × 2 |
+|---|---|---|---|---|
+| P12-E2-k1 | 0.66 | 0.43 | 3.8 | 7.7 |
+| P24-E2-k1 | 1.25 | 0.81 | 7.3 | 14.5 |
+| P42-E2-k1 | 2.59 | 1.67 | 15.1 | 30.1 |
+| P42-E4-k1 | 3.91 | 2.52 | 22.7 | 45.4 |
+| P42-E7-k1 | 5.74 | 3.71 | 33.4 | 66.8 |
+| P42-E14-k1 | 10.19 | 6.59 | 59.3 | 118.5 |
+| P42-E4-k2 | 4.21 | 2.72 | 24.5 | 49.0 |
+| P42-E4-k4 | 5.72 | 3.70 | 33.3 | 66.5 |
+| **total** | | | **199 s = 0.055 vCPU-h** | **399 s = 0.111 vCPU-h** |
+
+Longest job: P42-E14-k1, 6.6 pod s (× 2: 13.2 s). Compute is about 1/10 of the stop; **pod
+overhead, not compute, decides the bill**.
+
+**Pod shapes** (secure CPU, `cpu5c`; workers = vCPU − 2 as D7 requires):
+
+| shape | workers | jobs per worker | driver wall central / × 2 | pod life × 2 | billed central / × 2 vCPU-h | 1 vCPU-h stop as pod life | margin over × 2 |
+|---|---|---|---|---|---|---|---|
+| 4 vCPU | 2 | 36 | 1.8 / 3.5 min | 6.5 min | 0.32 / 0.44 | 15.0 min | 2.30× |
+| **8 vCPU** | **6** | **12** | **0.7 / 1.3 min** | **4.3 min** | **0.49 / 0.58** | **7.5 min** | **1.74×** |
+| 16 vCPU | 14 | 5.1 | 0.4 / 0.7 min | 3.7 min | 0.90 / 1.00 | 3.75 min | 1.00× |
+
+- **Workers stay busy** on 4 and 8 vCPU: 72 jobs give every worker 12 (8 vCPU) or 36 (4 vCPU)
+  episodes of 0.4–6.6 s, so the pool drains together. The 2 idle cores are D7's protocol (memory
+  bandwidth headroom for the timings), not job scarcity.
+- **16 vCPU is out**: the 3 min overhead alone bills 0.8 vCPU-h, and the × 2 case lands on the
+  stop (1.00).
+- **8 vCPU against 4 vCPU.** 8 vCPU bills more (overhead × 8) but stays well under the stop, and
+  it is tasks.md 11.1's `cpu8`. The user's preference for larger pods applies: its 6 workers are
+  filled. 4 vCPU is cheaper (≈ 0.32) with a wider margin (15 min of pod life), so it is the
+  fallback.
+- **Sensitivity.** The 0.646 factor was measured on a torch-free job mix (§EXP-0054); this run
+  is batch-1 torch. At a factor of 1.0 (pod as slow as local) the × 2 driver wall on 8 vCPU is
+  ≈ 2.0 min, pod life 5.0 min, 0.67 vCPU-h, still under the stop. The stop on 8 vCPU is breached
+  only if the pod overhead exceeds ≈ 6 min (2× EXP-0054's), e.g. a slow install or a failed
+  first pod.
+
+**Result.**
+- **Compute:** 0.055 pod vCPU-h (× 2: **0.11**). Every cell's time is above.
+- **Billed:** ≈ **0.49 vCPU-h** central on 8 vCPU (× 2: **0.58**), under D7's **1 vCPU-h** stop.
+  Not above 1 vCPU-h; no supervisor decision needed.
+- **Recommended shape:** a fresh **8 vCPU secure CPU pod** (`--create-pod --vcpu 8`, `cpu5c`),
+  `--workers 6`. Never community.
+- **Hard stop:** **1 billed vCPU-h = 7.5 min of pod life** on 8 vCPU (creation to termination;
+  expected ≈ 3.7 min, × 2 ≈ 4.3 min). `run_pod_training.py` has no time limit, so the operator
+  enforces it: if the driver has not started by 6 min of pod life, or the pod reaches 7.5 min,
+  stop and remove the pod and report; do not relaunch without a new decision.
+- **Fallback:** if no 8 vCPU secure capacity is available, a **4 vCPU secure pod,
+  `--workers 2`**, same 1 vCPU-h stop = 15 min of pod life (expected ≈ 4.8 min, × 2 ≈ 6.5 min).
+- **M3 spend:** ≈ 27.6 billed through EXP-0054 (≈ 30.4 upper) + ≤ 1.0 = ≤ 28.6 (≤ 31.4) of 40.
