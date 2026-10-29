@@ -226,6 +226,26 @@ Open: why its parts complete. Its distillation target is input-aware (log of
 the teacher as a router (split by `makeable_qty_now`), its whole-order version, and a trace of
 expired reservations by producer input stock.
 
+**Seen in EXP-0052** (`experiments/EXP-0052-headroom-atlas-confirm/`, the deciding check above,
+pre-registered in EXP-0050 and design D12, read on the atlas confirm's 14 hard worlds with at least
+4 makers per product: 4 at 12 producers, 10 at 42; `deciding_check.csv`). Outcome: **no branch
+reaches 2/3.** `makeable_split` within the floor of the trained orderer (input-aware weighting is
+the lever): 4 of 14. `makeable_weighted_whole` above `makeable_split` beyond the floor (splitting
+still costs): 8 of 14, the nearest, and 7 of 10 at 42 producers (by up to 8,700 units; the split
+by size was not pre-registered). `makeable_split` below the trained orderer (the scorer learned
+more than its target): 2 of 14; at 42 producers it is the other way round on 7 of 10 (the teacher
+target as a router beats the trained orderer by 409–3,286 units). Floors are 330–580 units, so the
+"within" calls are low-powered (without 12-0435, a dead-bar artifact, entry 20: 3 / 8 / 2 of
+13). The tracer split answers the open question in part. On consumer orders, the share of units
+lost to expired reservations whose receiver's inputs could not cover the order is 0.88–0.91 for
+`round_robin` / `random_whole` / `random`, 0.87–0.89 for the other roster rules, and 0.705
+(`makeable_split`), 0.73 (trained orderer, `portable`), 0.77 (`makeable_weighted_whole`);
+on investment orders 0.37 / 0.50–0.52 / 0.82 against 0.87–0.91 for the blind bar rules
+(`deciding_check.csv` sums both sides). Input-aware routing, learned or hand-written, removes a
+clear but partial share of the input-shortage cause of consumer expiries (≈ 16–18 points),
+consistent with the trained orderer's split parts completing more often (not a causal test). What
+it does not settle is whether splitting itself costs; the 42-producer evidence leans that way.
+
 ## 20. A world set has no headroom
 
 **Problem (plain English):** on some worlds no better policy can be reached: every cheap policy
@@ -264,7 +284,7 @@ A row above B2 is a bug (run invalid, naming world, episode and arm), never head
 - **collapse** (every arm dies before cycle 50 in every episode): a world-design problem, not
   headroom.
 
-**Seen in:** EXP-0051 (screen, provisional classes, run commit 92f3177): the branch depends on the region. Saturated only in the low-tightness, small-order corner where registry v2 and the EXP-0050 family worlds sit (10 of 512 worlds at 12 producers by fill, all ρ ≤ 0.23; the 12-f4 and three 42-producer anchors) plus 11 over-demanded worlds by the ceiling; elsewhere labelled hard (213 at 12, 68 at 42; mostly by `makeable_weighted_whole`, at lower ρ and, at 42, wide choice) or open (274 / 58; high ρ, bar fill ≈ 0.4). The hard labels are an upper bound: the screen's floor borrowed EXP-0050's spreads, 18–35× too small on these worlds (entry 21); with the screen's own replicate spread 63–71 / 34 stay hard. EXP-0052 (confirm, task 5.2) decides on fresh seeds with its own pooled spreads; the episode spread σ_ep on atlas worlds is unmeasured by the screen and likely larger than EXP-0050's.
+**Seen in:** EXP-0051 (screen, provisional classes, run commit 92f3177): the branch depends on the region. Saturated only in the low-tightness, small-order corner where registry v2 and the EXP-0050 family worlds sit (10 of 512 worlds at 12 producers by fill, all ρ ≤ 0.23; the 12-f4 and three 42-producer anchors) plus 11 over-demanded worlds by the ceiling; elsewhere labelled hard (213 at 12, 68 at 42; mostly by `makeable_weighted_whole`, at lower ρ and, at 42, wide choice) or open (274 / 58; high ρ, bar fill ≈ 0.4). The hard labels are an upper bound: the screen's floor borrowed EXP-0050's spreads, 18–35× too small on these worlds (entry 21); with the screen's own replicate spread 63–71 / 34 stay hard. EXP-0052 (confirm, task 5.2, run commit 9d44220): on fresh seeds with its own pooled spreads (3 × SE) the selected worlds read **hard** 4 of 64 at 12 producers and 10 of 32 at 42, every other one **open**; none saturated, flat or collapsed. Hard holds at 42 producers with wide choice (9 of 14 f14 worlds, 1 dense; none at f2/f4/f7; median +16% of the bar, won by input-aware routing); at 12 only two exact cyclic worlds and one marginal world (12-0435 is an artifact: its fixed bar arm dies at cycle 4 while other blind arms survive). The count is D12's pre-registered one but depends on the estimator: across eight spread estimates (entry 21) it is 2–12 at 12 and 5–17 at 42. Open worlds: bar fill ≈ 0.46, room ≈ 0.5 under B_lp ≈ B_lp_base ≈ demand, a ceiling that ignores input lead time, the fund and inventory (EXP-0051 addendum), so their reachable room is unproven. Frozen as atlas v1 (`atlas_v1.json`). **Rule gap seen in EXP-0052** (12-0435): confirm fixes the bar arm from the screen; when that arm dies on fresh seeds (here `random_whole` at cycle 4 in all 4 runs, bar 0) while other blind arms survive (470–790 units), the world reads hard (gain +874, room 1.00) although against the best blind arm on the same runs (+218) it is not. Collapse needs every arm dead and nothing checks a dead fixed bar arm. Check: compare the fixed bar arm's units and deaths with the best blind arm per world (`exp0052_check.py` sensitivity "free bar"); branch: if the fixed arm died, report the world as unresolved rather than hard (a code task, not done here). The world stays hard in `atlas_v1.json`; PoC-A's 12-producer train sample has only it and 12-0348 as hard worlds.
 
 ## 21. A noise floor borrowed from another world population
 
@@ -294,6 +314,22 @@ provisional σ_rep, and the hard count recomputed with it (absolute and relative
 **Seen in:** EXP-0051 (screen): σ_rep 46–77 units at 12 producers and 156–343 at 42 against the
 borrowed 2.6 and 10–21 (18–35×); hard 213 → 63–71 at 12, 68 → 34 at 42 at 2 × SE. σ_ep (episode
 to episode) is not measurable in the screen.
+EXP-0052 (confirm, the "own spread decides" branch): pooled from its own replicated episodes, σ_ep
+= 164 units at 12 producers and 156 at 42 (EXP-0050: 6–14 and 6–37), σ_rep = 90–131 and 315 (EXP-0050:
+2.6 and 10–21); median floor 397 / 577 against the screen's 14 / 76; 4 of 48 and 10 of 24 selected
+hard worlds stay hard (D12's pooled estimator). A second form of the same problem showed inside the
+confirm: both of its own pooled spreads are concentrated in a few worlds. 5 worlds give 89% / 72%
+of the σ_ep sum of squares (gains that swing by hundreds of units between episodes; median
+episode-to-episode change 52 / 134 units) and 69% / 87% of the σ_rep sum of squares; at 42
+producers the floor is mostly σ_rep (σ_rep²/2 ≈ 49,600 vs σ_ep² ≈ 24,200), and its largest term
+is a death: one `random` bar replicate on 42-0045 dies at cycle 17–23 while the other delivers
+≈ 1,900 units. Check: the "sensitivity" section of
+`openspec/changes/add-m3-development-audit/probes/exp0052_check.py` (pools without the 5 largest
+σ_ep / σ_rep worlds or both, without deaths, relative to the bar, median-based, bar re-chosen);
+hard counts 2–12 at 12 and 5–17 at 42 at 3 × SE (12 / 17 with both outlier sets out of the
+pools). A spread pooled in absolute units over worlds whose bars range from a few hundred to
+16,400 units, with deaths in random replicates, is a lower-quality floor than per-class, relative
+or robust pooling; later reads should pre-register one of those.
 
 ---
 

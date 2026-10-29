@@ -613,3 +613,31 @@ with a split of the selected worlds recorded before confirm reads them.
   only 63–71 worlds at 12 and 34 at 42 stay hard (DIAGNOSTICS 21). The screen also rests on one
   episode per world and a stochastic arm played once; EXP-0052 confirms on fresh seeds with its
   own pooled spreads. ≈ 7.3 vCPU-h billed.
+
+- **EXP-0052 — atlas confirm. Measured headroom is thin at 12 producers and real at 42 with wide
+  choice; atlas v1 frozen.** The screen's 96 selected worlds replayed on fresh seeds (2 episodes,
+  stochastic arms R = 2, `portable` reported; bar and reach arms fixed from the screen; ceiling
+  with task 4.7's input-output bound), with spreads pooled from the confirm's own runs and a 3 × SE
+  floor. Of the 72 selected hard worlds, 4 of 48 stay hard at 12 producers and 10 of 24 at 42; all
+  other selected worlds are open (none saturated, flat or collapsed). The confirm's own spreads are
+  large (σ_ep 164 / 156 units, σ_rep 90–131 / 315; median floor 33% / 15% of the bar). The count
+  is D12's pre-registered one, but both spreads are concentrated in a few worlds (5 worlds give
+  σ_ep 89% / 72% and σ_rep 69% / 87% of the sum of squares; at 42 the floor is mostly σ_rep, led
+  by a `random` bar replicate that dies), so it depends on the estimator: across eight spread
+  estimates (outlier worlds out of the pools, relative, median-based, bar re-chosen) the hard count
+  is 2–12 at 12 and 5–17 at 42. Confirmed headroom is a 42-producer wide-choice phenomenon (9 of 14
+  f14 worlds plus 1 dense; none at f2/f4/f7; median +16% of the bar), won by input-aware routing,
+  mostly whole (`makeable_weighted_whole` 6, `makeable_split` 3, trained 1); at 12 producers only
+  two exact cyclic worlds and one marginal world hold (12-0435's hard label is an artifact of its
+  fixed bar arm dying at cycle 4). Screen gains shrank on fresh seeds at 12 (median 9.4% → 5.7% of
+  the bar), not at 42. EXP-0050's deciding check found no pre-registered branch at 2/3 (input-aware
+  weighting 4 / 14, splitting costs 8 / 14, scorer beyond target 2 / 14); input-aware routers cut
+  the share of expired consumer reservations whose receiver lacked inputs from ≈ 0.89 to 0.71–0.73
+  (more on investment orders). 12-0435's hard label is a rule gap (the fixed bar arm dies → bar 0),
+  so PoC-A's pre-registered 12-producer train sample has only 2 hard worlds, one of them this
+  artifact. Open
+  worlds (bar fill ≈ 0.46, room ≈ 0.5 under a ceiling ≈ demand) remain the teacher's sample, their
+  reachable room unproven. `portable` sits below the bar (−10% / −31%). Atlas v1
+  (`atlas_v1.json`, `f241464c4bc4…`) keeps EXP-0051's split; gate files untouched. ≈ 3.8 vCPU-h
+  billed on an 8 vCPU secure pod (16 vCPU unavailable; a failed 16 vCPU pod added ≈ 2.8 if its
+  initialization was billed); M3 ≈ 21.9 of 40 vCPU-h (≈ 24.7 upper).
