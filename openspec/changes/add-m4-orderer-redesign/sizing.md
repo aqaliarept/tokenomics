@@ -167,3 +167,110 @@ costs 0.90–1.03 × TR. Task 5.4 must time the per-order policy itself.
 - 42-0076 is not the slowest 42-producer world: under the world model 42-0031's TR job (40 s on
   the pod) is about 1.6% slower than 42-0076's (39 s), so the cell model's per-job prices are not
   a strict upper bound at 42 (2.3 review). Its total stays above the world model's.
+
+## §EXP-0066 (task 4.5)
+
+**Question.** How much will the split-need re-test (`python -m tokenomics.eval.split_need`, task
+4.5) cost on a pod, and on which shape? The real run is 284 jobs: EXP-0057's 71 world-episodes
+(43 at 12 producers over 23 worlds, 28 at 42 over 14 worlds) × 4 arm-replicates (TS × 2, MWWk ×
+2), horizon 100, `entity_planner` producer, tracer and split-need observer on.
+
+**Method.** `/srv/research/tokenomics/openspec/changes/add-m4-orderer-redesign/probes/timing_45.py`
+builds single jobs exactly as `run_split_need` builds them and times `split_need.run_split_job`,
+the driver's own worker (EXP-0057's job path + the observer). The orderer is loaded before the
+clock starts. Each timed row is also checked against its EXP-0057 row (`neutrality`: 79 / 79
+cells equal on all 8) and the observer self-checks (`consistency`: 0 problems). Raw lines are in
+`probes/timing_45.jsonl`. `probes/extrapolate_45.py` builds the real 284-job list with the
+driver's functions (`select_views`, `world_entry`, `decoder_arm`, `build_jobs`, `longest_first`)
+and simulates the pool with task 2.3's `extrapolate_23.simulate`, rates, 60 s parent time and
+10 min setup.
+
+**Local box.** 2 CPUs, shared with task 5.1's implementer, one command at a time,
+`OMP_NUM_THREADS=1`, torch 1 thread. Load average 0.6–1.3. Longest command 55.7 s (42-0076 TS r0).
+
+### Measured seconds (local, horizon 100, first confirm episode)
+
+The two world-episodes are 12-0352 (the slowest 12-producer world in §EXP-0057) and 42-0076 (the
+loaded f14 world, the costliest choice level).
+
+| world | arm | r0 | r1 | EXP-0057 cell (no observer, r0) | observer overhead (slower rep / EXP-0057) |
+|---|---|---|---|---|---|
+| 12-0352 | TS | 8.99 | 9.25 | 9.06 | 1.02 |
+| 12-0352 | MWWk | 3.78 | 3.72 | 3.74 | 1.01 |
+| 42-0076 | TS | 54.36 | 49.82 | 54.75 | 0.99 |
+| 42-0076 | MWWk | 24.31 | 24.61 | 22.64 | 1.09 |
+
+The observer costs ≤ 9% (within run-to-run noise on the TS arms). Peak RSS 454–518 MB in
+process; ≈ 0.63 GB per worker with torch, so cpu8 needs ≈ 5.7 GB (`--mem 16`).
+
+### Extrapolation (284 jobs)
+
+- **cell (the estimate):** every job at its size × arm cell, the slower measured replicate.
+- **world (central check):** §EXP-0057's world model (world RR seconds × the largest arm / RR
+  ratio) × the observer overhead above.
+
+| model | local s (12 / 42) | local vCPU-h | pod compute vCPU-h | longest job (pod) |
+|---|---|---|---|---|
+| **cell** | 1,121 / 4,423 = 5,544 | 1.54 | **0.99** | 35 s (42 TS) |
+| world | 577 / 2,913 = 3,491 | 0.97 | 0.63 | 36 s |
+
+| shape | wall (cell) | workers busy | **billed (cell)** | stop = 2 × est. (≤ 8) | billed (world) | billed, setup 3 min (cell) |
+|---|---|---|---|---|---|---|
+| **cpu8** | **8.5 min** | 0.99 | **2.47** | **4.9 (37 min of pod life)** | 2.10 | 1.54 |
+| cpu16 | 4.8 min | 0.98 | 3.94 | 7.9 (30 min) | 3.57 | 2.08 |
+
+- Setup dominates again: 10 min costs 1.33 vCPU-h on cpu8, 2.67 on cpu16, against ≈ 1.0 of
+  compute. cpu16 costs +1.5 vCPU-h to save ≈ 4 min of wall.
+- **Calibration.** EXP-0057 ran 639 jobs in ≈ 8.7 min of driver wall on cpu8 (sized 16.4 min,
+  0.53 ×) with setup under a minute: billed 1.4 against 3.5. This run's cell compute is 0.49 ×
+  EXP-0057's (5,544 vs 11,376 local s), so the realized bill on cpu8 is likely ≈ 0.7–1.0
+  vCPU-h. The estimate stays on the conservative cell model.
+
+**Recommended shape: cpu8**, a fresh secure pod (`--create-pod --vcpu 8 --mem 16`, `--workers
+8`):
+- **estimate 2.5 billed vCPU-h** (0.99 compute + 1.33 setup + parent and tail);
+- **≈ 8.5 min driver wall**;
+- **hard stop 4.9 vCPU-h = 37 min of cpu8 pod life** (2 × estimate, ≤ 8). `run_pod_training.py`
+  has no stop flag: the experiment implementer enforces it by wall clock (carry-forward).
+
+### Pod command (task 4.6)
+
+Stage the three inputs into the git-ignored `tokenomics/_pod_ckpts/` (the driver syncs the inner
+package dir only; `_pod_ckpts/` is in `.gitignore`, so `--verify-source-commit` still sees a
+clean tree). Check the SHA-256s after copying:
+
+| staged file | source | SHA-256 |
+|---|---|---|
+| `tokenomics/_pod_ckpts/exp0066/atlas_v2.json` | `experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json` | `7517314f297ac39e1c00da3fb734bb40fcfecc9492ee2e67936fc910f8cf9568` (content hash `220886a7cf12…`, checked by the driver) |
+| `tokenomics/_pod_ckpts/exp0066/orderer_scorer.pt` | `experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt` | `d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c` |
+| `tokenomics/_pod_ckpts/exp0066/exp0057_episodes.csv` | `experiments/EXP-0057-decoder-check/artifacts/episodes.csv` (git-lfs: pull it first) | `69656f9e2034bc2f41049591d492a70e692cd9d770b10e60d14291021d9d593c` |
+
+```
+cd /srv/research/tokenomics
+mkdir -p tokenomics/_pod_ckpts/exp0066
+cp experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json tokenomics/_pod_ckpts/exp0066/
+cp experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt tokenomics/_pod_ckpts/exp0066/
+cp experiments/EXP-0057-decoder-check/artifacts/episodes.csv tokenomics/_pod_ckpts/exp0066/exp0057_episodes.csv
+sha256sum tokenomics/_pod_ckpts/exp0066/*
+python3 run_pod_training.py --create-pod --image runpod/base:0.7.0-ubuntu2004 --cpu \
+  --python python3.12 --vcpu 8 --mem 16 --disk 30 --pod-name exp0066-split-need \
+  --verify-source-commit \
+  --train "-u -m tokenomics.eval.split_need \
+    --atlas /workspace/tokenomics/_pod_ckpts/exp0066/atlas_v2.json \
+    --orderer-ckpt /workspace/tokenomics/_pod_ckpts/exp0066/orderer_scorer.pt \
+    --exp0057-episodes /workspace/tokenomics/_pod_ckpts/exp0066/exp0057_episodes.csv \
+    --workers 8 --source-commit {SOURCE_COMMIT} --out-dir /workspace/tokenomics/runs/exp0066" \
+  --pull "/workspace/tokenomics/runs/exp0066:./experiments/EXP-0066-split-need"
+rm -rf tokenomics/_pod_ckpts/exp0066
+```
+
+The driver refuses a real run unless the atlas content hash, the orderer SHA-256 and the EXP-0057
+`episodes.csv` SHA-256 are the registered ones, the horizon is 100, the commit is 40-hex and no
+filter is set; it exits 2 if any row is not neutral against EXP-0057 or the observer's classes do
+not add up. `--verify-source-commit` needs a clean tree: commit 4.5 first.
+
+**Uncertainties.**
+- Only the first confirm episode of the two loaded worlds was timed. 42-0031's TS job took
+  52–55 s in task 4.4 (observer on), about the cell price (54.4 s; up to 1% above it).
+- The spread between TS's two replicates at 42 (49.8 vs 54.4 s) is larger than the observer's
+  measured cost, so the overhead column is noise-level on the TS arms.
