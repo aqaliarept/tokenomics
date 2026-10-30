@@ -292,22 +292,30 @@ completed / failed / rejected lists is the only input.
 ```
 s_i(o) = b_i + Δ_θ(i, o)
 b_i     = frozen EXP-0012 score (one forward per stream per cycle; shared rows only)
-φ_i     = normalised shared row (31) ⊕ normalised h_{a,i} (9) ⊕ own-turn [assigned_units, assigned_orders] (2)
+φ_i     = normalised shared row (31) ⊕ normalised [h_{a,i} (9) ⊕ has_completed (1)] ⊕ normalised own-turn [assigned_units, assigned_orders] (2)   (43)
 ψ_o     = normalised product (9) ⊕ [quantity, tokens/quantity, TTL remaining, kind]
 Δ_θ     = B·tanh( (w·φ_i + Σ_{r≤R} (u_r·φ_i)(v_r·ψ_o)) / B ),  B = 2.0 logits
 τ       = exp(θ_τ)            (θ_τ = 0 → τ = 1)
 choice  = inverse-CDF draw of softmax(s/τ) with the D3 key; the whole order goes to the drawn producer
 ```
 
-- Normalisation is a fixed median / IQR per feature, fitted once on the pilot's bar-precompute
-  rows, then hashed and frozen.
+- **Has-completed indicator (task 4.3).** The history's latency reads 0.0 before a pair's first
+  completion, so a linear term would read a pair with only failures or rejections as the
+  fastest. φ therefore adds `has_completed` (1 once a's sub-orders to i have completed any
+  units this episode), which takes φ from 42 to 43. An imputation (e.g. the median latency of
+  completed pairs) was rejected on data: on the 4.3 fixture world 83% of completed latencies
+  are 0, so the fitted median is the 0.0 default itself.
+- Normalisation is a fixed median / IQR per feature (all 43 + 13 inputs), fitted once on the
+  pilot's bar-precompute rows (A0's rows, task 5.1), then hashed and frozen. A zero IQR falls
+  back to the feature's standard deviation, and a zero one to 1. Normalised values are clipped
+  to ±5.
 - **Arms:**
   - **A0, zero residual:** θ = 0, which is exactly TS (spec: "Zero residual equals the decoder
     check"). Ties need no rule, because sampling is proportional.
-  - **A1, row-only:** w (42) and θ_τ; 43 parameters.
+  - **A1, row-only:** w (43) and θ_τ; 44 parameters.
   - **A2, low-rank bilinear:** A1 plus u_r, v_r with R = 4 (or R = 2 if the gradient probe finds
-    low signal, D7): 43 + 4·(42 + 13) = 263 parameters. u_r is initialised from a fixed-seed
-    N(0, 0.1) and v_r = 0, so Δ starts at zero.
+    low signal, D7): 44 + 4·(43 + 13) = 268 parameters (R = 2: 156). u_r is initialised from
+    a fixed-seed N(0, 0.1) and v_r = 0, so Δ starts at zero.
   - A1 and A2 at θ = 0 equal A0 exactly.
 - **Per-parameter scales** (ES perturbation σ_j): σ = 0.05 for w, u, v, in units of the
   normalised features; σ_τ = 0.05 on θ_τ (log τ).

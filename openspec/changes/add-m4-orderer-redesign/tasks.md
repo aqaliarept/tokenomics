@@ -131,11 +131,11 @@ Ladder gates (design D1): a group marked **Gated** starts only when the named re
   - the history resets at reset.
 
   The `domain/` purity test, goldens and the full suite are green.
-- [ ] 4.3 [code][local-exclusive] Per-order residual policy `/srv/research/tokenomics/tokenomics/tokenomics/train/per_order_scorer.py` (design D5, whole orders only).
+- [x] 4.3 [code][local-exclusive] Per-order residual policy `/srv/research/tokenomics/tokenomics/tokenomics/train/per_order_scorer.py` (design D5, whole orders only).
   - Frozen EXP-0012 base, one forward per stream per cycle.
-  - φ = shared row (31) ⊕ agent-local history (9) ⊕ own-turn assigned (2); ψ = product ⊕ order features; a fixed median / IQR normaliser, hashed.
+  - φ = shared row (31) ⊕ agent-local history (9) ⊕ a has-completed indicator (1, added by this task: latency reads 0.0 before any completion) ⊕ own-turn assigned (2) = 43; ψ = product ⊕ order features; a fixed median / IQR normaliser, hashed.
   - Bounded Δ (B = 2.0) and τ = exp(θ_τ). No split action: every choice is a one-hot share.
-  - Arms A0 (θ = 0) / A1 (43 parameters) / A2 (R = 4: 263, or R = 2).
+  - Arms A0 (θ = 0) / A1 (44 parameters) / A2 (R = 4: 268, or R = 2: 156).
   - Per-parameter σ scales stored with the arm. Keyed draws exclude the member.
   - `choice-v1` share actions. A composite checkpoint (θ, base SHA-256, normaliser hash, arm, decoder / architecture versions).
   - A shared-only ablation switch (history replaced by the mean over the product's agents).
@@ -152,6 +152,8 @@ Ladder gates (design D1): a group marked **Gated** starts only when the named re
   - the shock sentinel.
 
   The full suite is green.
+
+- [ ] 4.4 [code][local] Split-need diagnostic (inserted 2026-10-30 by the user's decision; root-cause rule). Under whole routing, EXP-0057 lost ≈ 252 (12) / 901 (42) consumer units per episode to `no_fit` (bid larger than the chosen producer's remaining capacity) against 88 / 98 for the splitting trained orderer. Write `/srv/research/tokenomics/openspec/changes/add-m4-orderer-redesign/probes/split_need.py`, which replays TS (and MWWk for context) on 12-0060, 12-0111, 12-0344 (first confirm episode, horizon 100) and one loaded 42-producer f14 train world, with `--workers 1`, and classifies every consumer `no_fit` loss by the state at its auction: **choice-fixable** (some other eligible producer had enough remaining capacity of every recipe type for the whole sub-order), **split-needed** (no single eligible producer had it, but the eligible producers together did), **unfillable** (not even together). Report units and order counts per class, per world, plus the same for producer-stream orders. Read capacity state only from the domain after the auction (no reasons as policy inputs; this is a diagnostic, not a policy). Output: notes §split-need in `/srv/research/tokenomics/openspec/changes/add-m4-orderer-redesign/notes/pre_pod_checks.md`. Verify: each command < 2 min; TS units equal EXP-0057's rows for those world-episodes (the probe is neutral); the class totals sum to the traced `no_fit` losses. Decision rule (pre-registered): if split-needed units are ≥ 5% of TS's filled units on ≥ 2 of the 3 12-producer worlds, or on the 42-producer world, the supervisor brings a rule-gated split design to the user before group 6; otherwise step 2 stays whole-only and the result is recorded in design D5.
 
 ## 5. Step 2 — ES driver, pre-registration and sizing (code)
 
