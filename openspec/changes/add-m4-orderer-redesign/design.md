@@ -258,6 +258,11 @@ pre-planned. EXP numbers are planned; an inserted diagnosis takes the next free 
   concern 3).
 - Splitting is out of scope for M4 step 2. It could come back only with a separate diagnosis
   showing that a split recovers units that whole routing cannot.
+- **Evidence (EXP-0066, 2026-10-30, `whole_suffices`):** on all 71 EXP-0057 world-episodes, units
+  that only a split could have saved are 0.55% (12 producers) / 1.07% (42) of filled units under
+  MWWk (completion-corrected joint count; uncorrected 1.95% / 3.42%), below the pre-registered 5%.
+  Most `no_fit` loss is unfillable in its cycle, and a better single choice recovers more than a
+  split would. Two worlds exceed 5% on their own (12-0230, 42-0076), reported, never deciding.
 
 **Order of decisions.** Within agent a's turn, orders are decided in ascending order id (the
 same order as `_slots`).
