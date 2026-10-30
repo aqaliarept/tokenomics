@@ -1,0 +1,153 @@
+{
+ "action_seed": 16110244938072109799,
+ "arm": "TS",
+ "check": {
+  "compared": 79,
+  "differ": [],
+  "found": true,
+  "lost_no_fit_ref": {
+   "consumer": "509.0",
+   "producer": "1882.0"
+  },
+  "units_ref": "2613.0"
+ },
+ "class": "open",
+ "dead": "false",
+ "episode": 832857904,
+ "max_rss_mb": 505.3,
+ "probe": {
+  "classified_rejections": {
+   "consumer": 181,
+   "producer": 675
+  },
+  "dup_bids": 0,
+  "lost_orders": {
+   "L": {
+    "consumer": {
+     "choice": 16,
+     "split": 15,
+     "unfillable": 3
+    },
+    "producer": {
+     "choice": 89,
+     "split": 65,
+     "unfillable": 29
+    }
+   },
+   "P": {
+    "consumer": {
+     "choice": 18,
+     "split": 14,
+     "unfillable": 2
+    },
+    "producer": {
+     "choice": 105,
+     "split": 59,
+     "unfillable": 19
+    }
+   },
+   "joint": {
+    "consumer": {
+     "choice": 12,
+     "split": 7,
+     "unfillable": 15
+    },
+    "producer": {
+     "choice": 37,
+     "split": 35,
+     "unfillable": 111
+    }
+   },
+   "units": {
+    "consumer": {
+     "choice": 16,
+     "split": 14,
+     "unfillable": 4
+    },
+    "producer": {
+     "choice": 89,
+     "split": 60,
+     "unfillable": 34
+    }
+   }
+  },
+  "lost_total": {
+   "consumer": 509,
+   "producer": 1882
+  },
+  "lost_units": {
+   "L": {
+    "consumer": {
+     "choice": 211,
+     "split": 240,
+     "unfillable": 58
+    },
+    "producer": {
+     "choice": 847,
+     "split": 715,
+     "unfillable": 320
+    }
+   },
+   "P": {
+    "consumer": {
+     "choice": 239,
+     "split": 222,
+     "unfillable": 48
+    },
+    "producer": {
+     "choice": 1010,
+     "split": 656,
+     "unfillable": 216
+    }
+   },
+   "joint": {
+    "consumer": {
+     "choice": 144,
+     "split": 105,
+     "unfillable": 260
+    },
+    "producer": {
+     "choice": 356,
+     "split": 357,
+     "unfillable": 1169
+    }
+   },
+   "units": {
+    "consumer": {
+     "choice": 211,
+     "split": 226,
+     "unfillable": 72
+    },
+    "producer": {
+     "choice": 847,
+     "split": 657,
+     "unfillable": 378
+    }
+   }
+  },
+  "nonuniform_sheets": 0,
+  "outage_candidates_excluded": 51,
+  "qty_mismatch": 0,
+  "replay_mismatch": 0
+ },
+ "replicate": 0,
+ "rho": 0.6441927481432179,
+ "seconds": {
+  "episode": 15.49,
+  "setup": 1.88,
+  "total": 17.39
+ },
+ "size": 42,
+ "subject": "entity_planner/trained_sampled_whole",
+ "traced_lost_no_fit": {
+  "consumer": "509.0",
+  "producer": "1882.0"
+ },
+ "traced_rejected_no_fit": {
+  "consumer": "2498.0",
+  "producer": "6759.0"
+ },
+ "units": "2613.0",
+ "world": "ws-atlas-v1-42-0043",
+ "world_rule": null
+}

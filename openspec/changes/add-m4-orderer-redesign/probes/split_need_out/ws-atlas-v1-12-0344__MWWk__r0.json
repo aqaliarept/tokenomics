@@ -1,0 +1,135 @@
+{
+ "action_seed": 13227869862158857892,
+ "arm": "MWWk",
+ "check": {
+  "compared": 79,
+  "differ": [],
+  "found": true,
+  "lost_no_fit_ref": {
+   "consumer": "40.0",
+   "producer": "70.0"
+  },
+  "units_ref": "3138.0"
+ },
+ "class": "open",
+ "dead": "false",
+ "episode": 1680874617,
+ "max_rss_mb": 47.6,
+ "probe": {
+  "classified_rejections": {
+   "consumer": 11,
+   "producer": 66
+  },
+  "dup_bids": 0,
+  "lost_orders": {
+   "L": {
+    "consumer": {
+     "split": 1
+    },
+    "producer": {
+     "choice": 2,
+     "split": 2,
+     "unfillable": 1
+    }
+   },
+   "P": {
+    "consumer": {
+     "split": 1
+    },
+    "producer": {
+     "choice": 2,
+     "split": 2,
+     "unfillable": 1
+    }
+   },
+   "joint": {
+    "consumer": {
+     "split": 1
+    },
+    "producer": {
+     "choice": 2,
+     "unfillable": 3
+    }
+   },
+   "units": {
+    "consumer": {
+     "split": 1
+    },
+    "producer": {
+     "choice": 2,
+     "split": 2,
+     "unfillable": 1
+    }
+   }
+  },
+  "lost_total": {
+   "consumer": 40,
+   "producer": 70
+  },
+  "lost_units": {
+   "L": {
+    "consumer": {
+     "split": 40
+    },
+    "producer": {
+     "choice": 28,
+     "split": 28,
+     "unfillable": 14
+    }
+   },
+   "P": {
+    "consumer": {
+     "split": 40
+    },
+    "producer": {
+     "choice": 28,
+     "split": 28,
+     "unfillable": 14
+    }
+   },
+   "joint": {
+    "consumer": {
+     "split": 40
+    },
+    "producer": {
+     "choice": 28,
+     "unfillable": 42
+    }
+   },
+   "units": {
+    "consumer": {
+     "split": 40
+    },
+    "producer": {
+     "choice": 28,
+     "split": 28,
+     "unfillable": 14
+    }
+   }
+  },
+  "nonuniform_sheets": 0,
+  "outage_candidates_excluded": 0,
+  "qty_mismatch": 0,
+  "replay_mismatch": 0
+ },
+ "replicate": 0,
+ "rho": 0.6003180492976411,
+ "seconds": {
+  "episode": 1.93,
+  "setup": 0.45,
+  "total": 2.42
+ },
+ "size": 12,
+ "subject": "entity_planner/mww_keyed",
+ "traced_lost_no_fit": {
+  "consumer": "40.0",
+  "producer": "70.0"
+ },
+ "traced_rejected_no_fit": {
+  "consumer": "534.0",
+  "producer": "867.0"
+ },
+ "units": "3138.0",
+ "world": "ws-atlas-v1-12-0344",
+ "world_rule": null
+}

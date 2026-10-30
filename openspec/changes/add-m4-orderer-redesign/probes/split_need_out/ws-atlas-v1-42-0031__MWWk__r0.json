@@ -1,0 +1,131 @@
+{
+ "action_seed": 12745729075847687000,
+ "arm": "MWWk",
+ "check": {
+  "compared": 79,
+  "differ": [],
+  "found": true,
+  "lost_no_fit_ref": {
+   "consumer": "9.0",
+   "producer": "1674.0"
+  },
+  "units_ref": "5715.0"
+ },
+ "class": "hard",
+ "dead": "false",
+ "episode": 188168481,
+ "max_rss_mb": 52.5,
+ "probe": {
+  "classified_rejections": {
+   "consumer": 45,
+   "producer": 731
+  },
+  "dup_bids": 0,
+  "lost_orders": {
+   "L": {
+    "consumer": {
+     "choice": 1
+    },
+    "producer": {
+     "choice": 119,
+     "split": 34
+    }
+   },
+   "P": {
+    "consumer": {
+     "choice": 1
+    },
+    "producer": {
+     "choice": 131,
+     "split": 22
+    }
+   },
+   "joint": {
+    "consumer": {
+     "choice": 1
+    },
+    "producer": {
+     "choice": 46,
+     "split": 32,
+     "unfillable": 75
+    }
+   },
+   "units": {
+    "consumer": {
+     "choice": 1
+    },
+    "producer": {
+     "choice": 119,
+     "split": 34
+    }
+   }
+  },
+  "lost_total": {
+   "consumer": 9,
+   "producer": 1674
+  },
+  "lost_units": {
+   "L": {
+    "consumer": {
+     "choice": 9
+    },
+    "producer": {
+     "choice": 1269,
+     "split": 405
+    }
+   },
+   "P": {
+    "consumer": {
+     "choice": 9
+    },
+    "producer": {
+     "choice": 1403,
+     "split": 271
+    }
+   },
+   "joint": {
+    "consumer": {
+     "choice": 9
+    },
+    "producer": {
+     "choice": 474,
+     "split": 362,
+     "unfillable": 838
+    }
+   },
+   "units": {
+    "consumer": {
+     "choice": 9
+    },
+    "producer": {
+     "choice": 1269,
+     "split": 405
+    }
+   }
+  },
+  "nonuniform_sheets": 0,
+  "outage_candidates_excluded": 122,
+  "qty_mismatch": 0,
+  "replay_mismatch": 0
+ },
+ "replicate": 0,
+ "rho": 0.4529616724738676,
+ "seconds": {
+  "episode": 23.76,
+  "setup": 0.47,
+  "total": 24.29
+ },
+ "size": 42,
+ "subject": "entity_planner/mww_keyed",
+ "traced_lost_no_fit": {
+  "consumer": "9.0",
+  "producer": "1674.0"
+ },
+ "traced_rejected_no_fit": {
+  "consumer": "399.0",
+  "producer": "7570.0"
+ },
+ "units": "5715.0",
+ "world": "ws-atlas-v1-42-0031",
+ "world_rule": "lowest id of ['ws-atlas-v1-42-0031', 'ws-atlas-v1-42-0076', 'ws-atlas-v1-42-0093', 'ws-atlas-v1-42-0113', 'ws-atlas-v1-42-0126']"
+}

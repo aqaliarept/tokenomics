@@ -1,0 +1,113 @@
+{
+ "action_seed": 12745729075847687000,
+ "arm": "TS",
+ "check": {
+  "compared": 79,
+  "differ": [],
+  "found": true,
+  "lost_no_fit_ref": {
+   "consumer": "0.0",
+   "producer": "2226.0"
+  },
+  "units_ref": "4813.0"
+ },
+ "class": "hard",
+ "dead": "false",
+ "episode": 188168481,
+ "max_rss_mb": 503.9,
+ "probe": {
+  "classified_rejections": {
+   "consumer": 17,
+   "producer": 848
+  },
+  "dup_bids": 0,
+  "lost_orders": {
+   "L": {
+    "consumer": {},
+    "producer": {
+     "choice": 210,
+     "split": 1
+    }
+   },
+   "P": {
+    "consumer": {},
+    "producer": {
+     "choice": 211
+    }
+   },
+   "joint": {
+    "consumer": {},
+    "producer": {
+     "choice": 100,
+     "split": 20,
+     "unfillable": 91
+    }
+   },
+   "units": {
+    "consumer": {},
+    "producer": {
+     "choice": 210,
+     "split": 1
+    }
+   }
+  },
+  "lost_total": {
+   "consumer": 0,
+   "producer": 2226
+  },
+  "lost_units": {
+   "L": {
+    "consumer": {},
+    "producer": {
+     "choice": 2212,
+     "split": 14
+    }
+   },
+   "P": {
+    "consumer": {},
+    "producer": {
+     "choice": 2226
+    }
+   },
+   "joint": {
+    "consumer": {},
+    "producer": {
+     "choice": 1040,
+     "split": 217,
+     "unfillable": 969
+    }
+   },
+   "units": {
+    "consumer": {},
+    "producer": {
+     "choice": 2212,
+     "split": 14
+    }
+   }
+  },
+  "nonuniform_sheets": 0,
+  "outage_candidates_excluded": 106,
+  "qty_mismatch": 0,
+  "replay_mismatch": 0
+ },
+ "replicate": 0,
+ "rho": 0.4529616724738676,
+ "seconds": {
+  "episode": 50.86,
+  "setup": 2.94,
+  "total": 53.85
+ },
+ "size": 42,
+ "subject": "entity_planner/trained_sampled_whole",
+ "traced_lost_no_fit": {
+  "consumer": "0.0",
+  "producer": "2226.0"
+ },
+ "traced_rejected_no_fit": {
+  "consumer": "156.0",
+  "producer": "8913.0"
+ },
+ "units": "4813.0",
+ "world": "ws-atlas-v1-42-0031",
+ "world_rule": "lowest id of ['ws-atlas-v1-42-0031', 'ws-atlas-v1-42-0076', 'ws-atlas-v1-42-0093', 'ws-atlas-v1-42-0113', 'ws-atlas-v1-42-0126']"
+}

@@ -1,0 +1,145 @@
+{
+ "action_seed": 10779109389573214061,
+ "arm": "TS",
+ "check": {
+  "compared": 79,
+  "differ": [],
+  "found": true,
+  "lost_no_fit_ref": {
+   "consumer": "2322.0",
+   "producer": "181.0"
+  },
+  "units_ref": "11677.0"
+ },
+ "class": "open",
+ "dead": "false",
+ "episode": 126034777,
+ "max_rss_mb": 508.0,
+ "probe": {
+  "classified_rejections": {
+   "consumer": 74,
+   "producer": 132
+  },
+  "dup_bids": 0,
+  "lost_orders": {
+   "L": {
+    "consumer": {
+     "choice": 12,
+     "split": 5
+    },
+    "producer": {
+     "choice": 10,
+     "split": 3,
+     "unfillable": 2
+    }
+   },
+   "P": {
+    "consumer": {
+     "choice": 12,
+     "split": 5
+    },
+    "producer": {
+     "choice": 11,
+     "split": 2,
+     "unfillable": 2
+    }
+   },
+   "joint": {
+    "consumer": {
+     "choice": 12,
+     "split": 5
+    },
+    "producer": {
+     "choice": 8,
+     "split": 2,
+     "unfillable": 5
+    }
+   },
+   "units": {
+    "consumer": {
+     "choice": 12,
+     "split": 5
+    },
+    "producer": {
+     "choice": 10,
+     "split": 3,
+     "unfillable": 2
+    }
+   }
+  },
+  "lost_total": {
+   "consumer": 2322,
+   "producer": 181
+  },
+  "lost_units": {
+   "L": {
+    "consumer": {
+     "choice": 1586,
+     "split": 736
+    },
+    "producer": {
+     "choice": 124,
+     "split": 31,
+     "unfillable": 26
+    }
+   },
+   "P": {
+    "consumer": {
+     "choice": 1586,
+     "split": 736
+    },
+    "producer": {
+     "choice": 135,
+     "split": 20,
+     "unfillable": 26
+    }
+   },
+   "joint": {
+    "consumer": {
+     "choice": 1586,
+     "split": 736
+    },
+    "producer": {
+     "choice": 98,
+     "split": 22,
+     "unfillable": 61
+    }
+   },
+   "units": {
+    "consumer": {
+     "choice": 1586,
+     "split": 736
+    },
+    "producer": {
+     "choice": 124,
+     "split": 31,
+     "unfillable": 26
+    }
+   }
+  },
+  "nonuniform_sheets": 0,
+  "outage_candidates_excluded": 0,
+  "qty_mismatch": 0,
+  "replay_mismatch": 0
+ },
+ "replicate": 0,
+ "rho": 0.5669390289840651,
+ "seconds": {
+  "episode": 23.4,
+  "setup": 1.49,
+  "total": 24.91
+ },
+ "size": 42,
+ "subject": "entity_planner/trained_sampled_whole",
+ "traced_lost_no_fit": {
+  "consumer": "2322.0",
+  "producer": "181.0"
+ },
+ "traced_rejected_no_fit": {
+  "consumer": "9288.0",
+  "producer": "1510.0"
+ },
+ "units": "11677.0",
+ "world": "ws-atlas-v1-42-0013",
+ "world_rule": null
+}

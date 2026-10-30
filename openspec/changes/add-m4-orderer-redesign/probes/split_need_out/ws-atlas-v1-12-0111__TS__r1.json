@@ -1,0 +1,121 @@
+{
+ "action_seed": 14540035540600538950,
+ "arm": "TS",
+ "check": {
+  "compared": 79,
+  "differ": [],
+  "found": true,
+  "lost_no_fit_ref": {
+   "consumer": "154.0",
+   "producer": "14.0"
+  },
+  "units_ref": "2865.0"
+ },
+ "class": "open",
+ "dead": "false",
+ "episode": 195303600,
+ "max_rss_mb": 501.7,
+ "probe": {
+  "classified_rejections": {
+   "consumer": 18,
+   "producer": 25
+  },
+  "dup_bids": 0,
+  "lost_orders": {
+   "L": {
+    "consumer": {
+     "choice": 2
+    },
+    "producer": {
+     "choice": 1
+    }
+   },
+   "P": {
+    "consumer": {
+     "choice": 2
+    },
+    "producer": {
+     "choice": 1
+    }
+   },
+   "joint": {
+    "consumer": {
+     "choice": 2
+    },
+    "producer": {
+     "choice": 1
+    }
+   },
+   "units": {
+    "consumer": {
+     "choice": 2
+    },
+    "producer": {
+     "choice": 1
+    }
+   }
+  },
+  "lost_total": {
+   "consumer": 154,
+   "producer": 14
+  },
+  "lost_units": {
+   "L": {
+    "consumer": {
+     "choice": 154
+    },
+    "producer": {
+     "choice": 14
+    }
+   },
+   "P": {
+    "consumer": {
+     "choice": 154
+    },
+    "producer": {
+     "choice": 14
+    }
+   },
+   "joint": {
+    "consumer": {
+     "choice": 154
+    },
+    "producer": {
+     "choice": 14
+    }
+   },
+   "units": {
+    "consumer": {
+     "choice": 154
+    },
+    "producer": {
+     "choice": 14
+    }
+   }
+  },
+  "nonuniform_sheets": 0,
+  "outage_candidates_excluded": 0,
+  "qty_mismatch": 0,
+  "replay_mismatch": 0
+ },
+ "replicate": 1,
+ "rho": 0.47089262613195343,
+ "seconds": {
+  "episode": 3.1,
+  "setup": 3.06,
+  "total": 6.18
+ },
+ "size": 12,
+ "subject": "entity_planner/trained_sampled_whole",
+ "traced_lost_no_fit": {
+  "consumer": "154.0",
+  "producer": "14.0"
+ },
+ "traced_rejected_no_fit": {
+  "consumer": "1896.0",
+  "producer": "302.0"
+ },
+ "units": "2865.0",
+ "world": "ws-atlas-v1-12-0111",
+ "world_rule": null
+}

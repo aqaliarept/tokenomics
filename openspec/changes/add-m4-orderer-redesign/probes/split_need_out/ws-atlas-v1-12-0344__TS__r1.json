@@ -1,0 +1,121 @@
+{
+ "action_seed": 2841511339499476531,
+ "arm": "TS",
+ "check": {
+  "compared": 79,
+  "differ": [],
+  "found": true,
+  "lost_no_fit_ref": {
+   "consumer": "0.0",
+   "producer": "98.0"
+  },
+  "units_ref": "3015.0"
+ },
+ "class": "open",
+ "dead": "false",
+ "episode": 1680874617,
+ "max_rss_mb": 502.1,
+ "probe": {
+  "classified_rejections": {
+   "consumer": 5,
+   "producer": 38
+  },
+  "dup_bids": 0,
+  "lost_orders": {
+   "L": {
+    "consumer": {},
+    "producer": {
+     "choice": 2,
+     "split": 2,
+     "unfillable": 3
+    }
+   },
+   "P": {
+    "consumer": {},
+    "producer": {
+     "choice": 3,
+     "split": 1,
+     "unfillable": 3
+    }
+   },
+   "joint": {
+    "consumer": {},
+    "producer": {
+     "choice": 1,
+     "split": 2,
+     "unfillable": 4
+    }
+   },
+   "units": {
+    "consumer": {},
+    "producer": {
+     "choice": 2,
+     "split": 2,
+     "unfillable": 3
+    }
+   }
+  },
+  "lost_total": {
+   "consumer": 0,
+   "producer": 98
+  },
+  "lost_units": {
+   "L": {
+    "consumer": {},
+    "producer": {
+     "choice": 28,
+     "split": 28,
+     "unfillable": 42
+    }
+   },
+   "P": {
+    "consumer": {},
+    "producer": {
+     "choice": 42,
+     "split": 14,
+     "unfillable": 42
+    }
+   },
+   "joint": {
+    "consumer": {},
+    "producer": {
+     "choice": 14,
+     "split": 28,
+     "unfillable": 56
+    }
+   },
+   "units": {
+    "consumer": {},
+    "producer": {
+     "choice": 28,
+     "split": 28,
+     "unfillable": 42
+    }
+   }
+  },
+  "nonuniform_sheets": 0,
+  "outage_candidates_excluded": 0,
+  "qty_mismatch": 0,
+  "replay_mismatch": 0
+ },
+ "replicate": 1,
+ "rho": 0.6003180492976411,
+ "seconds": {
+  "episode": 4.66,
+  "setup": 2.73,
+  "total": 7.42
+ },
+ "size": 12,
+ "subject": "entity_planner/trained_sampled_whole",
+ "traced_lost_no_fit": {
+  "consumer": "0.0",
+  "producer": "98.0"
+ },
+ "traced_rejected_no_fit": {
+  "consumer": "273.0",
+  "producer": "498.0"
+ },
+ "units": "3015.0",
+ "world": "ws-atlas-v1-12-0344",
+ "world_rule": null
+}
