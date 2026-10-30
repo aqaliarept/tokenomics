@@ -150,9 +150,9 @@ pre-planned. EXP numbers are planned; an inserted diagnosis takes the next free 
   the roster.
 - **Worlds.** Every atlas v2 train-split world with ρ > 0.28 whose v2 class is not `collapse`:
   23 at 12 producers (including EXP-0056's 12-0060 / 12-0111 / 12-0344) and 14 at 42. Episodes
-  use the confirm's seeds: 2 per world, or 1 for cyclic shock-free worlds (12-0005, 0155, 0176,
-  0330 and 0464 have one). **Only the 12-producer worlds enter the readings.** The 42-producer
-  worlds are reported.
+  use the confirm's seeds: 2 per world, or 1 for cyclic shock-free worlds (12-0005, 0155 and
+  0176 have one: 43 world-episodes at 12 producers, 28 at 42). **Only the 12-producer worlds
+  enter the readings.** The 42-producer worlds are reported.
 - **Floors (n = 1 rule).** For each compared pair of arms on a world:
   - floor_w = max(atlas `noise_floor` at the run's counts, 3·SE of the run's own paired
     per-world differences);
