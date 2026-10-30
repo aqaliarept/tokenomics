@@ -63,9 +63,9 @@ See proposal.md (Why). The facts this design rests on:
   on label instability (EXP-0040 `SEARCH_ONLY`, winner overlap 0.60–0.74 < 0.80), not on
   architecture.
 - **DIAGNOSTICS entries 6, 9, 11, 12** (memorising, pod stalls, learnable teacher signal,
-  target-is-a-function) were removed by `18c717d`. This change cites them as
-  `git show 18c717d^:docs/DIAGNOSTICS.md` §N until task 1.1 restores them into
-  `docs/DIAGNOSTICS.md`.
+  target-is-a-function) were removed by `18c717d`; task 1.1 restored them verbatim into
+  `/srv/research/tokenomics/docs/DIAGNOSTICS.md`, and this change cites them there as
+  DIAGNOSTICS 6, 9, 11 and 12.
 
 ## Goals / Non-Goals
 

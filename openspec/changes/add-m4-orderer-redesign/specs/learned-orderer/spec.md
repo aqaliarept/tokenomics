@@ -169,7 +169,7 @@ Before the first ES run, the minimum detectable effect of the validation read SH
 - **THEN** the validation and held-out reads are played with 8 episodes per world
 
 ### Requirement: Imitation targets pass label stability
-Any per-decision imitation target, including one used only to warm-start, SHALL first pass an EXP-0040-style stability check on replayed states. Winner overlap SHALL be at least 0.80 at the registered continuation count. It SHALL also pass DIAGNOSTICS 12's target-is-a-function check (`git show 18c717d^:docs/DIAGNOSTICS.md` §12 until restored).
+Any per-decision imitation target, including one used only to warm-start, SHALL first pass an EXP-0040-style stability check on replayed states. Winner overlap SHALL be at least 0.80 at the registered continuation count. It SHALL also pass DIAGNOSTICS 12's target-is-a-function check (`/srv/research/tokenomics/docs/DIAGNOSTICS.md` §12).
 
 #### Scenario: Unstable target
 - **WHEN** a candidate target's winner overlap across continuations is below 0.80
