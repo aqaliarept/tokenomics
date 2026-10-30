@@ -1,0 +1,678 @@
+{
+ "action_seed": null,
+ "arm": "RR",
+ "checks": [
+  {
+   "compared": 66,
+   "demand_digest_equal": true,
+   "differ": [],
+   "found": true,
+   "ref": "EXP-0056",
+   "shock_digest_equal": true,
+   "units": "2429.0",
+   "units_ref": "2429.0"
+  },
+  {
+   "compared": 58,
+   "demand_digest_equal": true,
+   "differ": [],
+   "found": true,
+   "ref": "EXP-0052",
+   "shock_digest_equal": true,
+   "units": "2429.0",
+   "units_ref": "2429.0"
+  }
+ ],
+ "choice": "sparse_f4",
+ "class": "hard",
+ "consistency": {
+  "bid_units_placed": 13543,
+  "routed_units_from_outcomes": 13543,
+  "unattributed_outcomes": 0
+ },
+ "dead": "false",
+ "demand_digest": "41b0057e66b5fc6228f3107ee2a8486af96ac4d0b116865e013857d20a625788",
+ "dispersion": {
+  "agent_history_dispersion": 0.19376005427014442,
+  "agent_history_dispersion_choice_products": 0.19376005427014442,
+  "agent_history_dispersion_sample_sd": 0.22904564741507089,
+  "history_cells": 48,
+  "history_cells_choice": 48,
+  "history_cells_zero_sd": 6,
+  "history_detail": [
+   {
+    "agents": 5,
+    "producer": "p0_0",
+    "product": 0,
+    "rates": [
+     1.0,
+     0.6818,
+     0.9615,
+     1.0,
+     1.0
+    ]
+   },
+   {
+    "agents": 5,
+    "producer": "p0_1",
+    "product": 0,
+    "rates": [
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   {
+    "agents": 5,
+    "producer": "p0_2",
+    "product": 0,
+    "rates": [
+     1.0,
+     0.8857,
+     0.9796,
+     0.7333,
+     0.8333
+    ]
+   },
+   {
+    "agents": 5,
+    "producer": "p0_3",
+    "product": 0,
+    "rates": [
+     1.0,
+     0.9048,
+     0.9362,
+     0.8636,
+     0.8889
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_0",
+    "product": 1,
+    "rates": [
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_1",
+    "product": 1,
+    "rates": [
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_2",
+    "product": 1,
+    "rates": [
+     0.9444,
+     1.0,
+     1.0,
+     0.2143,
+     0.9261,
+     0.6667
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_3",
+    "product": 1,
+    "rates": [
+     0.8182,
+     0.979,
+     1.0,
+     0.9141,
+     0.957,
+     1.0
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_0",
+    "product": 2,
+    "rates": [
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_1",
+    "product": 2,
+    "rates": [
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   {
+    "agents": 5,
+    "producer": "p0_2",
+    "product": 2,
+    "rates": [
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     0.75
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_3",
+    "product": 2,
+    "rates": [
+     0.8182,
+     1.0,
+     1.0,
+     0.9474,
+     0.7857,
+     1.0
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_0",
+    "product": 3,
+    "rates": [
+     0.9524,
+     0.9833,
+     1.0,
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_1",
+    "product": 3,
+    "rates": [
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_2",
+    "product": 3,
+    "rates": [
+     1.0,
+     1.0,
+     1.0,
+     0.6792,
+     0.75,
+     0.8
+    ]
+   },
+   {
+    "agents": 6,
+    "producer": "p0_3",
+    "product": 3,
+    "rates": [
+     0.7317,
+     0.6,
+     1.0,
+     0.8333,
+     0.7692,
+     0.6667
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_0",
+    "product": 10,
+    "rates": [
+     0.3614,
+     0.8,
+     0.9138,
+     0.6538
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_1",
+    "product": 10,
+    "rates": [
+     0.4235,
+     1.0,
+     0.6,
+     0.5417
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_2",
+    "product": 10,
+    "rates": [
+     0.3373,
+     0.8,
+     1.0,
+     0.4082
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_3",
+    "product": 10,
+    "rates": [
+     0.3253,
+     0.7872,
+     0.7222,
+     0.5152
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_0",
+    "product": 11,
+    "rates": [
+     0.8911,
+     0.819,
+     0.4122,
+     0.2252
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_1",
+    "product": 11,
+    "rates": [
+     0.7556,
+     0.9104,
+     0.4857,
+     0.3094
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_2",
+    "product": 11,
+    "rates": [
+     1.0,
+     0.8689,
+     0.4597,
+     0.4211
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_3",
+    "product": 11,
+    "rates": [
+     1.0,
+     0.908,
+     0.2857,
+     0.4653
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_0",
+    "product": 12,
+    "rates": [
+     0.3582,
+     0.3293,
+     0.292,
+     0.1505
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_1",
+    "product": 12,
+    "rates": [
+     1.0,
+     0.5932,
+     0.2295,
+     0.2632
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_2",
+    "product": 12,
+    "rates": [
+     0.9036,
+     0.4272,
+     0.1538,
+     0.1631
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_3",
+    "product": 12,
+    "rates": [
+     0.7969,
+     0.5341,
+     0.2321,
+     0.1879
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_0",
+    "product": 13,
+    "rates": [
+     0.48,
+     0.7778,
+     0.6579,
+     0.2615
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_1",
+    "product": 13,
+    "rates": [
+     0.5273,
+     0.6739,
+     1.0,
+     0.2615
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_2",
+    "product": 13,
+    "rates": [
+     0.85,
+     0.4688,
+     0.3871,
+     0.1296
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p1_3",
+    "product": 13,
+    "rates": [
+     0.3077,
+     1.0,
+     0.6912,
+     0.2857
+    ]
+   },
+   {
+    "agents": 3,
+    "producer": "p2_0",
+    "product": 20,
+    "rates": [
+     0.2946,
+     0.4158,
+     0.3516
+    ]
+   },
+   {
+    "agents": 3,
+    "producer": "p2_1",
+    "product": 20,
+    "rates": [
+     1.0,
+     0.92,
+     0.7073
+    ]
+   },
+   {
+    "agents": 3,
+    "producer": "p2_2",
+    "product": 20,
+    "rates": [
+     0.8358,
+     0.9245,
+     0.2564
+    ]
+   },
+   {
+    "agents": 3,
+    "producer": "p2_3",
+    "product": 20,
+    "rates": [
+     0.7143,
+     0.8235,
+     0.3708
+    ]
+   },
+   {
+    "agents": 5,
+    "producer": "p2_0",
+    "product": 21,
+    "rates": [
+     0.5,
+     0.9195,
+     1.0,
+     0.3696,
+     0.6
+    ]
+   },
+   {
+    "agents": 5,
+    "producer": "p2_1",
+    "product": 21,
+    "rates": [
+     0.2909,
+     0.9355,
+     0.8431,
+     0.5349,
+     0.512
+    ]
+   },
+   {
+    "agents": 5,
+    "producer": "p2_2",
+    "product": 21,
+    "rates": [
+     0.2963,
+     0.2083,
+     0.6154,
+     0.7231,
+     0.422
+    ]
+   },
+   {
+    "agents": 5,
+    "producer": "p2_3",
+    "product": 21,
+    "rates": [
+     0.2171,
+     0.7123,
+     0.6852,
+     0.1824,
+     0.2458
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p2_0",
+    "product": 22,
+    "rates": [
+     0.4533,
+     0.4429,
+     0.7719,
+     0.2031
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p2_1",
+    "product": 22,
+    "rates": [
+     0.3425,
+     0.9429,
+     0.8868,
+     0.8077
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p2_2",
+    "product": 22,
+    "rates": [
+     0.619,
+     0.6974,
+     0.3676,
+     0.6275
+    ]
+   },
+   {
+    "agents": 4,
+    "producer": "p2_3",
+    "product": 22,
+    "rates": [
+     0.3529,
+     0.3925,
+     0.3441,
+     0.2346
+    ]
+   },
+   {
+    "agents": 2,
+    "producer": "p2_0",
+    "product": 23,
+    "rates": [
+     0.4651,
+     0.2017
+    ]
+   },
+   {
+    "agents": 2,
+    "producer": "p2_1",
+    "product": 23,
+    "rates": [
+     0.9286,
+     0.269
+    ]
+   },
+   {
+    "agents": 2,
+    "producer": "p2_2",
+    "product": 23,
+    "rates": [
+     0.8958,
+     0.195
+    ]
+   },
+   {
+    "agents": 2,
+    "producer": "p2_3",
+    "product": 23,
+    "rates": [
+     0.9074,
+     0.4222
+    ]
+   }
+  ],
+  "routed_share_dispersion": 0.18757228300641476,
+  "routed_share_dispersion_all_products": 0.18757228300641476,
+  "routed_share_dispersion_per_product_median": 0.15694462137934817,
+  "share_pairs": 104,
+  "share_pairs_all": 104,
+  "share_products": 12
+ },
+ "episode": 1295251592,
+ "groups": {
+  "all": {
+   "across_group_share": 0.9794520547945206,
+   "across_order_share": 0.9846889952153111,
+   "across_pair_share": 0.9463350785340314,
+   "cross_pairs": 2169,
+   "groups": 730,
+   "groups_across": 715,
+   "groups_by_class": {
+    "consumer": 231,
+    "producer": 499
+   },
+   "groups_within_only": 15,
+   "mean_agents_per_group": 2.706849315068493,
+   "mean_group_size": 2.863013698630137,
+   "orders": 2090,
+   "orders_with_other_agent": 2058,
+   "pairs": 2292
+  },
+  "choice": {
+   "across_group_share": 0.9794520547945206,
+   "across_order_share": 0.9846889952153111,
+   "across_pair_share": 0.9463350785340314,
+   "cross_pairs": 2169,
+   "groups": 730,
+   "groups_across": 715,
+   "groups_by_class": {
+    "consumer": 231,
+    "producer": 499
+   },
+   "groups_within_only": 15,
+   "mean_agents_per_group": 2.706849315068493,
+   "mean_group_size": 2.863013698630137,
+   "orders": 2090,
+   "orders_with_other_agent": 2058,
+   "pairs": 2292
+  }
+ },
+ "lead_concurrent_top_share_consumer": "0.5246753246753247",
+ "max_rss_mb": 47.7,
+ "pattern": "burst",
+ "replicate": 0,
+ "rho": 0.32595993322203676,
+ "seconds": {
+  "episode": 2.5,
+  "setup": 0.4,
+  "total": 2.93
+ },
+ "shock_digest": "c961073d15241fab471823d3784f101c7585efaef806b1206d8d5620575aa164",
+ "shocks": true,
+ "size": 12,
+ "subject": "entity_planner/round_robin",
+ "turns": {
+  "consumer": {
+   "active_turns": 709,
+   "agents": 14,
+   "max_orders_per_turn": 2,
+   "orders": 715,
+   "orders_per_active_turn": 1.008462623413258,
+   "share_active_turns_ge2": 0.00846262341325811,
+   "turns": 1400
+  },
+  "no_order_agents": {
+   "agents": 0,
+   "turns": 0
+  },
+  "producer": {
+   "active_turns": 1586,
+   "agents": 40,
+   "max_orders_per_turn": 3,
+   "orders": 1694,
+   "orders_per_active_turn": 1.0680958385876418,
+   "share_active_turns_ge2": 0.06242118537200504,
+   "turns": 4000
+  }
+ },
+ "units": "2429.0",
+ "world": "ws-atlas-v1-12-0060",
+ "world_rule": null
+}
