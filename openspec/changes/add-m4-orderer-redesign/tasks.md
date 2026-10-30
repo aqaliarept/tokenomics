@@ -160,7 +160,7 @@ Ladder gates (design D1): a group marked **Gated** starts only when the named re
 
 ## 5. Step 2 — ES driver, pre-registration and sizing (code)
 
-- [ ] 5.1 [code][local-exclusive] Training worlds and the bar precompute in `/srv/research/tokenomics/tokenomics/tokenomics/train/order_es_worlds.py` (design D6).
+- [x] 5.1 [code][local-exclusive] Training worlds and the bar precompute in `/srv/research/tokenomics/tokenomics/tokenomics/train/order_es_worlds.py` (design D6).
   - Worlds: the 23 loaded non-collapse 12-producer Atlas train worlds plus 41 fresh `eval/world_space` draws (disjoint seed stream; the ρ > 0.28 / fill < 0.95 / no-dead-bar filters; a fixed redraw order), each pinned.
   - `--mode bar` plays RR, MWW R = 2, TR, the roster v2 deterministic members and A0 on every training world-episode with the chosen producer, records per-job timings (for longest-first) and applies the "A0 infeasible" branch (replace worlds where A0 dies; `no_feasible_start` at > 1/4 replaced or < 50 feasible).
   - The 16-world-episode monitor set and the minibatch schedule come from a recorded seed stream.
