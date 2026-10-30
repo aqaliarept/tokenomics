@@ -209,6 +209,8 @@ RESOURCES: <local|local-exclusive|remote:<profile>>. The box is shared (<nproc> 
 the supervisor instead of running it. Tell the reviewer when your own full-suite run is done.
 TASK: <task text + relevant spec/design excerpts>
 SCOPE: <files>  ACCEPTANCE: <command or check>
+Mutation checks (deleting a guard, planting a leak) run on a copy (a temp copy of the tree or a
+git worktree), never on the live file: a deleted guard once let a test start a real run locally.
 Artifact for review: the uncommitted working tree diff vs <base commit>; list new files.
 Do not commit or push; the supervisor commits after approval.
 ```

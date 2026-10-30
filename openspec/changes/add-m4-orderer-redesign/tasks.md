@@ -52,7 +52,7 @@ Ladder gates (design D1): a group marked **Gated** starts only when the named re
   - "Diagnostic router added" holds (frozen hashes, baseline keys, `signal_check` rows).
 
   Goldens and the full suite are green.
-- [ ] 2.2 [code][local-exclusive] Build `/srv/research/tokenomics/tokenomics/tokenomics/eval/decoder_check.py` (design D3) on `routing_audit`'s job path, tracer on, `entity_planner` for every arm.
+- [x] 2.2 [code][local-exclusive] Build `/srv/research/tokenomics/tokenomics/tokenomics/eval/decoder_check.py` (design D3) on `routing_audit`'s job path, tracer on, `entity_planner` for every arm.
   - Sample: Atlas train split, ρ > 0.28, not `collapse` (23 at 12, 14 at 42), at the confirm's episode seeds.
   - Arms: TR, TS (R = 2), MWWk (R = 2), MWW (R = 2), TW, RR.
   - Floors are per comparison: max(atlas `noise_floor` at the run's counts, 3·SE of the run's own paired per-world differences). The own SE is used only with ≥ 2 paired observations, else the atlas floor (the n = 1 rule).
