@@ -1,0 +1,169 @@
+{
+  "compared_rows": 284,
+  "deciding_arm": "MWWk",
+  "dry_run": false,
+  "experiment": "EXP-0066",
+  "neutral_rows": 284,
+  "neutrality_checked": true,
+  "next": "step 2 stays whole-only; design D5 records why",
+  "per_size": {
+    "12": {
+      "MWWk": {
+        "classes_units": {
+          "L": {
+            "choice": 12065.0,
+            "split": 6260.0,
+            "unfillable": 7970.0
+          },
+          "P": {
+            "choice": 13733.0,
+            "split": 5451.0,
+            "unfillable": 7111.0
+          },
+          "joint": {
+            "choice": 6910.0,
+            "split": 3515.0,
+            "unfillable": 15870.0
+          },
+          "units": {
+            "choice": 12065.0,
+            "split": 5703.0,
+            "unfillable": 8527.0
+          }
+        },
+        "corrected_split_units": 1000.1845368320561,
+        "filled_units": 180255.0,
+        "lost_no_fit_units": 26295.0,
+        "rows": 86,
+        "share_corrected": 0.005548720073407429,
+        "share_split_uncorrected": {
+          "L": 0.03472857895758786,
+          "P": 0.030240492635433137,
+          "joint": 0.019500152561648776,
+          "units": 0.03163851210784722
+        }
+      },
+      "TS": {
+        "classes_units": {
+          "L": {
+            "choice": 6168.0,
+            "split": 4771.0,
+            "unfillable": 10773.0
+          },
+          "P": {
+            "choice": 8132.0,
+            "split": 4337.0,
+            "unfillable": 9243.0
+          },
+          "joint": {
+            "choice": 4702.0,
+            "split": 1911.0,
+            "unfillable": 15099.0
+          },
+          "units": {
+            "choice": 6168.0,
+            "split": 3929.0,
+            "unfillable": 11615.0
+          }
+        },
+        "corrected_split_units": 582.3924754401411,
+        "filled_units": 167854.0,
+        "lost_no_fit_units": 21712.0,
+        "rows": 86,
+        "share_corrected": 0.0034696371575305986,
+        "share_split_uncorrected": {
+          "L": 0.028423510908289346,
+          "P": 0.025837930582530057,
+          "joint": 0.011384894015036878,
+          "units": 0.023407246773982152
+        }
+      },
+      "at_or_above": false,
+      "deciding": "MWWk"
+    },
+    "42": {
+      "MWWk": {
+        "classes_units": {
+          "L": {
+            "choice": 19717.0,
+            "split": 18987.0,
+            "unfillable": 8726.0
+          },
+          "P": {
+            "choice": 21216.0,
+            "split": 18223.0,
+            "unfillable": 7991.0
+          },
+          "joint": {
+            "choice": 15092.0,
+            "split": 11353.0,
+            "unfillable": 20985.0
+          },
+          "units": {
+            "choice": 19717.0,
+            "split": 17889.0,
+            "unfillable": 9824.0
+          }
+        },
+        "corrected_split_units": 3545.7792522098985,
+        "filled_units": 331788.0,
+        "lost_no_fit_units": 47430.0,
+        "rows": 56,
+        "share_corrected": 0.010686882142241125,
+        "share_split_uncorrected": {
+          "L": 0.05722630113204818,
+          "P": 0.0549236259298106,
+          "joint": 0.03421763294633923,
+          "units": 0.05391695902202611
+        }
+      },
+      "TS": {
+        "classes_units": {
+          "L": {
+            "choice": 21727.0,
+            "split": 19784.0,
+            "unfillable": 8935.0
+          },
+          "P": {
+            "choice": 23664.0,
+            "split": 19048.0,
+            "unfillable": 7734.0
+          },
+          "joint": {
+            "choice": 16027.0,
+            "split": 10935.0,
+            "unfillable": 23484.0
+          },
+          "units": {
+            "choice": 21727.0,
+            "split": 18832.0,
+            "unfillable": 9887.0
+          }
+        },
+        "corrected_split_units": 1678.6188076595427,
+        "filled_units": 257460.0,
+        "lost_no_fit_units": 50446.0,
+        "rows": 56,
+        "share_corrected": 0.006519920794141003,
+        "share_split_uncorrected": {
+          "L": 0.07684300473860017,
+          "P": 0.07398430824205701,
+          "joint": 0.0424726171055698,
+          "units": 0.07314534296589761
+        }
+      },
+      "at_or_above": false,
+      "deciding": "MWWk"
+    }
+  },
+  "reading": "whole_suffices",
+  "readings_withheld": false,
+  "reported_arms": [
+    "TS"
+  ],
+  "rule": "deciding arm MWWk (TS reported): per size, pooled completion-corrected split-needed units (joint consumer split-needed units x that run's completed / accepted consumer bid units) over all its world-episodes and replicates / pooled filled consumer units; split_needed if that share >= 5% at 12 or at 42, else whole_suffices",
+  "sizes_at_or_above": [],
+  "sizes_incomplete": [],
+  "status": "valid",
+  "threshold": 0.05
+}

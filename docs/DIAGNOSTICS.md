@@ -838,6 +838,58 @@ negative). Outcome: structural; EXP-0053 records `ub` as no upper bound.
 
 ---
 
+## 24. Whole routing loses orders that do not fit: choice or split?
+
+**Problem (plain English):** an orderer that sends every order whole to one producer loses
+orders whose whole bundle does not fit the chosen producer's remaining capacity (the bid is
+rejected `no_fit`). A splitting orderer loses far fewer that way (EXP-0057, consumer units per
+episode at 12 / 42 producers: whole TS ≈ 252 / 901 and MWWk ≈ 306 / 847, against 88 / 98 for the
+splitting trained orderer). Read naively, that says a
+whole-only orderer has a built-in ceiling and must learn to split. The competing explanations
+call for different responses:
+- **choice**: another eligible producer had room for the whole order; a better whole choice
+  fixes it (train the chooser, no split needed);
+- **split**: no single producer had room, but the eligible producers together did; only a split
+  saves it (a split rule / split action is needed);
+- **unfillable**: not even all eligible producers together had the capacity that cycle; neither
+  fixes it (the loss is load, not routing).
+
+**Discriminating check (pod for the full sample; local for 1–2 world-episodes):**
+`python -m tokenomics.eval.split_need` (task 4.5) replays the whole arms on their reference
+world-episodes with a read-only observer and classifies every unit lost to `no_fit` at its
+order's last bid's auction. Read:
+- the **joint** count (the yardstick: a cycle's lost bids claim the leftovers once, in
+  descending price order), never the per-order count alone, which lets every lost order reuse
+  the same spare units and overstates both choice and split on overloaded worlds;
+- the split-needed share of filled consumer units, pooled per size over every world-episode
+  and replicate, after the **completion correction** (× the run's completed / accepted consumer
+  bid units: an accepted bid is not yet a fill);
+- the sample must hold the loss: check what fraction of the reference arm's `no_fit` loss the
+  sampled world-episodes carry before reading anything (task 4.4's first pass held 13.7% /
+  0.1% and could not answer). Validity: rows neutral against the reference, classes summing to
+  the traced `no_fit` loss in every row (exit 2 otherwise).
+
+**Outcome branches:**
+- **corrected split-needed share ≥ the pre-registered line (5%) at some size**: splitting is
+  needed there; bring a rule-gated split design to the user before training a whole-only
+  policy on that size;
+- **below the line, choice-fixable ≫ split-needed**: whole routing suffices; the loss is the
+  chooser's, so train / improve the whole choice;
+- **below the line, mostly unfillable**: whole routing suffices and the loss is capacity, not
+  routing; neither a better choice nor a split recovers it in that cycle (look at producers /
+  investment if it matters);
+- **per-world outliers above the line while the pooled share is below**: record them; they
+  do not decide under the pooled rule, but name them if a later per-world gap appears there.
+
+**Seen in:** EXP-0066 (task 4.6; task 4.4 the first, unrepresentative pass). MWWk corrected
+split-needed share 0.55% (12) / 1.07% (42), uncorrected joint 1.95% / 3.42%, TS 0.35% / 0.65%;
+`no_fit` loss classes (joint, MWWk) 12: choice 26% / split 13% / unfillable 60%, 42: 32% / 24% /
+44%. Outliers: 12-0230 (16.0%) and 42-0076 (13.4%). Joint vs per-order on 12-0352 MWWk r0:
+split-needed 103 vs 865, choice-fixable 398 vs 1,935, unfillable 3,072 vs 773. Outcome:
+`whole_suffices` (mostly unfillable, choice > split); step 2 stays whole-only.
+
+---
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

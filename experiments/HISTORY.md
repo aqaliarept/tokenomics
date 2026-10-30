@@ -989,3 +989,30 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   MWWk recovering 1.08 of the gap), so at that size the scores themselves leave a large share.
   Reproduction 293 / 293 rows against EXP-0052 / EXP-0056, 0 contract failures. ≈ 1.4 vCPU-h
   billed (tranche A ≈ 1.4 of 100). Per D3, `history_flat` goes to the user before group 4.
+
+### Does whole routing need a split? (split-need re-test)
+
+- **EXP-0066 — split-need re-test. `whole_suffices`: orders that only a split could have saved
+  are ≈ 1% of filled consumer units or less at both sizes, so step 2 stays whole-only.** Step 2
+  sends every order whole to one producer, and the user asked whether that leaves a built-in
+  ceiling on orders too big for any single producer. Whole routing loses consumer orders to
+  `no_fit` (the whole bundle did not fit the chosen producer's remaining capacity): in EXP-0057
+  ≈ 252 / 901 units per episode at 12 / 42 producers under TS and 306 / 847 under MWWk. Each lost unit is classified at its last
+  bid's auction as *choice-fixable* (another eligible producer's leftover held the whole
+  sub-order), *split-needed* (only the eligible producers' leftovers together did) or
+  *unfillable* (not even together), with the *joint* count (a cycle's lost bids claim the
+  leftovers once, in price order) as the yardstick and each run's completed / accepted consumer
+  bid ratio as a crude completion correction. Task 4.4's first pass fired its rule on a sample
+  that held only 13.7% / 0.1% of TS's `no_fit` loss, so the user chose a fair re-test over every
+  EXP-0057 world-episode (71) with MWWk deciding and TS reported, R = 2, the reading fixed
+  before the run. MWWk's corrected split-needed share is 0.55% at 12 and 1.07% at 42 (TS 0.35% /
+  0.65%) against the 5% line; even uncorrected the joint shares are 1.95% / 3.42%, and only the
+  loosest count (per order, uncorrected) crosses 5%, at 42 (5.72%). Most `no_fit` loss is
+  unfillable in its cycle (60% / 44% of MWWk's), and choice-fixable units exceed split-needed
+  ones at both sizes under both arms. The split-needed loss is concentrated: corrected ≥ 5% on
+  one world per size under both arms (12-0230 16.0%, 42-0076 13.4% MWWk). The joint count is
+  much stricter than the per-order one on overloaded worlds (12-0352 MWWk r0: split-needed 103
+  vs 865, unfillable 3,072 vs 773), because the per-order count lets every lost order reuse the
+  same spare units. All 284 rows equal their EXP-0057 rows (the observer is neutral) and the
+  classes sum to the traced loss in every row. ≈ 1.7 vCPU-h billed (tranche A ≈ 3.1 of 100).
+  New DIAGNOSTICS entry 24.
