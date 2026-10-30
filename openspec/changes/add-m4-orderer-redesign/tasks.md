@@ -111,7 +111,7 @@ Ladder gates (design D1): a group marked **Gated** starts only when the named re
   - `pettingzoo` `api_test` passes on both decodes;
   - "Legacy checkpoint replay" holds (goldens unedited);
   - the `domain/` purity test and the full suite are green.
-- [ ] 4.2 [code][local-exclusive] Agent-local history (design D5; ADR-0058) in a new `/srv/research/tokenomics/tokenomics/tokenomics/env/agent_history.py`.
+- [x] 4.2 [code][local-exclusive] Agent-local history (design D5; ADR-0058) in a new `/srv/research/tokenomics/tokenomics/tokenomics/env/agent_history.py`.
   - The history is built **only from bid-outcome kinds** of the agent's own sub-orders: accepted, completed, failed (the domain's dropped and TTL failures merged) and rejected (all kinds merged). No `reason` field is read.
   - Features per (ordering agent, eligible producer of its stream product): EMAs of routed, accepted, completed, failed and rejected units; completion latency; completion rate with a 1-unit prior; log recency; a never-routed flag (9 features). α is the domain telemetry's.
   - Folded only after `complete_cycle`, reset at reset.

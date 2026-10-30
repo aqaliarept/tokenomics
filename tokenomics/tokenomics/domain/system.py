@@ -119,7 +119,10 @@ class BidOutcome:
     "Telemetry"), pure data. `outcome` is accepted / completed / failed / rejected; `reason`
     is a REJECT_* / FAIL_* constant of `producing_agent` for rejected / failed bids, else None.
     `order_kind` is consumer / replenishment / investment. DIAGNOSTIC ONLY: an `outage`
-    reason reveals hidden shock state, so no policy or teacher fork may read it (design D4)."""
+    reason reveals hidden shock state, so no policy or teacher fork may read it (design D4).
+    `routed_cycle` is the cycle the bid was routed (`Bid.routed_cycle`), additive pure data
+    (add-m4-orderer-redesign D5): the agent-local history's completion latency is dated from it,
+    exactly as the telemetry's is."""
 
     producer_id: ProducerId
     order_id: OrderId
@@ -129,6 +132,7 @@ class BidOutcome:
     capacity_units: Capacity
     outcome: str
     reason: str | None
+    routed_cycle: int = 0
 
 
 @dataclass(frozen=True)
@@ -567,7 +571,7 @@ class System:
         def outcome(pid: ProducerId, bid: Bid, kind: str, reason: str | None) -> BidOutcome:
             return BidOutcome(
                 pid, bid.order_id, order_kind(must_get(self.orders, bid.order_id)), bid.product,
-                bid.quantity, bid.total_capacity(), kind, reason,
+                bid.quantity, bid.total_capacity(), kind, reason, bid.routed_cycle,
             )
 
         # producers in an outage during this played cycle (D2)
@@ -666,6 +670,7 @@ class System:
                         bid_outcomes.append(BidOutcome(
                             pid, r.bid.order_id, removed_kinds[r.bid.order_id], r.bid.product,
                             r.bid.quantity, r.bid.total_capacity(), "failed", FAIL_TTL,
+                            r.bid.routed_cycle,
                         ))
                     else:
                         survivors.append(r)
