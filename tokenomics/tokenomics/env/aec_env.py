@@ -27,7 +27,7 @@ from ..domain.config import Configuration
 from ..domain.consumer import Consumer, ScheduleEntry
 from ..domain.producing_agent import ProducerInfo
 from ..domain.system import CycleResult
-from .decode import decode_ordering, decode_producing
+from .decode import decode_ordering, decode_producing, eligibility_mask
 from .encode import (
     encode_global,
     encode_ordering,
@@ -41,7 +41,7 @@ from .demand_drift import draw_schedule_entry, drift_schedules  # noqa: F401 (re
 from .demand_patterns import pattern_schedules
 from .shock_schedule import build_schedule, shock_digest
 from .side_effects import SideEffectTracker, capacity_ratio
-from .spaces import build_spec
+from .spaces import CHOICE_V1, LOGITS_V1, build_spec
 
 # Action handed to step(): both roles emit a raw float vector (Box); None = a
 # dead-agent step. ADR-0026 made the producing action continuous too.
@@ -92,6 +92,7 @@ class TokenomicsAECEnv(AECEnv):
         product_stream_ordering: bool = False,
         corrected_stream_k: bool = False,
         entity_producer_obs: bool = False,
+        ordering_decode: str = LOGITS_V1,
     ) -> None:
         super().__init__()
         self.config = config or load_config(DEFAULT_CONFIG)
@@ -123,7 +124,11 @@ class TokenomicsAECEnv(AECEnv):
             self.config,
             orderer_obs_version=orderer_obs_version,
             producer_obs_version=producer_obs_version,
+            ordering_decode=ordering_decode,
         )
+        # ADR-0059: `choice-v1` ordering actions are per-slot shares checked by the validity
+        # layer; `logits-v1` (default) keeps the legacy decode byte-identical.
+        self.ordering_decode = ordering_decode
         self.horizon = horizon
         self.render_mode = render_mode
 
@@ -433,7 +438,22 @@ class TokenomicsAECEnv(AECEnv):
             self._clear_rewards()
 
         self.agent_selection = self._agent_selector.next()
+        self._set_action_mask(self.agent_selection)
         self._accumulate_rewards()
+
+    def _set_action_mask(self, agent: str) -> None:
+        """`choice-v1` only (ADR-0059): give the ordering agent about to act its slot
+        eligibility as `infos[agent]["action_mask"]` (flat k_stream * P, int8), the PettingZoo
+        convention `ChoiceShareSpace.sample` reads. Eligibility is the static `produces` set
+        (ADR-0028), so nothing outside the agent's information set (ADR-0058) is exposed.
+        Producing agents and the legacy decode get nothing."""
+        if self.ordering_decode != CHOICE_V1 or self._role[agent][0] != "order":
+            return
+        if self.terminations[agent] or self.truncations[agent]:
+            return
+        view = self.system.ordering_agents[self._role[agent][1]].view(self.system.producer_infos)
+        mask = eligibility_mask(self.spec_, view).astype(np.int8).reshape(-1)
+        self.infos[agent] = {**self.infos[agent], "action_mask": mask}
 
     def render(self) -> None:
         if self.render_mode is None:

@@ -13,6 +13,7 @@ derived from the config so they scale with the economy:
                      (restoration, upgrade, inventory expansion), raw reals
   ordering  action = Box(K*P)    -> per slot, raw logits over *all* producers;
                      decode restricts to the order's eligible producers
+                     (`ordering_decode="choice-v1"`, ADR-0059: per-slot shares in [0, 1])
 
 P = num producers, T = num capacity types, K = max order slots, G = global input-
 product vocabulary (sorted union over all composite recipes).
@@ -38,6 +39,53 @@ ORDER_LIFETIME = 3
 INVESTMENT_STREAMS = 3
 OBS_CLIP = 10.0
 ACTION_LOGIT_BOUND = 10.0
+
+# Ordering decodes (ADR-0059). `logits-v1` = legacy per-slot logits -> softmax split, the default;
+# `choice-v1` = per-slot producer shares, checked by `allocator.validate_choice`.
+LOGITS_V1 = "logits-v1"
+CHOICE_V1 = "choice-v1"
+ORDERING_DECODES = (LOGITS_V1, CHOICE_V1)
+
+
+def check_ordering_decode(ordering_decode: str) -> str:
+    if ordering_decode not in ORDERING_DECODES:
+        raise ValueError(f"unknown ordering_decode {ordering_decode!r}; known: {ORDERING_DECODES}")
+    return ordering_decode
+
+
+def decode_pins(ordering_decode: str) -> dict[str, str]:
+    """The ordering-decode entry of a driver's `spec.json` pins (ADR-0059): empty at the legacy
+    default, so every existing pin set (and resume check) is unchanged; `choice-v1` adds a key,
+    so a choice run never resumes or reads as a logits run."""
+    check_ordering_decode(ordering_decode)
+    return {} if ordering_decode == LOGITS_V1 else {"ordering_decode": ordering_decode}
+
+
+class ChoiceShareSpace(spaces.Box):
+    """The `choice-v1` ordering action (ADR-0059): row k = slot k's shares over all producers,
+    each in [0, 1]. Box bounds cannot express "sums to one over the order's eligible producers",
+    so validity is `allocator.validate_choice`'s. `sample(mask)` draws a valid whole (one-hot)
+    choice per slot from a (k_stream * P) eligibility mask, the env's `infos[agent]
+    ["action_mask"]`; rows without an eligible producer stay zero. Without a mask it draws a
+    one-hot over all producers, which may be invalid for the env's orders."""
+
+    def __init__(self, k_slots: int, num_producers: int) -> None:
+        super().__init__(0.0, 1.0, shape=(k_slots * num_producers,), dtype=np.float32)
+        self.k_slots = k_slots
+        self.num_producers = num_producers
+
+    def sample(self, mask: np.ndarray | None = None, probability: None = None) -> np.ndarray:
+        if probability is not None:
+            raise ValueError("ChoiceShareSpace.sample takes no probability")
+        shape = (self.k_slots, self.num_producers)
+        rows = (np.ones(shape, dtype=bool) if mask is None
+                else np.asarray(mask, dtype=bool).reshape(shape))
+        out = np.zeros(shape, dtype=np.float32)
+        for k in range(self.k_slots):
+            idx = np.flatnonzero(rows[k])
+            if idx.size:
+                out[k, idx[int(self.np_random.integers(idx.size))]] = 1.0
+        return out.reshape(-1)
 
 # Enriched orderer observation block widths (EXP-0006A, orderer_obs_version 2). Each
 # mirrors a block the encoder emits from the domain OrdererEconomyView; the dim and
@@ -129,6 +177,9 @@ class EnvSpec:
     # obs (ADR-0053, EXP-0010A). Opt-in so flat_v1 producer checkpoints stay valid;
     # hashed into config_fingerprint so an entity checkpoint can't collide with a flat.
     producer_obs_version: int = 1
+    # Ordering decode (ADR-0059): `logits-v1` (legacy, default) or `choice-v1`. Hashed into
+    # config_fingerprint only when not the default, so legacy fingerprints hold.
+    ordering_decode: str = LOGITS_V1
 
     @property
     def num_producers(self) -> int:
@@ -310,6 +361,8 @@ class EnvSpec:
         )
 
     def ordering_action_space(self) -> spaces.Box:
+        if self.ordering_decode == CHOICE_V1:
+            return ChoiceShareSpace(self.k_stream, self.num_producers)
         return spaces.Box(
             -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND, shape=(self.ordering_action_dim,), dtype=np.float32
         )
@@ -347,7 +400,8 @@ def _canonical_economy(config: Configuration) -> str:
 
 
 def config_fingerprint(
-    config: Configuration, orderer_obs_version: int = 1, producer_obs_version: int = 1
+    config: Configuration, orderer_obs_version: int = 1, producer_obs_version: int = 1,
+    ordering_decode: str = LOGITS_V1,
 ) -> str:
     """Stable short hash identifying a config's *economy* (review P1, #7).
 
@@ -364,9 +418,13 @@ def config_fingerprint(
 
     `orderer_obs_version` (EXP-0006A) is part of the contract: a v2 (enriched) orderer
     checkpoint and a v1 one on the *same* economy must not collide, so the spec is
-    built at that version (changing ordering_obs_dim) and the version is hashed in."""
+    built at that version (changing ordering_obs_dim) and the version is hashed in.
+
+    `ordering_decode` (ADR-0059) is folded in only when not `logits-v1`, as the producer obs
+    version is, so every legacy fingerprint is unchanged."""
     sp = build_spec(
-        config, orderer_obs_version=orderer_obs_version, producer_obs_version=producer_obs_version
+        config, orderer_obs_version=orderer_obs_version, producer_obs_version=producer_obs_version,
+        ordering_decode=ordering_decode,
     )
     fields = [
         sorted(sp.producer_ids),
@@ -386,14 +444,18 @@ def config_fingerprint(
     # legacy flat_v1 checkpoints keep their historical fingerprint (back-compat).
     if sp.producer_obs_version >= 2:
         fields.append(("producer_obs_version", sp.producer_obs_version))
+    if sp.ordering_decode != LOGITS_V1:
+        fields.append(("ordering_decode", sp.ordering_decode))
     fields.append(_canonical_economy(config))  # P1: same shape, different economy -> diff fp
     canonical = repr(tuple(fields))
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
 def build_spec(
-    config: Configuration, orderer_obs_version: int = 1, producer_obs_version: int = 1
+    config: Configuration, orderer_obs_version: int = 1, producer_obs_version: int = 1,
+    ordering_decode: str = LOGITS_V1,
 ) -> EnvSpec:
+    check_ordering_decode(ordering_decode)
     producer_ids = sorted(p.id for p in config.producer_configs)
     capacity_types = sorted({t for p in config.producer_configs for t in p.capacities})
     type_index = {t: i for i, t in enumerate(capacity_types)}
@@ -476,4 +538,5 @@ def build_spec(
         k=k,
         orderer_obs_version=orderer_obs_version,
         producer_obs_version=producer_obs_version,
+        ordering_decode=ordering_decode,
     )

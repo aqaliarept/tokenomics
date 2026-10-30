@@ -599,21 +599,24 @@ stop is ≤ the tranche. The supervisor records the check in the task. A resize 
 probe (`weak`), by D2's "both" answer or by D7's 8-episode rule reruns the check, and a misfit
 goes to the user.
 
-The table assumes 4-episode reads; the 8-episode case follows it.
+The table assumes 4-episode reads; the 8-episode case follows it. "Spend before" uses the planned
+estimates, with EXP-0057 at its re-sized 3.52 (task 2.3; rounded 3.5), so every later row is 0.5
+below the proposal's values and the success path's largest spend + stop is **91.4**. EXP-0057
+billed ≈ 1.41 (task 3.1); the launch-fit rule uses billed spend, so the real checks have more room.
 
 | Run | Step | Shape | Estimate (billed vCPU-h) | Hard stop | Grounding | Launch-fit (spend before + stop) |
 |---|---|---|---|---|---|---|
-| EXP-0057 decoder check | 1 | cpu16 | 4.0 (1.3 + 2.7) | 8 | 37 worlds × 2 ep × 9 router-equivalents ≈ 7,300 local s (§EXP-0051) | 0 + 8 |
-| EXP-0058 gradient-signal probe | 2 | cpu8 | 2.0 (0.7 + 1.3) | 4 | 2 arms × 12 pairs × 2 × 2 × 6 world-ep × 5.9 s ≈ 3,400 local s | 4.0 + 4 = 8.0 |
-| EXP-0059 pilot, A1 s0, gen 1–20 | 2 | cpu32 | 13 (7.4 + 5.3) | 26 | 25 × 12 × 5.9 s × 20 + bar precompute 64 × 2 × 25 s + monitor | 6.0 + 26 = 32.0 |
-| EXP-0060a A1 s0 resumed, gen 21–40 | 2 | cpu32 | 12 (6.7 + 5.3) | 24 | 20 gen × 0.32 + monitor | 19.0 + 24 = 43.0 |
-| EXP-0060b A2 s0, gen 1–40 | 2 | cpu32 | 19 (13.3 + 5.3) | 38 | 40 gen × 0.32 + monitor | 31.0 + 38 = 69.0 (81.0 if launched with 0060a) |
-| EXP-0060c seed-0 validation read | 2 | cpu16 | 3.9 (1.2 + 2.7) | 8 | 13 worlds at 12 × 4 × 46 s + 3 at 42 × 4 × 350 s ≈ 6,600 local s | 50.0 + 8 = 58.0 |
-| EXP-0060d seed 1, selected arm (conditional) | 2 | cpu32 | 19 | 38 | as 0060b | 53.9 + 38 = **91.9** |
-| EXP-0060e final validation read (conditional) | 2 | cpu16 | 3.0 | 6 | the seed-1 candidate only; references reused | 72.9 + 6 = 78.9 |
-| EXP-0061 held-out confirmation | 2 | cpu16 | 5.4 (2.7 + 2.7) | 11 | 12 worlds at 12 × 4 × 51 s + 8 at 42 × 4 × 390 s ≈ 14,900 local s | 75.9 + 11 = 86.9 |
-| EXP-0062 per-order cost | 2 | cpu8 | 1.6 | 3 | EXP-0055: 0.23 vCPU-h compute on 4 vCPU | 81.3 + 3 = 84.3 |
-| **Tranche A (steps 1–2)** | | | **53.9 seed-0 path; 82.9 full success path** | | | **max 91.9 → proposed authorisation 95; margin 3.1** |
+| EXP-0057 decoder check | 1 | cpu8 | 3.52 (re-sized by task 2.3, sizing.md §EXP-0057); actual ≈ 1.41 billed | 7.0 | 71 world-episodes, 639 jobs ≈ 11,376 local s (sizing.md §EXP-0057) | 0 + 7.0 |
+| EXP-0058 gradient-signal probe | 2 | cpu8 | 2.0 (0.7 + 1.3) | 4 | 2 arms × 12 pairs × 2 × 2 × 6 world-ep × 5.9 s ≈ 3,400 local s | 3.5 + 4 = 7.5 |
+| EXP-0059 pilot, A1 s0, gen 1–20 | 2 | cpu32 | 13 (7.4 + 5.3) | 26 | 25 × 12 × 5.9 s × 20 + bar precompute 64 × 2 × 25 s + monitor | 5.5 + 26 = 31.5 |
+| EXP-0060a A1 s0 resumed, gen 21–40 | 2 | cpu32 | 12 (6.7 + 5.3) | 24 | 20 gen × 0.32 + monitor | 18.5 + 24 = 42.5 |
+| EXP-0060b A2 s0, gen 1–40 | 2 | cpu32 | 19 (13.3 + 5.3) | 38 | 40 gen × 0.32 + monitor | 30.5 + 38 = 68.5 (80.5 if launched with 0060a) |
+| EXP-0060c seed-0 validation read | 2 | cpu16 | 3.9 (1.2 + 2.7) | 8 | 13 worlds at 12 × 4 × 46 s + 3 at 42 × 4 × 350 s ≈ 6,600 local s | 49.5 + 8 = 57.5 |
+| EXP-0060d seed 1, selected arm (conditional) | 2 | cpu32 | 19 | 38 | as 0060b | 53.4 + 38 = **91.4** |
+| EXP-0060e final validation read (conditional) | 2 | cpu16 | 3.0 | 6 | the seed-1 candidate only; references reused | 72.4 + 6 = 78.4 |
+| EXP-0061 held-out confirmation | 2 | cpu16 | 5.4 (2.7 + 2.7) | 11 | 12 worlds at 12 × 4 × 51 s + 8 at 42 × 4 × 390 s ≈ 14,900 local s | 75.4 + 11 = 86.4 |
+| EXP-0062 per-order cost | 2 | cpu8 | 1.6 | 3 | EXP-0055: 0.23 vCPU-h compute on 4 vCPU | 80.8 + 3 = 83.8 |
+| **Tranche A (steps 1–2)** | | | **53.4 seed-0 path; 82.4 full success path** | | | **max 91.4; authorised 100 (user, 2026-10-30); margin 8.6 (3.6 under 95)** |
 | EXP-0063a A2+R s0 | 3 gate | cpu32 | 21 | 40 | as 0060b + ≈ 10% feature cost | 0 + 40 |
 | EXP-0063b validation read | 3 gate | cpu16 | 3.9 | 8 | as 0060c | 21 + 8 = 29 |
 | EXP-0063c A2+R s1 (conditional) + read | 3 gate | cpu32 | 24 (21 + 3.0) | 40 | as above | 24.9 + 40 = **64.9** |
@@ -629,11 +632,13 @@ The table assumes 4-episode reads; the 8-episode case follows it.
 | EXP-0061 | 8.1 | 17 |
 | EXP-0063b | 5.1 | 11 |
 
-- Tranche A: success path 87.1, max spend + stop 94.4 (at EXP-0061), so the margin under 95 is
-  0.6.
+- Tranche A: success path 86.6, max spend + stop 93.9 (at EXP-0061), so the margin under the
+  approved 100 is 6.1 (1.1 under 95).
 - Tranche B1: max 66.1 (at EXP-0063c, 26.1 + 40), which needs 67.
 
-**Margin, stated in the tranche-A approval question.** The success path's largest "spend so far
+**Margin, stated in the tranche-A approval question** (values at proposal time, before task 2.3
+re-sized EXP-0057; the user approved 100 on 2026-10-30, and the current margin is 8.6, 6.1 under
+8-episode reads, per the table above). The success path's largest "spend so far
 + hard stop" is 91.9, so the margin under 95 is **3.1 vCPU-h** (0.6 under 8-episode reads). Review
 round 2's 3.6 was computed before the probe's re-estimate (+0.5). An overrun of more than the
 margin across the earlier runs blocks seed 1 (EXP-0060d) or the held-out read until the user
@@ -723,8 +728,9 @@ success-path total moves 82.6 → 82.9 (+0.5 probe, −0.2 from the corrected he
   the fingerprint.
 - **[Step-3 aggregates or graph leak same-cycle or hidden state]** → ADR-0058 permutation tests
   (tasks 2.1, 4.2, 4.3, 10.1, 12.2), the shock sentinel, `pending_bid` relations dropped.
-- **[Thin tranche-A margin (3.1; 0.6 under 8-episode reads)]** → stated in the approval question,
-  with a 100 vCPU-h option; the launch-fit rule stops before overrun.
+- **[Tranche-A margin (8.6 under the approved 100; 6.1 under 8-episode reads)]** → the user
+  approved 100 vCPU-h (2026-10-30; 95 would have left 3.6 / 1.1); the launch-fit rule stops
+  before overrun.
 
 ## Migration Plan
 

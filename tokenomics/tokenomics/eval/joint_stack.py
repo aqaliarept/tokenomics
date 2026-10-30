@@ -16,6 +16,7 @@ from dataclasses import replace
 
 from ..domain.config import Configuration
 from ..env import TokenomicsAECEnv
+from ..env.spaces import LOGITS_V1
 from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES
 from .runner import run_episode
 from .scale import build_scale_config
@@ -44,14 +45,18 @@ def relabel_capacity_types(config: Configuration) -> Configuration:
     return out
 
 
-def joint_stack_env(config: Configuration, horizon: int) -> TokenomicsAECEnv:
-    """The env both portable modules need: entity producer obs + corrected v4 streams."""
+def joint_stack_env(config: Configuration, horizon: int,
+                    ordering_decode: str = LOGITS_V1) -> TokenomicsAECEnv:
+    """The env both portable modules need: entity producer obs + corrected v4 streams.
+    `ordering_decode` (ADR-0059) defaults to the legacy decode; a driver passing `choice-v1`
+    merges `spaces.decode_pins` into its pins."""
     return TokenomicsAECEnv(
         config=config,
         horizon=horizon,
         entity_producer_obs=True,
         product_stream_ordering=True,
         corrected_stream_k=True,
+        ordering_decode=ordering_decode,
     )
 
 

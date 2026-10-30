@@ -16,6 +16,8 @@ failures; they are what the verdict judges.
 - `ContractMonitor.verify` runs after the loop: every `possible_agents` agent has a latched
   outcome, latched terminations agree with `dead` and latched truncations with
   `cycles == horizon`. A truncation is never inferred from the cycle count.
+- An invalid `choice-v1` ordering action (`env.allocator.InvalidChoice`, ADR-0059) is a `job`
+  row with check `choice_validity`: the validity layer raises, it never repairs a choice.
 - `Failure` rows (scope `job` or `run`) go to an append-only `contract_failures.csv`. A run with
   any row is invalid, whatever happens on resume.
 """
@@ -33,6 +35,8 @@ from typing import Any, Mapping
 import numpy as np
 from gymnasium import spaces
 
+from ..env.allocator import InvalidChoice
+
 JOB = "job"
 RUN = "run"
 SCOPES = (JOB, RUN)
@@ -44,6 +48,7 @@ ACTION = "action_space"
 TERMINAL = "terminal_outcome"
 CHECKPOINT = "checkpoint"
 DIGEST = "digest_pairing"
+CHOICE = InvalidChoice.check  # an invalid choice-v1 ordering action (ADR-0059)
 
 FAILURES_FILE = "contract_failures.csv"
 TERMINATED = "terminated"
@@ -84,9 +89,11 @@ FAILURE_COLUMNS = tuple(f.name for f in fields(Failure))
 
 
 def job_failure(job: Mapping[str, Any], exc: BaseException) -> Failure:
-    """The `job` row for an exception (a `ContractViolation` keeps its check name)."""
-    check = exc.check if isinstance(exc, ContractViolation) else EXCEPTION
-    message = str(exc) if isinstance(exc, ContractViolation) else (
+    """The `job` row for an exception (a `ContractViolation` or `InvalidChoice` keeps its check
+    name)."""
+    named = isinstance(exc, (ContractViolation, InvalidChoice))
+    check = exc.check if named else EXCEPTION
+    message = str(exc) if named else (
         f"{exc}\n{''.join(traceback.format_exception(type(exc), exc, exc.__traceback__)[-3:])}")
     return Failure(scope=JOB, check=check, error_type=type(exc).__name__, message=message.strip(),
                    world=job["world"], episode=job["episode"], subject=job["subject"],

@@ -164,3 +164,6 @@ costs 0.90–1.03 × TR. Task 5.4 must time the per-order policy itself.
   vCPU-h was 0.90 × the recheck estimate made with it.
 - Scorer jobs at 42 producers vary between 2.06 and 2.68 × RR across the two timed worlds. The
   cell model prices all 42 TR jobs at 60.9 s, the highest measured.
+- 42-0076 is not the slowest 42-producer world: under the world model 42-0031's TR job (40 s on
+  the pod) is about 1.6% slower than 42-0076's (39 s), so the cell model's per-job prices are not
+  a strict upper bound at 42 (2.3 review). Its total stays above the world model's.

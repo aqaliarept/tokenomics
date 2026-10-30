@@ -6,6 +6,10 @@ the largest-remainder rule, then apportions tokens following the realized intege
 quantities (one allocation, not two — ADR-0025). Zero-quantity sub-orders are
 dropped. Σ sub-quantities = order quantity, Σ sub-tokens = order tokens.
 
+Under `ordering_decode="choice-v1"` (ADR-0059) slot k carries per-producer shares instead;
+`allocator.validate_choice` checks them (raising `InvalidChoice`, never repairing) and
+apportions the same way. Overflow orders (beyond `k_stream`) keep the legacy even split.
+
 Producing action: a Box of raw reals — G replenishment quantities then 3
 investment toggles (restoration, upgrade, inventory expansion). Decode owns all
 gating: joint replenishment over shared inventory headroom, irrelevant dims are
@@ -18,8 +22,8 @@ import numpy as np
 
 from ..domain.ordering_agent import OrderingAgentCommand, OrderingAgentView, SubOrder
 from ..domain.producing_agent import ProducingAgentCommand, ProducingAgentView
-from .allocator import allocate_suborders
-from .spaces import ACTION_LOGIT_BOUND, EnvSpec
+from .allocator import InvalidChoice, allocate_suborders, validate_choice
+from .spaces import ACTION_LOGIT_BOUND, CHOICE_V1, EnvSpec
 
 
 def _allocate_int(proportions: np.ndarray, budget: int) -> list[int]:
@@ -43,6 +47,8 @@ def decode_ordering(
 ) -> OrderingAgentCommand:
     # k_stream == k for v1/v2/v3; v4 narrows the backlog bound to per-stream (O0).
     action = np.asarray(action, dtype=np.float64).reshape(spec.k_stream, spec.num_producers)
+    if spec.ordering_decode == CHOICE_V1:
+        return _decode_choice(spec, action, view)
     ids = spec.producer_ids
     orders: dict[str, list[SubOrder]] = {}
     for k, oid in enumerate(sorted(view.incoming)):
@@ -53,6 +59,43 @@ def decode_ordering(
         # addressed. The masked allocator (O1) owns eligibility + conservation.
         scores = action[k] if k < spec.k_stream else np.zeros(len(ids))
         orders[oid] = allocate_suborders(ids, scores, mask, oi.quantity, oi.tokens)
+    return OrderingAgentCommand(orders)
+
+
+def eligibility_mask(spec: EnvSpec, view: OrderingAgentView) -> np.ndarray:
+    """(k_stream, P) bool: slot k's order's eligible producers (ADR-0028); False rows for empty
+    slots. The `choice-v1` `action_mask` info (ADR-0059) and `_decode_choice` share it."""
+    ids = spec.producer_ids
+    mask = np.zeros((spec.k_stream, len(ids)), dtype=bool)
+    for k, oid in enumerate(sorted(view.incoming)[: spec.k_stream]):
+        mask[k] = [pid in view.eligible[oid] for pid in ids]
+    return mask
+
+
+def _decode_choice(
+    spec: EnvSpec, action: np.ndarray, view: OrderingAgentView
+) -> OrderingAgentCommand:
+    """`choice-v1` (ADR-0059): slot k = the k-th order in ascending order id, as in the legacy
+    decode. A slot without an order must be all zero (a policy whose slots are misaligned with
+    its orders fails loudly); orders beyond `k_stream` keep the legacy even split (ADR-0059)."""
+    ids = spec.producer_ids
+    mask = eligibility_mask(spec, view)
+    oids = sorted(view.incoming)
+    for k in range(len(oids), spec.k_stream):
+        if np.any(action[k] != 0):
+            raise InvalidChoice(f"slot {k} has no order (the agent holds {len(oids)}) but a "
+                                f"non-zero share row")
+    orders: dict[str, list[SubOrder]] = {}
+    for k, oid in enumerate(oids):
+        oi = view.incoming[oid]
+        if k < spec.k_stream:
+            try:
+                orders[oid] = validate_choice(ids, action[k], mask[k], oi.quantity, oi.tokens)
+            except InvalidChoice as exc:
+                raise InvalidChoice(f"order {oid} (slot {k}): {exc}") from exc
+        else:
+            elig = np.array([pid in view.eligible[oid] for pid in ids])
+            orders[oid] = allocate_suborders(ids, np.zeros(len(ids)), elig, oi.quantity, oi.tokens)
     return OrderingAgentCommand(orders)
 
 
