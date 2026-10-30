@@ -942,3 +942,50 @@ orderer's split orders complete (the deciding check, answer 3).
 Housekeeping left to this change: amend `establish-project-baseline` D4's "up to 1200
 producers" in a separate change; sync the specs and archive `add-m3-development-audit`. Branch
 `new-model` is ahead of `origin`; pushing is a human gate.
+
+## 14. M4: the ordering ladder
+
+M3 picked the ordering role for M4 (EXP-0054: swapping the orderer closes c_O = 1.02 of the
+deployed stack's gap to the teacher stack, the producer swap 0.12) and showed why the deployed
+orderer trails plain whole-order rotation (EXP-0056, `joint`): its learned part only ranks
+producers per (source, product) stream, and fixed code turns that ranking into routing — a
+softmax, a largest-remainder split, one score row tiled over every order — so 98–99% of a
+product's concurrent orders lead to one producer, and it was trained by regression onto a formula
+(log `makeable_qty_now`), never on outcomes. On 2026-10-30 the user chose a *gated ladder* for
+the role (OpenSpec change `add-m4-orderer-redesign`): step 1, a decoder check that keeps the
+EXP-0012 scores and only changes the decode, with no training; step 2, a per-order portable
+policy with a choice decode, agent-local history and outcome training, licensed only by step 1;
+step 3, a per-order GNN router, only if step 2 plateaus (postponed by the user). Orderers decide
+only from earlier information and their own history (ADR-0058): they never see other agents'
+same-cycle bids, and diversity across agents has to come from agent-local history plus per-order
+sampling. Pre-pod checks (tasks 1.2 / 1.3) predicted step 1 offline (`decoder`, with
+`makeable_weighted_whole` standing in for the sampled decode) and found the concentration is
+across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix it.
+
+### Is the decode the bottleneck? (step 1)
+
+- **EXP-0057 — decoder check. `decoder_partial`: sampling one producer per order from the same
+  scores and routing it whole wins back ≈ 70% of the gap to `round_robin`; the scores carry
+  their target (`faithful`); agent histories differ only borderline (`history_flat`).** On the 23
+  loaded atlas v2 train worlds at 12 producers (ρ > 0.28, not `collapse`; 14 more at 42
+  producers reported only), with `entity_planner`, the trained orderer TR trails `round_robin` RR
+  above the floor on 17 (*gap worlds*). TS — the same scores, one producer drawn per order from
+  softmax(score), the order whole — recovers rec_w = (TS − TR) / (RR − TR) ≥ 2/3 on 11 of them,
+  one short of the pre-registered `decoder` (median 0.704, pooled 0.70; the six partial worlds
+  at 0.48–0.63). The licence is step 2, with the unexplained ≈ 0.30 recorded: ≈ 0.19 is the
+  scores falling short of their own target (MWWk, the keyed sampler weighted by
+  `makeable_qty_now`, recovers 0.89) and ≈ 0.11 is `round_robin` still beating that target rule.
+  Task 1.2's prediction (`decoder`, MWW 16 / 17, median 0.908, reproduced exactly here) missed by
+  one step, right at its stated flip line (TS at 0.77 of MWW's gain against ≈ 0.78). Fidelity:
+  TS is within the floor of MWWk on 17 of 23 worlds, below on 6, above on none, so where the
+  scores differ from their target they are worse, not better. Going whole without sampling (TW,
+  argmax) recovers only 0.29 and causes all 4 deaths of the run: sampling, not just whole
+  routing, is what spreads concurrent orders (concurrent top share TR 0.98, TW 0.99, TS 0.84,
+  MWWk 0.73, RR 0.63). Dispersion, D5's premise for agent-local history: completion histories
+  differ on every world, but the routed-share measure clears 0.10 on 15 of 23 (16 needed), with
+  5 worlds within ±0.02 of the line; the three alternative share measures read 14 / 11 / 10, so
+  `history_flat` under every definition; under MWW, MWWk or RR the same rule would pass 16. At 42
+  producers (reported): also `decoder_partial`, but `fidelity_loss` (TS below MWWk on 8 of 14,
+  MWWk recovering 1.08 of the gap), so at that size the scores themselves leave a large share.
+  Reproduction 293 / 293 rows against EXP-0052 / EXP-0056, 0 contract failures. ≈ 1.4 vCPU-h
+  billed (tranche A ≈ 1.4 of 100). Per D3, `history_flat` goes to the user before group 4.

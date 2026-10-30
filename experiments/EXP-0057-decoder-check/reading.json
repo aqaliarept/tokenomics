@@ -1,0 +1,252 @@
+{
+  "dispersion": {
+    "alternatives_reported_only": {
+      "producer_streams": {
+        "defined_worlds": 23,
+        "passing_worlds": 14,
+        "reading": "history_flat",
+        "skipped_worlds": []
+      },
+      "unit_weighted": {
+        "defined_worlds": 23,
+        "passing_worlds": 10,
+        "reading": "history_flat",
+        "skipped_worlds": []
+      },
+      "vs_rest": {
+        "defined_worlds": 23,
+        "passing_worlds": 11,
+        "reading": "history_flat",
+        "skipped_worlds": []
+      }
+    },
+    "borderline": true,
+    "borderline_band": 0.02,
+    "borderline_changes_reading": true,
+    "borderline_worlds": [
+      "ws-atlas-v1-12-0005",
+      "ws-atlas-v1-12-0060",
+      "ws-atlas-v1-12-0111",
+      "ws-atlas-v1-12-0155",
+      "ws-atlas-v1-12-0344"
+    ],
+    "defined_worlds": 23,
+    "next": "recorded; the supervisor asks the user before group 4, since agent-local history would carry little contrast",
+    "passing_worlds": 15,
+    "reading": "history_flat",
+    "skipped_reason": "a count column (trace_agent_history_cells / trace_routed_share_pairs) is 0 on every row of the world: the measure is undefined there, never below the line",
+    "skipped_worlds": [],
+    "thresholds": {
+      "agent_history_dispersion": 0.05,
+      "routed_share_dispersion": 0.1,
+      "share": 0.6666666666666666
+    }
+  },
+  "dry_run": false,
+  "experiment": "EXP-0057",
+  "fidelity": {
+    "above": 0,
+    "below": 6,
+    "beyond_rule": false,
+    "equivalent": 17,
+    "loss_rule": false,
+    "reading": "faithful",
+    "worlds": 23
+  },
+  "interpretation": "decode is the bottleneck; scores carry their target",
+  "interpretation_table": {
+    "decoder / decoder_partial (licensed)": {
+      "beyond_target": "decode is the bottleneck; scores add to their target (noted)",
+      "faithful": "decode is the bottleneck; scores carry their target",
+      "fidelity_loss": "decode is the bottleneck; MWWk is the stronger reference (noted)",
+      "mixed": "decode is the bottleneck; fidelity varies by world (noted)"
+    },
+    "no_gap (diagnose)": {
+      "beyond_target": "start from why the addendum's loss did not reproduce",
+      "faithful": "start from why the addendum's loss did not reproduce",
+      "fidelity_loss": "start from why the addendum's loss did not reproduce",
+      "mixed": "start from why the addendum's loss did not reproduce"
+    },
+    "not_decoder (diagnose)": {
+      "beyond_target": "start from what TS's extra signal costs against RR",
+      "faithful": "whole input-aware sampling does not close the gap: start from rotation and per-agent offsets vs sampling",
+      "fidelity_loss": "start from score fidelity (a design update would change the base)",
+      "mixed": "start world by world"
+    }
+  },
+  "kl_target": "softmax(makeable_logits(m)): log makeable_qty_now clipped to +-10 (env.spaces.ACTION_LOGIT_BOUND), a -10 logit for a producer with nothing makeable, uniform when nothing is makeable (routing_trace.makeable_logits, the EXP-0012 scorer's distillation target); not D3's plain makeable share, whose KL is infinite wherever a producer has m = 0",
+  "licence": "step 2 (the unexplained share is recorded)",
+  "licence_rule": "the licence comes from the primary reading alone; fidelity and dispersion never grant or withhold one",
+  "prediction_task_1_2": {
+    "flips_if": "TS reaches less than about 0.78 of MWW's gain over TR",
+    "gap_worlds": 17,
+    "median_rec": 0.908,
+    "reading": "decoder",
+    "rec_strong_worlds": 16,
+    "share_rec_ge_2_3": 0.9411764705882353,
+    "source": "openspec/changes/add-m4-orderer-redesign/notes/1.2.md, task 1.2 (\u00a7d)",
+    "worlds": 23
+  },
+  "primary": {
+    "gap_world_ids": [
+      "ws-atlas-v1-12-0060",
+      "ws-atlas-v1-12-0111",
+      "ws-atlas-v1-12-0121",
+      "ws-atlas-v1-12-0176",
+      "ws-atlas-v1-12-0230",
+      "ws-atlas-v1-12-0254",
+      "ws-atlas-v1-12-0302",
+      "ws-atlas-v1-12-0308",
+      "ws-atlas-v1-12-0321",
+      "ws-atlas-v1-12-0340",
+      "ws-atlas-v1-12-0344",
+      "ws-atlas-v1-12-0352",
+      "ws-atlas-v1-12-0391",
+      "ws-atlas-v1-12-0392",
+      "ws-atlas-v1-12-0408",
+      "ws-atlas-v1-12-0436",
+      "ws-atlas-v1-12-0483"
+    ],
+    "gap_worlds": 17,
+    "licence": "step 2 (the unexplained share is recorded)",
+    "median_rec": 0.7038378695907578,
+    "reading": "decoder_partial",
+    "rec_strong_worlds": 11,
+    "share_rec_ge_2_3": 0.6470588235294118,
+    "worlds": 23
+  },
+  "readings_withheld": false,
+  "reported_42": {
+    "dispersion": {
+      "alternatives_reported_only": {
+        "producer_streams": {
+          "defined_worlds": 14,
+          "passing_worlds": 11,
+          "reading": "history_differs",
+          "skipped_worlds": []
+        },
+        "unit_weighted": {
+          "defined_worlds": 14,
+          "passing_worlds": 8,
+          "reading": "history_flat",
+          "skipped_worlds": []
+        },
+        "vs_rest": {
+          "defined_worlds": 14,
+          "passing_worlds": 9,
+          "reading": "history_flat",
+          "skipped_worlds": []
+        }
+      },
+      "borderline": true,
+      "borderline_band": 0.02,
+      "borderline_changes_reading": true,
+      "borderline_worlds": [
+        "ws-atlas-v1-42-0039",
+        "ws-atlas-v1-42-0081"
+      ],
+      "defined_worlds": 14,
+      "next": "none",
+      "passing_worlds": 11,
+      "reading": "history_differs",
+      "skipped_reason": "a count column (trace_agent_history_cells / trace_routed_share_pairs) is 0 on every row of the world: the measure is undefined there, never below the line",
+      "skipped_worlds": [],
+      "thresholds": {
+        "agent_history_dispersion": 0.05,
+        "routed_share_dispersion": 0.1,
+        "share": 0.6666666666666666
+      }
+    },
+    "fidelity": {
+      "above": 0,
+      "below": 8,
+      "beyond_rule": false,
+      "equivalent": 6,
+      "loss_rule": true,
+      "reading": "fidelity_loss",
+      "worlds": 14
+    },
+    "interpretation": "decode is the bottleneck; MWWk is the stronger reference (noted)",
+    "note": "42-producer worlds are reported only (D3): they never grant, withhold or change a reading",
+    "primary": {
+      "gap_world_ids": [
+        "ws-atlas-v1-42-0000",
+        "ws-atlas-v1-42-0013",
+        "ws-atlas-v1-42-0031",
+        "ws-atlas-v1-42-0034",
+        "ws-atlas-v1-42-0039",
+        "ws-atlas-v1-42-0040",
+        "ws-atlas-v1-42-0043",
+        "ws-atlas-v1-42-0076",
+        "ws-atlas-v1-42-0081",
+        "ws-atlas-v1-42-0113",
+        "ws-atlas-v1-42-0119"
+      ],
+      "gap_worlds": 11,
+      "licence": "step 2 (the unexplained share is recorded)",
+      "median_rec": 0.8239690008303349,
+      "reading": "decoder_partial",
+      "rec_strong_worlds": 7,
+      "share_rec_ge_2_3": 0.6363636363636364,
+      "worlds": 14
+    },
+    "reported": true,
+    "score_fidelity": {
+      "TR": {
+        "decisions": 483367,
+        "kl_to_makeable_logits": 0.436519456733662,
+        "rows": 28,
+        "spearman_log_makeable": 0.8648592611186943,
+        "top1_agreement": 0.7875272022231662
+      },
+      "TS": {
+        "decisions": 789543,
+        "kl_to_makeable_logits": 0.43088005744188557,
+        "rows": 56,
+        "spearman_log_makeable": 0.8,
+        "top1_agreement": 0.723175700543216
+      },
+      "TW": {
+        "decisions": 200561,
+        "kl_to_makeable_logits": 0.07430452202087201,
+        "rows": 28,
+        "spearman_log_makeable": 0.9486832980505138,
+        "top1_agreement": 0.8491730853073681
+      }
+    },
+    "size": 42
+  },
+  "rules": {
+    "atlas_floor": "the atlas v2 world entry's recorded noise_floor (the confirm's counts, which are the run's)",
+    "dispersion": "under TS: history_differs when agent_history_dispersion >= 0.05 and routed_share_dispersion >= 0.10 on >= 2/3 of the defined worlds, else history_flat",
+    "fidelity": "equivalent: |TS_w - MWWk_w| <= floor_w; first match: faithful (equivalent on >= 2/3) -> mixed (both or neither of the next two) -> fidelity_loss (TS < MWWk beyond the floor on >= 1/3) -> beyond_target (TS > MWWk beyond the floor on >= 1/3)",
+    "floor": "per comparison: max(atlas noise_floor, 3 SE of the run's own paired differences); the own SE only with >= 2 paired observations (episodes x replicates), else the atlas floor (n = 1 rule)",
+    "means": "per world: equal-weight mean over episodes of the replicate means",
+    "primary": "G_w = RR_w - TR_w; gap world: G_w > floor_w; rec_w = (TS_w - TR_w) / G_w; first match: no_gap (< 5 gap worlds) -> decoder (rec_w >= 2/3 on >= 2/3 of gap worlds) -> decoder_partial (median rec_w >= 1/3) -> not_decoder",
+    "score_fidelity": "per arm: median over episode rows of the per-row medians (Spearman, KL); top-1 decision-weighted; top-1 ties: first argmax"
+  },
+  "score_fidelity": {
+    "TR": {
+      "decisions": 150894,
+      "kl_to_makeable_logits": 0.08082066632286929,
+      "rows": 43,
+      "spearman_log_makeable": 0.9486832980505138,
+      "top1_agreement": 0.8284041103458436
+    },
+    "TS": {
+      "decisions": 277309,
+      "kl_to_makeable_logits": 0.10353421127739873,
+      "rows": 86,
+      "spearman_log_makeable": 0.9486832980505138,
+      "top1_agreement": 0.778922149199198
+    },
+    "TW": {
+      "decisions": 121915,
+      "kl_to_makeable_logits": 0.08322720032536357,
+      "rows": 43,
+      "spearman_log_makeable": 0.9486832980505138,
+      "top1_agreement": 0.8673703830148464
+    }
+  },
+  "status": "valid"
+}

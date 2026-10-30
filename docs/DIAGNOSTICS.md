@@ -636,6 +636,27 @@ registered: this is (f) + (b) combined, the case the (f) branch above already na
 
 **Seen across the atlas (EXP-0051 addendum, 2026-10-30)**: offline over 639 screen worlds, the trained orderer beats `round_robin` on only 13% (median −21%); its relative result falls with load (t −7.4) and, against the prediction, with makers per product, more so under load (log E × log ρ t −4.2). EXP-0050's wins sit in the very-light-load corner (ρ ≈ 0.06), where it ties. Consistent with the concentration mechanism of EXP-0056; association, not proof.
 
+**Seen in EXP-0057** (`experiments/EXP-0057-decoder-check/`, M4 step 1, design D3 of
+`add-m4-orderer-redesign`; follows the `joint` reading above). Question: is the trained orderer's
+loss to whole-order `round_robin` in its fixed decode (softmax split, one score row tiled over
+every order) rather than in its scores? Check: `python -m tokenomics.eval.decoder_check` (CLAUDE.md
+"Decoder check") on the 23 loaded atlas v2 train worlds at 12 producers (14 at 42 reported):
+TS = the same EXP-0012 scores, one producer drawn per order from softmax(score), the order
+whole, against TR (as deployed), TW (argmax whole), MWWk (the scorer's target
+`makeable_qty_now` as a keyed whole sampler with TS's draws), MWW and RR; read
+`decoder_check.csv` (G_w = RR − TR, its floor, rec_w = (TS − TR) / G_w) and `fidelity.csv`.
+Outcome: **`decoder_partial`**, the decode is most of the cause. 17 of 23 worlds have a gap
+above the floor; TS recovers ≥ 2/3 of it on 11 (12 needed for `decoder`), median 0.70, pooled
+0.70. The rest: ≈ 0.19 of the gap is the scores short of their own target (MWWk recovers 0.89;
+TS within the floor of MWWk on 17 / 23, below on 6, above on none) and ≈ 0.11 is `round_robin`
+over the target rule. Going whole by argmax (TW) recovers only 0.29 and is the only arm that
+dies (4 episodes), so spreading concurrent orders across producers by sampling, not whole
+routing alone, carries the recovery (concurrent top share TR 0.98, TW 0.99, TS 0.84, MWWk 0.73,
+RR 0.63; descriptive). This narrows the `joint` reading for M4: "vary receivers" is delivered by
+per-order sampling from the scores, and a choice decode recovers most of the gap without
+retraining. At 42 producers the scores themselves fall short (`fidelity_loss`, 8 of 14 worlds),
+reported only. No new cause registered: `decoder_partial` is a licensed reading, not a failure.
+
 ## 20. A world set has no headroom
 
 **Problem (plain English):** on some worlds no better policy can be reached: every cheap policy
