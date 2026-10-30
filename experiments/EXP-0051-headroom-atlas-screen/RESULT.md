@@ -348,3 +348,14 @@ matters, it loses, and it loses more the more makers there are to spread across.
 EXP-0056's mechanism (it concentrates a product's concurrent orders on one producer, so more makers
 means more spreading forgone), but this addendum shows association across worlds, not that
 mechanism. Single screen episode per world; the confirm sample is selected (hard / open worlds).
+
+**Same screen, the orderer's distillation target as a router (2026-10-30).** The trained orderer
+was distilled from log `makeable_qty_now` shares, i.e. the `makeable_split` router. Over the 639
+screen worlds (consumer split degree; share of worlds beating `round_robin`; median d):
+`makeable_split` 2.03, 16%, −25.7%; trained orderer 1.90, 14%, −21.0%; `makeable_weighted_whole`
+(the same signal, one producer per order drawn ∝ `makeable_qty_now`) 1.00, 62%, +1.8%;
+`random_whole` 1.00, 40%, −1.1%; `proportional` 2.98, 2%, −66.8%; `even_split` 2.99, 1%, −77.0%.
+The trained orderer reproduces its target's behaviour (it even does slightly better); the target
+itself splits and loses. The same input-aware signal used whole, with a per-order random draw
+that spreads concurrent orders, is the best simple router in the atlas. Single screen episode per
+world.
