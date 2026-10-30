@@ -155,7 +155,11 @@ at one size only SHALL be exempt from the ratio comparison.
 ### Requirement: Development headroom check
 A family SHALL enter the registry only if baseline-only runs on its development worlds show,
 at every size where the family has worlds, a hindsight baseline fill rate (fulfilled over ordered
-consumer units) below a saturation ceiling recorded in the registry.
+consumer units) below a saturation ceiling recorded in the registry. From registry v3 on, headroom
+SHALL be decided per family and size: a family that fails at a size SHALL be excluded at that
+size in both splits, with its rows reported only, while other families proceed. A screen SHALL
+stop without frozen files only when a size is left with no admitted family. A family whose worlds
+run in an earlier member wave SHALL be checked before a later wave starts.
 
 #### Scenario: Saturated family rejected
 - **WHEN** the hindsight baseline already fulfils more ordered units than the saturation ceiling on a
@@ -164,8 +168,33 @@ consumer units) below a saturation ceiling recorded in the registry.
 
 #### Scenario: Region family checked at its own size
 - **WHEN** the v3 screen checks headroom
-- **THEN** it checks `sparse_wide` at 12 and 42, `ws_loaded` at 12 and `ws_wide` at 42, and any
-  failure stops the screen without frozen files
+- **THEN** it checks `sparse_wide` at 12 and 42, `ws_loaded` at 12 and `ws_wide` at 42
+
+#### Scenario: One family fails under v3
+- **WHEN** after wave 1 of the v3 screen `sparse_wide` at 12 producers has median best fill 0.96
+  and `ws_loaded` 0.49
+- **THEN** the `sparse_wide` 12-producer entries are marked excluded, their rows are reported, and
+  the screen goes on to wave 2
+
+#### Scenario: Exclusion covers both splits
+- **WHEN** `sparse_wide` at 12 producers is excluded by the development screen
+- **THEN** its 12-producer sealed gate worlds and reserves are excluded too, and the sealed
+  screen and every sealed read skip them
+
+#### Scenario: Recorded exclusion passes admission
+- **WHEN** a frozen v3 registry records `sparse_wide` at 12 producers as failed and excluded
+- **THEN** a real development report, the sealed 12-producer screen and a 12-producer scoped
+  sealed read all pass admission, and a failed headroom record without an exclusion is still
+  refused
+
+#### Scenario: Excluded rows do not shape the frozen files
+- **WHEN** a member sets the per-episode best only on episodes of an excluded family × size
+- **THEN** it is not carried to wave 2 for that reason, it counts as never-winning for pruning,
+  and the excluded episodes enter no family's X / Y
+
+#### Scenario: A size without an admitted family
+- **WHEN** after wave 1 both families at 12 producers fail headroom
+- **THEN** the screen stops before wave 2 and writes no frozen files
 
 ### Requirement: Side-effect parameter calibration
 The run-down factor X and the starvation floor Y SHALL be computed by a recorded rule from
@@ -188,7 +217,86 @@ version it used.
 - **WHEN** a report or recompute reads parameter version 1 or 2
 - **THEN** it applies their single X and Y to every world, as before
 
+### Requirement: World registry
+Gate and development worlds SHALL be listed in a versioned registry. Each entry SHALL give
+a world id, family, economy size, regime, a replayable generator reference, a world seed,
+its episode seeds, and a split of `development` or `sealed`. Development and sealed worlds
+SHALL use disjoint world seeds. Legacy families SHALL draw world seeds from the registry's per-split
+seed ranges; region families SHALL draw them from split-named hashed streams, and their
+disjointness SHALL be checked as explicit sets on load and proven by a test.
+
+#### Scenario: Overlapping seeds rejected
+- **WHEN** a registry lists the same family and world seed under both splits
+- **THEN** loading the registry fails validation
+
+#### Scenario: Hashed region seeds
+- **WHEN** registry v3 holds a `ws_wide` development world whose seed lies outside 1000–1999
+- **THEN** it loads, because region seeds are checked by set disjointness against the sealed
+  region seeds and every legacy seed, not by range
+
+#### Scenario: Region seed shared across splits
+- **WHEN** a region world seed appears under both the development and the sealed split
+- **THEN** loading the registry fails naming both entries
+
 ## ADDED Requirements
+
+### Requirement: Attainable margins are reported
+A screen SHALL report, per (size, regime) and per family, the perfect-fill ratio, the mean over
+worlds of the world's ordered units over its hindsight baseline, against the regime's margin,
+and SHALL flag a cell below its margin as unattainable. The flag SHALL NOT change admission,
+pruning or calibration.
+
+#### Scenario: Shocked margin out of reach
+- **WHEN** the v3 screen's sparse_wide 12-producer shocked worlds give a perfect-fill ratio of 1.09
+- **THEN** that cell is flagged unattainable against 1.10 in the screen record, and the frozen
+  files are unchanged by the flag
+
+### Requirement: Routing reading per world
+A screen SHALL report per world the relative gain of the input-aware routers over the best blind
+router, both paired with the best producing baseline, and count a world when that gain is at
+least 0.05 and above the world's own floor (pre-registered in the design per world type, 0 when both
+sides are deterministic on a calm world). A family SHALL read `routing_matters` when at
+least a third of its admitted worlds count, else `routing_flat`. The reading SHALL NOT gate.
+
+#### Scenario: Flat region family
+- **WHEN** on 1 of a region family's 6 admitted worlds the input-aware routers beat the best blind
+  router by at least 0.05 and by more than the floor
+- **THEN** the screen record reads `routing_flat` for that family and admission is unchanged
+
+#### Scenario: Deterministic sides on a calm world
+- **WHEN** on a calm world `makeable_split` beats `round_robin`, the best blind router, by 6% and
+  both are deterministic
+- **THEN** the floor is 0 and the world counts
+
+#### Scenario: Poor routers do not make routing matter
+- **WHEN** on every world of a family `even_split` delivers half of `round_robin`'s units, and the
+  input-aware routers are within 0.02 of `round_robin`
+- **THEN** the family reads `routing_flat`
+
+### Requirement: Size-scoped real report
+A real report MAY declare a size scope. Its verdict SHALL be computed over the scoped sizes only,
+the scope SHALL be recorded in the run specification and bound in any pre-registration manifest,
+and recomputing SHALL use the recorded scope. From registry v3 on, admission SHALL check each
+family at the sizes it is declared for.
+
+#### Scenario: 12-producer sealed read
+- **WHEN** a sealed report is scoped to 12 producers on registry v3
+- **THEN** the verdict covers only 12-producer worlds, no margin failure is recorded for 42, and
+  the region family `ws_wide` does not block admission
+
+#### Scenario: Scope differs from the manifest
+- **WHEN** a sealed read is scoped to 12 producers but its manifest binds both sizes
+- **THEN** the harness refuses before running any episode
+
+### Requirement: Packaging a gate version does not move driver defaults
+Adding a new registry, roster and parameter version to the packaged files SHALL NOT change the
+version any driver reads by default. The default SHALL move only after the user approves and every
+driver that reads it pins its version explicitly.
+
+#### Scenario: v3 packaged during M4
+- **WHEN** the v3 files are packaged
+- **THEN** the default registry, roster and parameter files are still v2, and the M4 training-world
+  driver loads the same parameters and refuses the same rosters as before
 
 ### Requirement: Registry v3 keeps v2 entries
 Registry v3 SHALL keep every registry v2 entry with the same id, world seed, episode seeds,
@@ -282,8 +390,10 @@ whose sealed groups are unscreened SHALL be refused.
 
 ### Requirement: Per-order candidate subject
 A gate report SHALL accept a per-order orderer checkpoint under the `choice-v1` decode as the
-candidate's orderer, paired with a hand-written producing baseline as the deciding producer. Only
-the deciding rows SHALL enter the verdict.
+candidate's orderer, paired with a hand-written producing baseline as the deciding producer. Its
+episodes SHALL run in the per-order policy's own environment, agent-local history included. Only
+the deciding rows SHALL enter the verdict. A non-finite or invalid choice SHALL be a contract
+failure.
 
 #### Scenario: Deciding producer is white-box
 - **WHEN** a per-order candidate is reported with `entity_planner` as the deciding producer
@@ -294,20 +404,39 @@ the deciding rows SHALL enter the verdict.
 - **WHEN** a per-order composite checkpoint is requested under the `logits-v1` decode
 - **THEN** the harness refuses before running any episode
 
+#### Scenario: Non-finite choice
+- **WHEN** the candidate's policy raises on a non-finite score in one job
+- **THEN** that job is a contract failure, the other jobs finish, and the run is invalid
+
+#### Scenario: Resume across decodes
+- **WHEN** a per-order report is resumed onto an output directory written by a `logits-v1` report,
+  or the reverse
+- **THEN** the harness refuses to resume
+
 ### Requirement: Candidate replicates for a sampled orderer
-A per-order candidate SHALL run R replicates per episode, R equal to the frozen roster's R. Each
-replicate SHALL use the hashed action seed and a draw key of (world id, episode seed, replicate).
-Its per-episode units SHALL be the replicate mean. Deaths, run-down and starvation SHALL be checked
-on every replicate.
+A per-order candidate SHALL run R replicates per episode, R equal to the frozen roster's R, each
+with the hashed action seed and a draw key of (world id, episode seed, replicate), and valued at
+the replicate mean of units.
 
 #### Scenario: Wrong replicate count
 - **WHEN** a real report requests 3 candidate replicates against a roster frozen with R = 5
 - **THEN** the harness refuses before running any episode
 
+### Requirement: Side effects of a replicated candidate
+From parameter version 3 on, a replicated candidate's run-down and starvation SHALL be judged on
+the replicate means the calibration uses, with per-replicate violations reported as monitored, and
+a death in any replicate SHALL fail the zero-death clause. Reports on earlier parameter versions
+SHALL keep their per-replicate checks.
+
 #### Scenario: One replicate dies
 - **WHEN** one of five candidate replicates of an episode reaches system death and the replicate
   mean of units clears the margin
 - **THEN** the zero-death clause fails, naming the world, episode and replicate
+
+#### Scenario: One replicate starves a consumer
+- **WHEN** one of five replicates leaves a consumer below Y while that consumer's mean fill rate
+  over the five is above Y
+- **THEN** the starvation clause passes and the replicate's violation is listed as monitored
 
 ### Requirement: Reported producer column
 A per-order report MAY add a reported column: the same orderer, seeds and draw keys with a
@@ -326,11 +455,11 @@ and compare it with the recorded one.
   all equal the recorded ones
 
 ### Requirement: Decode and component pins
-A per-order report SHALL pin, in its run specification and resume check, the ordering decode, the
-decoder and architecture versions, the checkpoint format, the SHA-256 of the composite checkpoint,
-its base and its normaliser, the parameter hash, the pre-registration file hash, the deciding
-producer's name, the reported producer checkpoint's SHA-256 and R. A sealed pre-registration
-manifest for a per-order candidate SHALL bind every one of these pins.
+A per-order report SHALL pin, in its run specification and resume check, the per-order policy's
+own pin set, including any key that set later adds, plus the composite checkpoint's SHA-256 and
+format, the pre-registration file hash, the deciding producer's name, the reported producer
+checkpoint's SHA-256, R and the size scope. A sealed pre-registration manifest for a per-order
+candidate SHALL bind the same pin set.
 
 #### Scenario: Resume with a different base
 - **WHEN** a per-order report is resumed on the same output directory with a composite whose base
@@ -341,3 +470,8 @@ manifest for a per-order candidate SHALL bind every one of these pins.
 - **WHEN** a sealed per-order read is requested with a manifest that does not bind the
   normaliser hash
 - **THEN** the harness refuses before running any episode
+
+#### Scenario: Policy pin set grows
+- **WHEN** the per-order policy's pin set gains a key, such as an input-transform hash
+- **THEN** the report pins that key without a change to the gate's pin list
+

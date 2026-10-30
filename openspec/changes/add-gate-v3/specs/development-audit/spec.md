@@ -72,11 +72,11 @@ band, SHALL be recorded and go to the user without changing the role M4 trains.
 - **THEN** the record states it, the decision goes to the user, and M4's training role is unchanged
 
 ### Requirement: The 42-producer teacher read follows a pre-registered reduction ladder
-The read SHALL be sized by a local timing probe before any pod run. If the probe's estimate
-exceeds the run's stop, it SHALL be reduced only by the pre-registered steps, in order: the hard
-worlds only; at most four candidates per stream; at most eight searched streams per cycle; no role
-swap; two worlds. If the estimate still exceeds the stop, the read SHALL NOT launch and the result
-SHALL go to the user. The record SHALL name every applied step, and every reading SHALL carry it.
+The read SHALL be sized by a local timing probe before any pod run. While the estimate does not
+fit its stop, the read SHALL be reduced only by the pre-registered steps, in order: hard worlds
+only; four candidates per stream; eight searched streams per cycle; no role swap; two worlds. If
+the last step does not fit, the read SHALL NOT launch. Every applied step SHALL be named in each
+reading.
 
 #### Scenario: Probe above the stop after the ladder
 - **WHEN** the probe's estimate after the last step still exceeds the stop
@@ -87,3 +87,32 @@ SHALL go to the user. The record SHALL name every applied step, and every readin
 - **THEN** each searched stream's candidates are the trained orderer's row and the whole order to
   each of the three eligible producers with the most makeable units, and every reading names the
   cap
+
+### Requirement: The 42-producer teacher fit test
+An estimate SHALL fit its stop when twice the billed estimate is at most 40 vCPU-h and twice the
+longest job's wall is at most the stop wall of the smallest pod shape that holds the run's long
+jobs.
+
+#### Scenario: Long job does not fit
+- **WHEN** the billed estimate is 15 vCPU-h but one teacher episode takes 6 h of pod wall on a
+  4 vCPU shape, whose stop wall is 10 h
+- **THEN** the estimate does not fit and the next ladder step applies
+
+### Requirement: The 42-producer teacher read needs a resolving posterior
+The timing probe SHALL record the posterior acceptance rate and the unresolved fraction of
+searched decisions at 42 producers. If at least half of the searched decisions on a probe world
+are unresolved, the read SHALL NOT launch and the result SHALL go to the user.
+
+#### Scenario: Posterior mostly unresolved
+- **WHEN** the probe finds 60% of searched decisions unresolved on 42-0054
+- **THEN** no pod is started, the record states that the teacher would mostly play its floor, and
+  the decision goes to the user
+
+### Requirement: The 42-producer teacher read uses the roster of its references
+The read SHALL name roster v2 explicitly, so that its bar and reach arms are the arms of the
+atlas and decoder-check rows it pairs with, whatever the packaged default roster is.
+
+#### Scenario: Default roster changed
+- **WHEN** the packaged default roster is a later version at launch
+- **THEN** the read still plays roster v2's arms and its reference rows reproduce EXP-0052's and
+  EXP-0057's
