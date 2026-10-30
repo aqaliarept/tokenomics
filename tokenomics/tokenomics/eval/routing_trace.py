@@ -40,6 +40,27 @@ Per episode, it aggregates how the ordering agents' routing played out in the au
   auction of the bid's latest placement (its routing), against the bid's quantity. A failed
   reservation whose placement the tracer did not see (attached mid-episode) is in neither.
 
+- agent-level measures for the M4 decoder check (add-m4-orderer-redesign design D3 / D9; the
+  reviewed definitions of task 1.3's `probes/trace_agents.py`). An *agent* is one ordering
+  agent's product stream (aid, product), the joint_stack ordering agent:
+  - `lead_concurrent_top_share_*` (EXP-0056's measure, ported from `teacher_audit`'s split-check
+    wrapper so that every driver reports it): each order's lead receiver is the producer that
+    gets its largest part (ties to the lowest index); per group of orders routed in one cycle
+    for one product over one eligible set (>= 2 producers), the share of the group led by its
+    most common lead receiver, averaged over groups of >= 2 orders. Orders beyond `k_stream` are
+    skipped, as the wrapper skips them;
+  - `share_swing_consumer` (D9): per product with >= 2 declaring producers, the total-variation
+    distance between consecutive cycles' producer shares of its consumer units, unit-weighted
+    (cycle t's units) over products and consecutive cycle pairs;
+  - `concurrent_cross_agent_share`: of the groups of >= 2 orders routed in one cycle for one
+    product with >= 2 declaring producers, the share holding orders of >= 2 agents (the pair
+    version: the share of their order pairs whose two orders come from different agents);
+  - `orders_per_turn_*`: orders per active turn (one agent in one cycle holding >= 1 order);
+  - `agent_history_dispersion`, `routed_share_dispersion` and its reported-only variants: see
+    `history_dispersion`. Built from bid-outcome kinds only, never a reason (ADR-0058).
+  `ScoreFidelity` (a policy wrapper, not part of the tracer) accumulates D3's per-decision
+  score fidelity.
+
 White-box, like the baselines: the tracer wraps `system.complete_cycle` to snapshot the placed
 bids just before the auction, then reads the result's diagnostic `bid_outcomes` and
 `order_resolutions` (and, for `ttl_outage`, the system's outage table). It only reads, so
@@ -52,11 +73,15 @@ here may feed a policy or a teacher fork (design D4).
 
 from __future__ import annotations
 
+import itertools
 from collections import defaultdict
 from dataclasses import dataclass, field
+from statistics import fmean, median, pstdev
 from typing import TYPE_CHECKING, Callable
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
+
+import numpy as np
 
 from ..domain.common import OrderId, ProducerId, Product, is_nan
 from ..domain.metrics import input_makeable_qty
@@ -74,6 +99,11 @@ LOSS_REASONS = REJECT_REASONS + FAIL_REASONS + ("never_bid",)
 FAIL_TTL_OUTAGE = "ttl_outage"
 INPUTS_SHORT = "inputs_short"  # input stock at routing could not assemble the sub-order
 INPUTS_OK = "inputs_ok"
+MIN_ROUTED_UNITS = 3  # D3: an agent enters a dispersion cell with >= 3 routed units
+ROUTED_KINDS = ("accepted", "rejected")  # every placed bid ends its auction as one of the two
+COMPLETED = "completed"
+
+Stream = tuple[str, Product]  # (ordering agent id, product): one agent under joint_stack
 
 
 def order_class(kind: str) -> str:
@@ -124,6 +154,124 @@ class _Counts:
     # per order and producer: (input-makeable units, bid quantity) at the latest placement
     routed_inputs: dict[OrderId, dict[ProducerId, tuple[float, int]]] = field(default_factory=dict)
     ttl_units: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    # agent-level measures (add-m4-orderer-redesign D3 / D9)
+    lead_groups: dict[tuple[str, int, Product, tuple[int, ...]], dict[int, int]] = field(
+        default_factory=dict)
+    swing_last: dict[Product, tuple[int, dict[ProducerId, float]]] = field(default_factory=dict)
+    swing_sum: float = 0.0
+    swing_units: int = 0
+    swing_pairs: int = 0
+    cc_groups: int = 0
+    cc_across: int = 0
+    cc_pairs: int = 0
+    cc_cross_pairs: int = 0
+    turn_orders: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    active_turns: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    order_stream: dict[OrderId, Stream] = field(default_factory=dict)
+    stream_class: dict[Stream, str] = field(default_factory=dict)
+    # stream -> producer -> [routed units, completed units]
+    history: dict[Stream, dict[ProducerId, list[int]]] = field(
+        default_factory=lambda: defaultdict(dict))
+    declarers: dict[Product, int] = field(default_factory=dict)
+
+
+def lead_receiver(units: Mapping[int, int]) -> int:
+    """The producer index receiving an order's largest part, ties to the lowest index."""
+    return min(units, key=lambda i: (-units[i], i))
+
+
+def concurrent_top_share(groups: Iterable[Mapping[int, int]]) -> tuple[float, int]:
+    """(mean over groups of >= 2 orders of the share led by the group's most common lead
+    receiver, number of such groups); 0.0 without one (EXP-0056, D13)."""
+    tops = [max(g.values()) / sum(g.values()) for g in groups if sum(g.values()) >= 2]
+    return (fmean(tops) if tops else 0.0), len(tops)
+
+
+def share_tv(a: Mapping[ProducerId, float], b: Mapping[ProducerId, float]) -> float:
+    """Total-variation distance (1/2) sum_i |a_i - b_i| of two share vectors (missing = 0)."""
+    return 0.5 * sum(abs(a.get(p, 0.0) - b.get(p, 0.0)) for p in set(a) | set(b))
+
+
+def _shares(units: Mapping[ProducerId, int]) -> dict[ProducerId, float]:
+    total = sum(units.values())
+    return {p: u / total for p, u in units.items()}
+
+
+def _weighted_median(pairs: Sequence[tuple[float, float]]) -> float:
+    """The first value (ascending) at which the cumulative weight reaches half the total."""
+    ordered = sorted(pairs)
+    half = sum(w for _, w in ordered) / 2
+    acc = 0.0
+    for v, w in ordered:
+        acc += w
+        if acc >= half:
+            return v
+    return ordered[-1][0]
+
+
+def history_dispersion(history: Mapping[Stream, Mapping[ProducerId, Sequence[int]]],
+                       stream_class: Mapping[Stream, str], declarers: Mapping[Product, int],
+                       min_units: int = MIN_ROUTED_UNITS) -> dict[str, float]:
+    """Design D3's across-agent dispersion of agent-local history, per episode, from
+    `history[stream][producer] = (routed units, completed units)` (bid-outcome kinds only,
+    ADR-0058; routed = accepted + rejected, so each re-bid counts again). The definitions are
+    task 1.3's reviewed ones (`probes/trace_agents.py`, notes/1.3.md):
+    - `agent_history_dispersion`: median, over cells (product x, producer i) where >= 2 agents
+      of x routed >= `min_units` units to i, of the population SD of those agents' completion
+      rates completed / routed at i (all products);
+    - `routed_share_dispersion`: median, over every (product, agent pair) of products with >= 2
+      declaring producers and agents with >= `min_units` routed units of it, of the
+      total-variation distance between the two agents' routed-share vectors.
+    Reported only, never a reading (the 1.3 review's alternatives, carry-forward): the same
+    pairs over producer-stream agents only (`_producer_streams`), each agent against the pooled
+    units of the product's other qualifying agents (`_vs_rest`, median over agents), and the
+    median of the pairs weighted by the product of the two agents' routed units
+    (`_unit_weighted`). An empty measure is 0.0; the `*_cells` / `*_pairs` counts tell it apart."""
+    by_product: dict[Product, dict[Stream, Mapping[ProducerId, Sequence[int]]]] = defaultdict(dict)
+    for stream, cells in history.items():
+        by_product[stream[1]][stream] = cells
+    sds: list[float] = []
+    pairs: list[tuple[float, float]] = []
+    producer_pairs: list[float] = []
+    vs_rest: list[float] = []
+    for x in sorted(by_product, key=str):
+        streams = by_product[x]
+        pids = sorted({p for cells in streams.values() for p in cells}, key=str)
+        for pid in pids:
+            rates = [cells[pid][1] / cells[pid][0] for cells in streams.values()
+                     if pid in cells and cells[pid][0] >= min_units]
+            if len(rates) >= 2:
+                sds.append(pstdev(rates))
+        if declarers.get(x, 0) < 2:
+            continue
+        routed = {s: {p: c[0] for p, c in cells.items()} for s, cells in streams.items()}
+        kept = [s for s in sorted(routed, key=str) if sum(routed[s].values()) >= min_units]
+        vec = {s: _shares(routed[s]) for s in kept}
+        for a, b in itertools.combinations(kept, 2):
+            tv = share_tv(vec[a], vec[b])
+            pairs.append((tv, float(sum(routed[a].values()) * sum(routed[b].values()))))
+            if stream_class.get(a) == PRODUCER and stream_class.get(b) == PRODUCER:
+                producer_pairs.append(tv)
+        if len(kept) >= 2:
+            for a in kept:
+                rest: dict[ProducerId, int] = defaultdict(int)
+                for b in kept:
+                    if b != a:
+                        for p, u in routed[b].items():
+                            rest[p] += u
+                vs_rest.append(share_tv(vec[a], _shares(rest)))
+    tvs = [tv for tv, _ in pairs]
+    return {
+        "agent_history_dispersion": median(sds) if sds else 0.0,
+        "agent_history_cells": float(len(sds)),
+        "routed_share_dispersion": median(tvs) if tvs else 0.0,
+        "routed_share_pairs": float(len(tvs)),
+        "routed_share_dispersion_producer_streams": (
+            median(producer_pairs) if producer_pairs else 0.0),
+        "routed_share_pairs_producer_streams": float(len(producer_pairs)),
+        "routed_share_dispersion_vs_rest": median(vs_rest) if vs_rest else 0.0,
+        "routed_share_dispersion_unit_weighted": _weighted_median(pairs) if pairs else 0.0,
+    }
 
 
 class RoutingTracer:
@@ -220,6 +368,7 @@ class RoutingTracer:
             c.overflow_orders += max(0, len(oa.incoming) - self._k_stream)
         self._receivers(system, per_order)
         self._herding(system, order_units, declarers)
+        self._agents(system, order_units, declarers, index)
 
         fund = system.investment_fund
         granted: dict[ProducerId, int] = defaultdict(int)
@@ -274,9 +423,84 @@ class RoutingTracer:
             c.herding_sum += sum((w / len(orders)) ** 2 for w in weight.values())
             c.herding_n += 1
 
+    def _agents(self, system: System, order_units: dict[object, dict[ProducerId, int]],
+                declarers: dict[Product, list[ProducerId]],
+                index: dict[ProducerId, int]) -> None:
+        """Agent-level measures of this cycle's routing (module docstring): every order an
+        ordering agent holds this cycle (`incoming`, still set before the auction) with its
+        placed bids."""
+        c = self._c
+        c.declarers = {x: len(pids) for x, pids in declarers.items()}
+        groups: dict[Product, list[Stream]] = defaultdict(list)
+        consumer_units: dict[Product, dict[ProducerId, int]] = defaultdict(lambda: defaultdict(int))
+        for aid, oa in system.ordering_agents.items():
+            per_class: dict[str, int] = defaultdict(int)
+            for slot, oid in enumerate(sorted(oa.incoming)):
+                order = system.orders.get(oid)
+                if order is None or oa.incoming[oid].quantity <= 0:
+                    continue
+                cls = order_class(order_kind(order))
+                stream = (str(aid), order.product)
+                c.order_stream[oid] = stream
+                c.stream_class.setdefault(stream, cls)
+                per_class[cls] += 1
+                groups[order.product].append(stream)
+                units = order_units.get(oid)
+                if not units:
+                    continue
+                elig = tuple(sorted(index[p] for p in declarers.get(order.product, ())
+                                    if p in index))
+                if slot < self._k_stream and len(elig) >= 2:
+                    lead = lead_receiver({index[p]: u for p, u in units.items()})
+                    group = c.lead_groups.setdefault((cls, c.cycle, order.product, elig), {})
+                    group[lead] = group.get(lead, 0) + 1
+                if cls == CONSUMER:
+                    for pid, u in units.items():
+                        consumer_units[order.product][pid] += u
+            for cls, n in per_class.items():
+                c.turn_orders[cls] += n
+                c.active_turns[cls] += 1
+        for x, streams in groups.items():
+            if len(streams) < 2 or c.declarers.get(x, 0) < 2:
+                continue
+            counts: dict[Stream, int] = defaultdict(int)
+            for s in streams:
+                counts[s] += 1
+            k = len(streams)
+            c.cc_groups += 1
+            c.cc_across += int(len(counts) >= 2)
+            c.cc_pairs += k * (k - 1) // 2
+            c.cc_cross_pairs += k * (k - 1) // 2 - sum(n * (n - 1) // 2 for n in counts.values())
+        for x, units in consumer_units.items():
+            if c.declarers.get(x, 0) < 2:
+                continue
+            total = sum(units.values())
+            shares = _shares(units)
+            last = c.swing_last.get(x)
+            if last is not None and last[0] == c.cycle - 1:
+                c.swing_sum += total * share_tv(last[1], shares)
+                c.swing_units += total
+                c.swing_pairs += 1
+            c.swing_last[x] = (c.cycle, shares)
+
+    def _history(self, result: CycleResult) -> None:
+        """Agent-local history from bid-outcome kinds only (ADR-0058): `reason` is never read
+        here."""
+        c = self._c
+        for b in result.bid_outcomes:
+            stream = c.order_stream.get(b.order_id)
+            if stream is None:
+                continue
+            cell = c.history[stream].setdefault(b.producer_id, [0, 0])
+            if b.outcome in ROUTED_KINDS:
+                cell[0] += b.quantity
+            elif b.outcome == COMPLETED:
+                cell[1] += b.quantity
+
     def _after_auction(self, result: CycleResult) -> None:
         c = self._c
         c.cycles += 1
+        self._history(result)
         in_outage = c.outages.get(c.cycle, frozenset()) | c.outages.get(c.cycle - 1, frozenset())
         for b in result.bid_outcomes:
             cls = order_class(b.order_kind)
@@ -344,6 +568,27 @@ class RoutingTracer:
         out["fund_share_herfindahl_episode"] = herfindahl(list(c.fund_granted.values()))
         out["investment_rejection_rate"] = (
             c.investment_rejected / c.investment_resolved if c.investment_resolved else 0.0)
+        out.update(self.agent_summary())
+        return out
+
+    def agent_summary(self) -> dict[str, float]:
+        """The agent-level measures (module docstring; add-m4-orderer-redesign D3 / D9)."""
+        c = self._c
+        out: dict[str, float] = {}
+        for cls in (CONSUMER, PRODUCER):
+            top, n = concurrent_top_share(g for (k, *_), g in c.lead_groups.items() if k == cls)
+            out[f"lead_concurrent_top_share_{cls}"] = top
+            out[f"lead_concurrent_groups_{cls}"] = float(n)
+            turns = c.active_turns.get(cls, 0)
+            out[f"orders_per_turn_{cls}"] = c.turn_orders.get(cls, 0) / turns if turns else 0.0
+            out[f"active_turns_{cls}"] = float(turns)
+        out["share_swing_consumer"] = c.swing_sum / c.swing_units if c.swing_units else 0.0
+        out["share_swing_pairs_consumer"] = float(c.swing_pairs)
+        out["concurrent_cross_agent_share"] = c.cc_across / c.cc_groups if c.cc_groups else 0.0
+        out["concurrent_cross_agent_pair_share"] = (
+            c.cc_cross_pairs / c.cc_pairs if c.cc_pairs else 0.0)
+        out["concurrent_groups"] = float(c.cc_groups)
+        out.update(history_dispersion(c.history, c.stream_class, c.declarers))
         return out
 
     def fund_shares(self) -> dict[ProducerId, float]:
@@ -359,4 +604,100 @@ class RoutingTracer:
             "cut_off_price_by_producer": {
                 pid: c.cut_off_sum[pid] / c.cut_off_n[pid] for pid in c.cut_off_n},
             "capacity_ratio_trace": list(self._env.capacity_trace) if self._env else [],
+        }
+
+
+# --- score fidelity (add-m4-orderer-redesign design D3), per decision on visited states ---
+
+
+def _ranks(v: np.ndarray) -> np.ndarray:
+    """Average ranks (ties share their mean rank)."""
+    order = np.argsort(v, kind="stable")
+    ranks = np.empty(len(v), dtype=np.float64)
+    sorted_v = v[order]
+    i = 0
+    while i < len(v):
+        j = i
+        while j + 1 < len(v) and sorted_v[j + 1] == sorted_v[i]:
+            j += 1
+        ranks[order[i:j + 1]] = (i + j) / 2.0
+        i = j + 1
+    return ranks
+
+
+def spearman(a: Sequence[float], b: Sequence[float]) -> float | None:
+    """Spearman rank correlation (average ranks); None when either side is constant."""
+    ra, rb = _ranks(np.asarray(a, dtype=np.float64)), _ranks(np.asarray(b, dtype=np.float64))
+    da, db = ra - ra.mean(), rb - rb.mean()
+    den = float(np.sqrt((da * da).sum() * (db * db).sum()))
+    return float((da * db).sum()) / den if den > 0 else None
+
+
+def makeable_logits(makeable: Sequence[int]) -> np.ndarray:
+    """The EXP-0012 scorer's distillation target (`train/orderer_scorer.teacher_logits`):
+    log `makeable_qty_now` clamped to the action bound, -bound for nothing makeable. Its
+    softmax is the makeable share (uniform when nothing is makeable, as `mww_keyed` draws)."""
+    from ..env.spaces import ACTION_LOGIT_BOUND as bound
+
+    m = np.asarray(makeable, dtype=np.float64)
+    out = np.full(len(m), -bound)
+    pos = m > 0
+    out[pos] = np.clip(np.log(m[pos]), -bound, bound)
+    return out
+
+
+def _log_softmax(v: np.ndarray) -> np.ndarray:
+    z = v - v.max()
+    return z - np.log(np.exp(z).sum())
+
+
+class ScoreFidelity:
+    """Order policy wrapper (reads only) for D3's score fidelity on visited states: wrap the
+    *scorer* (TR as deployed; TS's base, `TRAINED_WRAPPERS["trained_sampled_whole"]
+    (ScoreFidelity(scorer))`). Per decision (a slot order with >= 2 eligible producers), with
+    s = the scorer's logits over the eligible producers and m their `makeable_qty_now`:
+    - Spearman correlation of s against log m (`makeable_logits`); skipped when s or m is
+      constant;
+    - top-1 agreement: the first argmax of s is one of m's argmaxes; skipped when m is constant;
+    - KL(softmax(s) || softmax(log m)), the makeable share as the scorer's target defines it.
+    `cells()` gives the per-episode median Spearman, the agreement share and the median KL, with
+    their decision counts; `values` keeps every decision's numbers for pooling across episodes.
+    The wrapped policy is called once per turn and its action returned unchanged."""
+
+    def __init__(self, policy: Callable[..., object]) -> None:
+        self.policy = policy
+        self.values: dict[str, list[float]] = {"spearman": [], "top1": [], "kl": []}
+
+    def __call__(self, env: "TokenomicsAECEnv", agent: str) -> object:
+        from .routing_diagnostics import _makeables, _slots
+
+        action = self.policy(env, agent)
+        sp = env.spec_
+        raw = np.asarray(action, dtype=np.float64).reshape(sp.k_stream, sp.num_producers)
+        for k, oid, q, elig in _slots(env, agent):
+            if len(elig) >= 2 and q > 0:
+                self.record(raw[k, elig], _makeables(env, oid, elig))
+        return action
+
+    def record(self, scores: Sequence[float], makeable: Sequence[int]) -> None:
+        """One decision's fidelity numbers (class docstring)."""
+        s = np.asarray(scores, dtype=np.float64)
+        m = np.asarray(makeable, dtype=np.float64)
+        rho = spearman(s, m)  # ranks of m are those of log m (zeros lowest)
+        if rho is not None:
+            self.values["spearman"].append(rho)
+        if m.max() > m.min():
+            self.values["top1"].append(float(m[int(np.argmax(s))] == m.max()))
+        lp, lq = _log_softmax(s), _log_softmax(makeable_logits(makeable))
+        self.values["kl"].append(float((np.exp(lp) * (lp - lq)).sum()))
+
+    def cells(self) -> dict[str, str]:
+        v = self.values
+        return {
+            "score_spearman_log_makeable": repr(median(v["spearman"])) if v["spearman"] else "",
+            "score_spearman_decisions": str(len(v["spearman"])),
+            "score_top1_agreement": repr(fmean(v["top1"])) if v["top1"] else "",
+            "score_top1_decisions": str(len(v["top1"])),
+            "score_kl_to_makeable": repr(median(v["kl"])) if v["kl"] else "",
+            "score_decisions": str(len(v["kl"])),
         }

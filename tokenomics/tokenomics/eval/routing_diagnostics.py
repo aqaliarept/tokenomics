@@ -20,6 +20,15 @@ DIAGNOSTICS 19's split check (task 11.2, design D13) adds two wrappers over a tr
 argmax (`trained_whole`), and its split profile on `round_robin`'s receivers
 (`trained_split_rotating`).
 
+The M4 decoder check (add-m4-orderer-redesign design D3, EXP-0057) adds two keyed whole-order
+draws: `trained_sampled_whole` (TS, a `TRAINED_WRAPPERS` entry: one eligible producer per slot
+drawn from softmax(trained score) at T = 1) and `mww_keyed` (MWWk: drawn in proportion to
+`makeable_qty_now`, uniformly when nothing is makeable). Both draw by inverse CDF from the
+uniform keyed by SHA-256(world, episode, replicate, agent, cycle, slot) (`keyed_uniform`), so
+TS - MWWk is paired; the key is set per episode with `set_draw_key`. The agent id is a key
+only, never an input, and both read only the slot's orders, the frozen producer rows and the
+scores (ADR-0058).
+
 They are white-box `Policy`s like `proportional` / `blend_0.5` and emit the raw ordering action
 decode reads (ADR-0025/0026). A router that wants an exact integer split (a whole order, a
 chosen leftover placement) emits `log(units)` for each receiving producer and `-BOUND` for the
@@ -37,8 +46,10 @@ from __future__ import annotations
 
 import hashlib
 import math
+import operator
 import weakref
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -397,6 +408,113 @@ def ordering_makeable_weighted_whole(env: "TokenomicsAECEnv", agent: str) -> np.
     return _flat(mat)
 
 
+# --- M4 decoder check (add-m4-orderer-redesign design D3): keyed whole-order draws ---
+
+
+@dataclass(frozen=True)
+class DrawKey:
+    """The episode part of a keyed draw (design D3): world id, episode seed, replicate. Typed
+    strictly, because `keyed_uniform` hashes the fields' text: a float or bool episode /
+    replicate would compare equal to the int yet draw differently, unpairing TS - MWWk. Integer
+    types (e.g. numpy ints) are normalised to `int`; floats, bools and non-str worlds are
+    refused."""
+
+    world: str
+    episode: int
+    replicate: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.world, str):
+            raise TypeError(f"DrawKey.world must be a str, got {type(self.world).__name__}")
+        for name in ("episode", "replicate"):
+            v = getattr(self, name)
+            if isinstance(v, bool):
+                raise TypeError(f"DrawKey.{name} must be an int, got bool")
+            try:
+                object.__setattr__(self, name, int(operator.index(v)))
+            except TypeError:
+                raise TypeError(f"DrawKey.{name} must be an int, got "
+                                f"{type(v).__name__}") from None
+
+
+DRAW_KEY_ATTR = "_m4_draw_key"
+
+
+def set_draw_key(env: "TokenomicsAECEnv", key: DrawKey) -> None:
+    """Key the env's keyed routers for the coming episode(s). An env attribute, so a deepcopy
+    of the env (a fork) draws with the same key."""
+    setattr(env, DRAW_KEY_ATTR, key)
+
+
+def draw_key(env: "TokenomicsAECEnv") -> DrawKey:
+    key = getattr(env, DRAW_KEY_ATTR, None)
+    if not isinstance(key, DrawKey):
+        raise RuntimeError("a keyed router needs set_draw_key(env, DrawKey(world, episode, "
+                           "replicate)) before the episode (design D3)")
+    return key
+
+
+def keyed_uniform(key: DrawKey, agent: str, cycle: int, slot: int) -> float:
+    """U[0, 1) from SHA-256(world, episode, replicate, agent, cycle, slot): 53 bits of the
+    digest, process-independent. The agent id enters the key only (ADR-0058)."""
+    parts = (key.world, key.episode, key.replicate, agent, cycle, slot)
+    digest = hashlib.sha256("|".join(str(p) for p in parts).encode()).digest()
+    return (int.from_bytes(digest[:8], "big") >> 11) / float(1 << 53)
+
+
+def inverse_cdf(weights: np.ndarray, u: float) -> int:
+    """The index whose cumulative-weight interval holds u * total (u in [0, 1)); weights >= 0,
+    total > 0. A zero-weight index is never drawn."""
+    cdf = np.cumsum(np.asarray(weights, dtype=np.float64))
+    return min(int(np.searchsorted(cdf, u * cdf[-1], side="right")), len(cdf) - 1)
+
+
+def softmax_weights(scores: np.ndarray) -> np.ndarray:
+    """Unnormalised softmax at T = 1, exp(s - max s) (`inverse_cdf` normalises)."""
+    s = np.asarray(scores, dtype=np.float64)
+    return np.exp(s - s.max())
+
+
+def makeable_weights(env: "TokenomicsAECEnv", oid: OrderId, elig: Sequence[int]) -> np.ndarray:
+    """MWW's weights: `makeable_units` per eligible producer, all ones when none is makeable."""
+    made = np.asarray(_makeables(env, oid, elig), dtype=np.float64)
+    return made if made.sum() > 0 else np.ones(len(elig))
+
+
+def ordering_mww_keyed(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """MWWk: `makeable_weighted_whole`'s weights, drawn by inverse CDF from the keyed uniform
+    instead of the action-space RNG (design D3), the order routed whole."""
+    key = draw_key(env)
+    cycle = env.system.cycle_counter
+    mat = _matrix(env)
+    for k, oid, q, elig in _slots(env, agent):
+        if elig:
+            chosen = inverse_cdf(makeable_weights(env, oid, elig),
+                                 keyed_uniform(key, agent, cycle, k))
+            mat[k, elig] = _whole(elig, chosen, q)
+    return _flat(mat)
+
+
+def ordering_sampled_whole(base: Policy) -> Policy:
+    """TS: `base`'s scores (the EXP-0012 scorer), one eligible producer per slot drawn by
+    inverse CDF of softmax(score) at T = 1 from the keyed uniform, the order routed whole
+    (design D3). `base` is called once per turn."""
+
+    def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        key = draw_key(env)
+        cycle = env.system.cycle_counter
+        raw = _slot_scores(base, env, agent)
+        mat = _matrix(env)
+        for k, _, q, elig in _slots(env, agent):
+            if elig:
+                chosen = inverse_cdf(softmax_weights(raw[k, elig]),
+                                     keyed_uniform(key, agent, cycle, k))
+                mat[k, elig] = _whole(elig, chosen, q)
+        return _flat(mat)
+
+    return policy
+
+
 # --- DIAGNOSTICS 19 split check (task 11.2, design D13): wrappers over a trained orderer ---
 
 
@@ -458,6 +576,7 @@ def ordering_split_rotating(base: Policy) -> Policy:
 TRAINED_WRAPPERS: dict[str, Callable[[Policy], Policy]] = {
     "trained_whole": ordering_forced_whole,
     "trained_split_rotating": ordering_split_rotating,
+    "trained_sampled_whole": ordering_sampled_whole,  # M4 D3 TS
 }
 
 
@@ -484,6 +603,7 @@ DIAGNOSTIC_ROUTERS: dict[str, Policy] = {
     "spare_rotating_whole": ordering_spare_rotating_whole,
     "makeable_split": ordering_makeable_split,
     "makeable_weighted_whole": ordering_makeable_weighted_whole,
+    "mww_keyed": ordering_mww_keyed,  # M4 D3 MWWk (keyed: needs set_draw_key)
 }
 
 ROUTER_KIND: dict[str, str] = {

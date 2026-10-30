@@ -37,7 +37,9 @@ from tokenomics.eval.world_space import config_from_record
 
 REPO = Path(__file__).resolve().parents[2]
 ATLAS_V2 = REPO / "experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json"
-PROBE = REPO / "openspec/changes/add-m3-development-audit/probes/exp0052_check.py"
+# archived with its change (commit 7948284)
+PROBE = REPO / ("openspec/changes/archive/2026-10-30-add-m3-development-audit/probes/"
+                "exp0052_check.py")
 PROD = PRODUCING_BASELINES["entity_planner"]
 ROUND_ROBIN = DIAGNOSTIC_ROUTERS["round_robin"]
 # The sample `probes/exp0052_check.py --reclassified` prints ("new"), in class rank order.
@@ -1027,7 +1029,9 @@ def test_lead_receivers_concurrent_spread_and_rotation() -> None:
 def test_split_wrappers_outside_the_roster() -> None:
     from tokenomics.eval.baselines import ORDERING_BASELINES
 
-    assert set(TRAINED_WRAPPERS) == {ta.TRAINED_WHOLE, ta.TRAINED_SPLIT_ROTATING}
+    # + M4's TS (add-m4-orderer-redesign task 2.1, design D3)
+    assert set(TRAINED_WRAPPERS) == {ta.TRAINED_WHOLE, ta.TRAINED_SPLIT_ROTATING,
+                                     "trained_sampled_whole"}
     assert not set(TRAINED_WRAPPERS) & (set(DIAGNOSTIC_ROUTERS) | set(ORDERING_BASELINES))
 
 
@@ -1075,7 +1079,14 @@ def test_role_arms_unchanged_golden() -> None:
     for role in ("S", "B"):
         job = build_jobs([e], [ta.role_arm(role)], 1, 12, None, pins)[0]
         rows[role] = ta.run_audit_job(job)
-        digest = hashlib.sha256(json.dumps(rows[role], sort_keys=True).encode()).hexdigest()
+        # the golden predates the M4 agent-level trace columns (add-m4-orderer-redesign task
+        # 2.1): every column it covered is hashed, the added ones are not
+        from tokenomics.eval.routing_trace import RoutingTracer
+
+        added = {f"trace_{k}" for k in RoutingTracer().agent_summary()}
+        old = {k: v for k, v in rows[role].items() if k not in added}
+        assert len(old) < len(rows[role])
+        digest = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()
         assert digest == ROLE_ROW_GOLDEN[role], role
     tr = next(j for j in _split_jobs(str(REPO_CKPTS["orderer"])) if j["split_arm"] == "TR")
     split_row = ta.run_split_job(tr)

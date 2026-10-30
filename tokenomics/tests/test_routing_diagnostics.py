@@ -9,6 +9,8 @@ orders one 20.
 
 from __future__ import annotations
 
+import copy
+import csv
 import json
 import subprocess
 import sys
@@ -36,9 +38,13 @@ from tokenomics.eval.routing_audit import (EDGE_COLUMNS, build_jobs, edge_table,
                                            real_run_problems, router_table, run_audit,
                                            select_worlds)
 from tokenomics.eval.routing_diagnostics import (DIAGNOSTIC_ROUTERS, ROUTER_KIND, STOCHASTIC,
-                                                 ordering_random_scaled, split_logits)
+                                                 TRAINED_WRAPPERS, DrawKey, _makeables, _slots,
+                                                 inverse_cdf, keyed_uniform,
+                                                 ordering_random_scaled, set_draw_key,
+                                                 softmax_weights, split_logits)
 from tokenomics.eval.joint_stack import joint_stack_env
-from tokenomics.eval.routing_trace import CONSUMER, PRODUCER, RoutingTracer, order_class
+from tokenomics.eval.routing_trace import (CONSUMER, PRODUCER, RoutingTracer, ScoreFidelity,
+                                           history_dispersion, order_class)
 from tokenomics.eval.runner import run_episode
 from tokenomics.eval.seeding import replicate_seed
 from tokenomics.eval.shock_profiles import SHOCKS_I_SMOKE
@@ -80,13 +86,18 @@ def _shocked_world_config() -> Configuration:
 Record = dict[str, object]
 
 
+FIXTURE_KEY = DrawKey("fixture", 0, 0)
+
+
 def _record(cfg: Configuration, router: Policy, *, action_seed: int | None = None,
             horizon: int = HORIZON, also: dict[str, Policy] | None = None,
-            ) -> tuple[list[Record], dict]:
+            key: DrawKey = FIXTURE_KEY) -> tuple[list[Record], dict]:
     """Run one joint-stack episode with `entity_planner` and `router`, under the contract
     monitor; record, per routed order and call, the decoded split of `router`'s action (the
-    split the env applies) and of each policy in `also` evaluated on the same state."""
+    split the env applies) and of each policy in `also` evaluated on the same state. `key`
+    keys the keyed routers (TS / MWWk, design D3); the others ignore it."""
     env = joint_stack_env(cfg, horizon)
+    set_draw_key(env, key)
     log: list[Record] = []
 
     def order(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
@@ -181,7 +192,9 @@ def test_diagnostic_router_kinds() -> None:
         "random_fixed_episode", "blend_noise_0.15", "blend_noise_0.6", "random_consumer_only",
         "random_producer_only", "random_whole", "even_split_random_leftover",
         "two_choice_spare", "spare_weighted_whole", "spare_rotating_whole",
-        "makeable_split", "makeable_weighted_whole"])
+        "makeable_split", "makeable_weighted_whole", "mww_keyed"])
+    assert sorted(TRAINED_WRAPPERS) == ["trained_sampled_whole", "trained_split_rotating",
+                                        "trained_whole"]
     assert sorted(n for n, k in ROUTER_KIND.items() if k != STOCHASTIC) == [
         "even_split_rotating", "makeable_split", "proportional_load_aware", "proportional_whole",
         "round_robin", "spare_rotating_whole"]
@@ -1403,3 +1416,457 @@ def test_makeable_weighted_whole_draws_in_proportion_to_input_aware_units(
     assert len(seen) >= HORIZON - 2
     assert all(m == made for m, _ in seen)
     assert {g for _, g in seen} == receivers
+
+
+# --- M4 decoder check (add-m4-orderer-redesign task 2.1, design D3 / D9, ADR-0058) ---
+
+TS = "trained_sampled_whole"
+MWWK = "mww_keyed"
+KEYED = (TS, MWWK)
+_PROJECTIONS: dict[tuple[int, int], np.ndarray] = {}
+
+
+def _obs_scorer(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+    """A deterministic stand-in for the EXP-0012 scorer that, like it, reads only the agent's
+    observation: a fixed projection of the observation to one logit row per slot."""
+    sp = env.spec_
+    obs = np.asarray(env.observe(agent), dtype=np.float64)
+    shape = (sp.k_stream * sp.num_producers, len(obs))
+    if shape not in _PROJECTIONS:
+        _PROJECTIONS[shape] = 0.1 * np.random.default_rng(len(obs)).standard_normal(shape)
+    return (_PROJECTIONS[shape] @ obs).astype(np.float32)
+
+
+def _log_makeable_scorer(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+    """Scores = log `makeable_qty_now` per eligible producer, a score far below the others
+    where nothing is makeable: softmax(score) is MWWk's weights (uniform when all are 0)."""
+    sp = env.spec_
+    mat = np.zeros((sp.k_stream, sp.num_producers))
+    for k, oid, _, elig in _slots(env, agent):
+        if elig:
+            m = np.asarray(_makeables(env, oid, elig), dtype=np.float64)
+            mat[k, elig] = np.where(m > 0, np.log(np.maximum(m, 1.0)), -1e6)
+    return mat.flatten()
+
+
+def _keyed(name: str, base: Policy = _obs_scorer) -> Policy:
+    return TRAINED_WRAPPERS[name](base) if name in TRAINED_WRAPPERS else DIAGNOSTIC_ROUTERS[name]
+
+
+def _m4_config() -> Configuration:
+    """The composite fixture plus a second consumer stream of product 10: three or more
+    ordering agents route product 10 in one cycle (two consumer streams, p3's replenishment and
+    the restoration / upgrade investments)."""
+    base = _config(3, composite=True)
+    cfg = Configuration(base.cycle_emission, base.process_sheets, base.producer_configs,
+                        base.consumers + [ConsumerConfig(id="c4", product=10,
+                                                         schedule=((10, 2),))])
+    cfg.validate()
+    return cfg
+
+
+@pytest.mark.parametrize("name", KEYED)
+def test_keyed_routers_conserve_never_split_and_replay(name: str) -> None:
+    """TS / MWWk: quantity and tokens conserved, only eligible producers, one sub-order per
+    order, the same key replays action for action (whatever the action-space seed: the draw is
+    keyed), another replicate draws differently; no key is refused."""
+    for cfg, horizon in ((_m4_config(), HORIZON), (_shocked_world_config(), 4)):
+        a, stats_a = _record(cfg, _keyed(name), horizon=horizon, action_seed=1)
+        b, stats_b = _record(cfg, _keyed(name), horizon=horizon, action_seed=2)
+        other, _ = _record(cfg, _keyed(name), horizon=horizon, key=DrawKey("fixture", 0, 1))
+        assert a and len(a) == len(b)
+        for r in a:
+            subs = r["subs"]
+            assert len(subs) == 1 and subs[0][1] == r["q"] and subs[0][2] == r["tokens"]
+            assert {p for p, _, _ in subs} <= r["eligible"]
+        assert [r["subs"] for r in a] == [r["subs"] for r in b] and stats_a == stats_b
+        assert all(np.array_equal(x["row"], y["row"]) for x, y in zip(a, b)
+                   if x["row"] is not None)
+        assert [r["subs"] for r in a] != [r["subs"] for r in other]
+    assert {r["class"] for r in _record(_m4_config(), _keyed(name))[0]} == {CONSUMER, PRODUCER}
+    env = joint_stack_env(_m4_config(), HORIZON)
+    with pytest.raises(RuntimeError, match="set_draw_key"):
+        run_episode(env, PRODUCING_BASELINES["entity_planner"], _keyed(name), seed=0)
+
+
+def test_ts_with_log_makeable_scores_draws_as_mwwk() -> None:
+    """Paired: with scores = log makeable, TS's sub-orders equal MWWk's for the same keys, at
+    every decision of the episode (MWWk evaluated on TS's states) and episode for episode."""
+    ts = TRAINED_WRAPPERS[TS](_log_makeable_scorer)
+    mwwk = DIAGNOSTIC_ROUTERS[MWWK]
+    for cfg, horizon in ((_fanout4_config(), HORIZON), (_m4_config(), HORIZON),
+                         (_shocked_world_config(), 4)):
+        for key in (FIXTURE_KEY, DrawKey("w", 7, 1)):
+            log, stats = _record(cfg, ts, horizon=horizon, key=key, also={"mwwk": mwwk})
+            contested = [r for r in log if len(r["eligible"]) >= 2]
+            assert contested and all(r["subs"] == r["alt"]["mwwk"] for r in log)
+            alone, stats_alone = _record(cfg, mwwk, horizon=horizon, key=key)
+            assert [r["subs"] for r in alone] == [r["subs"] for r in log]
+            assert stats_alone == stats
+
+
+def test_draw_key_is_strictly_typed() -> None:
+    """Equal keys draw alike: a float or bool episode / replicate (equal to the int, different
+    text) and a non-str world are refused; numpy ints are normalised to int."""
+    key = DrawKey("w", 1295251592, 0)
+    assert DrawKey("w", np.int64(1295251592), np.int32(0)) == key
+    same = DrawKey("w", np.int64(1295251592), np.int32(0))
+    assert type(same.episode) is int and type(same.replicate) is int
+    assert keyed_uniform(same, "order_c1__10", 5, 0) == keyed_uniform(key, "order_c1__10", 5, 0)
+    for bad in (("w", 1295251592.0, 0), ("w", 1295251592, False), ("w", True, 0),
+                ("w", "1295251592", 0), (7, 1295251592, 0)):
+        with pytest.raises(TypeError, match="DrawKey"):
+            DrawKey(*bad)  # type: ignore[arg-type]
+
+
+def test_keyed_draw_share_follows_the_weights() -> None:
+    """Two producers with scores (log 3, log 1): the keyed inverse-CDF draw picks the first in
+    0.75 +- 0.03 of 4,000 keys, and draws identically from MWWk's weights (3, 1). A
+    zero-weight producer is never drawn."""
+    key = DrawKey("ws-atlas-v1-12-0060", 1295251592, 0)
+    us = [keyed_uniform(key, "order_c1__10", cycle, slot)
+          for cycle in range(1, 1001) for slot in range(4)]
+    assert len(set(us)) == 4000 and all(0.0 <= u < 1.0 for u in us)
+    ts = [inverse_cdf(softmax_weights(np.log([3.0, 1.0])), u) for u in us]
+    assert abs(ts.count(0) / 4000 - 0.75) <= 0.03
+    assert ts == [inverse_cdf(np.array([3.0, 1.0]), u) for u in us]
+    assert {inverse_cdf(np.array([0.0, 2.0, 0.0, 1.0]), u) for u in us} == {1, 3}
+    assert inverse_cdf(np.array([1.0, 0.0]), 0.999999) == 0
+
+
+def _turn_inputs(env: TokenomicsAECEnv, agent: str, name: str, base: Policy) -> dict[str, object]:
+    """Everything a keyed router reads for `agent`'s turn, and what it routes: the weight
+    vectors and uniforms it actually draws from (recorded at `inverse_cdf`, so a leak inside
+    the router's weights shows even when the sampled producer happens not to change), the
+    observation, the shared producer rows (product-stream view), the orderer view, its slots,
+    the scores, the makeable units, the action and the decoded sub-orders."""
+    from tokenomics.eval import routing_diagnostics as rd
+
+    _, aid = env._role[agent]
+    slots = _slots(env, agent)
+    view = env.system.ordering_agents[aid].view(env.system.producer_infos)
+    draws: list[tuple[bytes, float]] = []
+    inverse_cdf_ = rd.inverse_cdf
+
+    def recorded(weights: np.ndarray, u: float) -> int:
+        # what the router actually draws from: its weight vector and uniform, per decision
+        draws.append((np.asarray(weights, dtype=np.float64).tobytes(), u))
+        return inverse_cdf_(weights, u)
+
+    rd.inverse_cdf = recorded
+    try:
+        action = np.asarray(_keyed(name, base)(env, agent))
+    finally:
+        rd.inverse_cdf = inverse_cdf_
+    assert draws  # the target holds an order with eligible producers
+    cmd = decode_ordering(env.spec_, action, view)
+    return {
+        "draws": draws,
+        "obs": np.asarray(env.observe(agent)).tobytes(),
+        "rows": repr(env.system.product_stream_view(aid)),
+        "view": repr(view), "slots": repr(slots),
+        "scores": np.asarray(base(env, agent), dtype=np.float64).tobytes(),
+        "makeable": repr([_makeables(env, oid, elig) for _, oid, _, elig in slots]),
+        "action": action.tobytes(),
+        "subs": repr({oid: [(s.producer_id, s.quantity, s.tokens) for s in subs]
+                      for oid, subs in sorted(cmd.orders.items())}),
+    }
+
+
+def _placed_bids(env: TokenomicsAECEnv) -> list[tuple[str, object, int]]:
+    return sorted((pid, b.order_id, b.quantity) for pid, p in env.system.producing_agents.items()
+                  for b in p.bids)
+
+
+def _permutation_check(name: str, base: Policy, cycles: tuple[int, ...] = (2, 4, 6)) -> int:
+    """ADR-0058: snapshot the env as the ordering phase of each cycle starts, then replay the
+    ordering agents before the target agent a (the last one in AEC order holding an order of
+    a product an earlier agent also routes) with their keyed actions, with those actions
+    permuted among them, and with `even_split`; a's inputs and sub-orders must be
+    byte-identical. Returns the number of (cycle, variant) checks whose earlier bids differed
+    from the keyed replay's (so the check is not vacuous)."""
+    router = _keyed(name, base)
+    snaps: dict[int, TokenomicsAECEnv] = {}
+
+    def order(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        if e.system.cycle_counter in cycles and e.system.cycle_counter not in snaps:
+            snaps[e.system.cycle_counter] = copy.deepcopy(e)
+        return router(e, agent)
+
+    env = joint_stack_env(_m4_config(), HORIZON)
+    set_draw_key(env, DrawKey("perm", 3, 1))
+    run_episode(env, PRODUCING_BASELINES["entity_planner"], order, seed=3)
+    assert sorted(snaps) == list(cycles)
+    differ = 0
+    for snap in snaps.values():
+        ordering = [a for a in snap.agents if snap._role[a][0] == "order"]
+        assert snap.agent_selection == ordering[0]
+        held = {a: {snap.system.orders[o].product
+                    for o in snap.system.ordering_agents[snap._role[a][1]].incoming}
+                for a in ordering}
+        target = next(a for a in reversed(ordering) if held[a] and any(
+            held[b] & held[a] for b in ordering[:ordering.index(a)]))
+        earlier = ordering[:ordering.index(target)]
+
+        def replay(act: Callable[[TokenomicsAECEnv, str, int], np.ndarray],
+                   ) -> tuple[dict[str, object], list, list[np.ndarray]]:
+            e = copy.deepcopy(snap)
+            acts = []
+            for i, b in enumerate(earlier):
+                assert e.agent_selection == b
+                acts.append(np.asarray(act(e, b, i)))
+                e.step(acts[-1])
+            assert e.agent_selection == target
+            return _turn_inputs(e, target, name, base), _placed_bids(e), acts
+
+        ref, ref_bids, keyed_acts = replay(lambda e, b, i: router(e, b))
+        n = len(keyed_acts)
+        variants = [lambda e, b, i: keyed_acts[(i + 1) % n],
+                    lambda e, b, i: keyed_acts[n - 1 - i],
+                    lambda e, b, i: ORDERING_BASELINES["even_split"](e, b)]
+        for variant in variants:
+            got, bids, _ = replay(variant)
+            assert got == ref
+            differ += int(bids != ref_bids)
+    return differ
+
+
+@pytest.mark.parametrize("name", KEYED)
+def test_adr0058_earlier_agents_leave_inputs_and_suborders_unchanged(name: str) -> None:
+    """Permuting or altering the actions of the ordering agents before agent a in a cycle
+    leaves TS's / MWWk's inputs (rows, scores, makeable units) and sub-orders for a
+    byte-identical (ADR-0058, design D3)."""
+    assert _permutation_check(name, _obs_scorer) >= 3
+
+
+def test_adr0058_permutation_with_the_exp0012_scorer() -> None:
+    """The same check for TS over the EXP-0012 scorer itself (git-lfs checkpoint)."""
+    _checkpoints_or_skip()
+    from tokenomics.eval.routing_audit import load_trained_policy
+
+    assert _permutation_check(TS, load_trained_policy("orderer", str(ORDERER_CKPT))) >= 3
+
+
+@pytest.mark.parametrize("name", KEYED)
+def test_keyed_routers_see_no_shock_schedule(name: str) -> None:
+    """Hidden shock state does not change actions: the same episode with every piece of shock
+    state readable and hidden behind the sentinel gives identical actions and statistics."""
+    from test_shock_reactive import _hidden, _recorded, _same, _smoke_world
+
+    config, seed = _smoke_world()
+
+    def actions(wrap: Callable[[Policy], Policy]) -> tuple[list, dict]:
+        log: list = []
+        env = joint_stack_env(config, 12)
+        set_draw_key(env, DrawKey("smoke", seed, 0))
+        stats = run_episode(env, PRODUCING_BASELINES["entity_planner"],
+                            _recorded(wrap(_keyed(name)), log), seed=seed,
+                            action_seed=replicate_seed("w", seed, 0))
+        return log, stats
+
+    open_log, open_stats = actions(lambda p: p)
+    hidden_log, hidden_stats = actions(_hidden)
+    assert open_log and _same(open_log, hidden_log)
+    assert open_stats == hidden_stats and open_stats["shock_events"] == 3
+
+
+# --- the new tracer columns ---
+
+
+def _traced(cfg: Configuration, router: Policy, horizon: int = HORIZON) -> dict[str, float]:
+    env = joint_stack_env(cfg, horizon)
+    set_draw_key(env, FIXTURE_KEY)
+    tracer = RoutingTracer()
+    tracer.attach(env)
+    run_episode(env, PRODUCING_BASELINES["entity_planner"], router, seed=0)
+    return tracer.summary()
+
+
+def _receiver_by_cycle(pick: Callable[[int], int]) -> Policy:
+    """Every order whole to eligible position pick(cycle) mod E."""
+
+    def policy(env: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        sp = env.spec_
+        mat = np.zeros((sp.k_stream, sp.num_producers), dtype=np.float32)
+        for k, _, q, elig in _slots(env, agent):
+            if elig:
+                j = pick(env.system.cycle_counter) % len(elig)
+                mat[k, elig] = split_logits([q if i == j else 0 for i in range(len(elig))])
+        return np.clip(mat, -10, 10).flatten()
+
+    return policy
+
+
+def test_share_swing_is_zero_for_constant_shares_and_one_for_a_full_switch() -> None:
+    """D9's `share_swing`: consumer units of product 10 always on one producer -> 0; on the
+    other producer every cycle -> 1."""
+    cfg = _config(3, degradation=0)
+    constant = _traced(cfg, _receiver_by_cycle(lambda c: 0))
+    switch = _traced(cfg, _receiver_by_cycle(lambda c: c))
+    for s in (constant, switch):
+        assert s["share_swing_pairs_consumer"] >= HORIZON - 2
+    assert constant["share_swing_consumer"] == 0.0
+    assert switch["share_swing_consumer"] == 1.0
+
+
+def test_concurrent_cross_agent_share_and_lead_top_share_two_consumer_streams() -> None:
+    """Two consumer streams of product 10: every concurrent group holds orders of >= 2 agents
+    (share 1). `proportional_whole` sends both to one producer (lead top share 1),
+    `spare_rotating_whole` one to each (0.5); one order per active turn."""
+    cfg, _ = _two_streams_config(degradation=0)
+    herd = _traced(cfg, DIAGNOSTIC_ROUTERS["proportional_whole"])
+    spread = _traced(cfg, DIAGNOSTIC_ROUTERS["spare_rotating_whole"])
+    for s in (herd, spread):
+        assert s["concurrent_groups"] >= HORIZON - 2
+        assert s["concurrent_cross_agent_share"] == 1.0
+        assert s["concurrent_cross_agent_pair_share"] == 1.0
+        assert s["orders_per_turn_consumer"] == 1.0
+        assert s["lead_concurrent_groups_consumer"] >= HORIZON - 2
+    assert herd["lead_concurrent_top_share_consumer"] == 1.0
+    assert spread["lead_concurrent_top_share_consumer"] == 0.5
+
+
+def test_history_dispersion_zero_for_identical_agents_and_hand_values() -> None:
+    """D3's dispersion measures (and the reported-only variants) on hand fixtures: 0 for two
+    agents with identical outcomes; the hand-computed values for three agents of one product
+    with different outcomes (stream -> producer -> (routed, completed))."""
+    same = {("a", 10): {"p1": [10, 8], "p2": [5, 5]}, ("b", 10): {"p1": [10, 8], "p2": [5, 5]}}
+    out = history_dispersion(same, {("a", 10): CONSUMER, ("b", 10): PRODUCER}, {10: 2})
+    assert out["agent_history_cells"] == 2 and out["routed_share_pairs"] == 1
+    for k in ("agent_history_dispersion", "routed_share_dispersion",
+              "routed_share_dispersion_vs_rest", "routed_share_dispersion_unit_weighted"):
+        assert out[k] == 0.0, k
+    diff = {("a", 10): {"p1": [12, 12], "p2": [4, 0]},     # shares .75 / .25, 16 units
+            ("b", 10): {"p1": [40, 20], "p2": [120, 60]},  # .25 / .75, 160 units
+            ("c", 10): {"p1": [60, 30]}}                   # 1 / 0, 60 units
+    cls = {("a", 10): CONSUMER, ("b", 10): PRODUCER, ("c", 10): PRODUCER}
+    out = history_dispersion(diff, cls, {10: 2})
+    # p1 rates 1, .5, .5 -> SD sqrt(1/18); p2 rates 0, .5 -> SD .25
+    assert out["agent_history_dispersion"] == pytest.approx(((1 / 18) ** 0.5 + 0.25) / 2)
+    # TV ab .5, ac .25, bc .75; weights 16*160, 16*60, 160*60 -> weighted median .75
+    assert out["routed_share_dispersion"] == pytest.approx(0.5)
+    assert out["routed_share_dispersion_producer_streams"] == pytest.approx(0.75)
+    assert out["routed_share_dispersion_unit_weighted"] == pytest.approx(0.75)
+    # vs the pooled rest: a vs (100, 120) -> .75 - 100/220; b vs (72, 4) -> 72/76 - .25;
+    # c vs (52, 124) -> 1 - 52/176; median = b's
+    assert out["routed_share_dispersion_vs_rest"] == pytest.approx(72 / 76 - 0.25)
+    assert out["routed_share_pairs_producer_streams"] == 1
+    # one declaring producer: the history cells stay, the share measures are empty
+    single = history_dispersion(diff, cls, {10: 1})
+    assert single["agent_history_dispersion"] == out["agent_history_dispersion"]
+    assert single["routed_share_pairs"] == 0 and single["routed_share_dispersion"] == 0.0
+
+
+REPO = Path(__file__).resolve().parents[2]
+ATLAS_V2 = REPO / "experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json"
+EXP0056_EPISODES = REPO / "experiments/EXP-0056-split-vs-rotation/artifacts/episodes.csv"
+
+
+def _atlas_view(world: str) -> dict:
+    from tokenomics.eval.teacher_audit import load_atlas, world_view
+
+    if not ATLAS_V2.exists():
+        pytest.skip("EXP-0052 atlas v2 not present")
+    return {v["world"]: v for v in map(world_view, load_atlas(ATLAS_V2)["worlds"])}[world]
+
+
+def test_tracer_reproduces_the_task_1_3_probe_on_12_0111_mww() -> None:
+    """The tracer's agent measures through `routing_audit`'s job path equal task 1.3's probe
+    (probes/trace_agents_out/12-0111__MWW.json, replicate 0) and its review's independent
+    alternatives (rounded to 4 places) on the confirm's first episode of 12-0111 under MWW."""
+    from tokenomics.eval.atlas import CONFIRM, arm_table
+    from tokenomics.eval.routing_audit import run_job
+    from tokenomics.eval.teacher_audit import world_entry
+
+    view = _atlas_view("ws-atlas-v1-12-0111")
+    table = arm_table(load_roster(), CONFIRM, ["makeable_weighted_whole"])
+    job = [j for j in build_jobs([world_entry(view)], table, 1, 100, None)
+           if j["replicate"] == 0][0]
+    row = run_job(job)
+    assert row["units"] == "3037.0"
+    probe = {"agent_history_dispersion": 0.08352244393891661, "agent_history_cells": 24.0,
+             "routed_share_dispersion": 0.08343496338932924, "routed_share_pairs": 57.0,
+             "orders_per_turn_consumer": 1.040767386091127,
+             "orders_per_turn_producer": 1.1382589612289686,
+             "concurrent_cross_agent_share": 0.9610231425091352,
+             "concurrent_cross_agent_pair_share": 0.8801591248135257,
+             "concurrent_groups": 821.0,
+             "lead_concurrent_top_share_consumer": 0.8260754115772704}
+    for k, v in probe.items():
+        assert float(row[f"trace_{k}"]) == v, k
+    review = {"routed_share_dispersion_producer_streams": 0.0752,
+              "routed_share_dispersion_vs_rest": 0.0976,
+              "routed_share_dispersion_unit_weighted": 0.0848}
+    for k, v in review.items():
+        assert round(float(row[f"trace_{k}"]), 4) == v, k
+    assert 0.0 < float(row["trace_share_swing_consumer"]) < 1.0
+
+
+def test_lead_concurrent_top_share_reproduces_exp0056() -> None:
+    """The ported `lead_concurrent_top_share` (tracer, from placed bids) equals EXP-0056's value
+    on its first-episode TR row of 12-0344, as does `teacher_audit`'s wrapper reusing the
+    ported helper."""
+    _checkpoints_or_skip()
+    if not EXP0056_EPISODES.exists():
+        pytest.skip("EXP-0056 episodes.csv not present")
+    from tokenomics.eval import teacher_audit as ta
+    from tokenomics.eval.provenance import sha256_file
+
+    world = "ws-atlas-v1-12-0344"
+    view = _atlas_view(world)
+    pin = {"path": str(ORDERER_CKPT), "sha256": sha256_file(str(ORDERER_CKPT))}
+    table = [ta.split_arm("TR", load_roster(ta.DEFAULT_ROSTER))]
+    (job,) = build_jobs([ta.world_entry(view)], table, 1, 100, None, {"orderer": pin})
+    job["split_arm"] = "TR"
+    row = ta.run_split_job(job)
+    csv.field_size_limit(sys.maxsize)
+    with EXP0056_EPISODES.open(newline="") as fh:
+        (ref,) = [r for r in csv.DictReader(fh) if r["world"] == world
+                  and r["subject"] == "entity_planner/trained_orderer" and r["replicate"] == "0"]
+    assert row["units"] == ref["units"] == "2621.0"
+    assert row["demand_digest"] == ref["demand_digest"]
+    for cls in (CONSUMER, PRODUCER):
+        assert float(row[f"trace_lead_concurrent_top_share_{cls}"]) == float(
+            ref[f"lead_concurrent_top_share_{cls}"])
+        assert float(row[f"trace_lead_concurrent_groups_{cls}"]) == float(
+            ref[f"lead_concurrent_groups_{cls}"])
+        assert row[f"lead_concurrent_top_share_{cls}"] == ref[f"lead_concurrent_top_share_{cls}"]
+        assert row[f"lead_concurrent_groups_{cls}"] == ref[f"lead_concurrent_groups_{cls}"]
+
+
+# --- score fidelity (D3) ---
+
+
+def test_score_fidelity_measures() -> None:
+    """Spearman against log makeable, top-1 agreement and KL(softmax(score) || makeable share)
+    per decision; constant makeable units skip the two rank measures."""
+    f = ScoreFidelity(lambda e, a: None)
+    f.record(np.log([4.0, 2.0, 1.0]), [4, 2, 1])  # the target itself
+    f.record([0.0, 1.0, 2.0], [4, 2, 1])            # reversed
+    f.record([1.0, 2.0, 3.0], [0, 0, 0])            # nothing makeable: uniform share
+    v = f.values
+    assert v["spearman"] == pytest.approx([1.0, -1.0]) and v["top1"] == [1.0, 0.0]
+    assert v["kl"][0] == pytest.approx(0.0, abs=1e-12) and v["kl"][1] > 0.5
+    p = np.exp([1.0, 2.0, 3.0]) / np.exp([1.0, 2.0, 3.0]).sum()
+    assert v["kl"][2] == pytest.approx(float((p * np.log(p * 3)).sum()))
+    cells = f.cells()
+    assert cells["score_decisions"] == "3" and cells["score_spearman_decisions"] == "2"
+    assert float(cells["score_spearman_log_makeable"]) == 0.0
+    assert float(cells["score_top1_agreement"]) == 0.5
+    assert ScoreFidelity(lambda e, a: None).cells()["score_spearman_log_makeable"] == ""
+
+
+def test_score_fidelity_wrapper_changes_no_action() -> None:
+    """Wrapping TS's scorer in `ScoreFidelity` changes no sub-order; over log-makeable scores
+    every decision agrees (Spearman 1 where defined, top-1 1, KL ~ 0)."""
+    plain, stats = _record(_m4_config(), TRAINED_WRAPPERS[TS](_obs_scorer))
+    fid = ScoreFidelity(_obs_scorer)
+    traced, traced_stats = _record(_m4_config(), TRAINED_WRAPPERS[TS](fid))
+    assert [r["subs"] for r in plain] == [r["subs"] for r in traced] and stats == traced_stats
+    assert len(fid.values["kl"]) == sum(1 for r in traced if len(r["eligible"]) >= 2
+                                        and r["row"] is not None)
+    exact = ScoreFidelity(_log_makeable_scorer)
+    _record(_fanout4_config(), TRAINED_WRAPPERS[TS](exact))
+    assert exact.values["spearman"] and set(exact.values["spearman"]) == {1.0}
+    assert exact.values["top1"] and set(exact.values["top1"]) == {1.0}
+    assert max(exact.values["kl"]) < 1e-3

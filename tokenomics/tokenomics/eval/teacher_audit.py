@@ -154,6 +154,7 @@ from .routing_audit import (
 from .routing_diagnostics import DETERMINISTIC
 from .routing_trace import CONSUMER as CONSUMER_CLASS
 from .routing_trace import PRODUCER as PRODUCER_CLASS
+from .routing_trace import concurrent_top_share
 from .shock_profiles import SHOCKS_I_SMOKE, SMOKE_START_WINDOW
 from .world_space import (
     DRIFT,
@@ -1412,10 +1413,10 @@ class LeadReceivers:
             n = self.pairs[cls]
             out[f"lead_receiver_change_share_{cls}"] = repr(self.changes[cls] / n if n else 0.0)
             out[f"lead_pairs_{cls}"] = str(n)
-            tops = [max(g.values()) / sum(g.values()) for (c, *_), g in self.groups.items()
-                    if c == cls and sum(g.values()) >= 2]
-            out[f"lead_concurrent_top_share_{cls}"] = repr(fmean(tops) if tops else 0.0)
-            out[f"lead_concurrent_groups_{cls}"] = str(len(tops))
+            top, groups = concurrent_top_share(
+                g for (c, *_), g in self.groups.items() if c == cls)
+            out[f"lead_concurrent_top_share_{cls}"] = repr(top)
+            out[f"lead_concurrent_groups_{cls}"] = str(groups)
         return out
 
 

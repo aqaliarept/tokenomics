@@ -28,7 +28,7 @@ Ladder gates (design D1): a group marked **Gated** starts only when the named re
 
 ## 2. Step 1 — decoder check instruments (code)
 
-- [ ] 2.1 [code][local-exclusive] Add TS and MWWk, plus the new trace columns (design D3).
+- [x] 2.1 [code][local-exclusive] Add TS and MWWk, plus the new trace columns (design D3).
   - In `/srv/research/tokenomics/tokenomics/tokenomics/eval/routing_diagnostics.py`, add TS `trained_sampled_whole` and MWWk `mww_keyed`. Both take a per-slot inverse-CDF draw from the SHA-256(world, episode, replicate, agent, cycle, slot) uniform: TS over softmax(EXP-0012 score) at T = 1, MWWk ∝ `makeable_qty_now`, uniform when all are zero. Each routes whole via `_whole`. TS goes in `TRAINED_WRAPPERS` and MWWk in `DIAGNOSTIC_ROUTERS`, both outside the roster.
   - In `/srv/research/tokenomics/tokenomics/tokenomics/eval/routing_trace.py`, add:
     - `lead_concurrent_top_share`, ported from `teacher_audit`'s split-check tracer so that every driver reports it;
