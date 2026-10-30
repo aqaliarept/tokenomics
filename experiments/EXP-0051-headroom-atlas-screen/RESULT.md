@@ -314,3 +314,37 @@ compute --out <jsonl>` (chunked with `--start/--count`), then `... analyse --out
 `/srv/research/tokenomics/tokenomics`, with the `lp` extra); the per-world-episode values are in
 `/srv/research/tokenomics/openspec/changes/add-m3-development-audit/probes/rebound_47.jsonl`. The
 screen's own files are unchanged.
+
+## Addendum (2026-10-30): when does the trained orderer beat `round_robin`?
+
+**Question.** EXP-0050 found the trained orderer (EXP-0012 scorer, `entity_planner` producer) beating
+`round_robin` at 42 producers with 4 or 14 makers per product; EXP-0054/0056 found it losing to
+`round_robin` by 274–891 units on three 12-producer atlas worlds. The prediction, written down
+before the analysis: the trained orderer's edge over `round_robin` should grow with the number of
+makers per product (E) and shrink with load (ρ, demand over top-layer throughput).
+
+**Measured.** Offline, no new episodes: for every world of this screen (639 worlds; the 8 EXP-0050
+anchors have no ρ and are left out) and of EXP-0052 (96 worlds), d = (trained − `round_robin`) /
+`round_robin` consumer units, regressed on log E, log ρ, size, burst demand and shocks, plus a table
+by size × E × load tercile. Script and output: `analysis/trained_vs_round_robin.py` / `.txt`.
+
+**Result.**
+- **The trained orderer is worse than `round_robin` almost everywhere in the atlas.** It wins on
+  13% of the 639 screen worlds (median d −21%) and 31% of the 96 confirm worlds (median −19%).
+- **Load: prediction confirmed.** d falls with ρ (screen −0.115 per unit log ρ, t −7.4; confirm
+  −0.169, t −5.1). In the lightest third of worlds (ρ ≤ 0.28) it ties `round_robin` (median d
+  −0.6% to +1.1% by cell); in the heaviest third it loses 28–85%.
+- **Makers: prediction wrong.** More makers does not help the trained orderer; it hurts (screen
+  −0.221 per unit log E, t −5.3), and the harm grows with load (log E × log ρ −0.120, t −4.2). At
+  42 producers and 14 makers it loses a median 85% under heavy load and ties under light load.
+  Only at ρ ≈ 0.06 (EXP-0050's neutral worlds) does the makers effect reach about zero; on the 29
+  screen worlds with ρ ≤ 0.06 it wins 48% (median d 0.0%).
+- Size, burst demand and shocks are not consistent across the two samples (size and shocks n.s.;
+  burst −0.207, t −2.8, only in the confirm's selected worlds).
+
+**What it means.** EXP-0050's wins came from its corner of very light load, where the trained
+orderer's input-aware choice is worth about as much as `round_robin`'s spreading. Everywhere load
+matters, it loses, and it loses more the more makers there are to spread across. That fits
+EXP-0056's mechanism (it concentrates a product's concurrent orders on one producer, so more makers
+means more spreading forgone), but this addendum shows association across worlds, not that
+mechanism. Single screen episode per world; the confirm sample is selected (hard / open worlds).

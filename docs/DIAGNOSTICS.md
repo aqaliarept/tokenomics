@@ -322,6 +322,8 @@ spread receivers together") is narrowed by this result to "whole routing and var
 (property open)". No new cause
 registered: this is (f) + (b) combined, the case the (f) branch above already names.
 
+**Seen across the atlas (EXP-0051 addendum, 2026-10-30)**: offline over 639 screen worlds, the trained orderer beats `round_robin` on only 13% (median −21%); its relative result falls with load (t −7.4) and, against the prediction, with makers per product, more so under load (log E × log ρ t −4.2). EXP-0050's wins sit in the very-light-load corner (ρ ≈ 0.06), where it ties. Consistent with the concentration mechanism of EXP-0056; association, not proof.
+
 ## 20. A world set has no headroom
 
 **Problem (plain English):** on some worlds no better policy can be reached: every cheap policy
