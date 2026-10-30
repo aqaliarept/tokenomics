@@ -1,0 +1,6 @@
+# User decisions (supervisor record)
+
+- 2026-10-30: plan approved; tranche A = 100 vCPU-h; training/judging producer = `entity_planner` (open decision 5 / design D2); no same-cycle visibility (ADR-0058); outage status not visible in M4.
+- 2026-10-30: pod runs allowed (launch when dependencies are committed, launch-fit rule applies).
+- 2026-10-30: "You authorized to decide any budgets use for m4": the supervisor decides all M4 compute budget (tranche A overruns, tranche B1/B2 release and size, runs > 40 vCPU-h). Each decision and its reason is recorded in the task or EXP record. Strategy forks (ladder-stopping readings, the task 1.3 trigger, the GNN choice) and pushes / gate changes stay with the user.
+- 2026-10-30: GNN postponed. "Fully trained" = step 2 as planned (every order's producer drawn from outcome-trained scores, no fixed split rule; frozen EXP-0012 base + bounded residual). On `plateau`: first diagnose whether the residual bound B or the frozen base limits training (residual saturation at ±B); if so, unfreeze the base before anything else. The relational check (EXP-0063, env-side features, no GNN) may still run; a `relational` reading ends in a record + a question to the user, not a GNN build. Groups 12–13 are deferred; the plan text (design D1/D8, tasks 12–13) gets updated via /opsx:update when the ladder reaches that branch.
