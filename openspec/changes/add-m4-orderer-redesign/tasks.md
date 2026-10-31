@@ -166,7 +166,7 @@ Ladder gates (design D1): a group marked **Gated** starts only when the named re
   - The 16-world-episode monitor set and the minibatch schedule come from a recorded seed stream.
 
   After 4.3. Verify: new `/srv/research/tokenomics/tokenomics/tests/test_order_es_worlds.py` covers determinism, 64 worlds, disjoint seeds, filters, the "No feasible start" branch on a forced-death fixture, and the bar table schema with a 2-world horizon-12 `--dry-run`. The full suite is green.
-- [ ] 5.2 [code][local-exclusive] ES loop in `/srv/research/tokenomics/tokenomics/tokenomics/train/order_es.py` (design D6 / D7).
+- [x] 5.2 [code][local-exclusive] ES loop in `/srv/research/tokenomics/tokenomics/tokenomics/train/order_es.py` (design D6 / D7).
   - `--mode train --arm --opt-seed --generations`: antithetic pairs, centered ranks, Adam with per-parameter σ, CRN minibatches, fitness U / B − h·H / D, relative disqualification, and the monitor-set eval every 10 generations.
   - `--resume-from <ckpt>`, accepted only on matching pins, so the main run continues the pilot.
   - `--mode probe`: the gradient-signal probe, with two disjoint minibatches per arm, cosine, the paired / unpaired variance ratio and the D7 `signal` / `weak` / `no_signal` reading.

@@ -19,7 +19,8 @@ from tokenomics.eval.contract import job_failure
 from tokenomics.eval.roster import load_roster
 from tokenomics.eval.world_space import (LEVERS, check_levers, episode_seeds, world_record)
 from tokenomics.train import order_es_worlds as ow
-from tokenomics.train.per_order_scorer import N_PHI, N_PSI, PHI_FEATURES, PSI_FEATURES, RawRows
+from tokenomics.train.per_order_scorer import (N_PHI, N_PSI, PHI_FEATURES, PSI_FEATURES,
+                                               FeatureNormaliser, RawRows)
 
 REPO = Path(__file__).resolve().parents[2]
 ATLAS_V2 = REPO / "experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json"
@@ -367,7 +368,7 @@ def _fixture_rows() -> RawRows:
     phi[:, 3] = 0.5 + rng.normal(0, 0.01, n)  # 30 % far out on both sides: heavy clip
     phi[:60, 3], phi[60:120, 3] = 50.0, -50.0
     psi = rng.normal(size=(n // 4, N_PSI))
-    psi[:, PSI_FEATURES.index("eligible_producer_count")] = 2.0
+    psi[:, PSI_FEATURES.index("eligible_producer_count")] = np.log1p(2.0)  # transformed rows
     rows = RawRows()
     for k in range(4):
         rows.phi.append(phi[k * 100:(k + 1) * 100])
@@ -390,21 +391,33 @@ def test_normaliser_fit_report_and_flags(tmp_path: Path) -> None:
     assert by[("phi", 0)]["clip_fraction"] == 0.0
     j = PSI_FEATURES.index("eligible_producer_count")
     assert by[("psi", j)]["rule"] == "unit"
-    # the 42-producer check: E = 14 against a median 2 / scale 1 clips
+    # the 42-producer check (task 5.2: the raw config counts go through the policy's log1p on E
+    # first): E = 14 against a median log1p(2) / scale 1 stays inside the clip
     from tokenomics.eval.world_space import Levers, build_world
 
     cfg42 = build_world(5, producers=42, levers=Levers(choice="sparse_f14"))
     cfg12 = build_world(5, producers=12, levers=Levers(choice="sparse_f2"))
     static = {(s["world"], s["feature"]): s
               for s in ow.static_psi_check(nm, {"w42": cfg42, "w12": cfg12})}
-    assert static[("w42", "eligible_producer_count")]["raw_max"] == 14.0
-    assert static[("w42", "eligible_producer_count")]["clip_fraction"] > 0
+    e42 = static[("w42", "eligible_producer_count")]
+    assert e42["raw_max"] == 14.0 and e42["transform"] == "log1p"
+    assert e42["z_max"] == pytest.approx(np.log1p(14.0) - np.log1p(2.0)) and e42["at_clip"] == 0
     assert static[("w12", "eligible_producer_count")]["z_max"] == 0.0
+    assert static[("w42", "product_depth")]["transform"] == ""
+    # a scale narrow enough still pins it at the clip, and the flag names it
+    narrow = FeatureNormaliser(nm.phi_median, nm.phi_scale, nm.psi_median,
+                               tuple(0.1 if k == j else v for k, v in enumerate(nm.psi_scale)))
+    pinned = ow.static_psi_check(narrow, {"w42": cfg42})
+    assert next(s for s in pinned if s["feature"] == "eligible_producer_count")["at_clip"] > 0
+    assert any("eligible_producer_count on w42" in f for f in ow.normaliser_doc(
+        narrow, report, pinned, [("w", 1)], dry_run=False)["flags"]["static_psi_clip_42"])
     doc = ow.normaliser_doc(nm, report, list(static.values()), [("w", 1)], dry_run=False)
     assert doc["sha256"] == nm.sha256 and doc["prereg"]["clip"] == 5.0
-    assert "IQR = 0 -> the column's population std; std = 0 -> 1.0" == \
-        doc["prereg"]["zero_spread_rule"]
-    assert any("eligible_producer_count on w42" in f for f in doc["flags"]["static_psi_clip_42"])
+    assert doc["prereg"]["zero_spread_rule"] == ("IQR = 0 -> the column's population std; "
+                                                 "std = 0 -> 1.0 (all-equal values have std 0 "
+                                                 "exactly)")
+    assert doc["flags"]["static_psi_clip_42"] == []
+    assert doc["prereg"]["transforms"] == {"psi.eligible_producer_count": "log1p"}
     assert doc["flags"]["history_completion_rate_clip"] == by[
         ("phi", PHI_FEATURES.index("completion_rate", 31))]["clip_fraction"]
     assert doc["rules"]["phi[2] " + PHI_FEATURES[2]] == "std"

@@ -29,6 +29,11 @@ the 9 history features, so a linear term can tell "no completion yet" from "comp
 routing cycle". An imputation was rejected on data: on the fixture world 83 % of completed
 latencies are 0, so the fitted median is 0.0, the default itself. This makes phi 43 wide:
 A1 44 parameters, A2 (R = 4) 44 + 4 (43 + 13) = 268 (design D5, as amended by task 4.3).
+
+Size-scaled counts (supervisor decision 3, task 5.2): `eligible_producer_count` is
+log1p-transformed before the normaliser, in the policy and in the fit rows alike, so a
+12-producer fit does not pin 42-producer products at the clip (`LOG1P_PSI`; the normaliser and
+the architecture versions are v2, so v1 composites and normaliser files are refused).
 """
 
 from __future__ import annotations
@@ -59,9 +64,9 @@ if TYPE_CHECKING:
     from .orderer_scorer import OrdererScoreModel
 
 DECODER_VERSION = "per-order-choice-v1"
-ARCHITECTURE_VERSION = "orderer-per-order-residual-v1"
+ARCHITECTURE_VERSION = "orderer-per-order-residual-v2"  # v2: log1p inputs (task 5.2)
 CHECKPOINT_FORMAT = "per-order-composite-v1"
-NORMALISER_VERSION = "median-iqr-v1"
+NORMALISER_VERSION = "median-iqr-log1p-v2"  # v2: fitted on the log1p-transformed inputs
 BASE_DECODER_VERSION = "allocate_suborders-v1"
 BASE_ARCHITECTURE_VERSION = "orderer-producer-row-scorer-v1"
 
@@ -79,6 +84,22 @@ PHI_FEATURES: tuple[str, ...] = (tuple(_ORDERER_PRODUCER_ROW_FEATURES) + tuple(H
 PSI_FEATURES: tuple[str, ...] = tuple(_ORDERER_PRODUCT_FEATURES) + ORDER_FEATURES
 N_PHI = len(PHI_FEATURES)  # 31 + 10 + 2 = 43
 N_PSI = len(PSI_FEATURES)  # 9 + 4 = 13
+# Inputs whose range is a function of the producer count, log1p-transformed before the
+# normaliser (fit rows included; supervisor decision 3, task 5.2). Only E, the producers
+# declaring the order's product, qualifies: at 12 producers E is 2 or 4 by construction, at 42
+# also 7 or 14, so a 12-producer fit pins it at the clip on every 42-producer E = 14 product.
+# The other config counts (depth, recipe inputs, capacity types) have the same values at 12 and
+# 42 on the atlas worlds, and the unit volumes (load, demand, history EMAs, own-turn units) are
+# demand-driven, a range the 12-producer training worlds' demand levers already span.
+LOG1P_PHI: tuple[str, ...] = ()
+LOG1P_PSI: tuple[str, ...] = ("eligible_producer_count",)
+# Registered scale floor of each transformed count (review round 1): the spread between E's two
+# 12-producer values, log1p(4) - log1p(2). The fit runs on decision rows, whose E = 2 share is not
+# fixed; outside ~[0.25, 0.75] the IQR is 0 and the std (or a ~0 std) would pin E = 14 at the
+# clip. With the floor, |z| <= (log1p(14) - log1p(1)) / floor = 3.9 for any median >= log1p(1).
+SCALE_FLOORS: dict[str, float] = {"psi.eligible_producer_count": math.log1p(4.0) - math.log1p(2.0)}
+_LOG1P_PHI_COLS = np.asarray([PHI_FEATURES.index(n) for n in LOG1P_PHI], dtype=np.intp)
+_LOG1P_PSI_COLS = np.asarray([PSI_FEATURES.index(n) for n in LOG1P_PSI], dtype=np.intp)
 _SHARED = slice(0, len(_ORDERER_PRODUCER_ROW_FEATURES))
 _HIST = slice(_SHARED.stop, _SHARED.stop + len(HISTORY_FEATURES) + 1)  # history + indicator
 LATENCY_COL = _HIST.start + HISTORY_FEATURES.index("completion_latency")
@@ -147,6 +168,43 @@ ARMS: dict[str, ArmSpec] = {
 }
 
 
+# --- input transform (before the normaliser) ---
+
+
+def transform_phi(phi_raw: np.ndarray) -> np.ndarray:
+    """log1p on `LOG1P_PHI` (none at present); a copy, the input is never written."""
+    x = np.array(phi_raw, dtype=np.float64, copy=True)
+    if _LOG1P_PHI_COLS.size:
+        x[..., _LOG1P_PHI_COLS] = np.log1p(x[..., _LOG1P_PHI_COLS])
+    return x
+
+
+def transform_psi(psi_raw: np.ndarray) -> np.ndarray:
+    """log1p on `LOG1P_PSI` (`eligible_producer_count`); a copy, the input is never written."""
+    x = np.array(psi_raw, dtype=np.float64, copy=True)
+    if _LOG1P_PSI_COLS.size:
+        x[..., _LOG1P_PSI_COLS] = np.log1p(x[..., _LOG1P_PSI_COLS])
+    return x
+
+
+def input_transforms() -> dict[str, str]:
+    """feature -> transform, as recorded in every normaliser (hashed) and pre-registration."""
+    return {**{f"phi.{n}": "log1p" for n in LOG1P_PHI},
+            **{f"psi.{n}": "log1p" for n in LOG1P_PSI}}
+
+
+def apply_scale_floors(phi_scale: Sequence[float], psi_scale: Sequence[float]
+                       ) -> tuple[list[float], list[float]]:
+    """max(fitted scale, registered floor) on the floored columns (`SCALE_FLOORS`)."""
+    ps, qs = [float(x) for x in phi_scale], [float(x) for x in psi_scale]
+    for key, floor in SCALE_FLOORS.items():
+        block, name = key.split(".", 1)
+        target, names = (ps, PHI_FEATURES) if block == "phi" else (qs, PSI_FEATURES)
+        j = names.index(name)
+        target[j] = max(target[j], floor)
+    return ps, qs
+
+
 # --- normaliser ---
 
 
@@ -159,7 +217,9 @@ class FeatureNormaliser:
     """Fixed per-feature median / scale for phi (43) and psi (13), fitted once (`fit`) and then
     frozen (D5); `apply_*` are pure. Scale = IQR; IQR = 0 -> the column's standard deviation;
     that 0 too -> 1.0 (the zero-spread rule). Normalised values are clipped to +-clip. Hashed
-    (`sha256`) over its canonical JSON."""
+    (`sha256`) over its canonical JSON. Its inputs are the transformed rows (`transform_phi` /
+    `transform_psi`, recorded as `transforms`): the policy and the fit rows both transform
+    before normalising."""
 
     phi_median: tuple[float, ...]
     phi_scale: tuple[float, ...]
@@ -170,6 +230,7 @@ class FeatureNormaliser:
     version: str = NORMALISER_VERSION
     phi_features: tuple[str, ...] = PHI_FEATURES
     psi_features: tuple[str, ...] = PSI_FEATURES
+    transforms: tuple[tuple[str, str], ...] = tuple(sorted(input_transforms().items()))
 
     def __post_init__(self) -> None:
         if (len(self.phi_median), len(self.phi_scale)) != (N_PHI, N_PHI) or \
@@ -178,6 +239,8 @@ class FeatureNormaliser:
         vals = self.phi_median + self.phi_scale + self.psi_median + self.psi_scale + (self.clip,)
         if not all(math.isfinite(x) for x in vals) or min(self.phi_scale + self.psi_scale) <= 0:
             raise ValueError("normaliser medians / scales must be finite, scales > 0")
+        if dict(self.transforms) != input_transforms():
+            raise ValueError("normaliser input transforms differ from this module's")
 
     @staticmethod
     def _column_stats(x: np.ndarray) -> tuple[list[float], list[float]]:
@@ -186,7 +249,9 @@ class FeatureNormaliser:
             col = x[:, j]
             q25, q50, q75 = np.percentile(col, [25.0, 50.0, 75.0])
             iqr = float(q75 - q25)
-            sd = float(np.std(col))
+            # all-equal values have zero spread exactly: np.std of a constant that is not a
+            # binary fraction (e.g. log1p(2)) is ~1e-16, which would become the scale
+            sd = 0.0 if np.ptp(col) == 0 else float(np.std(col))
             med.append(float(q50))
             scale.append(iqr if iqr > 0 else (sd if sd > 0 else 1.0))
         return med, scale
@@ -200,6 +265,7 @@ class FeatureNormaliser:
             raise ValueError("normaliser fit needs at least one phi and one psi row")
         pm, ps = cls._column_stats(phi)
         qm, qs = cls._column_stats(psi)
+        ps, qs = apply_scale_floors(ps, qs)
         return cls(tuple(pm), tuple(ps), tuple(qm), tuple(qs), float(clip), int(len(psi)))
 
     @classmethod
@@ -221,7 +287,8 @@ class FeatureNormaliser:
         return {"version": self.version, "phi_features": list(self.phi_features),
                 "psi_features": list(self.psi_features), "phi_median": list(self.phi_median),
                 "phi_scale": list(self.phi_scale), "psi_median": list(self.psi_median),
-                "psi_scale": list(self.psi_scale), "clip": self.clip, "n_rows": self.n_rows}
+                "psi_scale": list(self.psi_scale), "clip": self.clip, "n_rows": self.n_rows,
+                "transforms": dict(self.transforms), "scale_floors": dict(SCALE_FLOORS)}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "FeatureNormaliser":
@@ -229,8 +296,17 @@ class FeatureNormaliser:
             raise ValueError(f"normaliser version {d.get('version')!r} != {NORMALISER_VERSION}")
         if tuple(d["phi_features"]) != PHI_FEATURES or tuple(d["psi_features"]) != PSI_FEATURES:
             raise ValueError("normaliser feature names differ from this module's phi / psi")
-        return cls(tuple(map(float, d["phi_median"])), tuple(map(float, d["phi_scale"])),
-                   tuple(map(float, d["psi_median"])), tuple(map(float, d["psi_scale"])),
+        if d.get("transforms") != input_transforms():
+            raise ValueError(f"normaliser input transforms {d.get('transforms')!r} differ from "
+                             f"this module's {input_transforms()!r}")
+        if d.get("scale_floors") != SCALE_FLOORS:
+            raise ValueError(f"normaliser scale floors {d.get('scale_floors')!r} differ from "
+                             f"this module's {SCALE_FLOORS!r}")
+        ps, qs = list(map(float, d["phi_scale"])), list(map(float, d["psi_scale"]))
+        if apply_scale_floors(ps, qs) != (ps, qs):
+            raise ValueError("normaliser scale below its registered floor (not this fit's)")
+        return cls(tuple(map(float, d["phi_median"])), tuple(ps),
+                   tuple(map(float, d["psi_median"])), tuple(qs),
                    float(d["clip"]), int(d["n_rows"]))
 
     @property
@@ -240,8 +316,9 @@ class FeatureNormaliser:
 
 @dataclass
 class RawRows:
-    """Raw (unnormalised) inputs collected while playing, the normaliser's fit rows: one phi
-    row per (decision, eligible producer), one psi row per decision."""
+    """Unnormalised inputs collected while playing, the normaliser's fit rows: one phi row per
+    (decision, eligible producer), one psi row per decision, after `transform_phi` /
+    `transform_psi` (the normaliser's input space)."""
 
     phi: list[np.ndarray] = field(default_factory=list)
     psi: list[np.ndarray] = field(default_factory=list)
@@ -406,8 +483,9 @@ class PerOrderPolicy:
             phi = psi = None
             delta = np.zeros(len(elig))
             if need_inputs:
-                raw = np.concatenate([shared, hist, own], axis=1)[elig]
-                psi_raw = np.concatenate([product, order_features(env, oid, incoming[oid])])
+                raw = transform_phi(np.concatenate([shared, hist, own], axis=1)[elig])
+                psi_raw = transform_psi(np.concatenate([product,
+                                                        order_features(env, oid, incoming[oid])]))
                 if self.sink is not None:
                     self.sink.add(raw, psi_raw)
                 if self.normaliser is not None:

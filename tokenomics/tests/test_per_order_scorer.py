@@ -630,7 +630,7 @@ def test_composite_checkpoint_roundtrip_and_refusals(job: dict, base: BaseScorer
     pos.save_composite(policy, path)
     ck = json.loads(path.read_text())
     assert ck["decoder_version"] == "per-order-choice-v1"
-    assert ck["architecture_version"] == "orderer-per-order-residual-v1"
+    assert ck["architecture_version"] == "orderer-per-order-residual-v2"
     assert ck["base"]["sha256"] == EXP0012_SHA and ck["normaliser_sha256"] == normaliser.sha256
     assert ck["arm"] == {"name": "A2", "residual": True, "rank": 4, "n_params": 268}
     assert ck["sigma"] == [0.05] * 268

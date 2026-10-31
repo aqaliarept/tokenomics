@@ -100,7 +100,8 @@ from ..eval.world_space import (WorldPoint, declarers, episode_seeds, point_from
                                 world_seed)
 from ..eval.world_space import config_from_record
 from .per_order_scorer import (CLIP, N_PHI, N_PSI, NORMALISER_VERSION, PHI_FEATURES,
-                               PSI_FEATURES, FeatureNormaliser, RawRows)
+                               PSI_FEATURES, SCALE_FLOORS, FeatureNormaliser, RawRows,
+                               input_transforms, transform_psi)
 
 DRIVER = "tokenomics.train.order_es_worlds"
 WORLDS_FORMAT = "m4-es-training-worlds-v1"
@@ -160,12 +161,21 @@ HEAVY_CLIP_SHARE = 0.25  # a column clipping on >= 1/4 of its rows is flagged
 NORMALISER_PREREG = {
     "version": NORMALISER_VERSION, "centre": "median (numpy percentile 50, linear)",
     "scale": "IQR (75th - 25th, numpy linear)",
-    "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0",
+    "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0 (all-equal "
+                        "values have std 0 exactly)",
     "clip": CLIP, "clip_rule": "normalised values clipped to +-clip",
-    "fit_rows": "A0's raw rows on the training world-episodes of the bar precompute only "
-                "(horizon 100, agent-history mode, after the infeasible-world replacement): "
-                "one phi row per (decision, eligible producer), one psi row per decision",
+    "fit_rows": "A0's unnormalised rows (after the input transforms) on the training "
+                "world-episodes of the bar precompute only (horizon 100, agent-history mode, "
+                "after the infeasible-world replacement): one phi row per (decision, eligible "
+                "producer), one psi row per decision",
     "phi_features": list(PHI_FEATURES), "psi_features": list(PSI_FEATURES),
+    "transforms": input_transforms(),
+    "transform_rule": "the listed columns are log1p-transformed before the fit and before every "
+                      "apply (policy and fit rows alike); the rest enter raw",
+    "scale_floors": SCALE_FLOORS,
+    "scale_floor_rule": "a floored column's scale = max(the rule's scale, its floor); floor of "
+                        "psi.eligible_producer_count = log1p(4) - log1p(2), the spread of its "
+                        "two 12-producer values",
 }
 # psi columns that are config facts of the order's product, checked at 42 producers
 STATIC_PSI = ("product_depth", "recipe_input_count", "recipe_input_units",
@@ -759,8 +769,10 @@ def column_report(rows: RawRows, nm: FeatureNormaliser) -> list[dict]:
         for j, name in enumerate(names):
             col = x[:, j]
             q25, q75 = (float(v) for v in np.percentile(col, [25.0, 75.0]))
-            sd = float(np.std(col))
+            sd = 0.0 if np.ptp(col) == 0 else float(np.std(col))  # as FeatureNormaliser.fit
             rule = "iqr" if q75 - q25 > 0 else ("std" if sd > 0 else "unit")
+            if scale[j] != (q75 - q25 if rule == "iqr" else sd if rule == "std" else 1.0):
+                rule = "floor"  # the registered scale floor of a transformed count
             z = (col - med[j]) / scale[j]
             lo, hi = float(np.mean(z < -nm.clip)), float(np.mean(z > nm.clip))
             flags = []
@@ -799,22 +811,34 @@ def static_psi_values(cfg: Any) -> dict[str, list[float]]:
 
 def static_psi_check(nm: FeatureNormaliser, configs: Mapping[str, Any]) -> list[dict]:
     """Per static psi column and world: the normalised values and the share that clips, e.g. on
-    the 42-producer reads (the 12-producer-trained policy runs there unretrained)."""
+    the 42-producer reads (the 12-producer-trained policy runs there unretrained). The raw
+    config counts go through the policy's input transform (`transform_psi`: log1p on
+    `eligible_producer_count`) before the normaliser, as the policy's rows do; `raw_*` stay
+    untransformed. `at_clip` = the share with |z| >= clip (pinned at the clip)."""
     out = []
+    transforms = input_transforms()
     for wid, cfg in sorted(configs.items()):
         vals = static_psi_values(cfg)
+        n = len(vals[STATIC_PSI[0]])
+        psi = np.zeros((n, N_PSI))
+        for name in STATIC_PSI:
+            psi[:, PSI_FEATURES.index(name)] = vals[name]
+        tpsi = transform_psi(psi)
         for name in STATIC_PSI:
             j = PSI_FEATURES.index(name)
-            raw = np.asarray(vals[name])
-            z = (raw - nm.psi_median[j]) / nm.psi_scale[j]
-            out.append({"world": wid, "feature": name, "raw_min": float(raw.min()),
-                        "raw_max": float(raw.max()), "z_min": float(z.min()),
-                        "z_max": float(z.max()),
-                        "clip_fraction": float(np.mean(np.abs(z) > nm.clip))})
+            raw = psi[:, j]
+            z = (tpsi[:, j] - nm.psi_median[j]) / nm.psi_scale[j]
+            out.append({"world": wid, "feature": name,
+                        "transform": transforms.get(f"psi.{name}", ""),
+                        "raw_min": float(raw.min()), "raw_max": float(raw.max()),
+                        "z_min": float(z.min()), "z_max": float(z.max()),
+                        "clip_fraction": float(np.mean(np.abs(z) > nm.clip)),
+                        "at_clip": float(np.mean(np.abs(z) >= nm.clip))})
     return out
 
 
-STATIC_COLUMNS = ("world", "feature", "raw_min", "raw_max", "z_min", "z_max", "clip_fraction")
+STATIC_COLUMNS = ("world", "feature", "transform", "raw_min", "raw_max", "z_min", "z_max",
+                  "clip_fraction", "at_clip")
 
 
 def reads_42_configs(atlas: Mapping) -> dict[str, Any]:
@@ -855,8 +879,8 @@ def normaliser_doc(nm: FeatureNormaliser, report: Sequence[Mapping], static: Seq
         "history_completion_rate_clip": next(
             r["clip_fraction"] for r in report
             if r["block"] == "phi" and r["index"] == PHI_FEATURES.index("completion_rate", 31)),
-        "static_psi_clip_42": sorted({f"{s['feature']} on {s['world']} ({s['clip_fraction']:.3f})"
-                                      for s in static if s["clip_fraction"] > 0}),
+        "static_psi_clip_42": sorted({f"{s['feature']} on {s['world']} ({s['at_clip']:.3f})"
+                                      for s in static if s["at_clip"] > 0}),
     }
     return {"normaliser": nm.to_dict(), "sha256": nm.sha256, "prereg": NORMALISER_PREREG,
             "rules": {f"{r['block']}[{r['index']}] {r['feature']}": r["rule"] for r in report},
