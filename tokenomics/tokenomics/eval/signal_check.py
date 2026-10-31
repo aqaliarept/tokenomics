@@ -24,6 +24,12 @@ COMBOS = [
     ("stock_aware", "proportional"),
     ("stock_aware", "blend_0.5"),  # gate roster v1 router (design D5)
     ("stock_aware", "shock_reactive"),  # gate roster v2 router (add-shocks-i-drift D9)
+    # gate roster v3 draft routers, promoted from the diagnostic routers (add-gate-v3 D1)
+    ("stock_aware", "round_robin"),
+    ("stock_aware", "even_split_rotating"),
+    ("stock_aware", "random_whole"),
+    ("stock_aware", "makeable_weighted_whole"),
+    ("stock_aware", "makeable_split"),
     # observation-compatible bar (NEXT STEPS stage 1): obs-only, the fair bar for RL.
     ("obs_stock_aware", "even_split"),
     ("obs_stock_aware", "obs_price"),
@@ -55,14 +61,14 @@ def main() -> None:
     def m(x: tuple[float, float]) -> float:  # mean only
         return x[0]
 
-    header = f"{'producing':17}{'ordering':14}{'cycles':>7}{'dead%':>7}{'cons✓':>8}{'cu✓':>8}{'cons✗':>8}{'return':>9}{'capmin':>8}"
+    header = f"{'producing':17}{'ordering':25}{'cycles':>7}{'dead%':>7}{'cons✓':>8}{'cu✓':>8}{'cons✗':>8}{'return':>9}{'capmin':>8}"
     print(header)
     print("-" * len(header))
 
     def row(pname: str, oname: str, prod: Policy, order: Policy) -> None:
         res = evaluate(prod, order, seeds=seeds, horizon=args.horizon, config=cfg)
         print(
-            f"{pname:17}{oname:14}"
+            f"{pname:17}{oname:25}"
             f"{m(res['cycles']):7.0f}"
             f"{m(res['dead_rate'])*100:7.0f}"
             f"{m(res['consumer_completed']):8.1f}"

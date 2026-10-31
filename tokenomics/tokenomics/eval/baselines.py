@@ -22,6 +22,13 @@ from ..domain.common import is_nan
 from ..domain.producer_planner import plan_producer_command
 from ..domain.producing_agent import ProducingAgentCommand
 from ..env.spaces import ACTION_LOGIT_BOUND, OBS_CLIP, EnvSpec
+from .rotation_routers import (
+    ordering_even_split_rotating,
+    ordering_makeable_split,
+    ordering_makeable_weighted_whole,
+    ordering_random_whole,
+    ordering_round_robin,
+)
 
 if TYPE_CHECKING:
     from ..env import TokenomicsAECEnv
@@ -418,4 +425,17 @@ ORDERING_BASELINES: dict[str, Policy] = {
     # whose recent sub-orders were mostly rejected or failed.
     "shock_reactive": ordering_shock_reactive,
     "random": random_action,
+    # gate roster v3 draft (add-gate-v3 D1): routers promoted from `routing_diagnostics`, same
+    # names and function objects (`eval/rotation_routers.py`), so their actions are unchanged.
+    "round_robin": ordering_round_robin,
+    "even_split_rotating": ordering_even_split_rotating,
+    "random_whole": ordering_random_whole,
+    "makeable_weighted_whole": ordering_makeable_weighted_whole,
+    "makeable_split": ordering_makeable_split,
 }
+
+# Baselines whose actions draw from the env action-space RNG (seeded per replicate by the
+# gate): a roster member with either policy here runs R replicates (add-gate-v3 D1;
+# gate-harness "Random-baseline replicates").
+STOCHASTIC_BASELINES: frozenset[str] = frozenset({"random", "random_whole",
+                                                  "makeable_weighted_whole"})

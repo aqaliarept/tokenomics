@@ -1,0 +1,537 @@
+{
+  "content_hash": "68504053eb8480253a465e256d30cf39271ab9433ff2d38f35d9d7bfd6030d01",
+  "frozen": false,
+  "members": [
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "always_both",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "always_both",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "always_both",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "always_both",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "always_restore",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "always_restore",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "always_restore",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "always_restore",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "entity_planner",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "entity_planner",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "entity_planner",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "noop",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "noop",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "noop",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "noop",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "blend_0.5",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "even_split",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "even_split_rotating",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "makeable_split",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "makeable_weighted_whole",
+      "producing": "obs_stock_aware",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "proportional",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "random",
+      "producing": "obs_stock_aware",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "random_whole",
+      "producing": "obs_stock_aware",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "round_robin",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "legacy",
+      "ordering": "shock_reactive",
+      "producing": "obs_stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "random",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "restore_when_low",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "restore_when_low",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "restore_when_low",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "restore_when_low",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "stock_aware",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "stock_aware",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "stock_aware",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "stock_aware",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "stock_aware",
+      "random": false
+    }
+  ],
+  "name": "roster-v3",
+  "pruning": null,
+  "replicates": 5
+}

@@ -26,7 +26,7 @@ from typing import Collection, Iterable
 
 from ..domain.config import Configuration
 from ..env import TokenomicsAECEnv
-from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
+from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, STOCHASTIC_BASELINES, Policy
 from .joint_stack import joint_stack_env
 
 ROSTER_V1 = Path(__file__).parent / "registry" / "roster_v1.json"
@@ -40,6 +40,15 @@ DEFAULT_ROSTER = ROSTER_V2  # the frozen v2 roster since task 10.1 (add-shocks-i
 ROSTER_V1_ORDERING = ("even_split", "proportional", "obs_price", "blend_0.5", "random")
 SHOCK_REACTIVE = "shock_reactive"
 ROSTER_V2_ORDERING = ROSTER_V1_ORDERING + (SHOCK_REACTIVE,)
+# v3 (add-gate-v3 D1): v2 plus the five routers promoted from `routing_diagnostics`. Pruning on
+# the v3 development screen, not a hand rule, decides which of them stay.
+PROMOTED_V3 = ("round_robin", "even_split_rotating", "random_whole", "makeable_weighted_whole",
+               "makeable_split")
+ROSTER_V3_ORDERING = ROSTER_V2_ORDERING + PROMOTED_V3
+# The pre-screen pilot's roster (add-gate-v3 D3 step 0): `entity_planner` alone, the only
+# producer that has ever set the per-episode best. A dry-run screen input, never a gate roster.
+PILOT_PRODUCING = "entity_planner"
+PILOT_V3_NAME = "roster-v3-pilot-ep (pilot, not a gate roster)"
 
 # Env contracts (D5). JOINT_STACK = `joint_stack_env`, the ordering mechanics the candidate runs
 # under. LEGACY = the default flat-observation env the `obs_*` baselines decode.
@@ -48,6 +57,14 @@ LEGACY = "legacy"
 CONTRACTS = (JOINT_STACK, LEGACY)
 
 RANDOM_POLICY = "random"
+
+
+def is_stochastic(producing: str, ordering: str) -> bool:
+    """A member runs R replicates when either policy draws from the action-space RNG
+    (`STOCHASTIC_BASELINES`, add-gate-v3 D1). For every v1 / v2 member this is `random` in the
+    pair, so their stored `random` flags (and hashes) are unchanged."""
+    return producing in STOCHASTIC_BASELINES or ordering in STOCHASTIC_BASELINES
+
 DEFAULT_REPLICATES = 5  # R, tasks.md 10.1 sizing
 DEVELOPMENT = "development"
 # Economy sizes the gate measures (producers; design "Economy sizes": 12 and 42, user decision
@@ -103,8 +120,9 @@ def contract_for(producing: str, ordering: str) -> str:
 
 @dataclass(frozen=True)
 class RosterMember:
-    """One baseline stack. `random` = either policy samples actions, so the member runs R
-    replicates and its per-episode value is the replicate mean (D5)."""
+    """One baseline stack. `random` = either policy samples actions (`is_stochastic`), so the
+    member runs R replicates and its per-episode value is the replicate mean (D5; add-gate-v3
+    D1 widens it beyond `random`, the stored field keeps its name)."""
 
     producing: str
     ordering: str
@@ -222,7 +240,7 @@ class Roster:
                 raise ValueError(
                     f"{m.id}: contract {m.contract!r} != {contract_for(m.producing, m.ordering)!r}"
                 )
-            if m.random != (RANDOM_POLICY in (m.producing, m.ordering)):
+            if m.random != is_stochastic(m.producing, m.ordering):
                 raise ValueError(f"{m.id}: random flag {m.random} does not match its policies")
 
     @property
@@ -310,11 +328,13 @@ def save_roster(roster: Roster, path: str | Path) -> None:
     Path(path).write_text(roster.to_json())
 
 
-def _cross(ordering: Iterable[str]) -> tuple[RosterMember, ...]:
-    """Every producing baseline paired with each of `ordering`."""
+def _cross(ordering: Iterable[str],
+           producing: Iterable[str] = tuple(PRODUCING_BASELINES)) -> tuple[RosterMember, ...]:
+    """Every producing baseline (or each of `producing`) paired with each of `ordering`."""
+    ordering = tuple(ordering)
     return tuple(
-        RosterMember(p, o, contract_for(p, o), RANDOM_POLICY in (p, o))
-        for p in PRODUCING_BASELINES
+        RosterMember(p, o, contract_for(p, o), is_stochastic(p, o))
+        for p in producing
         for o in ordering
     )
 
@@ -331,6 +351,23 @@ def build_roster_v2(replicates: int = DEFAULT_REPLICATES) -> Roster:
     `obs_stock_aware/shock_reactive` to LEGACY; the router reads only state both contracts have.
     The baseline-only screen on registry v2 prunes and freezes it."""
     return Roster(name="roster-v2", replicates=replicates, members=_cross(ROSTER_V2_ORDERING))
+
+
+def build_roster_v3(replicates: int = DEFAULT_REPLICATES) -> Roster:
+    """Draft roster v3 (add-gate-v3 D1): every producing baseline (8) × the v2 ordering baselines
+    and the five promoted routers (11) = 88 members, 32 stochastic (216 runs per world-episode
+    at R = 5), unfrozen and unpruned. `obs_stock_aware` × a promoted router runs LEGACY
+    (`contract_for`); the routers read `env.system` and emit the raw action both contracts
+    decode. The two-wave v3 development screen (D3) prunes and freezes it."""
+    return Roster(name="roster-v3", replicates=replicates, members=_cross(ROSTER_V3_ORDERING))
+
+
+def build_pilot_roster_v3(replicates: int = DEFAULT_REPLICATES) -> Roster:
+    """The pre-screen pilot's roster (add-gate-v3 D3 step 0): `entity_planner` × the 11 v3
+    ordering baselines (23 runs per world-episode), unfrozen. Its name says it is a pilot, not
+    a gate roster: its rows never prune or calibrate anything."""
+    return Roster(name=PILOT_V3_NAME, replicates=replicates,
+                  members=_cross(ROSTER_V3_ORDERING, producing=(PILOT_PRODUCING,)))
 
 
 def member_policies(m: RosterMember) -> tuple[Policy, Policy]:

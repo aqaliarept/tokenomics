@@ -10,7 +10,7 @@ Coordination with M4: every gate-v3 code commit changes M4's package source hash
 
 ## 1. Roster v3 draft (code)
 
-- [ ] 1.1 [code][local] Promote `round_robin`, `even_split_rotating`, `random_whole`, `makeable_weighted_whole` and `makeable_split` (design D1).
+- [x] 1.1 [code][local] Promote `round_robin`, `even_split_rotating`, `random_whole`, `makeable_weighted_whole` and `makeable_split` (design D1).
   - **Structure, no import cycle.** `routing_diagnostics` imports `baselines`, so move the five routers and their private helpers unchanged to a new module that imports neither (e.g. `/srv/research/tokenomics/tokenomics/tokenomics/eval/rotation_routers.py`). Register them in `ORDERING_BASELINES` in `/srv/research/tokenomics/tokenomics/tokenomics/eval/baselines.py`, and have `/srv/research/tokenomics/tokenomics/tokenomics/eval/routing_diagnostics.py` re-export them in `DIAGNOSTIC_ROUTERS` under the same names.
   - Add `STOCHASTIC_BASELINES = {random, random_whole, makeable_weighted_whole}`.
   - In `/srv/research/tokenomics/tokenomics/tokenomics/eval/roster.py` add `ROSTER_V3_ORDERING` and `build_roster_v3()` (88 members, stochastic = either policy in `STOCHASTIC_BASELINES`, R = 5). The stored `random` flags of v1 / v2 stay unchanged.

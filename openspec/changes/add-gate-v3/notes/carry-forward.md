@@ -1,0 +1,6 @@
+# Carry-forward items (supervisor, gate-v3)
+
+- **Task 3.x / 4.x** (from the 1.1 review, binding): `gate_cli.py:218` and `:747` choose baseline-subject replicates with `RANDOM_POLICY in pair`; `baseline:*/makeable_weighted_whole` / `random_whole` get one unseeded replicate. Switch both to `roster.is_stochastic(*pair)` (with a test) before any read with a baseline subject.
+- **Task 3.1** (from the 1.1 review, binding): refuse the pilot roster (`PILOT_V3_NAME`) outside `--dry-run`; `gate_cli.py:1022` would otherwise freeze it as `roster-v3`.
+- **Commit timing vs M4** (from the 1.1 review): gate-v3 commits change the package source hash, which M4 refuses to cross in `order_es` train resume (`source_tree_sha256`) and `order_es_validate --reuse-references` (`REUSE_PINS`). Land gate-v3 code commits only between M4 runs: never between an M4 seed-0 read and its seed-1 read, never under a train run that will be resumed.
+- **Optional hardening (any later gate-v3 code task)**: `test_promoted_router_acts_as_before` compares a function with itself. Pin per-router action digests (reviewer's base values: `notes/router_action_digests_base.json`). Minor: `test_ceiling_bound*` lists `round_robin` twice.

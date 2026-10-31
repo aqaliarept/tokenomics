@@ -3,7 +3,10 @@ roster", "Roster pruning uses development evidence only")."""
 
 from __future__ import annotations
 
+import ast
 import json
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,9 +14,19 @@ import pytest
 
 from tokenomics.domain import load_config
 from tokenomics.env.aec_env import DEFAULT_CONFIG
-from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES
+from tokenomics.eval.baselines import ORDERING_BASELINES, PRODUCING_BASELINES, STOCHASTIC_BASELINES
+from tokenomics.eval.gate import DEFAULT_PARAMS, PARAMS_V1, PARAMS_V2, load_side_effect_params
+from tokenomics.eval.gate_cli import build_jobs
+from tokenomics.eval.registry import (DEFAULT_REGISTRY, REGISTRY_V1, REGISTRY_V2, build_worlds_v1,
+                                      build_worlds_v2, load_registry)
 from tokenomics.eval.roster import (
+    DEFAULT_ROSTER,
+    PILOT_V3_NAME,
+    PROMOTED_V3,
     ROSTER_V1,
+    ROSTER_V2,
+    ROSTER_V2_ORDERING,
+    ROSTER_V3_ORDERING,
     DEVELOPMENT,
     JOINT_STACK,
     LEGACY,
@@ -23,7 +36,10 @@ from tokenomics.eval.roster import (
     EpisodeKey,
     Roster,
     RosterHashMismatch,
+    build_pilot_roster_v3,
     build_roster_v1,
+    build_roster_v2,
+    build_roster_v3,
     contract_for,
     freeze_roster,
     load_roster,
@@ -35,6 +51,7 @@ from tokenomics.eval.roster import (
     save_roster,
 )
 from tokenomics.eval.runner import run_episode
+from tokenomics.eval.seeding import replicate_seed
 
 SIZES = (12, 42)
 
@@ -63,7 +80,8 @@ def test_roster_v1_is_producing_cross_ordering_40_with_12_random() -> None:
         (p, o) for p in PRODUCING_BASELINES for o in ROSTER_V1_ORDERING
     }
     # roster v2's shock-reactive router (add-shocks-i-drift D9) is not a v1 member
-    assert set(ROSTER_V1_ORDERING) == set(ORDERING_BASELINES) - {"shock_reactive"}
+    # nor are the routers gate v3 promotes (add-gate-v3 D1)
+    assert set(ROSTER_V1_ORDERING) == set(ORDERING_BASELINES) - {"shock_reactive", *PROMOTED_V3}
     assert r.replicates == 5 and not r.frozen and r.pruning is None
 
 
@@ -242,3 +260,123 @@ def test_already_pruned_roster_refuses_second_pruning() -> None:
     pruned = prune_roster(r, _both_sizes(r, {}, {}))
     with pytest.raises(ValueError, match="already pruned"):
         prune_roster(pruned, _both_sizes(pruned, {}, {}))
+
+
+# --- roster v3 draft (add-gate-v3 D1) ---
+
+DRAFTS = Path(__file__).resolve().parents[2] / "openspec" / "changes" / "add-gate-v3" / "drafts"
+# Recorded at base commit 43f77c6, before the promotion: the v1 / v2 drafts use explicit ordering
+# lists, so adding baselines must not move them; the frozen files keep their content hashes.
+DRAFT_HASHES = {
+    "roster-v1": "8791e24b2760a24bc2b40ef588578ee96b7e8e93502b76c50ef0d2fac6b83239",
+    "roster-v2": "a050c99e4960eb422b9eda34fd4a0de56d259629c934ccf28e4ffcb33da816fe",
+    "worlds-v2": "3032147f1f17233703f486c66e4c56e006c026399364dd1cbaead5b46bcfceb5",
+}
+FROZEN_HASHES = {  # tests/test_frozen_v2.py FROZEN_V1 / FROZEN_V2
+    "worlds_v1": "566946fe0c0363ec888f9a58bfe7bd480bcc948e049c93e9923088e2cab911e3",
+    "roster_v1": "c2832dbb44d26601f279fc04c0c483c543c5a5fcdc8cb2231090fc03f76a3731",
+    "params_v1": "e6651b2ebe541b18ade0a8904f27b0a08844e2a4f8ee0e231ca062514472f2c1",
+    "worlds_v2": "7b09f536e9880bc31370694f80eaca828587621eb5daa16fdf64e80ed05ee7ff",
+    "roster_v2": "5050508ecb25f0eda0ae0a61b0dde4ba948a6e9b0d901cd14cde28e0db161f38",
+    "params_v2": "e2aee97ac38524d709862bc956c43940413ac0cb44c846304a4b8c3d324c3a99",
+}
+
+
+def test_roster_v3_draft_is_88_members_32_stochastic() -> None:
+    """Scenario "Roster v3 draft": every producing baseline × every v2 ordering baseline and each
+    promoted router, no trained stack; 32 stochastic members (11 with the `random` producer, 7
+    producers × 3 stochastic routers), so 216 runs per world-episode at R = 5."""
+    r = build_roster_v3()
+    assert ROSTER_V3_ORDERING == ROSTER_V2_ORDERING + PROMOTED_V3
+    assert set(ROSTER_V3_ORDERING) == set(ORDERING_BASELINES)
+    assert {(m.producing, m.ordering) for m in r.members} == {
+        (p, o) for p in PRODUCING_BASELINES for o in ROSTER_V3_ORDERING}
+    assert len(r.members) == 88 and sum(m.random for m in r.members) == 32
+    assert sum(r.replicates_for(m) for m in r.members) == 216
+    assert r.name == "roster-v3" and r.version_tag == 3 and r.replicates == 5
+    assert not r.frozen and r.pruning is None and r.screened_on is None
+    assert all(m.random == (m.producing in STOCHASTIC_BASELINES or m.ordering in STOCHASTIC_BASELINES)
+               for m in r.members)
+    # obs_stock_aware x a promoted router runs LEGACY (D1 "Legacy contract")
+    assert {m.ordering for m in r.members if m.producing == "obs_stock_aware"
+            and m.contract == LEGACY} == set(ROSTER_V3_ORDERING)
+
+
+def test_stochastic_flag_refused_when_wrong() -> None:
+    m = build_roster_v3().member("entity_planner/makeable_weighted_whole")
+    assert m.random
+    with pytest.raises(ValueError, match="random"):
+        Roster("roster-v3", 5, (replace(m, random=False),))
+
+
+def test_pilot_roster_is_entity_planner_times_every_ordering_baseline() -> None:
+    p = build_pilot_roster_v3()
+    assert {(m.producing, m.ordering) for m in p.members} == {
+        ("entity_planner", o) for o in ROSTER_V3_ORDERING}
+    assert sum(p.replicates_for(m) for m in p.members) == 23  # D3 step 0
+    assert p.name == PILOT_V3_NAME and "pilot, not a gate roster" in p.name
+    assert p.version_tag == 3 and not p.frozen and p.pruning is None
+
+
+def test_drafts_on_disk_are_the_builders() -> None:
+    """The Drafts files (written by 1.1) are exactly `build_roster_v3()` / the pilot, and load."""
+    if not DRAFTS.exists():  # the openspec tree is not shipped to pods
+        pytest.skip("Drafts dir not present")
+    for name, roster in (("roster_v3_draft.json", build_roster_v3()),
+                         ("roster_v3_pilot_ep.json", build_pilot_roster_v3())):
+        assert (DRAFTS / name).read_text() == roster.to_json(), name
+        assert load_roster(DRAFTS / name).version == roster.version
+
+
+def test_v1_v2_drafts_frozen_hashes_and_defaults_unchanged() -> None:
+    assert build_roster_v1().version == DRAFT_HASHES["roster-v1"]
+    assert build_roster_v2().version == DRAFT_HASHES["roster-v2"]
+    assert build_worlds_v2().version == DRAFT_HASHES["worlds-v2"]
+    build_worlds_v1()  # still builds
+    got = {
+        "worlds_v1": load_registry(REGISTRY_V1).version, "roster_v1": load_roster(ROSTER_V1).version,
+        "params_v1": load_side_effect_params(PARAMS_V1).version,
+        "worlds_v2": load_registry(REGISTRY_V2).version, "roster_v2": load_roster(ROSTER_V2).version,
+        "params_v2": load_side_effect_params(PARAMS_V2).version,
+    }
+    assert got == FROZEN_HASHES
+    # stored `random` flags of v1 / v2 unchanged: only `random` makes a v1 / v2 member stochastic
+    for r in (load_roster(ROSTER_V1), load_roster(ROSTER_V2), build_roster_v2()):
+        assert all(m.random == ("random" in (m.producing, m.ordering)) for m in r.members)
+    assert (DEFAULT_ROSTER, DEFAULT_REGISTRY, DEFAULT_PARAMS) == (ROSTER_V2, REGISTRY_V2, PARAMS_V2)
+
+
+def test_stochastic_members_get_replicate_seeds() -> None:
+    """gate-harness "Stochastic promoted router": a stochastic v3 member runs R jobs with the
+    hashed action seeds (world, episode, replicate); a deterministic one runs once, unseeded."""
+    roster = build_roster_v3()
+    world = load_registry(REGISTRY_V2).gate_worlds(DEVELOPMENT)[0]
+    jobs = build_jobs([world], roster, None, episodes_per_world=1)
+    assert len(jobs) == 216
+    ep = world.episode_seeds[0]
+    seeds: dict[str, list] = {}
+    for j in jobs:
+        seeds.setdefault(j["subject"], []).append((j["replicate"], j["action_seed"]))
+    for m in roster.members:
+        want = ([(r, replicate_seed(world.id, ep, r)) for r in range(5)] if m.random
+                else [(0, None)])
+        assert sorted(seeds[m.id]) == want, m.id
+    assert all(s != ep for j in jobs if (s := j["action_seed"]) is not None)
+
+
+@pytest.mark.parametrize("module", ["baselines", "routing_diagnostics", "roster", "gate_cli",
+                                    "rotation_routers"])
+def test_fresh_interpreter_imports_module_first(module: str) -> None:
+    """D1 "No import cycle": each module imports first in a fresh interpreter."""
+    root = Path(__file__).resolve().parents[1]
+    subprocess.run([sys.executable, "-c", f"import tokenomics.eval.{module}"], cwd=root,
+                   check=True, capture_output=True, text=True)
+
+
+def test_rotation_routers_imports_neither_baselines_nor_diagnostics() -> None:
+    import tokenomics.eval.rotation_routers as rr
+
+    tree = ast.parse(Path(rr.__file__).read_text())
+    names = {(n.module or "") for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+    names |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    assert not any(x.split(".")[-1] in ("baselines", "routing_diagnostics") for x in names), names

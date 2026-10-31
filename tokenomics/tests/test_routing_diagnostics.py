@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import copy
 import csv
+import dataclasses
+import hashlib
 import json
 import subprocess
 import sys
@@ -28,12 +30,14 @@ from tokenomics.domain.system import order_kind
 from tokenomics.env import TokenomicsAECEnv
 from tokenomics.env.allocator import allocate_suborders
 from tokenomics.env.decode import decode_ordering
-from tokenomics.eval.baselines import (ORDERING_BASELINES, PRODUCING_BASELINES, Policy,
-                                       ordering_blend, ordering_even_split, random_action)
+from tokenomics.eval.baselines import (ORDERING_BASELINES, PRODUCING_BASELINES,
+                                       STOCHASTIC_BASELINES, Policy, ordering_blend,
+                                       ordering_even_split, random_action)
 from tokenomics.eval.contract import ContractMonitor, read_failures
 from tokenomics.eval.gate import PARAMS_V2, load_side_effect_params
 from tokenomics.eval.registry import REGISTRY_V2, load_registry
-from tokenomics.eval.roster import JOINT_STACK, ROSTER_V2, load_roster
+from tokenomics.eval.roster import (JOINT_STACK, LEGACY, PROMOTED_V3, ROSTER_V2, RosterMember,
+                                    contract_for, is_stochastic, load_roster, member_env)
 from tokenomics.eval.routing_audit import (EDGE_COLUMNS, build_jobs, edge_table,
                                            real_run_problems, router_table, run_audit,
                                            select_worlds)
@@ -50,6 +54,7 @@ from tokenomics.eval.seeding import replicate_seed
 from tokenomics.eval.shock_profiles import SHOCKS_I_SMOKE
 
 HORIZON = 8
+PROMOTED = PROMOTED_V3  # add-gate-v3 D1: also gate ordering baselines
 PRODUCER_IDS = ("p1", "p2")
 
 
@@ -403,17 +408,19 @@ SIGNAL_CHECK = [sys.executable, "-m", "tokenomics.eval.signal_check", "--seeds",
 
 def test_diagnostic_router_added() -> None:
     """Scenario "Diagnostic router added": frozen v2 content hashes unchanged, the baseline
-    dictionaries unchanged and disjoint from the diagnostic routers, and signal_check's rows
+    dictionaries unchanged and disjoint from the diagnostic routers but for the five routers
+    gate v3 promotes (add-gate-v3 D1, bound to the same functions), and signal_check's rows
     identical with and without the diagnostic modules imported."""
     assert load_registry(REGISTRY_V2).version == FROZEN_V2["worlds"]
     assert load_roster(ROSTER_V2).version == FROZEN_V2["roster"]
     assert load_side_effect_params(PARAMS_V2).version == FROZEN_V2["params"]
     assert list(ORDERING_BASELINES) == ["even_split", "proportional", "obs_price", "blend_0.5",
-                                        "shock_reactive", "random"]
+                                        "shock_reactive", "random", *PROMOTED]
     assert list(PRODUCING_BASELINES) == ["noop", "always_restore", "always_both",
                                          "restore_when_low", "stock_aware", "entity_planner",
                                          "obs_stock_aware", "random"]
-    assert not set(DIAGNOSTIC_ROUTERS) & set(ORDERING_BASELINES)
+    assert set(DIAGNOSTIC_ROUTERS) & set(ORDERING_BASELINES) == set(PROMOTED)
+    assert all(ORDERING_BASELINES[n] is DIAGNOSTIC_ROUTERS[n] for n in PROMOTED)
     root = Path(__file__).resolve().parents[1]
     plain = subprocess.run(SIGNAL_CHECK, cwd=root, capture_output=True, text=True, check=True)
     loaded = subprocess.run(
@@ -421,7 +428,79 @@ def test_diagnostic_router_added() -> None:
          "sys.argv = ['signal_check', '--seeds', '1', '--horizon', '12']; "
          "runpy.run_module('tokenomics.eval.signal_check', run_name='__main__')"],
         cwd=root, capture_output=True, text=True, check=True)
-    assert plain.stdout == loaded.stdout and plain.stdout.count("\n") == 13
+    assert plain.stdout == loaded.stdout and plain.stdout.count("\n") == 18  # + 5 promoted rows
+    rows = [line.split()[:2] for line in plain.stdout.splitlines()[2:]]
+    assert all(["stock_aware", name] in rows for name in PROMOTED)
+
+
+# --- promoted routers (add-gate-v3 D1) ---
+
+PROMOTED_WORLD = "dev-sparse_wide-12-shocked-00"
+PROMOTED_HORIZON = 12
+
+
+@pytest.fixture(scope="module")
+def promoted_world() -> tuple[str, Configuration, int]:
+    """A registry v2 shocked 12-producer world with `shocks-i-smoke` (onsets in cycles 2-8)."""
+    entry = load_registry(REGISTRY_V2).entry(PROMOTED_WORLD)
+    params = {**entry.generator["params"], "shock_profile": SHOCKS_I_SMOKE}
+    entry = dataclasses.replace(entry, generator={**entry.generator, "params": params})
+    return entry.id, entry.config(), entry.episode_seeds[0]
+
+
+def _digest_run(world: tuple[str, Configuration, int], producing: str, order: Policy,
+                ordering: str) -> tuple[str, dict]:
+    """Play one horizon-12 episode in the member's env (its roster contract) under the contract
+    monitor, the gate's replicate-1 action seed; sha256 over every ordering action."""
+    wid, config, seed = world
+    env = member_env(RosterMember(producing, ordering, contract_for(producing, ordering),
+                                  is_stochastic(producing, ordering)), config, PROMOTED_HORIZON)
+    h = hashlib.sha256()
+
+    def recorded(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        act = np.asarray(order(e, agent))
+        h.update(agent.encode())
+        h.update(act.tobytes())
+        return act
+
+    mon = ContractMonitor(env)
+    stats = run_episode(env, PRODUCING_BASELINES[producing], recorded, seed=seed,
+                        action_seed=replicate_seed(wid, seed, 1), monitor=mon)
+    mon.verify(dead=bool(stats["dead"]), cycles=stats["cycles"],
+               horizon=PROMOTED_HORIZON)  # raises on any contract failure
+    return h.hexdigest(), stats
+
+
+@pytest.mark.parametrize("name", PROMOTED)
+def test_promoted_router_acts_as_before(promoted_world: tuple[str, Configuration, int],
+                                        name: str) -> None:
+    """Scenario "Promoted router acts as before": the same function in both dictionaries, and
+    byte-identical actions as a gate ordering baseline and as a diagnostic router on a
+    horizon-12 `shocks-i-smoke` episode with the same seeds."""
+    assert ORDERING_BASELINES[name] is DIAGNOSTIC_ROUTERS[name]
+    base, base_stats = _digest_run(promoted_world, "entity_planner", ORDERING_BASELINES[name], name)
+    diag, diag_stats = _digest_run(promoted_world, "entity_planner", DIAGNOSTIC_ROUTERS[name], name)
+    assert base == diag
+    assert base_stats["consumer_fulfilled_units"] == diag_stats["consumer_fulfilled_units"]
+    assert base_stats["shock_events"] > 0  # the smoke profile's shocks land inside 12 cycles
+
+
+@pytest.mark.parametrize("name", PROMOTED)
+@pytest.mark.parametrize("producing,contract", [("entity_planner", JOINT_STACK),
+                                                ("obs_stock_aware", LEGACY)])
+def test_promoted_router_contracts(promoted_world: tuple[str, Configuration, int], name: str,
+                                   producing: str, contract: str) -> None:
+    """Each promoted router under joint_stack and under LEGACY (`obs_stock_aware`, D1 "Legacy
+    contract") plays a horizon-12 episode with zero contract failures (`_digest_run` verifies)."""
+    assert contract_for(producing, name) == contract
+    _, stats = _digest_run(promoted_world, producing, ORDERING_BASELINES[name], name)
+    assert stats["cycles"] == PROMOTED_HORIZON
+
+
+def test_stochastic_baselines_match_router_kinds() -> None:
+    """`STOCHASTIC_BASELINES` = `random` + the promoted routers `ROUTER_KIND` calls stochastic."""
+    assert STOCHASTIC_BASELINES == {"random"} | {n for n in PROMOTED if ROUTER_KIND[n] == STOCHASTIC}
+    assert STOCHASTIC_BASELINES == {"random", "random_whole", "makeable_weighted_whole"}
 
 
 # --- the driver ---

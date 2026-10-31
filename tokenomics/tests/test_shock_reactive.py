@@ -36,6 +36,7 @@ from tokenomics.eval.registry import REGISTRY_V2, load_registry
 from tokenomics.eval.roster import (
     JOINT_STACK,
     LEGACY,
+    PROMOTED_V3,
     ROSTER_V1,
     ROSTER_V1_ORDERING,
     ROSTER_V2,
@@ -87,7 +88,8 @@ def test_roster_v2_is_v1_draft_plus_shock_reactive_pairs() -> None:
     assert set(v2.member_ids) == set(v1.member_ids) | {
         f"{p}/{SHOCK_REACTIVE}" for p in PRODUCING_BASELINES}
     assert v1.members == tuple(m for m in v2.members if m.ordering != SHOCK_REACTIVE)
-    assert set(ROSTER_V1_ORDERING) == set(ORDERING_BASELINES) - {SHOCK_REACTIVE}
+    # the routers gate v3 promotes (add-gate-v3 D1) enter only the v3 draft
+    assert set(ROSTER_V1_ORDERING) == set(ORDERING_BASELINES) - {SHOCK_REACTIVE, *PROMOTED_V3}
     # literal pins: 8 x 6 members; random = 6 (random producing) + 7 (random ordering);
     # LEGACY = 6 (obs_stock_aware) + 8 (obs_price) - 1 (counted twice)
     assert len(v2.members) == 48

@@ -1,0 +1,75 @@
+{
+  "content_hash": "185513430aa6d1ac8e66e1985da742878658a4a3337ede095cbc6ace780fbe9f",
+  "frozen": false,
+  "members": [
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "entity_planner",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "entity_planner",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "entity_planner",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "entity_planner",
+      "random": false
+    }
+  ],
+  "name": "roster-v3-pilot-ep (pilot, not a gate roster)",
+  "pruning": null,
+  "replicates": 5
+}
