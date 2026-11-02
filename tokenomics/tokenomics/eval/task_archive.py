@@ -81,15 +81,18 @@ def _degenerate_variant(seed: int, *, variant: str, depth: int = 3, width: int =
 def _world_space(seed: int, shock_profile: str | None = None,
                  **params: object) -> Configuration:
     """A world-space world (add-m3-development-audit D10; params {"producers", "levers",
-    "shock_window", "shock_profile"?}). `shock_profile` (add-gate-v3 D2) accepts only
-    "shocks-i", on a world that is it: shocks on at the neutral shock levers with its drift, its
-    generators equal to the registered profile's (`world_space.check_shock_profile`); it names
-    the profile, the levers build the world. Imported on call: `world_space` imports
-    `routing_audit`, which imports the registry, which imports this module."""
+    "shock_window", "shock_profile"?}). `shock_profile` (add-gate-v3 D2) accepts "shocks-i" and
+    the test-only "shocks-i-smoke" (with the smoke start window, add-gate-v3 2.2), on a world
+    that is it: shocks on at the neutral shock levers with its drift, its generators equal to
+    the profile's (`world_space.check_shock_profile`); it names the profile, the levers build the
+    world. Imported on call: `world_space` imports `routing_audit`, which imports the registry,
+    which imports this module."""
+    from .families import SHOCKS_I_WINDOW
     from .world_space import build_world, check_shock_profile
 
     if shock_profile is not None:
-        check_shock_profile(shock_profile, levers=params.get("levers"))  # type: ignore[arg-type]
+        check_shock_profile(shock_profile, levers=params.get("levers"),  # type: ignore[arg-type]
+                            shock_window=params.get("shock_window", SHOCKS_I_WINDOW))  # type: ignore[arg-type]
     cfg = build_world(seed, **params)  # type: ignore[arg-type]
     if shock_profile is not None:
         check_shock_profile(shock_profile, levers=params.get("levers"), cfg=cfg)  # type: ignore[arg-type]

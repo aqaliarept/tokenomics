@@ -38,7 +38,7 @@ Coordination with M4: every gate-v3 code commit changes M4's package source hash
   - `shock_profile` with any other value is refused.
 
   After 1.1. Verify: tests pass in < 2 min; Goldens green.
-- [ ] 2.2 [code][local-exclusive] `build_worlds_v3()` in `/srv/research/tokenomics/tokenomics/tokenomics/eval/registry.py` (design D2).
+- [x] 2.2 [code][local-exclusive] `build_worlds_v3()` in `/srv/research/tokenomics/tokenomics/tokenomics/eval/registry.py` (design D2).
   - **Contents.**
     - Every v2 entry is copied unchanged.
     - `ws_loaded` (12 producers; dense / sparse_f4 alternating by slot) and `ws_wide` (42; sparse_f14) per split, with the D2 counts and 4 reserves per regime.

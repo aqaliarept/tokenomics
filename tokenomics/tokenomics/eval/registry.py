@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
+import functools
 import hashlib
 import json
 from dataclasses import dataclass, field, replace
@@ -66,9 +68,17 @@ SPLITS = (DEVELOPMENT, SEALED)
 GATE = "gate"
 RESERVE = "reserve"
 REPLACED = "replaced"
-STATUSES = (GATE, RESERVE, REPLACED)
+# add-gate-v3 D3 step 4: a family x size that failed development headroom, in both splits (v3+)
+EXCLUDED = "excluded"
+STATUSES = (GATE, RESERVE, REPLACED, EXCLUDED)
 
-FAMILY_GENERATORS = {DENSE: "dense_family", SPARSE_WIDE: "sparse_wide_family"}
+# Region families (add-gate-v3 D2): world-space draws, from registry v3 on.
+WS_LOADED = "ws_loaded"
+WS_WIDE = "ws_wide"
+REGION_FAMILIES = (WS_LOADED, WS_WIDE)
+WORLD_SPACE_GENERATOR = "world_space"
+FAMILY_GENERATORS = {DENSE: "dense_family", SPARSE_WIDE: "sparse_wide_family",
+                     WS_LOADED: WORLD_SPACE_GENERATOR, WS_WIDE: WORLD_SPACE_GENERATOR}
 # Seed allocation order of the draft generator: every defined family keeps its seed block, so a
 # family's worlds never move when another family is (not) emitted.
 SEED_ORDER = (DENSE, SPARSE_WIDE)
@@ -76,6 +86,10 @@ SEED_ORDER = (DENSE, SPARSE_WIDE)
 # non-gating: EXP-0044 found dense-12 saturated (median best fill 0.954 > 0.95) and the 10.3
 # probe found capacity is not binding there (the shortfall is mostly warm-up; DIAGNOSTICS 18).
 GATE_FAMILIES = (SPARSE_WIDE,)
+GATE_FAMILIES_V3 = (SPARSE_WIDE, WS_LOADED, WS_WIDE)  # add-gate-v3 D2 / ADR-0060 §2
+# The sizes each gate family is declared at (gate-harness "Scale families"); coverage checks
+# each family at these from v3 on.
+FAMILY_SIZES = {SPARSE_WIDE: GATE_SIZES, WS_LOADED: (12,), WS_WIDE: (42,)}
 SIZES = GATE_SIZES  # the registry holds worlds at exactly the gate sizes
 CALM_PER_SHOCKED = 2  # gate-harness "Regimes": calm >= 2x shocked at each size
 
@@ -89,6 +103,22 @@ RESERVES_PER_GROUP = 4  # per (split, family, size, regime)
 DEFAULT_SATURATION_CEILING = 0.95  # D10: headroom ceiling on the hindsight-baseline fill rate
 SPARSE_FANOUT = 2
 CALM_SCHEDULE_LENGTH = 7
+
+# Region draws (add-gate-v3 D2): the choice levels per family (ws_loaded alternates them by slot
+# index within each (split, regime) group, gate worlds first), the Latin-hypercube pool per
+# (split, size), the measured-rho acceptance band (lo, hi], and the counts per split.
+REGION_CHOICES = {WS_LOADED: ("dense", "sparse_f4"), WS_WIDE: ("sparse_f14",)}
+REGION_POOL = 128
+RHO_BAND = (0.28, 3.1)
+REGION_WORLD_COUNTS = {
+    DEVELOPMENT: {CALM: (4, 3), SHOCKED: (2, 10)},
+    SEALED: {CALM: (8, 3), SHOCKED: (4, 10)},
+}
+# Seeds region worlds must avoid besides the registries v1 / v2 (gate-harness "Region worlds
+# are fresh draws ..."): M4's training-draw stream (`train.order_es_worlds.FRESH_ATLAS`, pinned
+# by a test without importing the training module), its first 4,096 indices at each size.
+M4_TRAIN_STREAM = "m4-es-train-v1"
+M4_RESERVED_INDICES = 4096
 
 
 class RegistryHashMismatch(ValueError):
@@ -117,6 +147,10 @@ class WorldEntry:
     generator: dict
     status: str = GATE
     reserve_position: int | None = None
+    # Region entries only (add-gate-v3 D2): {"pool": n, "record": world_space.world_record}, the
+    # draw's hypercube pool size and the world record. None (and omitted from the payload, so v1 /
+    # v2 hashes are unchanged) on legacy entries.
+    region: dict | None = None
 
     @property
     def group(self) -> tuple[str, str, int, str]:
@@ -138,7 +172,7 @@ class WorldEntry:
             "regime": self.regime, "world_seed": self.world_seed,
             "episode_seeds": list(self.episode_seeds), "generator": copy.deepcopy(self.generator),
             "status": self.status, "reserve_position": self.reserve_position,
-        }
+        } | ({} if self.region is None else {"region": copy.deepcopy(self.region)})
 
     @classmethod
     def from_dict(cls, d: dict) -> WorldEntry:
@@ -147,6 +181,7 @@ class WorldEntry:
             regime=d["regime"], world_seed=d["world_seed"],
             episode_seeds=tuple(d["episode_seeds"]), generator=copy.deepcopy(d["generator"]),
             status=d["status"], reserve_position=d["reserve_position"],
+            region=copy.deepcopy(d.get("region")),
         )
 
 
@@ -161,6 +196,23 @@ class Replacement:
 
 
 @dataclass(frozen=True)
+class Exclusion:
+    """A family × size the v3 development screen did not admit (add-gate-v3 D3 step 4), with the
+    headroom result that excluded it. Every entry of it, in both splits, has status `excluded`."""
+
+    family: str
+    size: int
+    headroom: Headroom
+
+    def to_dict(self) -> dict:
+        return {"family": self.family, "size": self.size, "headroom": self.headroom.to_dict()}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Exclusion:
+        return cls(d["family"], d["size"], Headroom(**d["headroom"]))
+
+
+@dataclass(frozen=True)
 class ScreeningRecord:
     """Zero-baseline screening outcome (gate-harness "Zero-baseline screening"): the roster it ran,
     the splits it covered, the world baseline means it saw (gate and consulted reserve worlds), the
@@ -171,6 +223,8 @@ class ScreeningRecord:
     replacements: tuple[Replacement, ...]
     splits: tuple[str, ...] = (DEVELOPMENT,)
     headroom: tuple[Headroom, ...] | None = None
+    # v3+ (add-gate-v3 D3 step 4); None and omitted from the payload otherwise (hash unchanged).
+    exclusions: tuple[Exclusion, ...] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -179,7 +233,12 @@ class ScreeningRecord:
             "replacements": [r.to_dict() for r in self.replacements],
             "splits": list(self.splits),
             "headroom": None if self.headroom is None else [h.to_dict() for h in self.headroom],
-        }
+        } | ({} if self.exclusions is None
+             else {"exclusions": [x.to_dict() for x in self.exclusions]})
+
+    def excluded(self) -> set[tuple[str, int]]:
+        """The excluded (family, size) pairs."""
+        return {(x.family, x.size) for x in self.exclusions or ()}
 
     @classmethod
     def from_dict(cls, d: dict) -> ScreeningRecord:
@@ -190,6 +249,8 @@ class ScreeningRecord:
                                for r in d["replacements"]),
             splits=tuple(d["splits"]),
             headroom=None if d["headroom"] is None else tuple(Headroom(**h) for h in d["headroom"]),
+            exclusions=(None if d.get("exclusions") is None
+                        else tuple(Exclusion.from_dict(x) for x in d["exclusions"])),
         )
 
 
@@ -223,7 +284,13 @@ class Registry:
         consistent with its generator ref; world seeds inside their split's range, unique per
         (family, size) and disjoint across splits per family; episode seeds non-empty, unique
         registry-wide and disjoint from world seeds; at each (split, size), gate calm worlds >= 2x
-        gate shocked worlds; reserve positions contiguous per group."""
+        gate shocked worlds; reserve positions contiguous per group.
+
+        From v3 (add-gate-v3 D2, D3 step 4): region families (`ws_loaded` at 12, `ws_wide` at
+        42) carry their draw and world record and are checked by set disjointness instead of the
+        seed range (`_check_region`); the legacy dense family is refused; `excluded` entries and
+        recorded exclusions must agree (`_check_exclusions`). A v1 / v2 registry holding a region
+        family, an `excluded` entry or a recorded exclusion is refused."""
         if not 0 < self.saturation_ceiling <= 1:
             raise ValueError(f"saturation ceiling must be in (0, 1], got {self.saturation_ceiling}")
         if self.screened_on is not None:
@@ -249,6 +316,8 @@ class Registry:
         split_of: dict[tuple[str, int], str] = {}
         episode_owner: dict[int, str] = {}
         world_seeds = {e.world_seed for e in self.entries}
+        tag = self.version_tag
+        self._check_region_seeds()  # before the per-entry checks, so the clash names its source
         for e in self.entries:
             if e.split not in SPLITS:
                 raise ValueError(f"{e.id}: unknown split {e.split!r}")
@@ -258,19 +327,32 @@ class Registry:
                 raise ValueError(f"{e.id}: world declares no valid regime ({e.regime!r})")
             if e.status not in STATUSES:
                 raise ValueError(f"{e.id}: unknown status {e.status!r}")
-            other = split_of.setdefault((e.family, e.world_seed), e.split)
-            if other != e.split:
-                raise ValueError(f"family {e.family} world seed {e.world_seed} is listed under "
-                                 f"both {other} and {e.split}")
-            lo, hi = ranges[e.split]
-            if not lo <= e.world_seed <= hi:
-                raise ValueError(f"{e.id}: world seed {e.world_seed} outside {e.split} range "
-                                 f"[{lo}, {hi}]")
+            if tag < 3 and (e.family in REGION_FAMILIES or e.status == EXCLUDED
+                            or e.region is not None):
+                raise ValueError(f"{e.id}: region families, `excluded` entries and region "
+                                 f"records exist from registry v3 on (this is v{tag})")
+            if tag >= 3 and e.family == DENSE:
+                raise ValueError(f"{e.id}: the legacy dense family is outside every gate "
+                                 "registry from v3 on")
+            if e.family in REGION_FAMILIES:
+                self._check_region_entry(e)
+            else:
+                if e.region is not None:
+                    raise ValueError(f"{e.id}: a {e.family} entry carries no region record")
+                other = split_of.setdefault((e.family, e.world_seed), e.split)
+                if other != e.split:
+                    raise ValueError(f"family {e.family} world seed {e.world_seed} is listed "
+                                     f"under both {other} and {e.split}")
+                lo, hi = ranges[e.split]
+                if not lo <= e.world_seed <= hi:
+                    raise ValueError(f"{e.id}: world seed {e.world_seed} outside {e.split} "
+                                     f"range [{lo}, {hi}]")
             key = (e.family, e.size, e.world_seed)
             if key in seen_seed:
                 raise ValueError(f"{e.id} and {seen_seed[key]} are the same world {key}")
             seen_seed[key] = e.id
-            self._check_generator(e)
+            if e.family not in REGION_FAMILIES:
+                self._check_generator(e)
             if not e.episode_seeds:
                 raise ValueError(f"{e.id}: no episode seeds")
             for s in e.episode_seeds:
@@ -282,12 +364,143 @@ class Registry:
         self._check_reserves()
         self._check_regime_balance()
         self._check_shock_profiles()
+        self._check_exclusions()
 
     @property
     def version_tag(self) -> int:
         """The registry generation from its name (`worlds-v2`, also a derived scope such as
         `worlds-v2-dry-run`, -> 2); 1 when the name carries none."""
         return name_version_tag(self.name)
+
+    @staticmethod
+    def _check_region_entry(e: WorldEntry) -> None:
+        """A region entry (add-gate-v3 D2): its family's size; a `world_space` generator ref with
+        params exactly {producers, levers, shock_window} plus `shock_profile` on shocked worlds;
+        the family's choice; calm = shocks off + cyclic, shocked = `shocks-i` (or the test-only
+        `shocks-i-smoke` with its window) with its drift at the neutral shock levers; a region
+        record whose world record names this world (stream `gate_v3_stream(split)`, seed,
+        levers, window, generator version), whose levers are row `index` of `region_sample` at
+        the recorded pool, and whose measured rho lies in `RHO_BAND`. The config hash is replayed
+        on load (`check_replay`)."""
+        from .world_space import (CYCLIC, GENERATOR_VERSION, Levers, check_levers,
+                                  check_shock_profile, gate_v3_stream)
+
+        want_size = FAMILY_SIZES[e.family][0]
+        if e.size != want_size:
+            raise ValueError(f"{e.id}: a {e.family} world has {want_size} producers, the entry "
+                             f"declares {e.size}")
+        g = e.generator
+        if not isinstance(g, dict) or set(g) != {"generator", "params"} \
+                or g.get("generator") != WORLD_SPACE_GENERATOR:
+            raise ValueError(f"{e.id}: a region entry needs a {WORLD_SPACE_GENERATOR!r} generator "
+                             f"ref, got {g!r}")
+        params = g["params"]
+        keys = {"producers", "levers", "shock_window"} | (
+            {"shock_profile"} if e.regime == SHOCKED else set())
+        if not isinstance(params, dict) or set(params) != keys:
+            raise ValueError(f"{e.id}: region generator params "
+                             f"{sorted(params) if isinstance(params, dict) else params!r} != "
+                             f"{sorted(keys)}")
+        if params["producers"] != e.size or isinstance(params["producers"], bool):
+            raise ValueError(f"{e.id}: generator producers {params['producers']!r} != size {e.size}")
+        w = params["shock_window"]
+        if not (isinstance(w, list) and len(w) == 2
+                and all(isinstance(x, int) and not isinstance(x, bool) for x in w)):
+            raise ValueError(f"{e.id}: shock_window must be a [start, end] pair of ints, got {w!r}")
+        if not isinstance(params["levers"], dict):
+            raise ValueError(f"{e.id}: levers must be an object")
+        levers = check_levers(e.size, Levers.from_dict(params["levers"]))
+        if levers.to_dict() != params["levers"]:
+            raise ValueError(f"{e.id}: levers are not in canonical form (every lever written)")
+        if levers.choice not in REGION_CHOICES[e.family]:
+            raise ValueError(f"{e.id}: {e.family} choice is one of {REGION_CHOICES[e.family]}, "
+                             f"got {levers.choice!r}")
+        if e.regime == CALM:
+            if levers.shocks or levers.pattern != CYCLIC:
+                raise ValueError(f"{e.id}: a calm region world has shocks off and the {CYCLIC} "
+                                 f"pattern, got shocks={levers.shocks}, {levers.pattern!r}")
+        else:
+            name = params["shock_profile"]
+            if not isinstance(name, str):
+                raise ValueError(f"{e.id}: shock_profile must be a profile name")
+            check_shock_profile(name, levers=levers, shock_window=w)
+        region = e.region
+        if not isinstance(region, dict) or set(region) != {"pool", "record"}:
+            raise ValueError(f"{e.id}: a region entry records {{pool, record}}, got {region!r}")
+        pool, rec = region["pool"], region["record"]
+        if isinstance(pool, bool) or not isinstance(pool, int) or pool < 1:
+            raise ValueError(f"{e.id}: region pool must be a positive int, got {pool!r}")
+        stream = gate_v3_stream(e.split)
+        want = {"atlas": stream, "size": e.size, "seed": e.world_seed,
+                "generator_version": GENERATOR_VERSION, "levers": params["levers"],
+                "shock_window": w}
+        got = {k: rec.get(k) for k in want} if isinstance(rec, dict) else None
+        if got != want:
+            raise ValueError(f"{e.id}: world record {got} does not describe this entry {want}")
+        index = rec.get("index")
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < pool:
+            raise ValueError(f"{e.id}: record index {index!r} outside the pool of {pool}")
+        drawn = _region_draw(stream, e.size, pool, levers.choice, levers.shocks,
+                             levers.pattern)[index]
+        if drawn.seed != e.world_seed or drawn.levers != levers:
+            raise ValueError(f"{e.id}: levers / seed are not draw {index} of {stream} "
+                             f"(size {e.size}, pool {pool})")
+        rho = (rec.get("coordinates") or {}).get("rho")
+        lo, hi = RHO_BAND
+        if not isinstance(rho, (int, float)) or not lo < rho <= hi:
+            raise ValueError(f"{e.id}: recorded rho {rho!r} outside ({lo}, {hi}]")
+
+    def _check_region_seeds(self) -> None:
+        """Region world seeds by explicit sets (gate-harness "World registry", "Region worlds are
+        fresh draws ..."): disjoint across splits (naming both entries), and no region world or
+        episode seed equals a seed of the registries v1 / v2, the atlas-v1 sample or its EXP-0050
+        anchors (with their episode seeds), or the first 4,096 `m4-es-train-v1` draws."""
+        region = [e for e in self.entries if e.family in REGION_FAMILIES]
+        if not region:
+            return
+        by_seed: dict[int, WorldEntry] = {}
+        for e in region:
+            other = by_seed.setdefault(e.world_seed, e)
+            if other is not e and other.split != e.split:
+                raise ValueError(f"region world seed {e.world_seed} is under both splits: "
+                                 f"{other.id} ({other.split}) and {e.id} ({e.split})")
+        reserved = region_reserved_seeds()
+        for e in region:
+            for what, seed in [("world", e.world_seed)] + [("episode", s) for s in e.episode_seeds]:
+                if seed in reserved:
+                    raise ValueError(f"{e.id}: {what} seed {seed} is reserved by "
+                                     f"{reserved[seed]}")
+
+    def _check_exclusions(self) -> None:
+        """add-gate-v3 D3 step 4: exclusions exist from v3 on and only on a screened registry with
+        a headroom record; each names a family × size whose recorded headroom failed, with that
+        result; every entry of an excluded family × size (both splits, gate and reserve) has
+        status `excluded`, and every `excluded` entry belongs to a recorded exclusion."""
+        sc = self.screening
+        exclusions = sc.exclusions if sc is not None else None
+        flagged = {(e.family, e.size) for e in self.entries if e.status == EXCLUDED}
+        if exclusions is None:
+            if flagged:
+                raise ValueError(f"entries of {sorted(flagged)} are excluded but the registry "
+                                 "records no exclusion")
+            return
+        if self.version_tag < 3:
+            raise ValueError(f"registry {self.name!r} records exclusions; they exist from v3 on")
+        if sc.headroom is None:
+            raise ValueError("exclusions are recorded with the headroom check that decided them")
+        heads = {(h.family, h.size): h for h in sc.headroom}
+        pairs = [(x.family, x.size) for x in exclusions]
+        if len(set(pairs)) != len(pairs):
+            raise ValueError(f"duplicate exclusions {pairs}")
+        for x in exclusions:
+            h = heads.get((x.family, x.size))
+            if h is None or h.passed or h != x.headroom:
+                raise ValueError(f"exclusion {x.family}/{x.size} does not match a failed headroom "
+                                 f"result (recorded {h}, exclusion {x.headroom})")
+        for e in self.entries:
+            if ((e.family, e.size) in set(pairs)) != (e.status == EXCLUDED):
+                raise ValueError(f"{e.id}: status {e.status!r} disagrees with the exclusions "
+                                 f"{sorted(pairs)}")
 
     def _check_shock_profiles(self) -> None:
         """gate-harness "Regimes" from v2 on: every shocked entry (gate and reserve, since a
@@ -388,6 +601,13 @@ class Registry:
                                  f"declares size {e.size}")
             if e.regime == CALM and (cfg.shocks is not None or cfg.demand_drift is not None):
                 raise ValueError(f"{e.id}: a calm world replays with shocks or demand drift")
+            if e.region is not None:
+                from .routing_audit import config_digest
+
+                digest = config_digest(cfg)
+                if digest != e.region["record"]["config_sha256"]:
+                    raise ValueError(f"{e.id}: replayed config sha256 {digest} != recorded "
+                                     f"{e.region['record']['config_sha256']}")
         if self.shock_profiles is not None:
             from .shock_profiles import load_shock_profiles
 
@@ -397,18 +617,32 @@ class Registry:
                                  f"packaged profile file is {current}")
 
     def coverage_problems(self, sizes: Collection[int] = GATE_SIZES,
-                          gate_families: Collection[str] = GATE_FAMILIES) -> list[str]:
+                          gate_families: Collection[str] | None = None) -> list[str]:
         """D10 admits a family only on development evidence at both sizes: every family with gate
         worlds in any split (a sealed-only family included) must have development gate worlds at
         every gate size. Only the M1 gate families may appear (task 10.4: dense is non-gating),
-        and every one of them must be present."""
+        and every one of them must be present.
+
+        From v3 (add-gate-v3 D2, D3 step 4) the gate families are `GATE_FAMILIES_V3`, each is
+        required at its declared sizes (`FAMILY_SIZES`), and a recorded exclusion is a family ×
+        size the registry does not declare. v1 / v2 output is unchanged."""
+        v3 = self.version_tag >= 3
+        if gate_families is None:
+            gate_families = GATE_FAMILIES_V3 if v3 else GATE_FAMILIES
         have = {(e.family, e.size) for e in self.gate_worlds(DEVELOPMENT)}
         present = {e.family for e in self.entries}
         families = sorted(present | set(gate_families))
-        problems = [f"family {f} is not a gate family in M1 (gate families: "
+        where = f"registry v{self.version_tag}" if v3 else "M1"
+        problems = [f"family {f} is not a gate family in {where} (gate families: "
                     f"{', '.join(gate_families)})" for f in sorted(present - set(gate_families))]
+        if not v3:
+            return problems + [f"no development gate worlds for {f}/{z}"
+                               for f in families for z in sorted(sizes) if (f, z) not in have]
+        excluded = self.screening.excluded() if self.screening is not None else set()
         return problems + [f"no development gate worlds for {f}/{z}"
-                           for f in families for z in sorted(sizes) if (f, z) not in have]
+                           for f in families for z in sorted(sizes)
+                           if z in FAMILY_SIZES.get(f, GATE_SIZES)
+                           and (f, z) not in have and (f, z) not in excluded]
 
     def admission_problems(self, split: str, sizes: Collection[int] = GATE_SIZES) -> list[str]:
         """Why a real report on `split` may not run on this registry (empty = admitted): the split
@@ -426,8 +660,10 @@ class Registry:
         got = {(h.family, h.size): h for h in sc.headroom}
         problems = self.coverage_problems(sizes)
         problems += [f"no headroom result for {g}" for g in sorted(groups - set(got))]
+        excluded = sc.excluded()  # v3+: a recorded exclusion is not a failure (D3 step 4)
         problems += [f"headroom failed for {h.family}/{h.size}: median fill {h.median_fill!r} "
-                     f">= ceiling {h.ceiling!r}" for h in sc.headroom if not h.passed]
+                     f">= ceiling {h.ceiling!r}" for h in sc.headroom
+                     if not h.passed and (h.family, h.size) not in excluded]
         return problems
 
     def gate_worlds(self, split: str | None = None) -> tuple[WorldEntry, ...]:
@@ -582,6 +818,191 @@ def build_worlds_v2(families: Collection[str] = GATE_FAMILIES) -> Registry:
     return Registry(name="worlds-v2", seed_ranges=v1.seed_ranges, entries=tuple(entries),
                     saturation_ceiling=v1.saturation_ceiling,
                     shock_profiles=load_shock_profiles().version)
+
+
+# --- registry v3: region draws (add-gate-v3 D2) ---
+
+
+@functools.lru_cache(maxsize=64)
+def _region_draw(stream: str, size: int, pool: int, choice: str, shocks: bool,
+                 pattern: str) -> tuple:
+    """`world_space.region_sample` at the neutral shock levers (cached: validation re-derives
+    every region entry's draw)."""
+    from .world_space import region_sample
+
+    return tuple(region_sample(stream, size, pool, choice=choice, shocks=shocks,
+                               pattern=pattern))
+
+
+def _registry_file_seeds(path: Path) -> dict[int, str]:
+    """World and episode seeds of a packaged registry file, read without replay; the recorded
+    content hash must match."""
+    d = json.loads(path.read_text())
+    recorded = d.pop("content_hash", None)
+    if recorded is None or content_hash(d) != recorded:
+        raise RegistryHashMismatch(f"{path}: content hash does not match its contents")
+    out: dict[int, str] = {}
+    for e in d["entries"]:
+        out.setdefault(e["world_seed"], f"{d['name']} world {e['id']}")
+        for s in e["episode_seeds"]:
+            out.setdefault(s, f"{d['name']} episode of {e['id']}")
+    return out
+
+
+@functools.lru_cache(maxsize=1)
+def region_reserved_seeds() -> dict[int, str]:
+    """Every seed a region world or episode must avoid, mapped to who holds it (gate-harness
+    "Region worlds are fresh draws disjoint from atlas and M4 worlds"; tasks.md 2.2): the world
+    and episode seeds of the packaged registries v1 / v2; the atlas-v1 sample (the worlds of atlas
+    v1 / v2, every split) at 12 and 42 with its screen and confirm episode seeds; the EXP-0050
+    fanout grid (the anchors' source) with its episode seeds; the first `M4_RESERVED_INDICES`
+    world seeds of `M4_TRAIN_STREAM` at 12 and 42."""
+    from .atlas import ATLAS, CONFIRM_EPISODES, CONFIRM_STAGE, SCREEN_EPISODES, SCREEN_WORLDS
+    from .routing_audit import fanout_worlds
+    from .world_space import episode_seeds, world_id, world_seed
+
+    out: dict[int, str] = {}
+    for path in (REGISTRY_V1, REGISTRY_V2):
+        for s, who in _registry_file_seeds(path).items():
+            out.setdefault(s, who)
+    for size, n in sorted(SCREEN_WORLDS.items()):
+        for i in range(n):
+            wid = world_id(ATLAS, size, i)
+            out.setdefault(world_seed(ATLAS, size, i), f"atlas world {wid}")
+            for s in (episode_seeds(wid, SCREEN_EPISODES)
+                      + episode_seeds(wid, CONFIRM_EPISODES, CONFIRM_STAGE)):
+                out.setdefault(s, f"atlas episode of {wid}")
+    for e in fanout_worlds():
+        out.setdefault(e.world_seed, f"EXP-0050 world {e.id}")
+        for s in e.episode_seeds:
+            out.setdefault(s, f"EXP-0050 episode of {e.id}")
+    for size in SIZES:
+        for i in range(M4_RESERVED_INDICES):
+            out.setdefault(world_seed(M4_TRAIN_STREAM, size, i),
+                           f"M4 draw {world_id(M4_TRAIN_STREAM, size, i)}")
+    return out
+
+
+def _rho(cfg: Configuration) -> float:
+    """`world_space.measure`'s rho, without the demand replay."""
+    from .families import demand_units_per_cycle, top_layer_throughput
+
+    return demand_units_per_cycle(cfg) / top_layer_throughput(cfg)
+
+
+def region_entries(split: str, family: str, pool: int = REGION_POOL,
+                   counts: Mapping[str, Mapping[str, tuple[int, int]]] = REGION_WORLD_COUNTS,
+                   ) -> tuple[list[WorldEntry], list[dict]]:
+    """One region family's entries in one split, and its acceptance rows (D2 "Acceptance filter").
+
+    Slots in a fixed order: regimes in `REGIMES` order, each gate worlds then
+    `RESERVES_PER_GROUP` reserves. `ws_loaded` alternates dense / sparse_f4 by slot index
+    within its (split, regime) group (even = dense); `ws_wide` is sparse_f14. Draws come from
+    `region_sample(gate_v3_stream(split), size, pool)` in index order, each index tried once by
+    the slot that reaches it; a slot takes the first draw whose world (built with the slot's
+    choice and regime) has rho in `RHO_BAND`. Rejections are kept with their rho. A pool too small
+    for every slot is refused, never shrunk."""
+    from .shock_profiles import SHOCKS_I
+    from .world_space import CYCLIC, DRIFT, gate_v3_stream, world_record
+
+    if family not in REGION_FAMILIES:
+        raise ValueError(f"unknown region family {family!r}; known: {REGION_FAMILIES}")
+    size = FAMILY_SIZES[family][0]
+    stream = gate_v3_stream(split)
+    lo, hi = RHO_BAND
+    entries: list[WorldEntry] = []
+    rows: list[dict] = []
+    k = 0
+    for regime in REGIMES:
+        shocks, pattern = (False, CYCLIC) if regime == CALM else (True, DRIFT)
+        worlds, episodes = counts[split][regime]
+        slots = [(GATE, i, None) for i in range(worlds)]
+        slots += [(RESERVE, j, j) for j in range(RESERVES_PER_GROUP)]
+        for s, (status, i, pos) in enumerate(slots):
+            choices = REGION_CHOICES[family]
+            choice = choices[s % len(choices)]
+            tag = f"{i:02d}" if status == GATE else f"r{i}"
+            wid = f"{split[:3]}-{family}-{size}-{regime}-{tag}"
+            while True:
+                if k >= pool:
+                    raise ValueError(f"{stream} size {size}: draw pool of {pool} exhausted at "
+                                     f"{wid}; the draft refuses to shrink a group")
+                point = _region_draw(stream, size, pool, choice, shocks, pattern)[k]
+                rho = _rho(point.config())
+                ok = lo < rho <= hi
+                rows.append({"split": split, "family": family, "size": size, "regime": regime,
+                             "slot": tag, "choice": choice, "draw_index": k, "seed": point.seed,
+                             "rho": rho, "accepted": ok, "world": wid if ok else ""})
+                k += 1
+                if ok:
+                    break
+            record = world_record(point)
+            if record["coordinates"]["rho"] != rho:
+                raise AssertionError(f"{wid}: record rho {record['coordinates']['rho']} != {rho}")
+            params: dict = {"producers": size, "levers": point.levers.to_dict(),
+                            "shock_window": list(point.shock_window)}
+            if regime == SHOCKED:
+                params["shock_profile"] = SHOCKS_I
+            entries.append(WorldEntry(
+                id=wid, split=split, family=family, size=size, regime=regime,
+                world_seed=point.seed,
+                episode_seeds=tuple(episode_seed(wid, j) for j in range(episodes)),
+                generator={"generator": WORLD_SPACE_GENERATOR, "params": params},
+                status=status, reserve_position=pos,
+                region={"pool": pool, "record": record}))
+    return entries, rows
+
+
+def draft_worlds_v3(pool: int = REGION_POOL) -> tuple[Registry, list[dict]]:
+    """Draft registry v3 and its acceptance rows (add-gate-v3 D2): every v2 draft entry
+    unchanged (the frozen v2 set has no replacements, so ids, seeds, episode seeds, generator refs,
+    statuses and reserve positions equal the frozen v2's), plus `ws_loaded` (12) and `ws_wide`
+    (42) per split with the D2 counts and 4 reserves per regime. Unscreened."""
+    v2 = build_worlds_v2()
+    entries = list(v2.entries)
+    rows: list[dict] = []
+    for split in SPLITS:
+        for family in REGION_FAMILIES:
+            got, r = region_entries(split, family, pool)
+            entries += got
+            rows += r
+    reg = Registry(name="worlds-v3", seed_ranges=v2.seed_ranges, entries=tuple(entries),
+                   saturation_ceiling=v2.saturation_ceiling, shock_profiles=v2.shock_profiles)
+    return reg, rows
+
+
+def build_worlds_v3() -> Registry:
+    """Draft registry v3 (`draft_worlds_v3` without the acceptance rows)."""
+    return draft_worlds_v3()[0]
+
+
+ACCEPTANCE_COLUMNS = ("split", "family", "size", "regime", "slot", "choice", "draw_index", "seed",
+                      "rho", "accepted", "world")
+
+
+def write_acceptance(rows: Sequence[Mapping], path: str | Path) -> None:
+    with Path(path).open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=ACCEPTANCE_COLUMNS)
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: (repr(v) if isinstance(v, float) else v) for k, v in r.items()})
+
+
+def smoke_variant(e: WorldEntry) -> WorldEntry:
+    """The horizon-12 dry-run form of a shocked region entry (add-gate-v3 2.2, the 2.1 review's
+    carry-forward): `shock_profile` "shocks-i-smoke" with every start window at
+    `SMOKE_START_WINDOW`, and its own world record. `gate_cli.test_only_problem` refuses it in a
+    real run (`names_test_only_profile`)."""
+    from .shock_profiles import SHOCKS_I_SMOKE, SMOKE_START_WINDOW
+    from .world_space import point_from_record, world_record
+
+    if e.family not in REGION_FAMILIES or e.regime != SHOCKED or e.region is None:
+        raise ValueError(f"{e.id}: only a shocked region entry has a region smoke form")
+    point = replace(point_from_record(e.region["record"]), shock_window=tuple(SMOKE_START_WINDOW))
+    g = copy.deepcopy(e.generator)
+    g["params"]["shock_profile"] = SHOCKS_I_SMOKE
+    g["params"]["shock_window"] = list(SMOKE_START_WINDOW)
+    return replace(e, generator=g, region={"pool": e.region["pool"], "record": world_record(point)})
 
 
 # --- zero-baseline screening (gate-harness "Zero-baseline screening") ---
@@ -765,6 +1186,26 @@ def record_headroom(registry: Registry, results: Sequence[Headroom]) -> Registry
     return replace(registry, screening=replace(registry.screening, headroom=tuple(results)))
 
 
+def record_exclusions(registry: Registry) -> Registry:
+    """add-gate-v3 D3 step 4: exclude every family × size whose recorded headroom failed, in both
+    splits (gate worlds and reserves get status `excluded`), and record each exclusion with its
+    headroom result (a new version). v3+ only; needs the headroom record."""
+    sc = registry.screening
+    if registry.version_tag < 3:
+        raise ValueError(f"registry {registry.name!r}: exclusions exist from v3 on")
+    if sc is None or sc.headroom is None:
+        raise ValueError("exclusions follow a recorded headroom check")
+    if sc.exclusions is not None:
+        raise ValueError(f"registry {registry.version} already records exclusions")
+    failed = [h for h in sc.headroom if not h.passed]
+    pairs = {(h.family, h.size) for h in failed}
+    entries = tuple(replace(e, status=EXCLUDED) if (e.family, e.size) in pairs else e
+                    for e in registry.entries)
+    exclusions = tuple(Exclusion(h.family, h.size, h) for h in sorted(
+        failed, key=lambda h: (h.family, h.size)))
+    return replace(registry, entries=entries, screening=replace(sc, exclusions=exclusions))
+
+
 # --- sealed access (gate-harness "Sealed worlds need a pre-registration") ---
 
 
@@ -876,9 +1317,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="world registry tools (design D7)")
     ap.add_argument("--write-draft", action="store_true",
                     help="regenerate a draft registry (v1: build_worlds_v1, v2: build_worlds_v2)")
-    ap.add_argument("--draft-version", type=int, choices=(1, 2), default=1)
+    ap.add_argument("--draft-version", type=int, choices=(1, 2, 3), default=1)
     ap.add_argument("--out", default=None, help="default: worlds_v1.json / worlds_v2.json; "
-                    "--write-draft needs it")
+                    "--write-draft needs it (v3: also writes acceptance.csv beside it)")
     args = ap.parse_args()
     if args.write_draft and args.out is None:
         ap.error("the packaged worlds_v1.json / worlds_v2.json are frozen screens; "
@@ -889,8 +1330,16 @@ def main() -> None:
         print(f"{out}: {len(reg.entries)} entries, version {reg.version}")
         return
     args.out = out
-    reg = build_worlds_v1() if args.draft_version == 1 else build_worlds_v2()
-    save_registry(reg, args.out)
+    if args.draft_version == 3:
+        if Path(out).resolve().parent == REGISTRY_V2.resolve().parent:
+            ap.error("the v3 draft goes to a Drafts path, never the packaged registry directory")
+        reg, rows = draft_worlds_v3()
+        save_registry(reg, out)
+        write_acceptance(rows, Path(out).parent / "acceptance.csv")
+        load_registry(out)  # the written draft reloads (hash check and replay)
+    else:
+        reg = build_worlds_v1() if args.draft_version == 1 else build_worlds_v2()
+        save_registry(reg, args.out)
     print(f"wrote {args.out}: {len(reg.entries)} entries, version {reg.version}")
 
 

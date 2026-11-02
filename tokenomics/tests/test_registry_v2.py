@@ -226,9 +226,14 @@ def test_entry_naming_an_unknown_profile_does_not_replay(v2: Registry) -> None:
 
 
 def test_world_entry_type_is_unchanged() -> None:
+    """v2 added no entry field (the profile lives in the generator ref). add-gate-v3 2.2 adds
+    one optional field, `region` (region entries only), omitted from a legacy entry's payload, so
+    every v1 / v2 entry serializes, and hashes, as before."""
     assert {f for f in WorldEntry.__dataclass_fields__} == {
         "id", "split", "family", "size", "regime", "world_seed", "episode_seeds", "generator",
-        "status", "reserve_position"}
+        "status", "reserve_position", "region"}
+    for e in build_worlds_v2().entries:
+        assert e.region is None and "region" not in e.to_dict()
 
 
 @pytest.mark.parametrize("kind, producers, count", [

@@ -625,7 +625,7 @@ def test_region_shocked_world_has_the_shocks_i_kinds() -> None:
         assert REPRODUCERS["world_space"](p.seed, **params) == cfg
 
 
-@pytest.mark.parametrize("name", ["shocks-i-smoke", "shocks-ii", "", "SHOCKS-I"])
+@pytest.mark.parametrize("name", ["shocks-ii", "", "SHOCKS-I", "shocks-i-smokey"])
 def test_reproducer_refuses_other_shock_profiles(name: str) -> None:
     from tokenomics.eval.task_archive import REPRODUCERS
     from tokenomics.eval.world_space import region_sample

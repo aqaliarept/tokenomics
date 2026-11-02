@@ -393,16 +393,23 @@ def region_sample(stream: str, size: int, n: int, *, choice: str, shocks: bool, 
 
 
 def check_shock_profile(name: str, *, levers: Levers | Mapping | None,
+                        shock_window: Sequence[int] | None = None,
                         cfg: Configuration | None = None) -> None:
-    """Refuses a world-space world that names a shock profile other than `shocks-i`, or names
-    `shocks-i` without being it: shocks on at the neutral shock levers with its drift, and (when
-    `cfg` is given) the built world's shock generators and demand drift equal the registered
-    profile's (D2 "Regime levers fixed by the slot")."""
-    from .shock_profiles import SHOCKS_I, apply_shock_profile, load_shock_profile
+    """Refuses a world-space world that names a shock profile other than `shocks-i` or the
+    test-only `shocks-i-smoke`, or names one without being it: shocks on at the neutral shock
+    levers with its drift, the profile's start window (`shocks-i` (21, 90), `shocks-i-smoke`
+    `SMOKE_START_WINDOW`) when `shock_window` is given, and (when `cfg` is given) the built
+    world's shock generators and demand drift equal the profile's as registered (D2 "Regime
+    levers fixed by the slot"). The smoke form exists so a shocked region world has a horizon-12
+    dry-run variant that `shock_profiles.names_test_only_profile` flags (add-gate-v3 2.2,
+    carry-forward from the 2.1 review)."""
+    from .shock_profiles import (SHOCKS_I, SHOCKS_I_SMOKE, SMOKE_START_WINDOW,
+                                 apply_shock_profile, load_shock_profile)
 
-    if name != SHOCKS_I:
-        raise ValueError(f"a world_space world accepts shock_profile {SHOCKS_I!r} only, "
-                         f"got {name!r}")
+    windows = {SHOCKS_I: tuple(SHOCKS_I_WINDOW), SHOCKS_I_SMOKE: tuple(SMOKE_START_WINDOW)}
+    if name not in windows:
+        raise ValueError(f"a world_space world accepts shock_profile {SHOCKS_I!r} only (or the "
+                         f"test-only {SHOCKS_I_SMOKE!r} with the smoke window), got {name!r}")
     if levers is None:
         levers = Levers()
     elif isinstance(levers, Mapping):
@@ -410,17 +417,20 @@ def check_shock_profile(name: str, *, levers: Levers | Mapping | None,
     neutral = Levers()
     off = [n for n in SHOCK_LEVERS if getattr(levers, n) != getattr(neutral, n)]
     if not levers.shocks or off or levers.pattern != DRIFT:
-        raise ValueError(f"shock_profile {SHOCKS_I!r} needs shocks on, the neutral shock "
+        raise ValueError(f"shock_profile {name!r} needs shocks on, the neutral shock "
                          f"levers and the {DRIFT} pattern; got shocks={levers.shocks}, "
                          f"non-neutral {off}, pattern {levers.pattern!r}")
+    if shock_window is not None and tuple(shock_window) != windows[name]:
+        raise ValueError(f"shock_profile {name!r} needs shock_window {list(windows[name])}, "
+                         f"got {list(shock_window)}")
     if cfg is None:
         return
-    want = apply_shock_profile(cfg, load_shock_profile(SHOCKS_I), len(cfg.producer_configs))
+    want = apply_shock_profile(cfg, load_shock_profile(name), len(cfg.producer_configs))
     got_gens = sorted(cfg.shocks.generators, key=lambda g: g.kind.value) if cfg.shocks else []
     if got_gens != sorted(want.shocks.generators, key=lambda g: g.kind.value) \
             or cfg.demand_drift != want.demand_drift:
         raise ValueError(f"world's shocks {got_gens} / drift {cfg.demand_drift} differ from the "
-                         f"registered {SHOCKS_I!r} profile's")
+                         f"registered {name!r} profile's")
 
 
 # --- measured coordinates and the record ---
