@@ -395,8 +395,12 @@ equal-weight mean over worlds.
 
 **Gradient-signal probe (EXP-0058; one generation per arm, its own cpu8 pod before the
 pilot).**
-- A1 and A2 at θ = 0. Each of the 12 pairs is scored on two disjoint CRN minibatches of 6
-  world-episodes.
+- A1 and A2 at their registered initial θ (Δ = 0; A2's u is its seeded draw, v = 0;
+  pre-registration `probe.theta`). Each of the 12 pairs is scored on two disjoint CRN
+  minibatches of 6 world-episodes.
+- A2's cosine is structurally lower than A1's: at v = 0 its u block (172 of 268 parameters) has
+  no first-order effect, so its estimate carries noise there. The thresholds read on A1 and are
+  not moved for A2.
 - Reads: the cosine between the two minibatches' ES gradient estimates, and the variance ratio of
   paired (CRN) against unpaired antithetic differences.
 
@@ -418,6 +422,11 @@ pilot).**
   derived from the EXP-0052 confirm rows (for example MWW − RR on the same world-episodes) and
   scaled to the read's episode and replicate counts.
 - It is expressed as a share of the **mean** validation bar.
+- Pre-registered (task 5.3): the deciding difference is the larger of MWW − RR and TR − RR,
+  stochastic arms at R = 2 (a stochastic arm's per-episode value is its replicate mean), from the
+  pooled within-world SD. `success` needs every comparison to clear, so the read is as weak as
+  its noisiest one. Task 5.4 computes the values and records the outcome; the rule, not the
+  outcome, is frozen.
 - Review round 2's estimate from those rows: ≈ 35 units at 4 episodes ≈ 1.9% of the mean bar
   1,831. The single-arm `se` column gives 44 / 31 and the atlas formula 48 at the confirm's
   counts; neither is used.

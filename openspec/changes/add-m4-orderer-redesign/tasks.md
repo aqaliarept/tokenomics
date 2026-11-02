@@ -183,7 +183,7 @@ Ladder gates (design D1): a group marked **Gated** starts only when the named re
   - a 2-world, 2-generation, 2-pair horizon-12 `--dry-run` with `--workers 1` in seconds.
 
   The full suite is green.
-- [ ] 5.3 [code][local-exclusive] Validation readings in `/srv/research/tokenomics/tokenomics/tokenomics/train/order_es_validate.py` (design D7 / D9).
+- [x] 5.3 [code][local-exclusive] Validation readings in `/srv/research/tokenomics/tokenomics/tokenomics/train/order_es_validate.py` (design D7 / D9).
   - `--mode validate --runs <dirs>` plays every staged candidate, A0, RR, MWW and TR, plus the shared-only ablation of each candidate, on all Atlas validation worlds (4 episodes, or 8 by the power rule; stochastic arms R = 2). It adds the EXP-0035-producer column when the producer decision says so.
   - Gains and floors: g_tr = center − A0 on the monitor set; g_val = selected candidate − A0 on the 12-producer loaded validation world mean. Floors are per comparison, with the n = 1 rule.
   - Readings:

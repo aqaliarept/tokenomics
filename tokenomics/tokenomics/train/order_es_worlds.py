@@ -50,6 +50,7 @@ match (including each arm's decode). Contract failures or missing rows: exit 2.
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
 import hashlib
 import json
@@ -155,8 +156,76 @@ FIT_COLUMNS = ("fit_phi_rows", "fit_psi_rows", "fit_rows_sha256")
 COLUMNS = EPISODE_COLUMNS + ("arm", "ordering_decode") + TIMING_COLUMNS + FIT_COLUMNS
 FIT_DIR = "fit_rows"
 
-# D5 / carry-forward "Task 5.1": the normaliser rule as fitted here; task 5.3 copies this entry
-# (plus the fitted hash) into es_prereg_m4_v1.json, which it freezes
+# The normaliser's fitting code (carry-forward "Task 5.3", the 5.1 review; review round 1 of
+# 5.3): the source text, decorators included, of these top-level definitions — the fit and apply
+# (normaliser, input transforms, scale floors, clip, fit-row loading) and the code that builds and
+# feeds its rows (the per-order policy's `decide`, which transforms the rows for both the fit sink
+# and the normaliser; the shared / history / order / product row builders; the agent-local
+# history) — hashed by `normaliser_code_sha256` and recorded in `NORMALISER_PREREG`. Every bar
+# run writes that block into `normaliser.json`, and every ES / validation run requires it equal
+# to its own, so a fit made, or rows built, by other code than the frozen pre-registration's is
+# refused. Not covered: the domain / env state those builders read (`product_stream_view`, the
+# outcome kinds); each run's package tree hash records that code.
+NORMALISER_CODE_DEFS: dict[str, tuple[str, ...]] = {
+    "train/per_order_scorer.py": (
+        "CLIP", "HAS_COMPLETED", "OWN_TURN_FEATURES", "ORDER_FEATURES", "PHI_FEATURES",
+        "PSI_FEATURES", "N_PHI", "N_PSI", "LOG1P_PHI", "LOG1P_PSI", "SCALE_FLOORS",
+        "_LOG1P_PHI_COLS", "_LOG1P_PSI_COLS", "_SHARED", "_HIST", "transform_phi",
+        "transform_psi", "input_transforms", "apply_scale_floors", "FeatureNormaliser",
+        "RawRows", "shared_rows", "history_rows", "order_features", "PerOrderPolicy"),
+    "train/orderer_scorer.py": ("_BOUND", "_ORDERER_PRODUCT_FEATURES",
+                                "_ORDERER_PRODUCER_ROW_FEATURES", "_product_features",
+                                "_producer_row_features"),
+    "env/agent_history.py": ("FEATURES", "N_FEATURES", "KINDS", "OUTCOME_KINDS", "PRIOR_UNITS",
+                             "PRIOR_RATE", "NO_LATENCY", "_PairState", "_EMPTY", "AgentHistory",
+                             "stream_producers", "_FoldHook", "_ResetHook",
+                             "attach_agent_history", "env_agent_id"),
+    "train/order_es_worlds.py": ("rows_digest", "load_fit_rows", "fit_normaliser",
+                                 "fit_rows_sha256"),
+}
+
+
+def _top_level_names(node: ast.stmt) -> list[str]:
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [node.name]
+    if isinstance(node, ast.Assign):
+        return [t.id for t in node.targets if isinstance(t, ast.Name)]
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        return [node.target.id]
+    return []
+
+
+def normaliser_code_source(source: str, names: Sequence[str]) -> str:
+    """The source lines (not `ast.dump`, so independent of the Python version) of `names'`
+    top-level definitions in `source`, decorators included, in `names` order; an absent name is
+    marked."""
+    tree = ast.parse(source)
+    lines = source.splitlines()
+    seg = {}
+    for node in tree.body:
+        for n in _top_level_names(node):
+            if n in names:
+                decorators = getattr(node, "decorator_list", [])
+                start = min([d.lineno for d in decorators] + [node.lineno])
+                seg[n] = "\n".join(lines[start - 1:node.end_lineno])
+    return "\n".join(f"# {n}\n{seg.get(n, '<absent>')}" for n in names)
+
+
+def normaliser_code_sha256() -> str:
+    """SHA-256 over `NORMALISER_CODE_DEFS`' source text, file by file (package-relative)."""
+    root = Path(__file__).resolve().parents[1]
+    h = hashlib.sha256()
+    for rel, names in sorted(NORMALISER_CODE_DEFS.items()):
+        text = normaliser_code_source((root / rel).read_text(), names)
+        h.update(rel.encode())
+        h.update(b"\0")
+        h.update(text.encode())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+# D5 / carry-forward "Task 5.1": the normaliser rule as fitted here; task 5.3 freezes this entry
+# into es_prereg_m4_v1.json (its `normaliser` section; `readings.normaliser_pins` holds its hash)
 HEAVY_CLIP_SHARE = 0.25  # a column clipping on >= 1/4 of its rows is flagged
 NORMALISER_PREREG = {
     "version": NORMALISER_VERSION, "centre": "median (numpy percentile 50, linear)",
@@ -176,6 +245,19 @@ NORMALISER_PREREG = {
     "scale_floor_rule": "a floored column's scale = max(the rule's scale, its floor); floor of "
                         "psi.eligible_producer_count = log1p(4) - log1p(2), the spread of its "
                         "two 12-producer values",
+    "fitting_code": {"defs": {k: list(v) for k, v in sorted(NORMALISER_CODE_DEFS.items())},
+                     "sha256": normaliser_code_sha256(),
+                     "rule": "SHA-256 over, per package-relative file in sorted order, the "
+                             "file name, NUL, the source lines of the listed top-level "
+                             "definitions, decorators included, in list order (each '# name' "
+                             "then its lines), NUL",
+                     "covers": "the normaliser fit and apply, the input transforms, scale "
+                               "floors and clip, fit-row loading, and the code that builds and "
+                               "feeds the rows (PerOrderPolicy, the shared / history / order / "
+                               "product row builders, the agent-local history)",
+                     "not_covered": "the domain / env state the row builders read "
+                                    "(product_stream_view, bid outcome kinds): recorded by each "
+                                    "run's package tree hash only"},
 }
 # psi columns that are config facts of the order's product, checked at 42 producers
 STATIC_PSI = ("product_depth", "recipe_input_count", "recipe_input_units",

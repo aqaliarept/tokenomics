@@ -305,14 +305,16 @@ def test_unregistered_change_refused() -> None:
     assert es.prereg_schema_problems([]) == ["pre-registration is not a JSON object"]
 
 
-def test_draft_file_matches_the_module() -> None:
-    """The DRAFT for task 5.3 holds this module's registered values and is marked draft."""
-    path = REPO / "openspec/changes/add-m4-orderer-redesign/es_prereg_m4_v1.draft.json"
-    doc = json.loads(path.read_text())
-    assert doc["status"] == es.DRAFT and es.prereg_schema_problems(doc) == []
+def test_frozen_file_matches_the_module() -> None:
+    """The frozen pre-registration (task 5.3; it superseded 5.2's draft) holds this module's
+    registered values, and a real run accepts it."""
+    doc = json.loads(es.PREREG_PATH.read_text())
+    assert doc["status"] == es.FROZEN and es.prereg_schema_problems(doc) == []
     for sec, want in es.registered_sections().items():
         assert doc[sec] == want, sec
     assert doc["normaliser"]["transforms"] == {"psi.eligible_producer_count": "log1p"}
+    assert es.prereg_problems(doc, **TRAIN_OK) == [] and es.prereg_file_problems(
+        es.PREREG_PATH) == []
 
 
 # --- log1p (supervisor decision 3) ---

@@ -20,8 +20,9 @@ by antithetic OpenAI-ES:
   estimate g_j = sum_i (r(+i) - r(-i)) eps_ij / (2 n sigma_j), and Adam (lr 0.02) ascending it,
   with weight decay 0.005 coupled into the gradient as OpenAI-ES's l2coeff.
 - Every `MONITOR_EVERY` generations (and at generation 0) the center plays the 16 monitor
-  world-episodes at replicates 0 and 1; A0 plays them once per run dir at both replicates (its
-  replicate-0 units must reproduce the bar's A0 units, else the run is invalid).
+  world-episodes at replicates 0 and 1; A0 plays them once per run dir at both replicates, a
+  resumed dir included (its replicate-0 units must reproduce the bar's A0 units, and a resumed
+  dir's mean the checkpoint's, else the run is invalid).
 - A checkpoint every generation (`checkpoints/gen-NNNN.json`: theta, Adam state, the training
   pins, the per-generation and monitor history, the composite), so a hard stop loses at most one
   generation; rows land in the CSVs as each job finishes, and a resume replays only missing jobs.
@@ -336,6 +337,19 @@ def draft_prereg() -> dict[str, Any]:
                     "'frozen' and writes train/registry/es_prereg_m4_v1.json",
             **registered_sections(),
             "readings": {"status": "TODO task 5.3"}}
+
+
+def prereg_file_problems(path: str | Path | None) -> list[str]:
+    """A real run's pre-registration file must be the frozen one (task 5.3,
+    `order_es_validate.PREREG_SHA256`), so a file whose `readings` section (not compared by
+    `prereg_problems`) differs is refused at launch, not only at the validation read."""
+    if path is None:
+        return []
+    from .order_es_validate import PREREG_SHA256
+
+    got = sha256_file(str(path))
+    return [] if got == PREREG_SHA256 else [
+        f"pre-registration file {got[:12]} is not the frozen {PREREG_SHA256[:12]} (task 5.3)"]
 
 
 def load_prereg(path: str | Path) -> dict[str, Any]:
@@ -1112,6 +1126,7 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
         issues = [] if prereg is None else prereg_problems(
             prereg, mode=TRAIN, arm=arm, opt_seed=opt_seed, generations=generations,
             minibatch=size, pairs=n_pairs, monitor_every=every)
+        issues += prereg_file_problems(prereg_path)
         issues += (["no probe reading (--probe-reading, EXP-0058 probe.json)"]
                    if probe_doc is None else _probe_doc_problems(probe_doc, arm, size))
         problems = real_run_problems(inp=inp, prereg=prereg, prereg_issues=issues,
@@ -1203,8 +1218,11 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
         jobs = [make_job(inp, pin, kind=MONITOR, arm=arm, theta=state.theta, generation=g,
                          member=CENTER, world=w, episode=e, replicate=r)
                 for w, e in monitor_we for r in range(ow.MONITOR_REPLICATES)]
+        # A0's monitor rows live in every run dir, a resumed one included (task 5.3 review: the
+        # validation read takes g_tr's A0 from the run's own monitor.csv); `play` skips the rows
+        # this dir already holds, so A0 plays once per dir
         a0_have = next((m["a0_units"] for m in state.monitor), None)
-        a0_jobs = [] if a0_have is not None else [
+        a0_jobs = [
             make_job(inp, pin, kind=MONITOR, arm="A0", theta=np.zeros(0), generation="a0",
                      member=A0_LABEL, world=w, episode=e, replicate=r)
             for w, e in monitor_we for r in range(ow.MONITOR_REPLICATES)]
@@ -1215,17 +1233,22 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
             return invalid(str(exc))
         if failures or len(rows) != len(jobs) + len(a0_jobs):
             return invalid(f"monitor generation {g}: {failures} contract failure(s)")
-        if a0_have is None:
-            a0 = [rows[j["job_id"]] for j in a0_jobs]
-            for d in a0:
-                if int(d["replicate"]) == ow.TRAIN_REPLICATE and float(d["units"]) != \
-                        inp.bar[(d["world"], int(d["episode"]))].a0_units:
-                    exc = ValueError(f"A0 on {d['world']} ep {d['episode']} played "
-                                     f"{d['units']} units, the bar's A0 "
-                                     f"{inp.bar[(d['world'], int(d['episode']))].a0_units}")
-                    append_failure(out, run_failure(A0_REPRODUCTION, exc))
-                    return invalid(str(exc))
-            a0_have = fmean(float(d["units"]) for d in a0)
+        a0 = [rows[j["job_id"]] for j in a0_jobs]
+        for d in a0:
+            if int(d["replicate"]) == ow.TRAIN_REPLICATE and float(d["units"]) != \
+                    inp.bar[(d["world"], int(d["episode"]))].a0_units:
+                exc = ValueError(f"A0 on {d['world']} ep {d['episode']} played "
+                                 f"{d['units']} units, the bar's A0 "
+                                 f"{inp.bar[(d['world'], int(d['episode']))].a0_units}")
+                append_failure(out, run_failure(A0_REPRODUCTION, exc))
+                return invalid(str(exc))
+        a0_mean = fmean(float(d["units"]) for d in a0)
+        if a0_have is not None and a0_mean != a0_have:  # a resumed dir replays A0 exactly
+            exc = ValueError(f"A0's monitor mean {a0_mean} differs from the resumed "
+                             f"checkpoint's {a0_have}")
+            append_failure(out, run_failure(A0_REPRODUCTION, exc))
+            return invalid(str(exc))
+        a0_have = a0_mean
         summ = monitor_summary(g, [rows[j["job_id"]] for j in jobs], a0_have, state.monitor)
         state.monitor.append(summ)
         log(f"[order_es] monitor g={g}: center {summ['center_units']} A0 {a0_have:.2f} "
@@ -1365,6 +1388,7 @@ def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
     if not dry_run:
         issues = [] if prereg is None else prereg_problems(
             prereg, mode=PROBE, arms=arms, minibatch=len(mb[0]), pairs=n_pairs)
+        issues += prereg_file_problems(prereg_path)
         problems = real_run_problems(inp=inp, prereg=prereg, prereg_issues=issues,
                                      source_commit=source_commit, orderer_sha=pin["sha256"],
                                      filters={"pairs": pairs})
