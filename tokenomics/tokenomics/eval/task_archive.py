@@ -78,13 +78,22 @@ def _degenerate_variant(seed: int, *, variant: str, depth: int = 3, width: int =
     return fixtures.degenerate_suite(seed, depth=depth, width=width)[variant]
 
 
-def _world_space(seed: int, **params: object) -> Configuration:
+def _world_space(seed: int, shock_profile: str | None = None,
+                 **params: object) -> Configuration:
     """A world-space world (add-m3-development-audit D10; params {"producers", "levers",
-    "shock_window"}). Imported on call: `world_space` imports `routing_audit`, which imports
-    the registry, which imports this module."""
-    from .world_space import build_world
+    "shock_window", "shock_profile"?}). `shock_profile` (add-gate-v3 D2) accepts only
+    "shocks-i", on a world that is it: shocks on at the neutral shock levers with its drift, its
+    generators equal to the registered profile's (`world_space.check_shock_profile`); it names
+    the profile, the levers build the world. Imported on call: `world_space` imports
+    `routing_audit`, which imports the registry, which imports this module."""
+    from .world_space import build_world, check_shock_profile
 
-    return build_world(seed, **params)  # type: ignore[arg-type]
+    if shock_profile is not None:
+        check_shock_profile(shock_profile, levers=params.get("levers"))  # type: ignore[arg-type]
+    cfg = build_world(seed, **params)  # type: ignore[arg-type]
+    if shock_profile is not None:
+        check_shock_profile(shock_profile, levers=params.get("levers"), cfg=cfg)  # type: ignore[arg-type]
+    return cfg
 
 
 REPRODUCERS: dict[str, Reproducer] = {
@@ -98,7 +107,8 @@ REPRODUCERS: dict[str, Reproducer] = {
     # gate world families (design D9): params {"producers", "regime", "fanout"?, "schedule_length"?}
     "dense_family": families.build_dense_config,
     "sparse_wide_family": families.build_sparse_wide_config,
-    # the atlas's world space (design D10, D12): params {"producers", "levers", "shock_window"}
+    # the atlas's world space (design D10, D12): params {"producers", "levers", "shock_window",
+    # "shock_profile"?} (add-gate-v3 D2)
     "world_space": _world_space,
 }
 

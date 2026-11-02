@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tokenomics.domain.config import Configuration
+from tokenomics.domain.config import PATTERN_BURST, PATTERN_SEASONAL, Configuration
 from tokenomics.env.spaces import config_fingerprint
 from tokenomics.eval.baselines import PRODUCING_BASELINES
 from tokenomics.eval.ceiling_bound import B_BASE, episode_demand, world_ceiling
@@ -487,3 +487,177 @@ def test_tight_corner_ceiling_sees_capacity() -> None:
         assert bounds[B_BASE].units < scheduled, (size, bounds, scheduled)
         assert bounds[B_BASE].binding_constraint.startswith("capacity")
         assert bounds["B2"].units == scheduled
+
+
+# --- region samples (add-gate-v3 task 2.1, design D2; world-space "Region samples") ---
+
+REGION = "gate-v3-test"
+SHOCKED_REGION = {"shocks": True, "pattern": DRIFT}  # shocks-i with its drift (D2)
+
+
+def test_region_sample_fixed_choice_overrides_the_hypercube() -> None:
+    """Choice fixed at f14 at 42 producers: every world declares each product by 14 producers,
+    though the hypercube's choice column holds other levels; continuous levers, seeds and pattern
+    parameters follow `lhs_columns` / `sample_worlds`."""
+    from tokenomics.eval.world_space import declarers, region_sample
+
+    n = 6
+    cols = lhs_columns(REGION, 42, n)
+    assert {CHOICES[42][int(c)] for c in cols["choice"]} != {"sparse_f14"}
+    points = region_sample(REGION, 42, n, choice="sparse_f14", shocks=False, pattern=CYCLIC)
+    atlas = sample_worlds(REGION, 42, n)
+    for i, (p, a) in enumerate(zip(points, atlas)):
+        assert (p.atlas, p.size, p.index, p.seed) == (REGION, 42, i, a.seed)
+        assert p.levers.choice == "sparse_f14" and not p.levers.shocks
+        assert p.levers.pattern == CYCLIC and p.levers.pattern_params == ()
+        for name, rng in LEVERS.items():
+            want = (getattr(Levers(), name) if name in SHOCK_LEVERS
+                    else rng.value(float(cols[name][i])))
+            assert getattr(p.levers, name) == want
+            if name not in SHOCK_LEVERS:
+                assert getattr(p.levers, name) == getattr(a.levers, name)
+        assert set(declarers(p.config()).values()) == {14}
+
+
+def test_region_sample_same_inputs_same_hashes() -> None:
+    """Same (stream, size, n, fixed levers) -> the same worlds with the same config hashes and
+    records; another stream gives other seeds."""
+    from tokenomics.eval.world_space import region_sample
+
+    args = (REGION, 12, 3)
+    kw = {"choice": "sparse_f4", **SHOCKED_REGION}
+    a, b = region_sample(*args, **kw), region_sample(*args, **kw)
+    assert a == b
+    assert [config_digest(p.config()) for p in a] == [config_digest(p.config()) for p in b]
+    rec = world_record(a[0])
+    assert rec["levers"] == a[0].levers.to_dict() and point_from_record(rec) == a[0]
+    assert config_from_record(rec) == a[0].config()
+    other = region_sample(REGION + "-other", 12, 3, **kw)
+    assert not {p.seed for p in a} & {p.seed for p in other}
+
+
+@pytest.mark.parametrize("kind", [PATTERN_BURST, PATTERN_SEASONAL])
+def test_region_sample_pattern_params_follow_the_world_seed(kind: str) -> None:
+    """A parametered pattern's D11 parameters are `pattern_params(kind, world_seed(stream, size,
+    i))`, as `sample_levers` draws them; they differ across worlds."""
+    from tokenomics.eval.world_space import pattern_params, region_sample
+
+    points = region_sample(REGION, 12, 4, choice="dense", shocks=False, pattern=kind)
+    for i, p in enumerate(points):
+        want = pattern_params(kind, world_seed(REGION, 12, i))
+        assert want and p.levers.pattern_params == want
+    assert len({p.levers.pattern_params for p in points}) == len(points)
+    p.config()  # the parametered world builds
+
+
+def test_region_sample_refuses_bad_fixed_levers() -> None:
+    from tokenomics.eval.world_space import region_sample
+
+    with pytest.raises(ValueError, match="choice"):
+        region_sample(REGION, 12, 2, choice="sparse_f14", shocks=False, pattern=CYCLIC)
+    with pytest.raises(ValueError, match="hit_magnitude"):
+        region_sample(REGION, 12, 2, choice="dense", shocks=True, pattern=DRIFT,
+                      hit_magnitude=0.95)
+    with pytest.raises(ValueError, match="pattern"):
+        region_sample(REGION, 12, 2, choice="dense", shocks=False, pattern="nope")
+
+
+def _fresh_atlas_name() -> str:
+    """M4's fresh-draw stream (`order_es_worlds.FRESH_ATLAS`), read from the source without
+    importing the training module."""
+    import ast
+
+    src = Path(__file__).resolve().parents[1] / "tokenomics/train/order_es_worlds.py"
+    for node in ast.parse(src.read_text()).body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "FRESH_ATLAS"
+                                                for t in node.targets):
+            return ast.literal_eval(node.value)
+    raise AssertionError("FRESH_ATLAS not found in order_es_worlds.py")
+
+
+def test_region_streams_share_no_seed() -> None:
+    """gate-v3-development, gate-v3-sealed, atlas-v1 and m4-es-train-v1 share no world seed over
+    the first 4,096 indices at 12 and 42 (D2 "Seeds and ids"), across streams and sizes."""
+    from tokenomics.eval.atlas import ATLAS as ATLAS_V1
+    from tokenomics.eval.world_space import gate_v3_stream, region_sample
+
+    n = 4096
+    fresh = _fresh_atlas_name()
+    assert (ATLAS_V1, fresh) == ("atlas-v1", "m4-es-train-v1")
+    streams = [gate_v3_stream("development"), gate_v3_stream("sealed")]
+    assert streams == ["gate-v3-development", "gate-v3-sealed"]
+    seeds: dict[tuple[str, int], set[int]] = {}
+    for size in (12, 42):
+        for s in streams:
+            seeds[s, size] = {p.seed for p in region_sample(s, size, n, choice="sparse_f2",
+                                                            shocks=False, pattern=CYCLIC)}
+        for s in (ATLAS_V1, fresh):
+            seeds[s, size] = {world_seed(s, size, i) for i in range(n)}
+    assert all(len(v) == n for v in seeds.values())
+    keys = sorted(seeds)
+    clashes = [(a, b) for i, a in enumerate(keys) for b in keys[i + 1:] if seeds[a] & seeds[b]]
+    assert clashes == []
+    with pytest.raises(ValueError, match="splits"):
+        gate_v3_stream("validation")
+
+
+def test_region_shocked_world_has_the_shocks_i_kinds() -> None:
+    """A shocked neutral-lever region world's shock generators equal the registered shocks-i
+    profile's (resolved for its size), its drift is shocks-i's, and the `world_space`
+    reproducer accepts `shock_profile: "shocks-i"` on it with the same config."""
+    from tokenomics.eval.shock_profiles import apply_shock_profile
+    from tokenomics.eval.task_archive import REPRODUCERS
+    from tokenomics.eval.world_space import region_sample
+
+    profile = load_shock_profile("shocks-i")
+    for size, choice in ((12, "dense"), (42, "sparse_f14")):
+        p = region_sample(REGION, size, 1, choice=choice, **SHOCKED_REGION)[0]
+        cfg = p.config()
+        want = apply_shock_profile(cfg, profile, size)
+        assert {g.kind for g in cfg.shocks.generators} == {k.kind for k in profile.kinds}
+        assert sorted(cfg.shocks.generators, key=lambda g: g.kind.value) == sorted(
+            want.shocks.generators, key=lambda g: g.kind.value)
+        assert cfg.demand_drift == want.demand_drift and cfg.demand_drift is not None
+        params = {"producers": size, "levers": p.levers.to_dict(),
+                  "shock_window": list(p.shock_window)}
+        rebuilt = REPRODUCERS["world_space"](p.seed, shock_profile="shocks-i", **params)
+        assert config_digest(rebuilt) == config_digest(cfg)
+        assert REPRODUCERS["world_space"](p.seed, **params) == cfg
+
+
+@pytest.mark.parametrize("name", ["shocks-i-smoke", "shocks-ii", "", "SHOCKS-I"])
+def test_reproducer_refuses_other_shock_profiles(name: str) -> None:
+    from tokenomics.eval.task_archive import REPRODUCERS
+    from tokenomics.eval.world_space import region_sample
+
+    p = region_sample(REGION, 12, 1, choice="dense", **SHOCKED_REGION)[0]
+    with pytest.raises(ValueError, match="shocks-i' only"):
+        REPRODUCERS["world_space"](p.seed, producers=12, levers=p.levers.to_dict(),
+                                   shock_profile=name)
+
+
+@pytest.mark.parametrize("levers, window", [
+    (None, None),                                            # no levers = neutral = shocks off
+    ({"shocks": False, "pattern": DRIFT}, None),             # shocks off
+    ({"shocks": True, "pattern": IID}, None),                 # without its drift
+    ({"shocks": True, "pattern": DRIFT, "shock_rate": 2.0}, None),
+    ({"shocks": True, "pattern": DRIFT, "hit_magnitude": 0.5}, None),
+    ({"shocks": True, "pattern": DRIFT, "outage_duration": 4}, None),
+    ({"shocks": True, "pattern": DRIFT}, SMOKE_START_WINDOW),  # not the profile's windows
+])
+def test_reproducer_refuses_shocks_i_on_a_world_that_is_not_it(levers: dict | None,
+                                                               window: tuple | None) -> None:
+    from tokenomics.eval.task_archive import REPRODUCERS
+
+    params: dict = {"producers": 12}
+    if levers is not None:
+        params["levers"] = {"choice": "dense", **levers}
+    if window is not None:
+        params["shock_window"] = list(window)
+    with pytest.raises(ValueError, match="shocks-i"):
+        REPRODUCERS["world_space"](7, shock_profile="shocks-i", **params)
+    if window is None:  # the lever check alone, before any build (no config passed)
+        from tokenomics.eval.world_space import check_shock_profile
+
+        with pytest.raises(ValueError, match="needs shocks on"):
+            check_shock_profile("shocks-i", levers=params.get("levers"))

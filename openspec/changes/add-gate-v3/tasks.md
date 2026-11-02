@@ -30,7 +30,7 @@ Coordination with M4: every gate-v3 code commit changes M4's package source hash
 
 ## 2. Registry v3 draft and per-family parameters (code)
 
-- [ ] 2.1 [code][local] Region samples in `/srv/research/tokenomics/tokenomics/tokenomics/eval/world_space.py`: a function that takes (stream, size, n, fixed categorical + shock levers) and returns `WorldPoint`s. Their continuous levers come from `lhs_columns(stream, size, n)`; choice / shocks / pattern / shock levers are the fixed ones (world-space "Region samples"). The `world_space` reproducer in `/srv/research/tokenomics/tokenomics/tokenomics/eval/task_archive.py` gains an optional `shock_profile` param that accepts only `"shocks-i"` with the neutral shock levers. Tests in `/srv/research/tokenomics/tokenomics/tests/test_world_space.py`:
+- [x] 2.1 [code][local] Region samples in `/srv/research/tokenomics/tokenomics/tokenomics/eval/world_space.py`: a function that takes (stream, size, n, fixed categorical + shock levers) and returns `WorldPoint`s. Their continuous levers come from `lhs_columns(stream, size, n)`; choice / shocks / pattern / shock levers are the fixed ones (world-space "Region samples"). The `world_space` reproducer in `/srv/research/tokenomics/tokenomics/tokenomics/eval/task_archive.py` gains an optional `shock_profile` param that accepts only `"shocks-i"` with the neutral shock levers. Tests in `/srv/research/tokenomics/tokenomics/tests/test_world_space.py`:
   - fixed choice overrides the hypercube (f14 → 14 declarers per product);
   - the same inputs give the same config hashes;
   - `gate-v3-development`, `gate-v3-sealed`, `atlas-v1` and `m4-es-train-v1` share no seed over the first 4,096 indices at 12 and 42;

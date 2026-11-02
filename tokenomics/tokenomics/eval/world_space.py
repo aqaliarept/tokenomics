@@ -33,6 +33,10 @@ categorical axis (choice, shocks, pattern), whose levels are equal-width strata 
 index, so every level gets floor or ceil of n / levels worlds. World seed =
 sha256(atlas, size, index); episode seeds hash the world id, as `routing_audit.fanout_worlds`.
 
+Region samples (`region_sample`, add-gate-v3 design D2): the continuous levers of the Latin
+hypercube for a named stream, with choice, shocks, pattern and the shock levers fixed by the
+caller; gate v3's region draws use the streams `gate_v3_stream(split)`.
+
 Measured coordinates (`measure`), on the demand schedule the env builds for the measurement seed
 (the world seed) over 100 cycles, so drift and patterns are covered:
 - rho: expected demand units per cycle / initial top-layer throughput
@@ -350,6 +354,73 @@ def sample_worlds(atlas: str, size: int, n: int,
     """The atlas sample for one size: world i has seed sha256(atlas, size, i)."""
     return [WorldPoint(atlas, size, i, world_seed(atlas, size, i), lv, tuple(shock_window))
             for i, lv in enumerate(sample_levers(atlas, size, n))]
+
+
+# --- region samples (add-gate-v3 design D2; world-space "Region samples") ---
+
+GATE_V3_SPLITS = ("development", "sealed")
+
+
+def gate_v3_stream(split: str) -> str:
+    """The stream name of gate v3's region draws for `split` (D2 "Seeds and ids")."""
+    if split not in GATE_V3_SPLITS:
+        raise ValueError(f"gate v3 splits are {GATE_V3_SPLITS}, got {split!r}")
+    return f"gate-v3-{split}"
+
+
+def region_sample(stream: str, size: int, n: int, *, choice: str, shocks: bool, pattern: str,
+                  shock_rate: float = 1.0, hit_magnitude: float = 0.45,
+                  outage_duration: int = 3,
+                  shock_window: Sequence[int] = SHOCKS_I_WINDOW) -> list[WorldPoint]:
+    """`n` worlds of one region: the continuous levers of world i come from row i of
+    `lhs_columns(stream, size, n)` (the atlas lever distribution); choice, shocks, pattern and
+    the shock levers are the caller's, whatever the hypercube's categorical columns hold (D2).
+    Seeds and pattern parameters are those of `sample_worlds`, so the sample is a function of
+    (stream, size, n, fixed levers) only, and two samples of one stream differing only in their
+    fixed levers share every seed and continuous lever row."""
+    fixed = check_levers(size, Levers(choice=choice, shocks=shocks, pattern=pattern,
+                                      shock_rate=shock_rate, hit_magnitude=hit_magnitude,
+                                      outage_duration=outage_duration))
+    cols = lhs_columns(stream, size, n)
+    out = []
+    for i in range(n):
+        seed = world_seed(stream, size, i)
+        values = {name: LEVERS[name].value(float(cols[name][i]))
+                  for name in LEVERS if name not in SHOCK_LEVERS}
+        levers = replace(fixed, pattern_params=pattern_params(pattern, seed), **values)
+        out.append(WorldPoint(stream, size, i, seed, levers, tuple(shock_window)))
+    return out
+
+
+def check_shock_profile(name: str, *, levers: Levers | Mapping | None,
+                        cfg: Configuration | None = None) -> None:
+    """Refuses a world-space world that names a shock profile other than `shocks-i`, or names
+    `shocks-i` without being it: shocks on at the neutral shock levers with its drift, and (when
+    `cfg` is given) the built world's shock generators and demand drift equal the registered
+    profile's (D2 "Regime levers fixed by the slot")."""
+    from .shock_profiles import SHOCKS_I, apply_shock_profile, load_shock_profile
+
+    if name != SHOCKS_I:
+        raise ValueError(f"a world_space world accepts shock_profile {SHOCKS_I!r} only, "
+                         f"got {name!r}")
+    if levers is None:
+        levers = Levers()
+    elif isinstance(levers, Mapping):
+        levers = Levers.from_dict(levers)
+    neutral = Levers()
+    off = [n for n in SHOCK_LEVERS if getattr(levers, n) != getattr(neutral, n)]
+    if not levers.shocks or off or levers.pattern != DRIFT:
+        raise ValueError(f"shock_profile {SHOCKS_I!r} needs shocks on, the neutral shock "
+                         f"levers and the {DRIFT} pattern; got shocks={levers.shocks}, "
+                         f"non-neutral {off}, pattern {levers.pattern!r}")
+    if cfg is None:
+        return
+    want = apply_shock_profile(cfg, load_shock_profile(SHOCKS_I), len(cfg.producer_configs))
+    got_gens = sorted(cfg.shocks.generators, key=lambda g: g.kind.value) if cfg.shocks else []
+    if got_gens != sorted(want.shocks.generators, key=lambda g: g.kind.value) \
+            or cfg.demand_drift != want.demand_drift:
+        raise ValueError(f"world's shocks {got_gens} / drift {cfg.demand_drift} differ from the "
+                         f"registered {SHOCKS_I!r} profile's")
 
 
 # --- measured coordinates and the record ---
