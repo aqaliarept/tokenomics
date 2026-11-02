@@ -1,0 +1,101 @@
+{
+  "arm": "utwf",
+  "compared_rows": 71,
+  "dry_run": false,
+  "experiment": "EXP-0067",
+  "mode": "arm-compare",
+  "neutral_rows": 71,
+  "neutrality_checked": true,
+  "next_by_reading": {
+    "utwf_not_better": "recorded; step 2 unchanged",
+    "utwf_strongest": "the supervisor brings two questions to the user before group 6: uTWF into roster v3 (the strongest-policy rule), and whether step 2's frozen base becomes uTWF's logits (or uTWF's level a phi feature)"
+  },
+  "reading": {
+    "loss_worlds": [
+      "ws-atlas-v1-12-0111",
+      "ws-atlas-v1-12-0254",
+      "ws-atlas-v1-12-0352"
+    ],
+    "losses_rule": true,
+    "losses_to_rr": 3,
+    "max_losses": 3,
+    "next": "recorded; step 2 unchanged",
+    "reading": "utwf_not_better",
+    "utwf_minus_mwwk": {
+      "alternative_exceeds_reported_only": false,
+      "alternative_floor_reported_only": 146.50592278917375,
+      "exceeds": false,
+      "mean_diff": 58.5,
+      "mean_floor": 202.02074451215807,
+      "worlds_below_floor": 0,
+      "worlds_beyond_floor": 5
+    },
+    "utwf_minus_rr": {
+      "alternative_exceeds_reported_only": false,
+      "alternative_floor_reported_only": 146.50592278917375,
+      "exceeds": false,
+      "mean_diff": -0.34782608695652173,
+      "mean_floor": 166.47097072974785,
+      "worlds_below_floor": 3,
+      "worlds_beyond_floor": 2
+    },
+    "utwf_minus_ts_reported": {
+      "alternative_exceeds_reported_only": true,
+      "alternative_floor_reported_only": 166.09910346983642,
+      "exceeds": true,
+      "mean_diff": 194.58695652173913,
+      "mean_floor": 180.86850842937886,
+      "worlds_below_floor": 0,
+      "worlds_beyond_floor": 9
+    },
+    "worlds": 23
+  },
+  "readings_withheld": false,
+  "reference": "exp0057",
+  "reported_42": {
+    "loss_worlds": [],
+    "losses_rule": true,
+    "losses_to_rr": 0,
+    "max_losses": 2,
+    "next": "recorded; step 2 unchanged",
+    "reading": "utwf_not_better",
+    "reported": true,
+    "utwf_minus_mwwk": {
+      "alternative_exceeds_reported_only": false,
+      "alternative_floor_reported_only": 362.18672067841555,
+      "exceeds": false,
+      "mean_diff": 24.125,
+      "mean_floor": 475.80444962147965,
+      "worlds_below_floor": 0,
+      "worlds_beyond_floor": 0
+    },
+    "utwf_minus_rr": {
+      "alternative_exceeds_reported_only": false,
+      "alternative_floor_reported_only": 455.6142986707698,
+      "exceeds": false,
+      "mean_diff": 342.69642857142856,
+      "mean_floor": 483.0843747949596,
+      "worlds_below_floor": 0,
+      "worlds_beyond_floor": 5
+    },
+    "utwf_minus_ts_reported": {
+      "alternative_exceeds_reported_only": true,
+      "alternative_floor_reported_only": 1254.5301075864443,
+      "exceeds": true,
+      "mean_diff": 1351.4107142857142,
+      "mean_floor": 584.0489070513704,
+      "worlds_below_floor": 0,
+      "worlds_beyond_floor": 8
+    },
+    "worlds": 14
+  },
+  "rules": {
+    "floor": "per comparison and world (D3): floor_w = max(atlas noise_floor, 3 SE of the run's own paired differences), the own SE only with >= 2 paired observations (the n = 1 rule)",
+    "mean_floor_alternative": "reported only: the mean difference against max(mean atlas floor, 3 SE of the per-world differences)",
+    "means": "per world: equal-weight mean over episodes of the replicate means",
+    "pairing": "uTWF - MWWk / uTWF - TS: per episode, replicate by replicate (the same keys); uTWF - RR: each uTWF replicate against RR's one row",
+    "reading": "12 producers decide (42 reported): utwf_strongest when uTWF - RR and uTWF - MWWk both exceed their per-comparison floor on the 23-world loaded mean, i.e. mean_w(X_w) > mean_w(floor_w) for each comparison X, AND uTWF loses to RR (RR_w - uTWF_w > floor_w) on <= 1/6 of the worlds (6 n <= worlds, exact); utwf_not_better otherwise",
+    "reference": "RR, MWWk and TS are EXP-0057's recorded rows (episodes.csv SHA-256 registered); the reproduced RR row of every world-episode must equal EXP-0057's (exp0057_neutrality), and every row's digests must equal EXP-0057's"
+  },
+  "status": "valid"
+}

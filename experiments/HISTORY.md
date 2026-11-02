@@ -1016,3 +1016,39 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   same spare units. All 284 rows equal their EXP-0057 rows (the observer is neutral) and the
   classes sum to the traced loss in every row. ≈ 1.7 vCPU-h billed (tranche A ≈ 3.1 of 100).
   New DIAGNOSTICS entry 24.
+
+### Does water filling beat rotation? (uTWF)
+
+- **EXP-0067 — uTWF router. `utwf_not_better`: the paper's unsplittable Tidal Water Filling
+  ties `round_robin` at 12 producers, and the water-filling branch closes.**
+  - **The problem.** Many ordering agents route the same product from the same start-of-cycle
+    snapshot, without seeing each other's choices (ADR-0058). Picking the best-looking producer
+    herds: the trained orderer's concurrent top share is 0.98. Drawing in proportion to spare
+    capacity (MWWk) only partly avoids it (0.72–0.74).
+  - **The method.** The distributed-dispatching answer, Tidal Water Filling (Goren / Vargaftik
+    / Moses, DISC 2020), randomises each dispatcher so that their expected work together levels
+    the servers. Its unsplittable variant (uTWF, Definition 2, Eq. (29)) was implemented
+    paper-faithfully from local information only:
+    - each agent's own order quantity;
+    - the product's configured stream count;
+    - the producers' `makeable_qty_now` as queues;
+    - one keyed draw per agent and product.
+
+    This was the user's "paper-faithful only" decision, which replaced an exact-demand variant
+    before any data.
+  - **12 producers.** uTWF ties RR on EXP-0057's 23 loaded worlds: −0.3 units against a mean
+    floor of 166.5.
+    - It sits above MWWk without clearing the floor: +58.5 against 202.0, beyond it on 5 worlds of
+      mixed kinds (three dense at ρ 0.6–4.5, two `sparse_f4` at ρ 0.3 and 1.0), below on none.
+    - It loses to RR beyond the floor on 3 of 23 worlds (two two-maker worlds and the most
+      loaded one, 12-0352), exactly the cap.
+    - Its routing pattern is close to MWWk's: concurrent top share 0.69–0.70, against RR's
+      0.62–0.63.
+  - **42 producers (reported).** +342.7 over RR, the largest gain over RR of any arm on those 14
+    worlds, but only 24 above MWWk and below the 483.1 floor.
+  - **Consequence, as pre-registered.** Recorded; step 2 unchanged (the EXP-0012 scores stay the
+    frozen base); uTWF does not enter roster v3.
+  - **Validity.** All 71 RR replays equal EXP-0057's rows; 0 contract failures, 0 deaths.
+    ≈ 2.0 vCPU-h billed (tranche A ≈ 5.1 of 100).
+  - The idle-stream inflation of the assumed load (M·a) is recorded as an untested hypothesis,
+    not a diagnosed cause.
