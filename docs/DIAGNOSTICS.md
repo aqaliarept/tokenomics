@@ -890,6 +890,124 @@ split-needed 103 vs 865, choice-fixable 398 vs 1,935, unfillable 3,072 vs 773. O
 
 ---
 
+## 25. An ES probe finds no gradient signal (`no_signal`)
+
+_Status: partially diagnosed (task 6.1a, 2026-11-02). Check 1 discriminated: disqualification
+is not the cause of EXP-0058's `no_signal`. "Flat at σ" versus "heterogeneous" is still open:
+check 3 needs A0's replicate spread, which the records lack, and task 6.1b runs it together with
+check 2._
+
+**Problem (plain English):** before an ES run, the gradient-signal probe (design D7,
+`order_es --mode probe`) scores the same perturbation pairs on two disjoint minibatches. The two
+gradient estimates point in unrelated directions: the cosine is < 0.1, or undefined because one
+estimate is exactly zero. A no-signal probe does not by itself say the policy cannot be
+improved. The competing explanations call for different responses:
+- **rank flattening by disqualification**: under the relative rule (D6), a member whose episode
+  runs down, starves a consumer or dies where A0 does not takes the worst rank. If most members
+  trip the rule, most ranks tie and the estimate rests on a few members, or is zero when all tie.
+  If the rule fires on keyed-draw noise alone, as near-threshold run-down / starvation flags
+  would, the probe measures the rule, not the landscape;
+- **flat landscape at the probe's step**: the perturbation (σ = 0.05 on normalised features)
+  changes outcomes no more than draw noise does, so the fitness differences carry no direction;
+- **world heterogeneity**: each minibatch of 6 world-episodes has its own direction, which the
+  other does not share. More world-episodes per estimate would be needed (D7's `weak` remedy,
+  minibatch 24, is registered only for 0.1 ≤ cosine < 0.3).
+
+**Discriminating checks (local and offline first, then pod):**
+1. **local, offline**: recompute both cosines from the recorded `probe_fitness.csv` with
+   disqualification off (centered ranks of the raw fitness), using `order_es`'s estimate code and
+   the recorded noise stream. If A1 then reaches ≥ 0.3, disqualification caused the no-signal.
+2. **pod, small**: the rule's noise floor. Play A0 at a second replicate key on the probe's 12
+   world-episodes and apply the relative rule to A0(r1) against A0(r0). A high self-
+   disqualification rate means the rule fires on draw noise.
+3. **local, offline**: for each pair, |f(+i) − f(−i)| against A0's replicate spread on the same
+   world-episode. **The reading is one-sided** (registered 2026-11-02, before 6.1b's data):
+   - The reference, √2 × A0's re-keyed replicate SD, is the noise of a difference between two
+     independently keyed episodes. A pair's two members share one key (CRN), so their
+     difference is usually less noisy than that.
+   - **Ratio |d| / reference > 1 means the pair difference is above draw noise.** If those
+     differences also disagree in sign across minibatches, that means heterogeneity.
+   - **A ratio ≤ 1 is inconclusive.** It does not show a flat landscape, because the reference
+     can overstate a pair's noise.
+   - **How the pairs add up (the deciding statistic, registered before 6.1b's data):** the
+     **minibatch level** (what the probe's estimate uses), **arm A1** (the probe reads on A1),
+     **median ratio** over its 24 pair differences (12 pairs × 2 minibatches) in `check3.json`
+     `summary["minibatch/A1"]`.
+     - **Median > 1 → "above noise".** With 6.1a's cross-minibatch sign agreement at chance
+       (5 / 12), that reads **heterogeneous**.
+     - **Median ≤ 1 → inconclusive.**
+     - The world-episode level, A2, and the shares above 1× / 2× are reported only.
+   - Ruling flatness *in* needs a two-sided reference: the spread of d itself across keys (the
+     same pairs played at r1..rK). That is extra pair jobs and the supervisor's call; it is not
+     part of 6.1b as specified.
+
+**Outcome branches:**
+- **disqualification-driven** (check 1 recovers signal; check 2 shows a high self-rate): the
+  relative rule, not the policy class, blocks the gradient. A rule redesign changes a registered
+  read and goes to the user; the frozen pre-registration is not edited silently;
+- **flat at σ** (check 1 still < 0.1, pair differences within noise): a step-size /
+  parameterisation question for the design, before any pilot. Under the one-sided check 3,
+  "within noise" is only established by the two-sided reference (d's own spread across keys);
+  ratios ≤ 1 against the re-keyed A0 reference leave this branch open, not confirmed;
+- **heterogeneous** (pair differences above noise but disagreeing across minibatches): a
+  minibatch-size / sampling question. Re-probe with a larger minibatch only with the user's or
+  supervisor's approval, since `weak`'s remedy is registered for a different band.
+
+**Evidence (EXP-0058, task 6.1; checks from task 6.1a, notes/6.1a.md):**
+- A1 cosine −0.070; A2 undefined (estimate norm 0.0 in minibatch 1).
+- 37 of 48 A1 and 42 of 48 A2 member-minibatch scores were disqualified, mostly run-down and
+  starvation, on 6 of 12 world-episodes (minibatch 1: 12-0005, 12-0014, 12-0139; minibatch 2:
+  12-0000, 12-0044, 12-0155). All 24 A2 members were disqualified in minibatch 1.
+- The paired / unpaired variance ratios are 0.046 / 0.014: CRN pairing works.
+- Task 5.2's horizon-12 dry run already disqualified 4 of 6 members in generation 1.
+- **Check 1 (6.1a, offline, `order_es`'s own `rank_and_estimate` / `probe_noise`):**
+  - the recorded rule reproduces A1 −0.0696;
+  - **with disqualification off, A1 0.032 and A2 −0.132**: still < 0.1, so no signal recovers;
+  - **the disqualification-driven branch is excluded as the cause.**
+- **Check 3's data side (6.1a):**
+  - pair differences |f(+i) − f(−i)| (minibatch means) are 0.023–0.037 of the bar on average;
+  - their signs agree across the two minibatches on 5 / 12 (A1) and 6 / 12 (A2) pairs, with
+    Pearson −0.13 / −0.14, i.e. no shared direction;
+  - perturbations do change trajectories: 0–2 of 24 members reproduce A0's units on any
+    world-episode under the same key.
+  - **Not completable:** A0 was played only at replicate 0 on the probe's world-episodes, so
+    there is no replicate spread to compare against. Task 6.1b supplies it (A0 at further keys).
+- **Knife-edge flags (6.1a):**
+  - on the run-down worlds 12-0005 / 12-0139 / 12-0044 A0 clears X by only 0.0008 / 0.0032 /
+    0.0036 (12-0000: 0.032);
+  - on 12-0014 / 12-0044 A0's later-flagged consumers clear Y by 0.025–0.038;
+  - flagged members fall below by a median of 0.011–0.037.
+
+## 26. A pod bills idle while a local step runs between two pod steps
+
+**Problem (plain English):** a run split into two steps on one pod (e.g. bar, then probe) puts a
+local step in between, such as reading the pulled output to check it. On the small shared local
+box that step can stall for many minutes while the pod sits idle and keeps billing (DIAGNOSTICS
+9: an oversubscribed box). In EXP-0058 a two-second file read took ≈ 14 minutes at load 8.8. The
+pod reached its hard stop before the second step could start, and the second step needed its own
+pod (≈ 6.04 vCPU-h billed for ≈ 5 minutes of bar work).
+
+**Check (before launch, local):** list every step of the plan between pod steps. Any step that
+runs on the local machine while a pod is up (a check, a staging copy, a review) is the problem.
+Also check how `/workspace` survives a stop: `run_pod_training.py --volume-size` defaults to 0,
+which puts it on the container disk, and RunPod clears that when a pod stops.
+
+**Outcome branches:**
+- **the check can run on the pod**: chain it into the first step's command, or run it over SSH
+  on the pod (it needs only the run's own files), so no local step sits between pod steps;
+- **the check must be local** (human judgement, other files): end the first pod after the pull,
+  and give the second step its own fresh pod with the pulled output staged. This costs one more
+  short setup (≈ 1 min on EXP-0058's pods) instead of idle billing;
+- **the steps must share state across a stop**: request a persistent volume (`--volume-size`)
+  or keep the pod running (`--no-stop`), and still run no local step while it bills.
+
+**Evidence:** EXP-0058 (task 6.1). The bar pod `fu1pfac93s95su` ran the bar 13:18–13:23, then
+idled from 13:24 to 13:38 during a local check, and was deleted at its stop. The larger shape
+halved the stop window: a 6.0 vCPU-h stop is 22.5 minutes of pod life on 16 vCPU against 45 on
+cpu8, so the same 14-minute stall would probably have fit on a cpu8 pod. A wall-clock stop
+shrinks with the vCPU count, which is one more reason not to hold a pod idle. The probe then ran
+on its own pod `d753h4sqnck39v` in ≈ 3.3 minutes of pod life (≈ 0.87 vCPU-h).
+
 ## Unverified problems (plain-English inbox)
 
 Humans: describe a suspected problem here in plain English — no tooling knowledge

@@ -1,0 +1,31 @@
+{
+ "a0_rundown_share": 0.78125,
+ "a0_starved_share": 0.984375,
+ "by_status": {
+  "dropped_bar_dead": 5,
+  "dropped_rho": 12,
+  "training": 64
+ },
+ "considered": 69,
+ "contract_failures": 0,
+ "dry_run": false,
+ "mean_bar": 2057.37890625,
+ "missing_rows": 0,
+ "normaliser_flags": {
+  "constant_raw_units": [
+   "phi[16] eligible",
+   "psi[7] recipe_capacity_type_count"
+  ],
+  "heavy_clip": [],
+  "history_completion_rate_clip": 0.0,
+  "static_psi_clip_42": []
+ },
+ "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+ "reason": "",
+ "replaced_a0_dead": 0,
+ "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+ "status": "complete",
+ "training_world_episodes": 128,
+ "training_worlds": 64,
+ "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9"
+}

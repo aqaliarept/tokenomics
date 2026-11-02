@@ -1,0 +1,167 @@
+{
+  "acceptance_read": false,
+  "blas_threads": null,
+  "date": "2026-11-02",
+  "driver": "tokenomics.train.order_es",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "exp0058",
+  "inputs": {
+    "bar_dir": "/workspace/tokenomics/_pod_ckpts/exp0058_bar",
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "prereg": "/workspace/tokenomics/tokenomics/train/registry/es_prereg_m4_v1.json"
+  },
+  "kind": "probe",
+  "pins": {
+    "arms": [
+      "A1",
+      "A2"
+    ],
+    "driver": "tokenomics.train.order_es",
+    "dry_run": false,
+    "horizon": 100,
+    "hyper": {
+      "h": 0.1,
+      "noise_stream": "m4-es-noise-v1",
+      "sigma": {
+        "A1": "600b09f07e9d833bf938b9e20ad695613fe7a67a27486e10e4db6c556e8e98a1",
+        "A2": "51e3df227c0a931035ca0784635090f3d1eb5586aac741a63c27181f8e843dd5"
+      }
+    },
+    "inputs": {
+      "bar_csv_sha256": "3e078c43c41bcd2be21325dd9cebacd6536b546c261d913a2419605363609d9b",
+      "bar_spec_pins_sha256": "1e0028b01bf968aa1a2bdc6d19bf01a1ea45bc3aab97f47507c363fa08650a69",
+      "normaliser_fit_rows_sha256": "4b23e026952dde1eb950266424dc946cbb6ef695b13ddfb513a34ee43a0fa9b1",
+      "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+      "orderer_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+      "prereg_sha256": "b9d449c15db6860950aab8dbc49bc0e3d67635d4d50e6f1c817d1e04fedcbabf",
+      "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+      "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9"
+    },
+    "minibatches": [
+      [
+        [
+          "ws-m4-es-train-v1-12-0014",
+          226572137
+        ],
+        [
+          "ws-m4-es-train-v1-12-0004",
+          47747607
+        ],
+        [
+          "ws-m4-es-train-v1-12-0005",
+          200560606
+        ],
+        [
+          "ws-m4-es-train-v1-12-0003",
+          1973389111
+        ],
+        [
+          "ws-m4-es-train-v1-12-0051",
+          1572602726
+        ],
+        [
+          "ws-atlas-v1-12-0139",
+          1946809725
+        ]
+      ],
+      [
+        [
+          "ws-m4-es-train-v1-12-0000",
+          867835099
+        ],
+        [
+          "ws-atlas-v1-12-0155",
+          474856157
+        ],
+        [
+          "ws-m4-es-train-v1-12-0044",
+          1092109868
+        ],
+        [
+          "ws-m4-es-train-v1-12-0002",
+          1600056319
+        ],
+        [
+          "ws-atlas-v1-12-0308",
+          203183553
+        ],
+        [
+          "ws-m4-es-train-v1-12-0033",
+          141870395
+        ]
+      ]
+    ],
+    "mode": "probe",
+    "ordering_decode": "choice-v1",
+    "pairs": 12,
+    "policy": {
+      "architecture_version": "orderer-per-order-residual-v2",
+      "decoder_version": "per-order-choice-v1",
+      "normaliser_version": "median-iqr-log1p-v2"
+    },
+    "producer": "entity_planner",
+    "source_tree_sha256": "1bbfe19f4a78608b97e9479708e8d2a5173b532655a8365079aded4d63bb39d2"
+  },
+  "pre_registered": {
+    "design": "add-m4-orderer-redesign D7 gradient-signal probe",
+    "probe": {
+      "a2_rank2_below": 0.1,
+      "arms": [
+        "A1",
+        "A2"
+      ],
+      "cosine": "cosine between the two minibatches' estimates; an all-zero estimate leaves it undefined, read as no_signal",
+      "estimate": "per minibatch, the training estimate (centered ranks over that minibatch's member fitness); noise from noise_stream with ('probe', arm)",
+      "minibatch": 6,
+      "minibatches": 2,
+      "pairs": 12,
+      "readings": {
+        "signal": 0.3,
+        "weak": 0.1
+      },
+      "theta": "each arm's registered initial theta (A1: 0; A2: w = 0, theta_tau = 0, u ~ N(0, 0.1) seed 0, v = 0), so Delta = 0 for both",
+      "variance_ratio": "var of paired (same minibatch) f(+i) - f(-i) over var of unpaired f_1(+i) - f_2(-i), f_2(+i) - f_1(-i) (ddof 1, raw fitness, non-finite members excluded); reported",
+      "weak_next": {
+        "minibatch": 24
+      }
+    }
+  },
+  "result": {
+    "contract_failures": 0,
+    "probe_sha256": "facfacfa8e75c94db316e887663257327aedc226dfc299c298a7f634d3ad66a8",
+    "reading": {
+      "a1_cosine": -0.06960670618283911,
+      "a2_arm": "A2",
+      "a2_cosine": null,
+      "a2_rank": 4,
+      "minibatch": 12,
+      "next": "diagnose, stop",
+      "reading": "no_signal"
+    },
+    "status": "complete"
+  },
+  "resumes": [],
+  "source": {
+    "commit": "f3c895e258cb9aeef69f927479b166761fce5935",
+    "n_files": 77,
+    "tree_sha256": "1bbfe19f4a78608b97e9479708e8d2a5173b532655a8365079aded4d63bb39d2"
+  },
+  "started": "2026-11-02T13:43:36.862298+00:00",
+  "status": "complete",
+  "workers": 16
+}

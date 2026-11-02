@@ -1484,6 +1484,353 @@ def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
     return 0
 
 
+# --- noise floor: DIAGNOSTICS 25 checks 2 and 3 (task 6.1c; EXP-0058's `no_signal`) ---
+#
+# A0 replayed at replicate keys r0..rK on the probe's 12 recorded world-episodes. r0 must
+# reproduce the bar's A0 row (same key, same job path); r1..rK give A0's replicate spread. Check 2
+# applies the relative rule (`disqualifying`) to A0(r_k) against the bar's A0 row (r0); check 3
+# compares the probe's pair differences |f(+i) - f(-i)| with the noise of a difference between
+# two independently keyed A0 episodes (sqrt 2 x A0's replicate SD), per minibatch mean and per
+# world-episode. Both are computed by `noise_floor_readings`, a pure function of the written
+# rows, so `--recompute` rebuilds them offline. Readings are reported, never a registered rule.
+
+NOISE_FLOOR = "noise-floor"
+NOISE_JOB = "noise"
+NOISE_FLOOR_K = 4  # supervisor 2026-11-02 (task 6.1b): r1..r4 + r0
+NOISE_FLOOR_ARMS = ("A1", "A2")
+EXP0058_PINS = {
+    "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+    "probe_fitness_sha256": "379d5895f1853578be6c6f09ca4d684801ed3d9f0d42c16b75c3edea5f65ba80",
+    "probe_json_sha256": "facfacfa8e75c94db316e887663257327aedc226dfc299c298a7f634d3ad66a8",
+    "probe_episodes_sha256": "3c3e4df7895e20320adad80ea05f0dfa9af0a6d71cf0d6803172fb0780c0b5bc",
+}
+CHECK3_COLUMNS = ("level", "arm", "batch", "world", "episode", "pair", "d", "abs_d", "a0_sd",
+                  "a0_replicates", "diff_noise", "ratio", "above_1x", "above_2x")
+REPRODUCTION_COLUMNS = ("world", "episode", "units", "bar_a0_units", "dead", "bar_a0_dead",
+                        "holding_units_per_cycle", "bar_a0_holding_units_per_cycle", "equal")
+NOISE_FLOOR_FILES = ("noise_floor.csv", "reproduction.csv", "check2.json", "check3.csv",
+                     "check3.json")
+
+
+def noise_label(r: int) -> str:
+    return f"a0r{int(r)}"
+
+
+def probe_world_episodes(probe_doc: Mapping[str, Any]) -> list[list[tuple[str, int]]]:
+    """The probe's two recorded minibatches (EXP-0058 `probe.json`), never re-derived."""
+    mbs = probe_doc.get("minibatches")
+    if not mbs or len(mbs) != 2:
+        raise ValueError("probe.json holds no two recorded minibatches")
+    return [[(str(w), int(e)) for w, e in m] for m in mbs]
+
+
+def noise_jobs(inp: Inputs, ckpt: Mapping[str, str], world_episodes: Sequence[tuple[str, int]],
+               replicates: int, horizon: int | None = None) -> list[Job]:
+    """A0 (the monitor job, theta = []) at replicates 0..K on each world-episode."""
+    if replicates < 1:
+        raise ValueError("--replicates must be >= 1 (r0 alone gives no spread)")
+    jobs = []
+    for w, e in world_episodes:
+        for r in range(replicates + 1):
+            j = make_job(inp, ckpt, kind=NOISE_JOB, arm="A0", theta=np.zeros(0),
+                         generation="noise", member=noise_label(r), world=w, episode=e,
+                         replicate=r)
+            if horizon is not None:
+                j["horizon"] = int(horizon)
+            jobs.append(j)
+    return jobs
+
+
+def _sd(xs: Sequence[float]) -> float | None:
+    return float(np.std(np.asarray(xs, np.float64), ddof=1)) if len(xs) >= 2 else None
+
+
+def _check3_row(level: str, arm: str, batch: int, world: str, episode: int | str, pair: int,
+                d: float, sd: float | None, n: int) -> dict[str, Any]:
+    noise_ = None if sd is None else math.sqrt(2.0) * sd
+    ratio = None if not noise_ else abs(d) / noise_
+    return {"level": level, "arm": arm, "batch": batch, "world": world, "episode": episode,
+            "pair": pair, "d": d, "abs_d": abs(d), "a0_sd": sd, "a0_replicates": n,
+            "diff_noise": noise_, "ratio": ratio,
+            "above_1x": None if ratio is None else ratio > 1.0,
+            "above_2x": None if ratio is None else ratio > 2.0}
+
+
+def _summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    rs = [r["ratio"] for r in rows if r["ratio"] is not None]
+    return {"n": len(rows), "with_noise": len(rs),
+            "median_ratio": float(np.median(rs)) if rs else None,
+            "share_above_1x": (sum(r > 1.0 for r in rs) / len(rs)) if rs else None,
+            "share_above_2x": (sum(r > 2.0 for r in rs) / len(rs)) if rs else None,
+            "median_abs_d": float(np.median([r["abs_d"] for r in rows])) if rows else None}
+
+
+def noise_floor_readings(rows: Sequence[Mapping[str, str]],
+                         bar: Mapping[tuple[str, int], BarRow],
+                         minibatches: Sequence[Sequence[tuple[str, int]]],
+                         probe_fitness: Sequence[Mapping[str, str]],
+                         probe_episodes: Sequence[Mapping[str, str]] | None = None,
+                         arms: Sequence[str] = NOISE_FLOOR_ARMS, pairs: int = PAIRS
+                         ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    """(check2.json, check3.csv rows, check3.json) from A0's noise rows. Pure: `--recompute`
+    rebuilds the written files from `noise_floor.csv` and the recorded probe files."""
+    a0: dict[tuple[str, int], dict[int, Mapping[str, str]]] = {}
+    for d in rows:
+        a0.setdefault((d["world"], int(d["episode"])), {})[int(d["replicate"])] = d
+    # check 2: the relative rule on A0(r_k), k >= 1, against the bar's A0 (r0)
+    flagged, per_we, per_flag = [], {}, {}
+    n = 0
+    for (w, e), reps in sorted(a0.items()):
+        hits = 0
+        for r, d in sorted(reps.items()):
+            if r == 0:
+                continue
+            n += 1
+            reasons = disqualifying(d, bar[(w, e)])
+            if reasons:
+                hits += 1
+                flagged.append({"world": w, "episode": e, "replicate": r, "reasons": reasons})
+                for x in reasons:
+                    k = x.split(":")[0]
+                    per_flag[k] = per_flag.get(k, 0) + 1
+        per_we[f"{w}:{e}"] = {"replicates": len(reps) - (0 in reps), "self_disqualified": hits}
+    check2 = {"rule": "disqualifying(A0(r_k), bar row = A0(r0)), k >= 1 (design D6's relative "
+                      "rule, unchanged)",
+              "episodes": n, "self_disqualified": len(flagged),
+              "rate": (len(flagged) / n) if n else None, "by_flag": per_flag,
+              "by_world_episode": per_we, "flagged": flagged}
+    # check 3: A0 replicate spread (sqrt 2 x SD = noise of a difference of two keyed episodes)
+    fit = {(w, e): {r: we_fitness(d, bar[(w, e)]) for r, d in reps.items()}
+           for (w, e), reps in a0.items()}
+    out: list[dict[str, Any]] = []
+    pf = {(d["arm"], int(d["batch"]), d["member"]): float(d["fitness"]) for d in probe_fitness
+          if d.get("fitness") not in (None, "")}
+    def mb_means(mb: Sequence[tuple[str, int]]) -> list[float]:
+        if not mb or not all(we in fit for we in mb):
+            return []
+        common = sorted(set.intersection(*[set(fit[we]) for we in mb]))
+        return [fmean(fit[we][r] for we in mb) for r in common]
+
+    for b, mb in enumerate(minibatches):
+        means = mb_means(mb)
+        sd = _sd(means)
+        for arm in arms:
+            for i in range(pairs):
+                kp, km = (arm, b, f"+{i:02d}"), (arm, b, f"-{i:02d}")
+                if kp in pf and km in pf:
+                    out.append(_check3_row("minibatch", arm, b, "", "", i, pf[kp] - pf[km], sd,
+                                           len(means)))
+    if probe_episodes is not None:
+        member = {}
+        for d in probe_episodes:
+            k = (d["world"], int(d["episode"]))
+            if k in bar:
+                member[(d["arm"], int(d["batch"]), k, d["member"])] = we_fitness(d, bar[k])
+        for b, mb in enumerate(minibatches):
+            for we in mb:
+                sd = _sd(list(fit.get(we, {}).values()))
+                nrep = len(fit.get(we, {}))
+                for arm in arms:
+                    for i in range(pairs):
+                        kp = (arm, b, we, f"+{i:02d}")
+                        km = (arm, b, we, f"-{i:02d}")
+                        if kp in member and km in member:
+                            out.append(_check3_row("world_episode", arm, b, we[0], we[1], i,
+                                                   member[kp] - member[km], sd, nrep))
+    summ = {f"{lvl}/{arm}": _summary([r for r in out if r["level"] == lvl and r["arm"] == arm])
+            for lvl in ("minibatch", "world_episode") for arm in arms}
+    a0_sd = {"minibatch": {str(b): _sd(mb_means(mb)) for b, mb in enumerate(minibatches)},
+             "world_episode": {f"{w}:{e}": _sd(list(f.values())) for (w, e), f in sorted(fit.items())}}
+    check3 = {"noise": "a difference of two independently keyed A0 episodes: sqrt(2) x A0's "
+                       "replicate SD (ddof 1, replicates 0..K); members share one key (CRN), so "
+                       "this is an upper reference for draw noise",
+              "summary": summ, "a0_sd": a0_sd,
+              "reported_only": "ratios and shares are reported; the branch is read by the "
+                               "supervisor (DIAGNOSTICS 25), no threshold is registered here"}
+    return check2, out, check3
+
+
+def reproduction_rows(rows: Sequence[Mapping[str, str]], bar_csv: Path
+                      ) -> tuple[list[dict[str, Any]], list[str]]:
+    """A0(r0) replayed against the bar's A0 row (units, death, holding): the job path is the
+    bar's. Returns (rows, problems)."""
+    with bar_csv.open(newline="") as fh:
+        b = {(d["world"], int(d["episode"])): d for d in csv.DictReader(fh)}
+    out, problems = [], []
+    for d in sorted((d for d in rows if int(d["replicate"]) == 0),
+                    key=lambda d: (d["world"], int(d["episode"]))):
+        k = (d["world"], int(d["episode"]))
+        ref = b[k]
+        eq = (float(d["units"]) == float(ref["a0_units"])
+              and _bool(d["dead"]) == _bool(ref["a0_dead"])
+              and (_opt(d["holding_units_per_cycle"]) or 0.0)
+              == (_opt(ref["a0_holding_units_per_cycle"]) or 0.0))
+        out.append({"world": k[0], "episode": k[1], "units": d["units"],
+                    "bar_a0_units": ref["a0_units"], "dead": d["dead"],
+                    "bar_a0_dead": ref["a0_dead"],
+                    "holding_units_per_cycle": d["holding_units_per_cycle"],
+                    "bar_a0_holding_units_per_cycle": ref["a0_holding_units_per_cycle"],
+                    "equal": eq})
+        if not eq:
+            problems.append(f"A0(r0) on {k[0]} ep {k[1]}: units {d['units']} vs the bar's "
+                            f"{ref['a0_units']}")
+    return out, problems
+
+
+def noise_floor_problems(*, inp: Inputs, source_commit: str, orderer_sha: str,
+                         probe_shas: Mapping[str, str | None], replicates: int,
+                         filters: Mapping[str, Any]) -> list[str]:
+    """A real noise-floor run: EXP-0058's bar and probe files, the registered K, no filters."""
+    issues = prereg_file_problems(PREREG_PATH)
+    out = real_run_problems(inp=inp, prereg=load_prereg(PREREG_PATH), prereg_issues=issues,
+                            source_commit=source_commit, orderer_sha=orderer_sha, filters=filters)
+    atlas = (inp.bar_spec.get("pins") or {}).get("atlas") or {}
+    from ..eval.teacher_audit import REGISTERED_ATLAS_HASH
+    if atlas.get("content_hash") != REGISTERED_ATLAS_HASH:
+        out.append(f"the bar's atlas {str(atlas.get('content_hash'))[:12]} is not the registered "
+                   f"{REGISTERED_ATLAS_HASH[:12]}")
+    if inp.normaliser.sha256 != EXP0058_PINS["normaliser_sha256"]:
+        out.append(f"normaliser {inp.normaliser.sha256[:12]} is not EXP-0058's "
+                   f"{EXP0058_PINS['normaliser_sha256'][:12]}")
+    for k in ("probe_fitness_sha256", "probe_json_sha256", "probe_episodes_sha256"):
+        if probe_shas.get(k) != EXP0058_PINS[k]:
+            out.append(f"{k.replace('_sha256', '')} {str(probe_shas.get(k))[:12]} is not "
+                       f"EXP-0058's {EXP0058_PINS[k][:12]}")
+    if replicates != NOISE_FLOOR_K:
+        out.append(f"--replicates {replicates} is not the registered {NOISE_FLOOR_K}")
+    return out
+
+
+def _write_noise_outputs(out: Path, check2: Mapping, check3_rows: Sequence[Mapping],
+                         check3: Mapping) -> None:
+    (out / "check2.json").write_text(json.dumps(_json_norm(check2), indent=1, sort_keys=True)
+                                     + "\n")
+    write_csv(out / "check3.csv", CHECK3_COLUMNS, check3_rows)
+    (out / "check3.json").write_text(json.dumps(_json_norm(check3), indent=1, sort_keys=True)
+                                     + "\n")
+
+
+def run_noise_floor(*, bar_dir: str | Path, probe_dir: str | Path, out_dir: str | Path,
+                    orderer_ckpt: str, replicates: int = NOISE_FLOOR_K, workers: int = 1,
+                    probe_episodes: str | Path | None = None, horizon: int | None = None,
+                    max_world_episodes: int | None = None, source_commit: str = "",
+                    dry_run: bool = False, recompute: bool = False,
+                    run_job_fn: Callable[[Job], dict[str, str]] | None = None,
+                    log: Callable[[str], None] = _log) -> int:
+    """DIAGNOSTICS 25 checks 2 and 3 into `out_dir` (exit 0, or 2 on a refused real run, a pin
+    mismatch, contract failures, missing rows, an r0 that does not reproduce the bar, or a
+    `--recompute` MISMATCH)."""
+    out = Path(out_dir)
+    run_job_fn = run_job_fn or run_es_job
+    pdir = Path(probe_dir)
+    probe_doc = json.loads((pdir / "probe.json").read_text())
+    minibatches = probe_world_episodes(probe_doc)
+    pe_path = Path(probe_episodes) if probe_episodes is not None else None
+    probe_shas = {"probe_fitness_sha256": sha256_file(str(pdir / "probe_fitness.csv")),
+                  "probe_json_sha256": sha256_file(str(pdir / "probe.json")),
+                  "probe_episodes_sha256": sha256_file(str(pe_path)) if pe_path else None}
+    inp = load_inputs(bar_dir)
+    wes = [we for mb in minibatches for we in mb]
+    if any(we not in inp.bar for we in wes):
+        raise ValueError("a recorded probe world-episode is not a training world-episode of "
+                         "this bar")
+    fitness = read_csv(pdir / "probe_fitness.csv")
+    pe_rows = read_csv(pe_path) if pe_path else None
+    if recompute:
+        pinned = json.loads((out / "spec.json").read_text())["pins"]
+        minibatches = [[(str(w), int(e)) for w, e in mb] for mb in pinned["world_episodes"]]
+        rows = read_csv(out / "noise_floor.csv")
+        c2, c3rows, c3 = noise_floor_readings(rows, inp.bar, minibatches, fitness, pe_rows)
+        tmp = out / "_recompute"
+        tmp.mkdir(exist_ok=True)
+        _write_noise_outputs(tmp, c2, c3rows, c3)
+        same = all((tmp / f).read_bytes() == (out / f).read_bytes()
+                   for f in ("check2.json", "check3.csv", "check3.json"))
+        for f in tmp.iterdir():
+            f.unlink()
+        tmp.rmdir()
+        log(f"[order_es] noise-floor recompute: {'MATCH' if same else 'MISMATCH'}")
+        return 0 if same else CONTRACT_INVALID
+    if (out / "noise_floor.csv").exists() and not (out / "spec.json").exists():
+        log(f"[order_es] noise-floor refused: {out} holds noise rows without spec.json")
+        return CONTRACT_INVALID
+    pin = _checked_orderer(out, orderer_ckpt)
+    if not dry_run:
+        problems = noise_floor_problems(
+            inp=inp, source_commit=source_commit, orderer_sha=pin["sha256"],
+            probe_shas=probe_shas, replicates=replicates,
+            filters={"horizon": horizon, "max_world_episodes": max_world_episodes})
+        if problems:
+            log("[order_es] not a valid noise-floor run (" + "; ".join(problems)
+                + "); pass --dry-run for a smoke run")
+            return CONTRACT_INVALID
+    if max_world_episodes is not None:
+        keep = set(wes[:max_world_episodes])
+        minibatches = [[we for we in mb if we in keep] for mb in minibatches]
+        wes = [we for we in wes if we in keep]
+    pins = _json_norm({
+        "driver": DRIVER, "mode": NOISE_FLOOR, "replicates": replicates,
+        "world_episodes": [list(map(list, mb)) for mb in minibatches],
+        "horizon": inp.horizon if horizon is None else horizon, "dry_run": dry_run,
+        "inputs": {**inp.hashes, "orderer_sha256": pin["sha256"], **probe_shas},
+        **decode_pins(CHOICE_V1), "producer": PRODUCER,
+        "source_tree_sha256": source_fingerprint()["tree_sha256"]})
+    try:
+        spec, resumed = _open_run(out, pins, {
+            "experiment": out.name, "driver": DRIVER,
+            "kind": "dry-run" if dry_run else NOISE_FLOOR, "acceptance_read": False,
+            "inputs": {"orderer": pin, "bar_dir": str(inp.bar_dir), "probe_dir": str(pdir),
+                       "probe_episodes": None if pe_path is None else str(pe_path)},
+            "source": source_fingerprint(source_commit or None),
+            "pre_registered": {"design": "DIAGNOSTICS 25 checks 2 and 3 (task 6.1c); D6's "
+                                         "relative rule and thresholds unchanged",
+                               "replicates": replicates}}, workers)
+    except ValueError as exc:  # a resume with other pins: refused before any job
+        log(f"[order_es] noise-floor refused: {exc}")
+        return CONTRACT_INVALID
+    log(f"[order_es] {'DRY RUN ' if dry_run else ''}noise-floor: A0 at r0..r{replicates} on "
+        f"{len(wes)} world-episodes" + (" (resumed)" if resumed else ""))
+    jobs = noise_jobs(inp, pin, wes, replicates, horizon)
+    try:
+        got, failures = play(out, "noise_floor.csv", jobs, workers, run_job_fn, inp.bar, log)
+    except DigestMismatch as exc:
+        spec["status"], spec["result"] = INVALID, {"status": INVALID, "reason": str(exc)}
+        _write_spec(out, spec)
+        return CONTRACT_INVALID
+    rows = list(got.values())
+    reproduced = horizon is None or int(horizon) == inp.horizon
+    repro, rproblems = reproduction_rows(rows, inp.bar_dir / "bar.csv") if reproduced else ([], [])
+    write_csv(out / "reproduction.csv", REPRODUCTION_COLUMNS, repro)
+    recorded = {f["message"] for f in read_failures(out)}
+    for msg in rproblems:
+        if msg not in recorded:
+            append_failure(out, run_failure(A0_REPRODUCTION, ValueError(msg)))
+    if failures or len(rows) != len(jobs) or read_failures(out):
+        spec["status"] = INVALID
+        spec["result"] = {"status": INVALID, "contract_failures": len(read_failures(out)),
+                          "missing_rows": len(jobs) - len(rows)}
+        _write_spec(out, spec)
+        log("[order_es] noise-floor INVALID (contract failures, missing rows or r0 not "
+            "reproducing the bar)")
+        return CONTRACT_INVALID
+    c2, c3rows, c3 = noise_floor_readings(rows, inp.bar, minibatches, fitness, pe_rows)
+    _write_noise_outputs(out, c2, c3rows, c3)
+    spec["status"] = "complete"
+    spec["result"] = {"status": "complete", "jobs": len(jobs), "contract_failures": 0,
+                      "r0_reproduced": None if not reproduced else len(repro),
+                      "self_disqualification_rate": c2["rate"],
+                      "check3_summary": c3["summary"],
+                      "files": {f: sha256_file(str(out / f)) for f in NOISE_FLOOR_FILES}}
+    _write_spec(out, spec)
+    write_result(out, f"noise floor (DIAGNOSTICS 25 checks 2 / 3), A0 at r0..r{replicates}: "
+                      f"self-disqualification rate {c2['rate']}", dry_run)
+    log(f"[order_es] {'DRY RUN ' if dry_run else ''}noise-floor: self-disqualification "
+        f"{c2['self_disqualified']} / {c2['episodes']}; check 3 " + ", ".join(
+            f"{k} median ratio {v['median_ratio']}" for k, v in c3["summary"].items()
+            if v["n"]))
+    return 0
+
+
 SKELETON_END = "Conclusions\n\nTODO.\n"
 
 
@@ -1506,7 +1853,7 @@ def _opt_int(s: str | None) -> int | None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--mode", choices=(TRAIN, PROBE), default=TRAIN)
+    p.add_argument("--mode", choices=(TRAIN, PROBE, NOISE_FLOOR), default=TRAIN)
     p.add_argument("--bar-dir", required=True,
                    help="a complete order_es_worlds bar run (bar.csv, training_worlds.json, "
                         "schedule.json, normaliser.json, spec.json)")
@@ -1528,8 +1875,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--minibatch", help=f"train: {ow.MINIBATCH} or the weak {WEAK_MINIBATCH}")
     p.add_argument("--monitor-every", help=f"dry run: (real {MONITOR_EVERY})")
     p.add_argument("--init", help="dry run: start from a composite checkpoint's theta")
+    p.add_argument("--probe-dir", help="noise-floor: EXP-0058's probe dir (probe.json, "
+                                       "probe_fitness.csv)")
+    p.add_argument("--probe-episodes", help="noise-floor: EXP-0058's probe_episodes.csv "
+                                            "(per world-episode check 3; needed in a real run)")
+    p.add_argument("--replicates", type=int, default=NOISE_FLOOR_K,
+                   help=f"noise-floor: A0 replicate keys r1..rK (registered {NOISE_FLOOR_K})")
+    p.add_argument("--max-world-episodes", type=int, help="noise-floor dry run: the first N")
+    p.add_argument("--horizon", type=int, help="noise-floor dry run: another horizon")
+    p.add_argument("--recompute", action="store_true",
+                   help="noise-floor: rebuild check2 / check3 from the out dir's rows (offline)")
     a = p.parse_args(argv)
+    if a.mode != NOISE_FLOOR and any(v is not None for v in (
+            a.probe_dir, a.probe_episodes, a.max_world_episodes, a.horizon)) or (
+            a.mode != NOISE_FLOOR and (a.recompute or a.replicates != NOISE_FLOOR_K)):
+        p.error("--probe-dir / --probe-episodes / --replicates / --max-world-episodes / "
+                "--horizon / --recompute belong to --mode noise-floor")
     commit = resolve_verified_commit() if a.verify_source_commit else a.source_commit
+    if a.mode == NOISE_FLOOR:
+        if not a.probe_dir:
+            p.error("--mode noise-floor needs --probe-dir")
+        try:
+            return run_noise_floor(bar_dir=a.bar_dir, probe_dir=a.probe_dir, out_dir=a.out_dir,
+                                   orderer_ckpt=a.orderer_ckpt, replicates=a.replicates,
+                                   workers=a.workers, probe_episodes=a.probe_episodes,
+                                   horizon=a.horizon, max_world_episodes=a.max_world_episodes,
+                                   source_commit=commit, dry_run=a.dry_run,
+                                   recompute=a.recompute)
+        except (ContractRunError, DigestMismatch):  # recorded in contract_failures.csv
+            return CONTRACT_INVALID
     try:
         if a.mode == PROBE:
             return run_probe(bar_dir=a.bar_dir, out_dir=a.out_dir, orderer_ckpt=a.orderer_ckpt,

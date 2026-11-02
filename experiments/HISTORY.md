@@ -1052,3 +1052,32 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
     ≈ 2.0 vCPU-h billed (tranche A ≈ 5.1 of 100).
   - The idle-stream inflation of the assumed load (M·a) is recorded as an untested hypothesis,
     not a diagnosed cause.
+
+### Does one ES generation carry a direction? (bar + gradient probe)
+
+- **EXP-0058 — bar precompute and gradient-signal probe. The bar is complete; the probe reads
+  `no_signal`, so step 2 stops for a diagnosis.**
+  - **What it is.** Step 2 trains a small correction on the trained orderer's scores with
+    evolution strategies: perturbed copies are ranked by fitness against a precomputed training
+    bar. Before the ES pilot, a probe checks whether one generation's gradient estimate points
+    the same way on two disjoint minibatches of 6 world-episodes (cosine ≥ 0.3 `signal`, 0.1–0.3
+    `weak`, < 0.1 or undefined `no_signal`).
+  - **The bar.** 81 candidates were screened (12 dropped for ρ before play) and 69 played (5
+    dropped for a bar-arm death), leaving 64 loaded training worlds and 128 world-episodes, with
+    no A0 death and no replacement. Mean bar 2,057.4; normaliser `2d574ec8a3df…`, no clip flag. A0 itself runs down
+    on 78% and starves a consumer on 98% of the world-episodes. That is why disqualification is
+    relative to A0.
+  - **The probe.** A1's cosine is −0.07; A2's is undefined, because its first-minibatch estimate
+    is exactly zero.
+    - Nearly every perturbed member was disqualified for a run-down or starvation that A0 did not
+      show: 37 of 48 for A1 and 42 of 48 for A2, all 24 in A2's first minibatch. That ties most
+      ranks.
+    - The flags cluster on 6 of the 12 world-episodes.
+    - The common random numbers work: the paired / unpaired variance ratio is 0.05 / 0.01.
+  - **Not yet diagnosed.** Whether the relative rule fires on draw noise, the landscape is flat at
+    the probe's step, or the worlds disagree is open. DIAGNOSTICS 25 (provisional) names the
+    discriminating checks, the first of them offline on the recorded fitness.
+  - **Consequence.** The pilot EXP-0059 does not launch.
+  - **Cost.** ≈ 6.9 vCPU-h billed: the bar pod 6.04 and the probe pod 0.87; tranche A ≈ 12.0 of
+    100. The bar pod idled to its hard stop while a between-steps check ran on the overloaded
+    local box, so the probe ran on its own pod (DIAGNOSTICS 26).

@@ -1,0 +1,122 @@
+{
+ "arms": {
+  "A1": {
+   "cosine": -0.06960670618283911,
+   "disqualified": 37,
+   "estimate_norms": [
+    5.209843254587499,
+    6.804492468857291
+   ],
+   "nonfinite": 0,
+   "variance_ratio": 0.04626490496405674
+  },
+  "A2": {
+   "cosine": null,
+   "disqualified": 42,
+   "estimate_norms": [
+    0.0,
+    14.99630518149543
+   ],
+   "nonfinite": 0,
+   "variance_ratio": 0.014427825985010665
+  }
+ },
+ "dry_run": false,
+ "minibatches": [
+  [
+   [
+    "ws-m4-es-train-v1-12-0014",
+    226572137
+   ],
+   [
+    "ws-m4-es-train-v1-12-0004",
+    47747607
+   ],
+   [
+    "ws-m4-es-train-v1-12-0005",
+    200560606
+   ],
+   [
+    "ws-m4-es-train-v1-12-0003",
+    1973389111
+   ],
+   [
+    "ws-m4-es-train-v1-12-0051",
+    1572602726
+   ],
+   [
+    "ws-atlas-v1-12-0139",
+    1946809725
+   ]
+  ],
+  [
+   [
+    "ws-m4-es-train-v1-12-0000",
+    867835099
+   ],
+   [
+    "ws-atlas-v1-12-0155",
+    474856157
+   ],
+   [
+    "ws-m4-es-train-v1-12-0044",
+    1092109868
+   ],
+   [
+    "ws-m4-es-train-v1-12-0002",
+    1600056319
+   ],
+   [
+    "ws-atlas-v1-12-0308",
+    203183553
+   ],
+   [
+    "ws-m4-es-train-v1-12-0033",
+    141870395
+   ]
+  ]
+ ],
+ "noise": {
+  "A1": {
+   "purpose": "probe|A1",
+   "stream": "m4-es-noise-v1"
+  },
+  "A2": {
+   "purpose": "probe|A2",
+   "stream": "m4-es-noise-v1"
+  }
+ },
+ "note": "",
+ "pairs": 12,
+ "pre_registered": {
+  "a2_rank2_below": 0.1,
+  "arms": [
+   "A1",
+   "A2"
+  ],
+  "cosine": "cosine between the two minibatches' estimates; an all-zero estimate leaves it undefined, read as no_signal",
+  "estimate": "per minibatch, the training estimate (centered ranks over that minibatch's member fitness); noise from noise_stream with ('probe', arm)",
+  "minibatch": 6,
+  "minibatches": 2,
+  "pairs": 12,
+  "readings": {
+   "signal": 0.3,
+   "weak": 0.1
+  },
+  "theta": "each arm's registered initial theta (A1: 0; A2: w = 0, theta_tau = 0, u ~ N(0, 0.1) seed 0, v = 0), so Delta = 0 for both",
+  "variance_ratio": "var of paired (same minibatch) f(+i) - f(-i) over var of unpaired f_1(+i) - f_2(-i), f_2(+i) - f_1(-i) (ddof 1, raw fitness, non-finite members excluded); reported",
+  "weak_next": {
+   "minibatch": 24
+  }
+ },
+ "reading": {
+  "a1_cosine": -0.06960670618283911,
+  "a2_arm": "A2",
+  "a2_cosine": null,
+  "a2_rank": 4,
+  "minibatch": 12,
+  "next": "diagnose, stop",
+  "reading": "no_signal"
+ },
+ "status": "complete"
+}
