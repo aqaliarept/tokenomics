@@ -26,7 +26,7 @@ Coordination with M4: every gate-v3 code commit changes M4's package source hash
     - a fresh interpreter imports each of `baselines`, `routing_diagnostics`, `roster` and `gate_cli` first without error.
 
   Verify: those tests and the Goldens pass; `python -m tokenomics.eval.signal_check` prints a row for each of the five routers.
-- [ ] 1.2 [code][local] Write the ADR (next free number after 0059) "Gate v3: promoted routers, region families, per-family side-effect parameters, per-order gate subject" in `/srv/research/tokenomics/docs/adr/`, from design D1–D8. Rejected alternatives: atlas worlds, unselected screen worlds, pooled X / Y, trained roster members, `ub`, moving the defaults during M4. After 1.1. Verify: the ADR cites EXP-0047 / 0048 / 0051 / 0052 / 0053 and add-m4-orderer-redesign D6 / D9; `grep -c` of "Status" = 1; no edits outside `docs/adr/`.
+- [x] 1.2 [code][local] Write the ADR (next free number after 0059) "Gate v3: promoted routers, region families, per-family side-effect parameters, per-order gate subject" in `/srv/research/tokenomics/docs/adr/`, from design D1–D8. Rejected alternatives: atlas worlds, unselected screen worlds, pooled X / Y, trained roster members, `ub`, moving the defaults during M4. After 1.1. Verify: the ADR cites EXP-0047 / 0048 / 0051 / 0052 / 0053 and add-m4-orderer-redesign D6 / D9; `grep -c` of "Status" = 1; no edits outside `docs/adr/`.
 
 ## 2. Registry v3 draft and per-family parameters (code)
 
