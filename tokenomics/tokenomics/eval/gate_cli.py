@@ -110,6 +110,7 @@ from .families import DENSE, NEUTRAL_CAPACITY_SCALE, check_capacity_scale
 from .registry import (
     DEFAULT_REGISTRY,
     DEVELOPMENT,
+    EXCLUDED,
     RESERVE,
     SEALED,
     SEALED_ACCESS_LOG,
@@ -463,22 +464,45 @@ Key = tuple[str, int, str, int]
 
 
 def job_grid(worlds: Sequence[WorldEntry], episodes_per_world: int | None, *,
-             twins: bool = False) -> dict[str, dict]:
+             twins: bool = False, families: bool = False) -> dict[str, dict]:
     """world -> {size, regime, episodes}: the episodes a report runs, pinned in `spec.json` so a
     resume and a recompute can check the CSV against it without the registry. With `twins` (a
     report), a world whose config has shocks also pins `twin` = its resilience window and
     tolerance: its candidate episodes get twins and resilience rows. The key is absent
-    otherwise, so a grid without shocked configs is unchanged."""
+    otherwise, so a grid without shocked configs is unchanged. With `families` (a report under
+    v3+ per-family side-effect parameters, add-gate-v3 D4) each world also pins its `family`,
+    which a recompute needs; absent otherwise, so v1 / v2 grids are unchanged."""
     grid = {}
     for w in worlds:
         g: dict = {"size": w.size, "regime": w.regime,
                    "episodes": list(w.episode_seeds[:episodes_per_world] if episodes_per_world
                                     else w.episode_seeds)}
+        if families:
+            g["family"] = w.family
         tp = twin_params(w) if twins else None
         if tp is not None:
             g["twin"] = {"window": tp.window, "tolerance": tp.tolerance}
         grid[w.id] = g
     return grid
+
+
+def grid_families(grid: Mapping[str, Mapping]) -> dict[str, str]:
+    """world -> family from a grid pinned with `families` (v3+ parameters)."""
+    missing = sorted(w for w, g in grid.items() if "family" not in g)
+    if missing:
+        raise ValueError(f"the pinned grid records no family for worlds {missing[:3]}; per-family "
+                         "side-effect parameters need it")
+    return {w: g["family"] for w, g in grid.items()}
+
+
+def params_family_problem(registry: Registry, params: SideEffectParams) -> str | None:
+    """Why per-family (v3+) parameters cannot check this registry (add-gate-v3 D4): a family
+    with any non-excluded entry and no X / Y in the file. None for v1 / v2 parameters."""
+    missing = params.missing_families(e.family for e in registry.entries if e.status != EXCLUDED)
+    if not missing:
+        return None
+    return (f"side-effect parameters {params.name!r} ({params.version[:12]}) record no X / Y for "
+            f"families {missing} present in registry {registry.name!r} ({registry.version[:12]})")
 
 
 def expected_keys(grid: Mapping[str, Mapping], roster: Roster, candidate_replicates: int) -> set[Key]:
@@ -741,11 +765,14 @@ def run_report(
                              + "); pass --dry-run for a smoke run")
     if not worlds:
         raise ValueError("no gate worlds selected")
+    family_problem = params_family_problem(registry, params)
+    if family_problem is not None:  # also in a dry run: no check could use the missing values
+        raise ValueError(family_problem)
     checkpoints = ({"producer": prod_ckpt, "orderer": orderer_ckpt} if pair is None else {})
     out = Path(out_dir)
     ckpt_hashes = _checked_checkpoints(out, checkpoints, dry_run, log)
     candidate_replicates = roster.replicates if pair and RANDOM_POLICY in pair else 1
-    grid = job_grid(worlds, episodes_per_world, twins=True)
+    grid = job_grid(worlds, episodes_per_world, twins=True, families=params.per_family)
     source = source_fingerprint(source_commit or None)
     pins = {
         "subject": subject, "split": split, "horizon": horizon, "dry_run": dry_run,
@@ -789,7 +816,9 @@ def run_report(
             _finish_invalid(out, spec, len(failures), len(missing), dry_run, log)
             return None, counts
         try:
-            report = compute_report(rows, roster, params, registry.version)
+            report = compute_report(rows, roster, params, registry.version,
+                                    world_family=grid_families(grid) if params.per_family
+                                    else None)
         except DigestMismatch as exc:  # the pure re-check; the live one should have caught it
             append_failure(out, run_failure(DIGEST, exc))
             raise
@@ -938,7 +967,8 @@ def recompute_details(out_dir: str | Path) -> Recomputed:
     if params.version != pins["params_version"]:
         raise ValueError(f"embedded params hashes to {params.version}, spec pins "
                          f"{pins['params_version']}")
-    report = compute_report(rows, roster, params, pins["registry_version"])
+    report = compute_report(rows, roster, params, pins["registry_version"],
+                            world_family=grid_families(grid) if params.per_family else None)
     recorded = (out / "verdict.json").read_text()
     table = resilience_table(rows, grid_resilience(grid))
     res_path = out / "resilience.csv"

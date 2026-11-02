@@ -373,3 +373,193 @@ def test_cli_derives_a_smoke_roster_from_a_frozen_v2_roster(
     assert not derived.frozen and derived.screened_on is None and derived.pruning is None
     assert derived.name in ("roster-v2-dry-run", "roster-v2-probe")
     assert set(derived.member_ids) <= set(frozen.member_ids)
+
+
+# --- per-family side-effect parameters (add-gate-v3 task 2.3, design D4, D6) ---
+
+EXPERIMENTS = Path(__file__).resolve().parents[2] / "experiments"
+EXP_0045 = EXPERIMENTS / "EXP-0045-champion-dev-report-12-42"
+EXP_0047 = EXPERIMENTS / "EXP-0047-registry-v2-calibration"
+
+
+@functools.cache
+def _draft_v3() -> Registry:
+    from tokenomics.eval.registry import build_worlds_v3
+
+    return build_worlds_v3()
+
+
+def _family_payload(x: float, y: float, run_down_distinct: int = 30,
+                    fill_distinct: int = 40) -> dict:
+    return {"x": x, "y": y, "evidence": {
+        "episodes": 64, "run_down_values": 64, "fill_values": 300, "rows_digest": "r" * 64,
+        "bests_digest": "b" * 64, "run_down_distinct": run_down_distinct,
+        "fill_distinct": fill_distinct, "x_is_minimum": False, "y_is_minimum": False,
+        "small_sample": min(run_down_distinct, fill_distinct) < 20}}
+
+
+def _v3_params_text(families: dict, screened_on: str | None = None) -> str:
+    from tokenomics.eval.gate import side_effect_params_json_v3
+
+    return side_effect_params_json_v3(
+        families, 0.05, name="side-effect-params-v3", rule="D4 per family", method="nearest-rank",
+        evidence={"roster_version": "r" * 64}, screened_on=screened_on or _draft_v3().version)
+
+
+V3_FAMILIES = {"sparse_wide": _family_payload(0.7457, 0.758),
+               "ws_loaded": _family_payload(0.45, 0.08, 24, 18),
+               "ws_wide": _family_payload(0.35, 0.05)}
+
+
+def test_v3_params_file_round_trips_per_family() -> None:
+    p = params_from_dict(json.loads(_v3_params_text(V3_FAMILIES)))
+    assert p.per_family and p.x is None and p.y is None
+    assert p.values_for("ws_wide") == (0.35, 0.05)
+    assert p.values_for("sparse_wide") == (0.7457, 0.758)
+    assert json.loads(_v3_params_text(V3_FAMILIES))["families"]["ws_loaded"]["evidence"][
+        "small_sample"] is True
+
+
+@pytest.mark.parametrize("edit, match", [
+    (lambda d: d["families"]["ws_wide"]["evidence"].update(small_sample=True), "small_sample"),
+    (lambda d: d["families"]["ws_wide"]["evidence"].pop("fill_distinct"), "evidence fields"),
+    (lambda d: d["families"]["ws_wide"].pop("y"), "family ws_wide fields"),
+    (lambda d: d.update(x=0.5, y=0.5), "fields"),
+    (lambda d: d.update(families={}), "non-empty"),
+])
+def test_malformed_v3_params_file_refused(edit: object, match: str) -> None:
+    d = json.loads(_v3_params_text(V3_FAMILIES))
+    d.pop("content_hash")
+    edit(d)  # type: ignore[operator]
+    d["content_hash"] = content_hash(d)
+    with pytest.raises(ValueError, match=match):
+        params_from_dict(d)
+
+
+def test_v3_params_missing_a_registry_family_refused(tmp_path: Path) -> None:
+    """A v3 file without ws_wide cannot check registry v3: refused before any file is touched,
+    also in a dry run. A family whose every entry is excluded is not required."""
+    from tokenomics.eval.gate_cli import params_family_problem
+
+    reg = _draft_v3()
+    fams = {k: v for k, v in V3_FAMILIES.items() if k != "ws_wide"}
+    text = _v3_params_text(fams)
+    params = params_from_dict(json.loads(text))
+    problem = params_family_problem(reg, params)
+    assert problem is not None and "['ws_wide']" in problem
+    assert params_family_problem(reg, params_from_dict(json.loads(_v3_params_text(
+        V3_FAMILIES)))) is None
+    assert params_family_problem(reg, load_side_effect_params(PARAMS_V1)) is None
+    with pytest.raises(ValueError, match=r"no X / Y for families \['ws_wide'\]"):
+        run_report(out_dir=tmp_path / "d", subject=SUBJECT, split=DEVELOPMENT, horizon=12,
+                   workers=1, registry=reg, roster=load_roster(ROSTER_V1), params=params,
+                   params_payload=json.loads(text), dry_run=True, max_worlds=1,
+                   episodes_per_world=1, run_job_fn=_first_job, log=lambda s: None)
+    assert not (tmp_path / "d").exists()
+    from tokenomics.eval.gate import Headroom
+    from tokenomics.eval.registry import (EXCLUDED, ScreeningRecord, record_exclusions,
+                                          record_headroom)
+
+    screened = dataclasses.replace(reg, screened_on=reg.version, screening=ScreeningRecord(
+        roster_version="r" * 64, baseline_means=(), replacements=()))
+    heads = [Headroom(f, z, 4, 0.96 if f == "ws_wide" else 0.5, 0.95, f != "ws_wide")
+             for f, z in (("sparse_wide", 12), ("sparse_wide", 42), ("ws_loaded", 12),
+                          ("ws_wide", 42))]
+    excluded = record_exclusions(record_headroom(screened, heads))
+    assert all(e.status == EXCLUDED for e in excluded.entries if e.family == "ws_wide")
+    assert params_family_problem(excluded, params) is None
+
+
+def _family_stub(roster: Roster):  # -> Callable[[Job], dict[str, str]]
+    """Member k delivers 100 - k units; the candidate 120 units with consumer c1 at fill 0.1,
+    below sparse_wide's Y and above ws_wide's / ws_loaded's."""
+    ids = sorted(roster.member_ids)
+
+    def stub(job: Job) -> dict[str, str]:
+        cand = job["subject"] == "candidate"
+        k = 0 if cand else ids.index(job["subject"])
+        return row_to_dict(EpisodeRow(
+            world=job["world"], size=job["size"], regime=job["regime"], episode=job["episode"],
+            subject=job["subject"], replicate=job["replicate"],
+            units=120.0 if cand else 100.0 - k, dead=False, demand_digest=f"d{job['episode']}",
+            r_start=1.0, r_end=0.9, consumer_fill_rate={"c0": 0.9, "c1": 0.1 if cand else 0.8},
+            ordered_units=100, fulfilled_units=50))
+
+    return stub
+
+
+def test_v3_report_checks_each_world_against_its_family_and_recomputes(tmp_path: Path) -> None:
+    """A dry-run report on registry v3's calm development worlds under v3 parameters: the grid
+    pins each world's family, starvation fails on sparse_wide worlds only, and `--mode recompute`
+    rebuilds the identical verdict from the pinned families."""
+    from tokenomics.eval.gate_cli import recompute_details
+
+    reg = _draft_v3()
+    roster = load_roster(ROSTER_V1)
+    text = _v3_params_text(V3_FAMILIES)
+    out = tmp_path / "v3"
+    report, _ = run_report(out_dir=out, subject=SUBJECT, split=DEVELOPMENT, horizon=12, workers=1,
+                           registry=reg, roster=roster, params=params_from_dict(json.loads(text)),
+                           params_payload=json.loads(text), dry_run=True, regimes=["calm"],
+                           episodes_per_world=1, run_job_fn=_family_stub(roster),
+                           log=lambda s: None)
+    spec = json.loads((out / "spec.json").read_text())
+    grid = spec["pins"]["grid"]
+    assert {g["family"] for g in grid.values()} == {"sparse_wide", "ws_loaded", "ws_wide"}
+    starving = {f.world for f in report.clause("starvation").failures}
+    assert starving == {w for w, g in grid.items() if g["family"] == "sparse_wide"}
+    assert {w.family for w in report.worlds} == {"sparse_wide", "ws_loaded", "ws_wide"}
+    r = recompute_details(out)
+    assert r.ok and r.report.to_json() == (out / "verdict.json").read_text()
+
+
+def test_v2_report_grid_records_no_family(tmp_path: Path) -> None:
+    """v1 / v2 parameters leave the pinned grid as it was (no `family` key)."""
+    out = tmp_path / "v1"
+    roster = load_roster(ROSTER_V1)
+    run_report(out_dir=out, subject=SUBJECT, split=DEVELOPMENT, horizon=12, workers=1,
+               registry=load_registry(REGISTRY_V1), roster=roster,
+               params=load_side_effect_params(PARAMS_V1),
+               params_payload=json.loads(PARAMS_V1.read_text()), dry_run=True, regimes=["calm"],
+               max_worlds=2, episodes_per_world=1, run_job_fn=_family_stub(roster),
+               log=lambda s: None)
+    grid = json.loads((out / "spec.json").read_text())["pins"]["grid"]
+    assert grid and all("family" not in g for g in grid.values())
+
+
+@pytest.mark.skipif(not (EXP_0045 / "episodes.csv").exists(), reason="EXP-0045 record absent")
+def test_exp0045_recompute_still_matches() -> None:
+    """EXP-0045 (a v1 report) recomputes to MATCH, verdict and resilience."""
+    from tokenomics.eval.gate_cli import recompute_details
+
+    r = recompute_details(EXP_0045)
+    assert r.ok and r.verdict_ok and r.resilience_ok
+
+
+@pytest.mark.skipif(not (EXP_0047 / "episodes.csv").exists(), reason="EXP-0047 record absent")
+def test_exp0047_screen_rederives_its_frozen_files() -> None:
+    """EXP-0047 is a screen (no verdict.json): its recorded rows re-derive the frozen v2 registry,
+    roster and parameters byte for byte through the pure screen (scalar `calibrate_x_y`)."""
+    from tokenomics.eval.gate_cli import read_rows
+
+    reg, roster = _draft_registry(), _draft_roster()
+    out = screen_outcome(reg, roster, read_rows(EXP_0047 / "episodes.csv"), q=0.05, prune=True,
+                         tag=2, screened_on=reg.version)
+    for name, got in (("side_effect_params_v2.json", out.params_json),
+                      ("roster_v2.json", out.roster.to_json()),
+                      ("worlds_v2.json", out.registry.to_json())):
+        assert got == (EXP_0047 / "frozen" / name).read_text(), name
+
+
+def test_small_sample_boundary_is_twenty_distinct() -> None:
+    """Exactly 20 distinct values is not a small sample; 19 is (D4: "fewer than 20")."""
+    from tokenomics.eval.gate import SMALL_SAMPLE_DISTINCT, FamilyCalibration
+
+    assert SMALL_SAMPLE_DISTINCT == 20
+    for distinct, small in ((20, False), (19, True)):
+        fams = dict(V3_FAMILIES, ws_wide=_family_payload(0.35, 0.05, distinct, 40))
+        assert fams["ws_wide"]["evidence"]["small_sample"] is small
+        params_from_dict(json.loads(_v3_params_text(fams)))  # loads: the flag follows the counts
+    cal = FamilyCalibration("ws_wide", None, 20, 20, False, False)  # type: ignore[arg-type]
+    assert cal.small_sample is False
+    assert dataclasses.replace(cal, fill_distinct=19).small_sample is True

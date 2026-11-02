@@ -444,3 +444,252 @@ def test_row_from_stats_maps_env_keys() -> None:
     assert r.fill_rates == s["consumer_fill_rate"]
     assert (r.r_start, r.r_end, r.dead) == (s["r_start"], s["r_end"], s["dead"])
     assert rows_from_csv(rows_to_csv([r])) == [r]
+
+
+# --- per-family X / Y and replicated candidates (add-gate-v3 task 2.3, design D4, D6) ---
+
+V3_NAME = "side-effect-params-v3"
+ON = "a" * 64  # a screened_on hash (v2+ parameters record one)
+SW, WL = "sparse_wide", "ws_wide"
+FAMILY_PARAMS = SideEffectParams(x=None, y=None, version="params-v3-test", name=V3_NAME,
+                                 screened_on=ON, families=((SW, 0.5, 0.25), (WL, 0.3, 0.05)))
+WORLD_FAMILY = {"calm-1": SW, "shock-1": SW, "calm-w": WL, "shock-w": WL}
+
+
+def _v3_report(rows: list[EpisodeRow], params: SideEffectParams = FAMILY_PARAMS,
+               world_family: dict[str, str] | None = None) -> GateReport:
+    return compute_report(rows, ROSTER_AB, params, REG, SMALL,
+                          world_family=WORLD_FAMILY if world_family is None else world_family)
+
+
+def _replicated(world: str, cand: list[dict], *, regime: str = CALM,
+                episode: int = 1000) -> list[EpisodeRow]:
+    """One episode: A 10, B 8 (deterministic) and one candidate row per dict in `cand`
+    (replicate r = position), each dict overriding `_row`'s keyword arguments."""
+    rows = [_row(world, episode, A, 10, regime=regime), _row(world, episode, B, 8, regime=regime)]
+    for r, kw in enumerate(cand):
+        rows.append(_row(world, episode, CANDIDATE, kw.pop("units", 12), replicate=r,
+                         regime=regime, **kw))
+    return rows
+
+
+def test_family_values_are_applied() -> None:
+    """A fill rate of 0.1 is below sparse_wide's Y 0.25 and above ws_wide's Y 0.05: it fails on a
+    sparse_wide world only (gate-harness "Family values used")."""
+    starving = {"fill": {"c0": 1.0, "c1": 0.1}}
+    rows = (_replicated("calm-1", [dict(starving)]) + _replicated("calm-w", [dict(starving)]))
+    rep = _v3_report(rows)
+    fails = rep.clause(STARVATION_CLAUSE).failures
+    assert [(f.world, f.threshold) for f in fails] == [("calm-1", 0.25)]
+    assert {w.world: w.family for w in rep.worlds} == {"calm-1": SW, "calm-w": WL}
+    assert rep.to_dict()["families"] == {SW: {"x": 0.5, "y": 0.25}, WL: {"x": 0.3, "y": 0.05}}
+    assert rep.x is None and rep.y is None
+    # run-down: ratio 0.4 is below sparse_wide's X 0.5, above ws_wide's 0.3
+    rundown = {"r_start": 1.0, "r_end": 0.4}
+    rep = _v3_report(_replicated("calm-1", [dict(rundown)]) + _replicated("calm-w", [dict(rundown)]))
+    assert [(f.world, f.threshold) for f in rep.clause(RUN_DOWN_CLAUSE).failures] == [("calm-1", 0.5)]
+
+
+def test_per_family_params_need_every_family() -> None:
+    rows = _replicated("calm-1", [{}]) + _replicated("calm-w", [{}])
+    only_sw = SideEffectParams(x=None, y=None, version="v", name=V3_NAME, screened_on=ON,
+                               families=((SW, 0.5, 0.25),))
+    with pytest.raises(ValueError, match=r"no X / Y for families \['ws_wide'\]"):
+        _v3_report(rows, only_sw)
+    with pytest.raises(ValueError, match="needs each world's family"):
+        compute_report(rows, ROSTER_AB, FAMILY_PARAMS, REG, SMALL)
+    with pytest.raises(ValueError, match="no family for worlds"):
+        _v3_report(rows, world_family={"calm-1": SW})
+    with pytest.raises(ValueError, match="record no X / Y for family 'dense'"):
+        FAMILY_PARAMS.values_for("dense")
+    assert PARAMS.values_for("anything") == (0.5, 0.25) and PARAMS.missing_families([WL]) == []
+
+
+def test_one_replicate_starves_a_consumer() -> None:
+    """One of five replicates leaves c1 at 0.1 < Y 0.25 while c1's mean over the five is 0.42: the
+    starvation clause passes and the replicate's violation is listed as monitored."""
+    cand = [{"fill": {"c0": 1.0, "c1": 0.5}} for _ in range(5)]
+    cand[2] = {"fill": {"c0": 1.0, "c1": 0.1}}
+    rep = _v3_report(_replicated("calm-1", cand))
+    assert rep.clause(STARVATION_CLAUSE).passed
+    viol = rep.replicate_violations
+    assert [(v.clause, v.replicate, v.consumer, v.value) for v in viol] == [
+        (STARVATION_CLAUSE, 2, "c1", 0.1)]
+    assert rep.worlds[0].replicate_violations == 1 and rep.worlds[0].starvation_failures == 0
+    # the same rows under scalar (v2-style) parameters fail per replicate, as before
+    v2 = compute_report(_replicated("calm-1", [dict(c) for c in cand]), ROSTER_AB, PARAMS, REG,
+                        SMALL)
+    assert [f.replicate for f in v2.clause(STARVATION_CLAUSE).failures] == [2]
+    assert "replicate_violations" not in v2.to_dict()
+
+
+def test_mean_below_y_fails_without_a_replicate() -> None:
+    cand = [{"fill": {"c0": 1.0, "c1": 0.2}}, {"fill": {"c0": 1.0, "c1": 0.28}}]
+    f, = _v3_report(_replicated("calm-1", cand)).clause(STARVATION_CLAUSE).failures
+    assert (f.consumer, f.replicate, f.threshold) == ("c1", None, 0.25)
+    assert f.value == pytest.approx(0.24)
+
+
+def test_one_replicate_dies() -> None:
+    """One of five replicates dies while the replicate mean of units clears the margin: the
+    zero-death clause fails, naming the world, episode and replicate."""
+    cand = [{"units": 12} for _ in range(5)]
+    cand[3] = {"units": 12, "dead": True}
+    rows = (_replicated("calm-1", cand)
+            + _replicated("shock-1", [{"units": 12} for _ in range(5)], regime=SHOCKED))
+    rep = _v3_report(rows)
+    assert rep.clause(CALM_CLAUSE).passed and rep.clause(SHOCKED_CLAUSE).passed
+    f, = rep.clause(ZERO_DEATH_CLAUSE).failures
+    assert (f.world, f.episode, f.replicate) == ("calm-1", 1000, 3)
+    assert rep.overall == REJECT and rep.failing_clauses == (ZERO_DEATH_CLAUSE,)
+
+
+def test_run_down_on_the_replicate_mean() -> None:
+    """Replicate ratios 0.4 and 0.7 (mean 0.55 >= X 0.5) pass, the 0.4 is monitored; a replicate
+    with r_end None fails closed; with every r_start 0 there is no ratio and the check passes."""
+    rep = _v3_report(_replicated("calm-1", [{"r_start": 1.0, "r_end": 0.4},
+                                            {"r_start": 1.0, "r_end": 0.7}]))
+    assert rep.clause(RUN_DOWN_CLAUSE).passed
+    assert [(v.clause, v.replicate) for v in rep.replicate_violations] == [(RUN_DOWN_CLAUSE, 0)]
+    rep = _v3_report(_replicated("calm-1", [{"r_start": 1.0, "r_end": 0.3},
+                                            {"r_start": 1.0, "r_end": 0.6}]))
+    f, = rep.clause(RUN_DOWN_CLAUSE).failures
+    assert (f.replicate, f.value) == (None, pytest.approx(0.45))
+    rep = _v3_report(_replicated("calm-1", [{"r_start": 1.0, "r_end": 0.9}, {"r_end": None}]))
+    f, = rep.clause(RUN_DOWN_CLAUSE).failures
+    assert f.value is None and "unmeasurable" in f.detail
+    rep = _v3_report(_replicated("calm-1", [{"r_start": 0.0, "r_end": 0.0}]))
+    assert rep.clause(RUN_DOWN_CLAUSE).passed
+
+
+def test_scalar_reports_serialize_as_before() -> None:
+    """v1 / v2 parameters add no v3 key to the report or its worlds (byte-identical verdicts)."""
+    d = _report(_passing()).to_dict()
+    assert set(d) == {"roster_version", "registry_version", "params_version", "x", "y", "worlds",
+                      "regimes", "clauses", "non_gating_worlds", "overall", "failing_clauses"}
+    assert all(set(w) == {"world", "size", "regime", "episodes", "candidate_mean", "baseline",
+                          "ratio", "gating", "deaths", "run_down_failures",
+                          "starvation_failures", "monitored"} for w in d["worlds"])
+
+
+def test_per_family_params_construction() -> None:
+    with pytest.raises(ValueError, match="exist from v3 on"):
+        SideEffectParams(x=None, y=None, version="v", name="side-effect-params-v2",
+                         screened_on=ON, families=((SW, 0.5, 0.25),))
+    with pytest.raises(ValueError, match="record X / Y per family"):
+        SideEffectParams(x=0.5, y=0.25, version="v", name=V3_NAME, screened_on=ON)
+    with pytest.raises(ValueError, match="no scalar X / Y"):
+        SideEffectParams(x=0.5, y=None, version="v", name=V3_NAME, screened_on=ON,
+                         families=((SW, 0.5, 0.25),))
+    with pytest.raises(ValueError, match="distinct families"):
+        SideEffectParams(x=None, y=None, version="v", name=V3_NAME, screened_on=ON,
+                         families=((SW, 0.5, 0.25), (SW, 0.4, 0.2)))
+    with pytest.raises(ValueError, match="finite"):
+        SideEffectParams(x=None, y=None, version="v", name=V3_NAME, screened_on=ON,
+                         families=((SW, float("nan"), 0.25),))
+
+
+def _roster_rows(world: str, episode: int, *, regime: str = CALM, a: float = 10, b: float = 8,
+                 r_end: float = 0.8, fill: dict[str, float | None] | None = None
+                 ) -> list[EpisodeRow]:
+    """Roster-only rows of one episode: A (the argmax) with the given side effects, B lower."""
+    return [_row(world, episode, A, a, regime=regime, r_start=1.0, r_end=r_end, fill=fill),
+            _row(world, episode, B, b, regime=regime)]
+
+
+def test_family_calibration_distinct_counts_on_triplicated_calm_rows() -> None:
+    """Calm worlds replay: a deterministic argmax member repeats its values in each of a world's
+    3 episodes, so value counts triple and distinct counts do not. Families are calibrated apart,
+    sparse_wide pooled over sizes."""
+    from tokenomics.eval.gate import SMALL_SAMPLE_DISTINCT, calibrate_families
+
+    rows: list[EpisodeRow] = []
+    fam: dict[str, str] = {}
+    for i in range(10):  # 10 calm ws_wide worlds x 3 identical episodes
+        w = f"wl-calm-{i}"
+        fam[w] = WL
+        for ep in range(3):
+            rows += _roster_rows(w, 100 * i + ep, r_end=0.5 + i / 100,
+                                 fill={"c0": 0.2 + i / 100, "c1": None})
+    for size in (12, 42):  # sparse_wide at both sizes, one pooled sample
+        for i in range(25):
+            w = f"sw-{size}-{i}"
+            fam[w] = SW
+            rows += [replace_size(r, size) for r in _roster_rows(
+                w, 5000 + size * 100 + i, regime=SHOCKED, r_end=0.7 + i / 1000,
+                fill={"c0": 0.6 + i / 1000, "c1": 0.9})]
+    cals = {c.family: c for c in calibrate_families(rows, ROSTER_AB, 0.05, fam)}
+    wl, sw = cals[WL], cals[SW]
+    assert wl.calibration.run_down_values == 30 and wl.run_down_distinct == 10
+    assert wl.calibration.fill_values == 30 and wl.fill_distinct == 10
+    assert wl.small_sample and wl.x_is_minimum and wl.y_is_minimum  # k = ceil(1.5) = 2nd = min
+    assert wl.calibration.x == 0.5 and wl.calibration.y == pytest.approx(0.2)
+    assert sw.calibration.episodes == 50 and sw.run_down_distinct == 25
+    assert sw.fill_distinct == 26 and not sw.small_sample  # 25 c0 values + c1's 0.9
+    assert sw.calibration.x == pytest.approx(0.701) and not sw.x_is_minimum  # 3rd of 50
+    ev = wl.evidence()
+    assert ev["small_sample"] is True and ev["run_down_distinct"] == 10
+    assert min(ev["run_down_distinct"], ev["fill_distinct"]) < SMALL_SAMPLE_DISTINCT
+    with pytest.raises(ValueError, match="without a family"):
+        calibrate_families(rows, ROSTER_AB, 0.05, {k: v for k, v in fam.items() if k != "wl-calm-0"})
+
+
+def replace_size(r: EpisodeRow, size: int) -> EpisodeRow:
+    from dataclasses import replace
+
+    return replace(r, size=size)
+
+
+def test_v3_replicate_means_exactly_at_the_bar_pass() -> None:
+    """Thresholds stay inclusive under v3: a replicate-mean fill exactly at Y and a replicate-mean
+    r_end / r_start exactly at X pass (values exact in binary floating point: 0.25, 0.5, 0.75)."""
+    at_y = [{"fill": {"c0": 1.0, "c1": 0.25}}, {"fill": {"c0": 1.0, "c1": 0.25}}]
+    rep = _v3_report(_replicated("calm-1", at_y))
+    assert rep.clause(STARVATION_CLAUSE).passed and not rep.replicate_violations
+    straddle_y = [{"fill": {"c0": 1.0, "c1": 0.125}}, {"fill": {"c0": 1.0, "c1": 0.375}}]
+    rep = _v3_report(_replicated("calm-1", straddle_y))  # mean 0.25 exactly
+    assert rep.clause(STARVATION_CLAUSE).passed
+    assert [v.replicate for v in rep.replicate_violations] == [0]
+    at_x = [{"r_start": 1.0, "r_end": 0.25}, {"r_start": 1.0, "r_end": 0.75}]  # mean 0.5 = X
+    rep = _v3_report(_replicated("calm-1", at_x))
+    assert rep.clause(RUN_DOWN_CLAUSE).passed
+    assert _v3_report(_replicated("calm-1", [{"r_start": 0.5, "r_end": 0.25}])).clause(
+        RUN_DOWN_CLAUSE).passed  # one replicate, ratio 0.5 = X
+
+
+def test_v3_run_down_is_the_mean_of_ratios_the_calibration_uses() -> None:
+    """Replicates with different r_start: the check uses the mean of r_end / r_start (what
+    `episode_bests` calibrates X on), not the ratio of means. Both directions differ at X 0.5."""
+    from tokenomics.eval.gate import episode_bests
+
+    passes = [{"r_start": 1.0, "r_end": 0.25}, {"r_start": 0.25, "r_end": 0.25}]
+    # mean of ratios (0.25 + 1.0) / 2 = 0.625 >= 0.5; ratio of means 0.5 / 1.25 = 0.4 < 0.5
+    assert _v3_report(_replicated("calm-1", [dict(c) for c in passes])).clause(
+        RUN_DOWN_CLAUSE).passed
+    fails = [{"r_start": 1.0, "r_end": 0.875}, {"r_start": 0.125, "r_end": 0.0078125}]
+    # mean of ratios (0.875 + 0.0625) / 2 = 0.46875 < 0.5; ratio of means 0.8828 / 1.125 > 0.5
+    f, = _v3_report(_replicated("calm-1", [dict(c) for c in fails])).clause(
+        RUN_DOWN_CLAUSE).failures
+    assert f.value == 0.46875 and f.replicate is None
+    # the calibration reduces the same replicates to the same statistic: a random member with
+    # these three replicates as the per-episode argmax gets run_down 0.46875 + its fill means
+    reps = [_row("w", 1, RND, 20, replicate=r, r_start=c["r_start"], r_end=c["r_end"],
+                 fill=fill)
+            for r, (c, fill) in enumerate(zip(fails + [{"r_start": 1.0, "r_end": 0.46875}],
+                                              [{"c1": 0.5}, {"c1": None}, {"c1": 0.25}]))]
+    best, = episode_bests([_row("w", 1, A, 10), _row("w", 1, B, 8)] + reps, ROSTER_ABR)
+    assert best.member == RND and best.run_down == 0.46875 and best.fill_rates == (0.375,)
+
+
+def test_v3_starvation_skips_replicates_where_the_consumer_did_not_order() -> None:
+    """A consumer with fill None in a replicate ordered nothing there: the replicate mean is over
+    the replicates where it ordered (None skipped, not counted as 0), as Y is calibrated."""
+    skipped = [{"fill": {"c0": 1.0, "c1": 0.375}}, {"fill": {"c0": 1.0, "c1": None}}]
+    rep = _v3_report(_replicated("calm-1", skipped))  # 0.375 >= Y; as 0 it would be 0.1875
+    assert rep.clause(STARVATION_CLAUSE).passed
+    low = [{"fill": {"c0": 1.0, "c1": 0.125}}, {"fill": {"c0": 1.0, "c1": None}},
+           {"fill": {"c0": 1.0, "c1": 0.125}}]
+    f, = _v3_report(_replicated("calm-1", low)).clause(STARVATION_CLAUSE).failures
+    assert (f.consumer, f.value) == ("c1", 0.125)  # as 0 it would be 0.0833...
+    none = [{"fill": {"c0": 1.0, "c1": None}}, {"fill": {"c0": 1.0, "c1": None}}]
+    assert _v3_report(_replicated("calm-1", none)).clause(STARVATION_CLAUSE).passed

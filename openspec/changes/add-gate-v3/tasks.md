@@ -64,7 +64,7 @@ Coordination with M4: every gate-v3 code commit changes M4's package source hash
     - `admission_problems` and `coverage_problems` give the same output as at the base commit on the packaged `worlds_v1.json` and `worlds_v2.json` (both splits).
 
   After 2.1. Verify: tests pass; the draft builds and reloads (hash check) in < 5 min; Frozen hashes unchanged; `acceptance.csv` shows every group filled.
-- [ ] 2.3 [code][local] Side-effect parameters per family and replicated-candidate checks in `/srv/research/tokenomics/tokenomics/tokenomics/eval/gate.py` (design D4, D6).
+- [x] 2.3 [code][local] Side-effect parameters per family and replicated-candidate checks in `/srv/research/tokenomics/tokenomics/tokenomics/eval/gate.py` (design D4, D6).
   - Parameter files from version 3 carry `{family: {x, y}}` with per-family evidence: value count, distinct-value count, quantile = minimum flag, and `small_sample` when there are < 20 distinct values.
   - `calibrate_x_y` runs per family with v2's nearest-rank q rule; sparse_wide is pooled over sizes and recomputed with the v3 roster.
   - The run-down and starvation checks use the world's family.

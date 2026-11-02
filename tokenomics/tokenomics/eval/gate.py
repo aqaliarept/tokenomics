@@ -110,24 +110,55 @@ def is_twin(subject: str) -> bool:
 # --- side-effect parameters ---
 
 
+def _check_xy(v: object, what: str) -> float:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
+        raise ValueError(f"side-effect parameter {what} must be finite and >= 0, got {v!r}")
+    return float(v)
+
+
+# From parameter version 3, X and Y are recorded per gate family (add-gate-v3 D4); a family whose
+# run-down or fill values hold fewer distinct values than this is flagged `small_sample`.
+FAMILY_PARAMS_VERSION = 3
+SMALL_SAMPLE_DISTINCT = 20
+
+
 @dataclass(frozen=True)
 class SideEffectParams:
     """Frozen X (run-down factor) and Y (starvation floor) with the version of the parameter file
-    they came from (design D4; frozen by 8.2/10.1, never hard-coded here)."""
+    they came from (design D4; frozen by 8.2/10.1, never hard-coded here).
 
-    x: float
-    y: float
+    v1 / v2 files carry one scalar X and Y for every world. From v3 (add-gate-v3 D4) `families`
+    holds (family, X, Y) per gate family and `x` / `y` are None: a world is checked against its
+    family's values (`values_for`)."""
+
+    x: float | None
+    y: float | None
     version: str
     name: str = ""
     # The registry draft hash a v2+ screen recorded (add-shocks-i-drift D8/D10); None on v1.
     screened_on: str | None = None
+    families: tuple[tuple[str, float, float], ...] | None = None
 
     def __post_init__(self) -> None:
-        for name in ("x", "y"):
-            v = getattr(self, name)
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
-                raise ValueError(f"side-effect parameter {name} must be finite and >= 0, got {v!r}")
-            object.__setattr__(self, name, float(v))
+        tag = name_version_tag(self.name)
+        if self.families is None:
+            for name in ("x", "y"):
+                object.__setattr__(self, name, _check_xy(getattr(self, name), name))
+        else:
+            if tag < FAMILY_PARAMS_VERSION:
+                raise ValueError(f"side-effect parameters {self.name!r} (v{tag}): per-family "
+                                 f"values exist from v{FAMILY_PARAMS_VERSION} on")
+            if self.x is not None or self.y is not None:
+                raise ValueError("per-family side-effect parameters carry no scalar X / Y")
+            fams = tuple(sorted((str(f), _check_xy(x, f"{f}.x"), _check_xy(y, f"{f}.y"))
+                                for f, x, y in self.families))
+            if not fams or len({f for f, _, _ in fams}) != len(fams):
+                raise ValueError(f"per-family side-effect parameters need distinct families, got "
+                                 f"{[f for f, _, _ in fams]}")
+            object.__setattr__(self, "families", fams)
+        if tag >= FAMILY_PARAMS_VERSION and self.families is None:
+            raise ValueError(f"side-effect parameters {self.name!r} (v{tag}) record X / Y per "
+                             "family")
         if not self.version:
             raise ValueError("side-effect parameters need a version")
         # Parameters exist only as a screen's output, so a v2+ name and `screened_on` go
@@ -138,6 +169,28 @@ class SideEffectParams:
                              f"recorded exactly from v2 on, got {self.screened_on!r}")
         if self.screened_on is not None:
             check_screened_on(self.screened_on, f"side-effect parameters {self.name!r}")
+
+    @property
+    def per_family(self) -> bool:
+        return self.families is not None
+
+    def values_for(self, family: str | None) -> tuple[float, float]:
+        """(X, Y) for a world of `family`: the scalar pair of a v1 / v2 file whatever the family;
+        the family's pair from v3, refused when the file has none for it."""
+        if self.families is None:
+            return self.x, self.y  # type: ignore[return-value]
+        for f, x, y in self.families:
+            if f == family:
+                return x, y
+        raise ValueError(f"side-effect parameters {self.name!r} ({self.version[:12]}) record no "
+                         f"X / Y for family {family!r}; they have {[f for f, _, _ in self.families]}")
+
+    def missing_families(self, families: Iterable[str]) -> list[str]:
+        """The families in `families` this v3+ file has no values for (always [] for v1 / v2)."""
+        if self.families is None:
+            return []
+        have = {f for f, _, _ in self.families}
+        return sorted(set(families) - have)
 
 
 # Side-effect parameter files (design D4; v1 frozen by EXP-0044 attempt 2, v2 by EXP-0047 and
@@ -150,6 +203,12 @@ DEFAULT_PARAMS = PARAMS_V2
 
 
 PARAMS_FIELDS = {"name", "x", "y", "q", "rule", "method", "evidence"}
+# v3+ (add-gate-v3 D4): `families` = {family: {x, y, evidence}} replaces the scalar x / y.
+PARAMS_FIELDS_V3 = {"name", "families", "q", "rule", "method", "evidence"}
+FAMILY_FIELDS = {"x", "y", "evidence"}
+FAMILY_EVIDENCE_FIELDS = {"episodes", "run_down_values", "fill_values", "rows_digest",
+                          "bests_digest", "run_down_distinct", "fill_distinct", "x_is_minimum",
+                          "y_is_minimum", "small_sample"}
 SCREENED_ON = "screened_on"
 
 
@@ -173,21 +232,71 @@ def side_effect_params_json(x: float, y: float, q: float, **kw: object) -> str:
     return json.dumps(d, indent=2, sort_keys=True) + "\n"
 
 
+def side_effect_params_payload_v3(
+    families: Mapping[str, Mapping[str, object]], q: float, *, name: str, rule: str = "",
+    method: str = "", evidence: Mapping[str, object] | None = None, screened_on: str,
+) -> dict:
+    """The v3+ file payload (no hash, add-gate-v3 D4): `families` = {family: {x, y, evidence}},
+    each family's evidence holding its value and distinct-value counts, whether each quantile is
+    the minimum, and `small_sample`."""
+    return {"name": name, "q": float(q), "rule": rule, "method": method,
+            "evidence": dict(evidence or {}), SCREENED_ON: screened_on,
+            "families": {f: {"x": float(v["x"]), "y": float(v["y"]),  # type: ignore[arg-type]
+                             "evidence": dict(v["evidence"])}  # type: ignore[call-overload]
+                         for f, v in sorted(families.items())}}
+
+
+def side_effect_params_json_v3(families: Mapping[str, Mapping[str, object]], q: float,
+                               **kw: object) -> str:
+    d = side_effect_params_payload_v3(families, q, **kw)  # type: ignore[arg-type]
+    d["content_hash"] = content_hash(d)
+    return json.dumps(d, indent=2, sort_keys=True) + "\n"
+
+
+def _families_from_dict(name: str, fams: object) -> tuple[tuple[str, float, float], ...]:
+    """The (family, X, Y) of a v3+ file, refusing malformed entries and an evidence block whose
+    `small_sample` flag does not follow from its distinct counts."""
+    if not isinstance(fams, dict) or not fams:
+        raise ValueError(f"side-effect parameter file {name!r}: families must be a non-empty object")
+    out = []
+    for f, v in sorted(fams.items()):
+        if not isinstance(v, dict) or set(v) != FAMILY_FIELDS:
+            raise ValueError(f"side-effect parameter file {name!r}: family {f} fields "
+                             f"{sorted(v) if isinstance(v, dict) else v!r} != {sorted(FAMILY_FIELDS)}")
+        ev = v["evidence"]
+        if not isinstance(ev, dict) or set(ev) != FAMILY_EVIDENCE_FIELDS:
+            raise ValueError(f"side-effect parameter file {name!r}: family {f} evidence fields "
+                             f"{sorted(ev) if isinstance(ev, dict) else ev!r} != "
+                             f"{sorted(FAMILY_EVIDENCE_FIELDS)}")
+        small = min(ev["run_down_distinct"], ev["fill_distinct"]) < SMALL_SAMPLE_DISTINCT
+        if ev["small_sample"] is not small:
+            raise ValueError(f"side-effect parameter file {name!r}: family {f} small_sample "
+                             f"{ev['small_sample']!r} disagrees with its distinct counts")
+        out.append((f, v["x"], v["y"]))
+    return tuple(out)
+
+
 def params_from_dict(d: Mapping[str, object]) -> SideEffectParams:
     """Parse a parameter file, refusing a recorded hash that does not match its contents."""
     d = dict(d)
     recorded = d.pop("content_hash", None)
     if recorded is None:
         raise ValueError("side-effect parameter file records no content_hash; it has no version")
+    tag = name_version_tag(str(d.get("name", "")))
     # v2+ parameter files are only ever written by a screen, so they always carry screened_on;
-    # v1 files never do (add-shocks-i-drift D10).
-    want = PARAMS_FIELDS | ({SCREENED_ON} if name_version_tag(str(d.get("name", ""))) >= 2 else set())
+    # v1 files never do (add-shocks-i-drift D10). v3+ files carry X / Y per family (D4).
+    want = ((PARAMS_FIELDS_V3 if tag >= FAMILY_PARAMS_VERSION else PARAMS_FIELDS)
+            | ({SCREENED_ON} if tag >= 2 else set()))
     if set(d) != want:
         raise ValueError(f"side-effect parameter file {d.get('name')!r} fields {sorted(d)} != "
                          f"{sorted(want)}")
     if content_hash(d) != recorded:
         raise ValueError(f"side-effect parameter hash {content_hash(d)} != recorded {recorded}: "
                          "edited without a new version")
+    if tag >= FAMILY_PARAMS_VERSION:
+        return SideEffectParams(x=None, y=None, version=str(recorded), name=str(d["name"]),
+                                screened_on=d.get(SCREENED_ON),  # type: ignore[arg-type]
+                                families=_families_from_dict(str(d["name"]), d["families"]))
     return SideEffectParams(x=d["x"], y=d["y"], version=str(recorded),  # type: ignore[arg-type]
                             name=str(d["name"]), screened_on=d.get(SCREENED_ON))  # type: ignore[arg-type]
 
@@ -477,6 +586,9 @@ class ClauseVerdict:
         }
 
 
+V3_WORLD_FIELDS = ("family", "replicate_violations")
+
+
 @dataclass(frozen=True)
 class WorldResult:
     """Per-world report line (gate-harness "Gate report contents"). `ratio` is None and
@@ -494,9 +606,15 @@ class WorldResult:
     run_down_failures: int
     starvation_failures: int
     monitored: tuple[tuple[str, float | None], ...]
+    # v3+ parameters only (add-gate-v3 D4, D6); None, and left out of `to_dict`, otherwise, so a
+    # v1 / v2 report serializes as before: the world's family, and how many candidate rows break
+    # run-down or starvation per replicate (monitored, never gating).
+    family: str | None = None
+    replicate_violations: int | None = None
 
     def to_dict(self) -> dict[str, object]:
-        d = {f.name: getattr(self, f.name) for f in fields(self)}
+        d = {f.name: getattr(self, f.name) for f in fields(self)
+             if not (f.name in V3_WORLD_FIELDS and getattr(self, f.name) is None)}
         d["episodes"] = list(self.episodes)
         d["monitored"] = dict(self.monitored)
         return d
@@ -526,14 +644,18 @@ class GateReport:
     roster_version: str
     registry_version: str
     params_version: str
-    x: float
-    y: float
+    x: float | None
+    y: float | None
     worlds: tuple[WorldResult, ...]
     regimes: tuple[RegimeResult, ...]
     clauses: tuple[ClauseVerdict, ...]
     non_gating_worlds: tuple[str, ...]
     overall: str
     failing_clauses: tuple[str, ...] = field(default=())
+    # v3+ parameters only (add-gate-v3 D4, D6), left out of `to_dict` when None: the (family, X,
+    # Y) applied, and the per-replicate run-down / starvation violations (monitored, never gating).
+    families: tuple[tuple[str, float, float], ...] | None = None
+    replicate_violations: tuple[Failure, ...] | None = None
 
     def clause(self, name: str) -> ClauseVerdict:
         for c in self.clauses:
@@ -554,7 +676,10 @@ class GateReport:
             "non_gating_worlds": list(self.non_gating_worlds),
             "overall": self.overall,
             "failing_clauses": list(self.failing_clauses),
-        }
+        } | ({} if self.families is None else {
+            "families": {f: {"x": x, "y": y} for f, x, y in self.families},
+            "replicate_violations": [v.to_dict() for v in self.replicate_violations or ()],
+        })
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
@@ -660,7 +785,7 @@ def _monitored_means(rows: Sequence[EpisodeRow]) -> tuple[tuple[str, float | Non
     return tuple(out)
 
 
-def _episode_failures(r: EpisodeRow, params: SideEffectParams) -> list[Failure]:
+def _episode_failures(r: EpisodeRow, x: float, y: float) -> list[Failure]:
     """Death, run-down and starvation failures of one candidate row."""
     scope = {"size": r.size, "regime": r.regime, "world": r.world, "episode": r.episode,
              "replicate": r.replicate}
@@ -669,31 +794,91 @@ def _episode_failures(r: EpisodeRow, params: SideEffectParams) -> list[Failure]:
         out.append(Failure(ZERO_DEATH_CLAUSE, "episode ended in system death", 1.0, 0.0, **scope))
     if r.r_start is None or r.r_end is None:
         out.append(Failure(RUN_DOWN_CLAUSE, "run-down unmeasurable (r_start or r_end is None)",
-                           None, params.x, **scope))
-    elif r.r_end < params.x * r.r_start:
+                           None, x, **scope))
+    elif r.r_end < x * r.r_start:
         out.append(Failure(
-            RUN_DOWN_CLAUSE, f"r_end {r.r_end!r} < X·r_start {params.x * r.r_start!r}",
-            r.r_end / r.r_start if r.r_start else None, params.x, **scope))
+            RUN_DOWN_CLAUSE, f"r_end {r.r_end!r} < X·r_start {x * r.r_start!r}",
+            r.r_end / r.r_start if r.r_start else None, x, **scope))
     for consumer, rate in r.consumer_fill_rate:
-        if rate is not None and rate < params.y:
+        if rate is not None and rate < y:
             out.append(Failure(STARVATION_CLAUSE, f"consumer {consumer} fill rate {rate!r} < Y",
-                               rate, params.y, consumer=consumer, **scope))
+                               rate, y, consumer=consumer, **scope))
     return out
+
+
+def _replicated_failures(reps: Sequence[EpisodeRow], x: float,
+                         y: float) -> tuple[list[Failure], list[Failure]]:
+    """(gating, monitored) failures of one candidate episode under v3+ parameters (add-gate-v3
+    D6; gate-harness "Side effects of a replicated candidate").
+
+    - Deaths per replicate: a death has no mean, so each dead replicate fails, named.
+    - Run-down on the replicate mean of r_end / r_start over replicates with r_start > 0 (the
+      statistic `episode_bests` calibrates X on). Fail-closed as v1 / v2: any replicate with
+      r_start or r_end None fails the episode as unmeasurable. With every r_start 0 there is no
+      ratio and the check passes, as v1 / v2's r_end >= X·0 does.
+    - Starvation per consumer on the replicate mean of its fill rate, over replicates where it
+      ordered (the statistic Y is calibrated on); a consumer that ordered in none is not judged.
+    - The per-replicate run-down and starvation failures v1 / v2 would record are returned as
+      monitored, never gating."""
+    first = reps[0]
+    scope = {"size": first.size, "regime": first.regime, "world": first.world,
+             "episode": first.episode}
+    gating = [f for r in reps for f in _episode_failures(r, x, y)
+              if f.clause == ZERO_DEATH_CLAUSE]
+    monitored = [f for r in reps for f in _episode_failures(r, x, y)
+                 if f.clause != ZERO_DEATH_CLAUSE]
+    if any(r.r_start is None or r.r_end is None for r in reps):
+        gating.append(Failure(RUN_DOWN_CLAUSE, "run-down unmeasurable (r_start or r_end is None "
+                              "in some replicate)", None, x, **scope))
+    else:
+        ratios = [r.r_end / r.r_start for r in reps if r.r_start]  # type: ignore[operator]
+        if ratios and fmean(ratios) < x:
+            gating.append(Failure(
+                RUN_DOWN_CLAUSE, f"replicate-mean r_end/r_start {fmean(ratios)!r} < X over "
+                f"{len(ratios)} replicate(s)", fmean(ratios), x, **scope))
+    consumers = sorted({c for r in reps for c, _ in r.consumer_fill_rate})
+    for c in consumers:
+        rates = [dict(r.consumer_fill_rate).get(c) for r in reps]
+        vals = [v for v in rates if v is not None]
+        if vals and fmean(vals) < y:
+            gating.append(Failure(
+                STARVATION_CLAUSE, f"consumer {c} replicate-mean fill rate {fmean(vals)!r} < Y "
+                f"over {len(vals)} replicate(s)", fmean(vals), y, consumer=c, **scope))
+    return gating, monitored
 
 
 def compute_report(
     rows: Sequence[EpisodeRow], roster: Roster, params: SideEffectParams, registry_version: str,
-    gate_sizes: Collection[int] = GATE_SIZES,
+    gate_sizes: Collection[int] = GATE_SIZES, world_family: Mapping[str, str] | None = None,
 ) -> GateReport:
     """The gate report and verdict, a pure function of the rows and the frozen versions (D6).
     `gate_sizes` defaults to the acceptance sizes; only fixtures narrow it. Twin rows are
-    checked (`split_twins`) and then dropped: resilience is a report, not a clause."""
+    checked (`split_twins`) and then dropped: resilience is a report, not a clause.
+
+    v1 / v2 parameters: one X and Y for every world, each candidate row checked on its own
+    (unchanged). v3+ parameters (add-gate-v3 D4, D6): `world_family` (world -> family) is
+    required, each world is checked against its family's X / Y, and a candidate episode's run-down
+    and starvation are judged on its replicate means (`_replicated_failures`), deaths per
+    replicate, with per-replicate violations reported as monitored."""
     if not gate_sizes:
         raise ValueError("no gate sizes")
     judged, _ = split_twins(rows)
     by_world = _check_rows(judged, roster, gate_sizes)
+    v3 = params.per_family
+    if v3:
+        if world_family is None:
+            raise ValueError(f"side-effect parameters {params.name!r} are per family: the report "
+                             "needs each world's family")
+        unknown = sorted(set(by_world) - set(world_family))
+        if unknown:
+            raise ValueError(f"no family for worlds {unknown[:3]}")
+        missing = params.missing_families(world_family[w] for w in by_world)
+        if missing:
+            raise ValueError(f"side-effect parameters {params.name!r} ({params.version[:12]}) "
+                             f"record no X / Y for families {missing} present in the report")
     worlds: list[WorldResult] = []
     failures: dict[str, list[Failure]] = {c: [] for c in CLAUSES}
+    rep_violations: list[Failure] = []
     for world in sorted(by_world):
         eps = by_world[world]
         episodes = tuple(sorted(eps))
@@ -707,12 +892,25 @@ def compute_report(
         cand_mean = fmean([_subject_value(eps[ep], CANDIDATE) for ep in episodes])
         cand_rows = [r for ep in episodes
                      for r in sorted(eps[ep], key=lambda r: r.replicate) if r.subject == CANDIDATE]
-        ep_fail = [f for r in cand_rows for f in _episode_failures(r, params)]
+        family = world_family[world] if v3 else None  # type: ignore[index]
+        x, y = params.values_for(family)
+        monitored_fail: list[Failure] = []
+        if v3:
+            ep_fail = []
+            for ep in episodes:
+                g, m = _replicated_failures(
+                    sorted((r for r in eps[ep] if r.subject == CANDIDATE),
+                           key=lambda r: r.replicate), x, y)
+                ep_fail += g
+                monitored_fail += m
+        else:
+            ep_fail = [f for r in cand_rows for f in _episode_failures(r, x, y)]
         gating = baseline != 0
         ratio = world_ratio(cand_mean, baseline) if gating else None
         if gating:
             for f in ep_fail:
                 failures[f.clause].append(f)
+            rep_violations += monitored_fail
             if ratio < NO_LOSING_FLOOR:  # type: ignore[operator]
                 failures[NO_LOSING_CLAUSE].append(Failure(
                     NO_LOSING_CLAUSE, f"world ratio {ratio!r} < {NO_LOSING_FLOOR!r}", ratio,
@@ -725,6 +923,9 @@ def compute_report(
             starvation_failures=len({(f.episode, f.replicate) for f in ep_fail
                                      if f.clause == STARVATION_CLAUSE}),
             monitored=_monitored_means(cand_rows),
+            family=family,
+            replicate_violations=(len({(f.episode, f.replicate) for f in monitored_fail})
+                                  if v3 else None),
         ))
 
     regimes: list[RegimeResult] = []
@@ -753,15 +954,18 @@ def compute_report(
         worlds=tuple(worlds), regimes=tuple(regimes), clauses=clauses,
         non_gating_worlds=tuple(w.world for w in worlds if not w.gating),
         overall=REJECT if failing else ACCEPT, failing_clauses=failing,
+        families=params.families, replicate_violations=tuple(rep_violations) if v3 else None,
     )
 
 
 def recompute_from_csv(
     text: str, roster: Roster, params: SideEffectParams, registry_version: str,
-    gate_sizes: Collection[int] = GATE_SIZES,
+    gate_sizes: Collection[int] = GATE_SIZES, world_family: Mapping[str, str] | None = None,
 ) -> GateReport:
-    """`--mode recompute` core (D6): the report rebuilt from `episodes.csv` text alone."""
-    return compute_report(rows_from_csv(text), roster, params, registry_version, gate_sizes)
+    """`--mode recompute` core (D6): the report rebuilt from `episodes.csv` text alone (plus the
+    pinned world families under v3+ parameters)."""
+    return compute_report(rows_from_csv(text), roster, params, registry_version, gate_sizes,
+                          world_family)
 
 
 # --- resilience rows (add-shocks-i-drift D6, D10; gate-harness "Resilience rows in a report") ---
@@ -958,20 +1162,78 @@ class Calibration:
                 "bests_digest": self.bests_digest}
 
 
-def calibrate_x_y(rows: Sequence[EpisodeRow], roster: Roster, q: float) -> Calibration:
-    """X and Y by the D4 rule (`CALIBRATION_RULE`) with the nearest-rank quantile, over the
-    roster-only `rows` (reduced by `episode_bests`). The evidence binds the exact input rows."""
+def _calibrate(rows: Sequence[EpisodeRow], roster: Roster,
+               q: float) -> tuple[Calibration, list[float], list[float]]:
     bests = episode_bests(rows, roster)
     run_downs = [b.run_down for b in bests if b.run_down is not None]
     fills = [f for b in bests for f in b.fill_rates]
     if not run_downs or not fills:
         raise ValueError("no measurable run-down ratios or fill rates to calibrate on")
     canon = sorted((b.world, b.episode, b.member, b.run_down, b.fill_rates) for b in bests)
-    return Calibration(
+    cal = Calibration(
         x=quantile_nearest_rank(run_downs, q), y=quantile_nearest_rank(fills, q), q=q,
         method=QUANTILE_METHOD, episodes=len(bests), run_down_values=len(run_downs),
         fill_values=len(fills), rows_digest=rows_digest(rows),
         bests_digest=content_hash({"bests": [list(c) for c in canon]}))
+    return cal, run_downs, fills
+
+
+def calibrate_x_y(rows: Sequence[EpisodeRow], roster: Roster, q: float) -> Calibration:
+    """X and Y by the D4 rule (`CALIBRATION_RULE`) with the nearest-rank quantile, over the
+    roster-only `rows` (reduced by `episode_bests`). The evidence binds the exact input rows."""
+    return _calibrate(rows, roster, q)[0]
+
+
+@dataclass(frozen=True)
+class FamilyCalibration:
+    """One gate family's X / Y (add-gate-v3 D4) with its sample evidence: the value counts (in
+    `calibration`), the distinct-value counts (calm worlds replay, so a deterministic argmax
+    member repeats its values across episodes), whether each nearest-rank quantile is the
+    sample minimum, and `small_sample` (fewer than `SMALL_SAMPLE_DISTINCT` distinct run-down or
+    fill values). The flag is recorded, never a change of rule."""
+
+    family: str
+    calibration: Calibration
+    run_down_distinct: int
+    fill_distinct: int
+    x_is_minimum: bool
+    y_is_minimum: bool
+
+    @property
+    def small_sample(self) -> bool:
+        return min(self.run_down_distinct, self.fill_distinct) < SMALL_SAMPLE_DISTINCT
+
+    def evidence(self) -> dict[str, object]:
+        return self.calibration.evidence() | {
+            "run_down_distinct": self.run_down_distinct, "fill_distinct": self.fill_distinct,
+            "x_is_minimum": self.x_is_minimum, "y_is_minimum": self.y_is_minimum,
+            "small_sample": self.small_sample}
+
+    def payload(self) -> dict[str, object]:
+        return {"x": self.calibration.x, "y": self.calibration.y, "evidence": self.evidence()}
+
+
+def calibrate_families(rows: Sequence[EpisodeRow], roster: Roster, q: float,
+                       world_family: Mapping[str, str]) -> tuple[FamilyCalibration, ...]:
+    """X / Y per gate family (add-gate-v3 D4): `calibrate_x_y`'s rule on each family's rows
+    alone, pooled over sizes (so sparse_wide's 12- and 42-producer episodes form one sample). Every
+    row's world must be in `world_family`: the caller passes exactly the admitted final worlds,
+    so excluded or replaced worlds cannot enter a family's sample unnoticed."""
+    unknown = sorted({r.world for r in rows} - set(world_family))
+    if unknown:
+        raise ValueError(f"rows of worlds without a family {unknown[:3]}: calibrate only the "
+                         "admitted final worlds")
+    by_family: dict[str, list[EpisodeRow]] = {}
+    for r in rows:
+        by_family.setdefault(world_family[r.world], []).append(r)
+    out = []
+    for family, fam_rows in sorted(by_family.items()):
+        cal, run_downs, fills = _calibrate(fam_rows, roster, q)
+        out.append(FamilyCalibration(
+            family=family, calibration=cal, run_down_distinct=len(set(run_downs)),
+            fill_distinct=len(set(fills)), x_is_minimum=cal.x == min(run_downs),
+            y_is_minimum=cal.y == min(fills)))
+    return tuple(out)
 
 
 @dataclass(frozen=True)
