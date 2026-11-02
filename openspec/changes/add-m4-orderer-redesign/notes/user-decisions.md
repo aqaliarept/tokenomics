@@ -13,3 +13,4 @@
 - 2026-10-31: user chose to build gate v3 alongside M4 (second implementer stream for add-gate-v3; full-suite runs take turns).
 - 2026-10-31: user: "Dont start experiments now, near weekly usage limit." Supervisor: no pod runs; in-flight code task (M4 5.3) and review (gate-v3 1.1) finish, then work pauses; no new delegations until the user resumes. Heartbeat paused.
 - 2026-11-02: user resumed ("Limits restored, continue") after the water-filling proposal; supervisor inserted 5.5 (WF router + arm-compare, local) and 5.6 (EXP-0067, cpu8) with a pre-registered reading, to run before group 6.
+- 2026-11-02: user chose "Paper-faithful only" for EXP-0067: the arm is the paper's uTWF using only local information (own order quantity, static agent count M_p, producer spare capacity); the exact-demand WF version is dropped. Task 5.5 reworked accordingly.

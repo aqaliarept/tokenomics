@@ -29,6 +29,11 @@ Validity (exit 2): contract failures, missing rows, digest differences across ar
 reproduction of EXP-0056 (TR / TW / RR, the three shocked worlds, first episode) and EXP-0052
 (TR / RR / MWW, the confirm rows): units, death and digests must be equal.
 
+`--mode arm-compare --arm utwf` (task 5.5, EXP-0067) replays every EXP-0057 world-episode with
+one more keyed router (uTWF, R = 2, EXP-0057's draw keys) and compares it with
+EXP-0057's recorded RR, MWWk and TS rows (`run_arm_compare`); RR is replayed once per
+world-episode only to check neutrality against EXP-0057. The check mode is unchanged.
+
 Outputs: `spec.json`, `episodes.csv` (gate rows + `trace_*` + `arm` + score-fidelity cells),
 `decoder_check.csv`, `fidelity.csv`, `dispersion.csv`, `reading.json`, `reproduction.csv`,
 `routing_metrics.csv`, `contract_failures.csv`, a `RESULT.md` skeleton. A real run needs the
@@ -1143,14 +1148,460 @@ def run_decoder_check(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
     return code
 
 
+# --- arm-compare mode (add-m4-orderer-redesign task 5.5, EXP-0067) ---
+#
+# One more keyed whole-order router (`--arm`, uTWF = `utwf`) replayed on every EXP-0057
+# world-episode (R = 2, EXP-0057's draw keys) and compared with EXP-0057's recorded RR, MWWk and
+# TS rows; RR is played once more per world-episode only as the neutrality check (it must equal
+# EXP-0057's row). The check mode above is unchanged.
+
+CHECK, ARM_COMPARE = "check", "arm-compare"
+MODES = (CHECK, ARM_COMPARE)
+COMPARE_EXPERIMENT = "EXP-0067"
+UTWF = "uTWF"
+COMPARE_ROUTERS = {"utwf": UTWF}  # --arm -> arm label (keyed diagnostic routers)
+EXP0057 = "exp0057"
+COMPARE_REFERENCE_ARMS = (RR, MWWK, TS)  # read from EXP-0057's rows, never rerun
+COMPARE_REPLICATES = {UTWF: KEYED_R, RR: 1, MWWK: KEYED_R, TS: KEYED_R}
+LOSS_SHARE_DEN = 6  # pre-registered: uTWF loses to RR beyond floor_w on <= 1/6 of the worlds
+UTWF_STRONGEST, UTWF_NOT_BETTER = "utwf_strongest", "utwf_not_better"
+COMPARE_NEXT = {
+    UTWF_STRONGEST: "the supervisor brings two questions to the user before group 6: uTWF into "
+                  "roster v3 (the strongest-policy rule), and whether step 2's frozen base "
+                  "becomes uTWF's logits (or uTWF's level a phi feature)",
+    UTWF_NOT_BETTER: "recorded; step 2 unchanged"}
+COMPARE_RULES = {
+    "reading": "12 producers decide (42 reported): utwf_strongest when uTWF - RR and uTWF - "
+               "MWWk both exceed their per-comparison floor on the 23-world loaded mean, i.e. "
+               "mean_w(X_w) > mean_w(floor_w) for each comparison X, AND uTWF loses to RR "
+               "(RR_w - uTWF_w > floor_w) on <= 1/6 of the worlds (6 n <= worlds, exact); "
+               "utwf_not_better otherwise",
+    "floor": "per comparison and world (D3): floor_w = max(atlas noise_floor, 3 SE of the run's "
+             "own paired differences), the own SE only with >= 2 paired observations (the n = 1 "
+             "rule)",
+    "pairing": "uTWF - MWWk / uTWF - TS: per episode, replicate by replicate (the same keys); "
+               "uTWF - RR: each uTWF replicate against RR's one row",
+    "means": "per world: equal-weight mean over episodes of the replicate means",
+    "reference": "RR, MWWk and TS are EXP-0057's recorded rows (episodes.csv SHA-256 "
+                 "registered); the reproduced RR row of every world-episode must equal EXP-0057's "
+                 "(exp0057_neutrality), and every row's digests must equal EXP-0057's",
+    "mean_floor_alternative": "reported only: the mean difference against max(mean atlas "
+                              "floor, 3 SE of the per-world differences)",
+}
+
+
+def _exp0057_sha() -> str:
+    from .split_need import EXP0057_EPISODES_SHA  # split_need imports this module
+
+    return EXP0057_EPISODES_SHA
+
+
+def compare_arm(router: str) -> dict:
+    """The `--arm` router's routing_audit entry: entity_planner + the keyed router, R = 2."""
+    if router not in COMPARE_ROUTERS:
+        raise ValueError(f"--arm {router!r}: arm-compare takes {sorted(COMPARE_ROUTERS)}")
+    if ROUTER_KIND.get(router) != STOCHASTIC:
+        raise AssertionError(f"{router} is not a keyed (stochastic) diagnostic router")
+    return {"router": router, "subject": member_id(PRODUCER, router), "producing": PRODUCER,
+            "ordering": router, "contract": JOINT_STACK, "random": True, "roster": False,
+            "kind": STOCHASTIC, "trained": False, "replicates": KEYED_R,
+            "arm": COMPARE_ROUTERS[router]}
+
+
+@dataclass(frozen=True)
+class CompareWorld:
+    world: str
+    size: int
+    choice: str
+    rho: float
+    episodes: int
+    means: dict[str, float]
+    utwf_rr: Comparison | None
+    utwf_mwwk: Comparison | None
+    utwf_ts: Comparison | None  # reported
+
+    @property
+    def loses_to_rr(self) -> bool | None:
+        """RR_w - uTWF_w > floor_w (uTWF - RR's floor)."""
+        c = self.utwf_rr
+        return None if c is None else -c.diff > c.floor
+
+
+def compare_table(units: Mapping[str, Mapping[str, Units]], views: Sequence[Mapping],
+                  replicates: Mapping[str, int] = COMPARE_REPLICATES) -> list[CompareWorld]:
+    """Per sampled world, uTWF against RR, MWWk (and TS, reported); None where an arm has no
+    complete rows (never paired from partial rows)."""
+    out = []
+    for v in views:
+        per = {a: u for a, u in units.get(v["world"], {}).items()
+               if complete_arm(a, u, replicates)}
+        floor = float(v["noise_floor"])
+
+        def cmp(b: str) -> Comparison | None:
+            if UTWF not in per or b not in per:
+                return None
+            try:
+                return compare(per[UTWF], per[b], floor)
+            except ValueError:  # episodes differ (the run is invalid anyway)
+                return None
+
+        eps = {e for u in per.values() for e in u}
+        out.append(CompareWorld(v["world"], int(v["size"]), v["choice"], float(v["rho"]),
+                                len(eps), {a: world_mean(u) for a, u in sorted(per.items())},
+                                cmp(RR), cmp(MWWK), cmp(TS)))
+    return out
+
+
+def _mean_rule(cs: Sequence[Comparison]) -> dict:
+    """The pre-registered mean rule for one comparison over a size's worlds, plus the reported
+    alternative floor."""
+    diffs = [c.diff for c in cs]
+    mean_diff, mean_floor = statistics.fmean(diffs), statistics.fmean(c.floor for c in cs)
+    se3 = own_3se(diffs)
+    alt = max(statistics.fmean(c.atlas_floor for c in cs), se3 if se3 is not None else 0.0)
+    return {"mean_diff": mean_diff, "mean_floor": mean_floor, "exceeds": mean_diff > mean_floor,
+            "worlds_beyond_floor": sum(c.diff > c.floor for c in cs),
+            "worlds_below_floor": sum(-c.diff > c.floor for c in cs),
+            "alternative_floor_reported_only": alt,
+            "alternative_exceeds_reported_only": mean_diff > alt}
+
+
+def compare_reading(results: Sequence[CompareWorld], size: int = READING_SIZE) -> dict:
+    """task 5.5's pre-registered reading on `size`'s worlds: `utwf_strongest` when uTWF - RR and
+    uTWF - MWWk both exceed their floor on the mean and uTWF loses to RR beyond floor_w on <= 1/6
+    of the worlds; else `utwf_not_better` (`incomplete` when a comparison is missing)."""
+    ws = [r for r in results if r.size == size]
+    if not ws or any(r.utwf_rr is None or r.utwf_mwwk is None for r in ws):
+        return {"reading": INCOMPLETE, "worlds": len(ws), "next": None}
+    rr = _mean_rule([r.utwf_rr for r in ws])
+    mwwk = _mean_rule([r.utwf_mwwk for r in ws])
+    ts = (_mean_rule([r.utwf_ts for r in ws]) if all(r.utwf_ts is not None for r in ws) else None)
+    losses = [r.world for r in ws if r.loses_to_rr]
+    losses_ok = len(losses) * LOSS_SHARE_DEN <= len(ws)
+    reading = UTWF_STRONGEST if rr["exceeds"] and mwwk["exceeds"] and losses_ok else UTWF_NOT_BETTER
+    return {"reading": reading, "next": COMPARE_NEXT[reading], "worlds": len(ws),
+            "utwf_minus_rr": rr, "utwf_minus_mwwk": mwwk, "utwf_minus_ts_reported": ts,
+            "losses_to_rr": len(losses), "loss_worlds": losses,
+            "max_losses": len(ws) // LOSS_SHARE_DEN, "losses_rule": losses_ok}
+
+
+COMPARE_COLUMNS = (
+    "scope", "size", "world", "cell", "rho", "enters_reading", "worlds", "episodes", UTWF, RR,
+    "RR_reproduced", MWWK, TS,
+    *(f"{p}_{m}" for p in ("utwf_rr", "utwf_mwwk", "utwf_ts")
+      for m in ("diff", "atlas_floor", "own_3se", "pairs", "floor", "beyond_floor",
+                "below_floor")),
+    "loses_to_rr")
+
+
+def compare_rows(results: Sequence[CompareWorld], reproduced: Mapping[str, float]
+                 ) -> list[dict]:
+    """`compare.csv`: per world, then one mean row per size (the reading's two sides)."""
+    rows = []
+    for r in results:
+        row = {"scope": "world", "size": r.size, "world": r.world, "cell": f"{r.size}/{r.choice}",
+               "rho": r.rho, "enters_reading": r.size == READING_SIZE, "worlds": 1,
+               "episodes": r.episodes, **{a: r.means.get(a) for a in (UTWF, RR, MWWK, TS)},
+               "RR_reproduced": reproduced.get(r.world), "loses_to_rr": r.loses_to_rr}
+        for p, c in (("utwf_rr", r.utwf_rr), ("utwf_mwwk", r.utwf_mwwk), ("utwf_ts", r.utwf_ts)):
+            if c is not None:
+                row.update({f"{p}_diff": c.diff, f"{p}_atlas_floor": c.atlas_floor,
+                            f"{p}_own_3se": c.own3se, f"{p}_pairs": c.pairs,
+                            f"{p}_floor": c.floor, f"{p}_beyond_floor": c.diff > c.floor,
+                            f"{p}_below_floor": -c.diff > c.floor})
+        rows.append(row)
+    for size in sorted({r.size for r in results}):
+        ws = [r for r in results if r.size == size]
+        row = {"scope": "mean", "size": size, "enters_reading": size == READING_SIZE,
+               "worlds": len(ws), "episodes": sum(r.episodes for r in ws),
+               "loses_to_rr": sum(bool(r.loses_to_rr) for r in ws)}
+        for a in (UTWF, RR, MWWK, TS):
+            xs = [r.means[a] for r in ws if a in r.means]
+            row[a] = statistics.fmean(xs) if len(xs) == len(ws) else None
+        for p in ("utwf_rr", "utwf_mwwk", "utwf_ts"):
+            cs = [getattr(r, p) for r in ws]
+            if all(c is not None for c in cs):
+                row.update({f"{p}_diff": statistics.fmean(c.diff for c in cs),
+                            f"{p}_atlas_floor": statistics.fmean(c.atlas_floor for c in cs),
+                            f"{p}_floor": statistics.fmean(c.floor for c in cs),
+                            f"{p}_beyond_floor": sum(c.diff > c.floor for c in cs),
+                            f"{p}_below_floor": sum(-c.diff > c.floor for c in cs)})
+        rows.append(row)
+    return rows
+
+
+def reference_digest_problems(dicts: Sequence[Mapping[str, str]],
+                              ref: Sequence[Mapping[str, str]]) -> list[tuple[str, str]]:
+    """Every row of this run against every EXP-0057 row of its world-episode: demand and shock
+    digests equal (digest pairing across the two runs)."""
+    theirs: dict[tuple[str, int], set[tuple[str, str]]] = {}
+    for d in ref:
+        theirs.setdefault((d["world"], int(d["episode"])), set()).add(
+            (d["demand_digest"], d.get("shock_digest", "")))
+    problems = []
+    for d in dicts:
+        k = (d["world"], int(d["episode"]))
+        mine = (d["demand_digest"], d.get("shock_digest", ""))
+        if k in theirs and theirs[k] != {mine}:
+            problems.append((DIGEST, f"{k[0]} episode {k[1]} {d['subject']} r{d['replicate']}: "
+                                     "digests differ from EXP-0057's"))
+    return problems
+
+
+def compare_run_problems(*, atlas: Mapping, roster: Roster, horizon: int, source_commit: str,
+                         orderer_sha: str | None, reference_sha: str | None,
+                         filters: Mapping[str, object]) -> list[str]:
+    problems = [msg for bad, msg in (
+        (atlas.get("content_hash") != REGISTERED_ATLAS_HASH,
+         f"atlas {str(atlas.get('content_hash'))[:12]} is not the registered EXP-0052 "
+         f"reclassified atlas {REGISTERED_ATLAS_HASH[:12]}"),
+        (not roster.frozen, f"roster {roster.version[:12]} is not frozen"),
+        (not _is_commit(source_commit),
+         "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
+        (horizon != HORIZON, f"horizon {horizon} != {HORIZON}"),
+        (orderer_sha != ROLE_CHECKPOINTS["orderer"],
+         f"orderer checkpoint {str(orderer_sha)[:12]} is not the registered "
+         f"{ROLE_CHECKPOINTS['orderer'][:12]} (EXP-0057's TS rows)"),
+        (reference_sha != _exp0057_sha(),
+         f"--exp0057-episodes {str(reference_sha)[:12]} is not the registered EXP-0057 "
+         f"episodes.csv {_exp0057_sha()[:12]}"),
+    ) if bad]
+    problems += [f"--{k.replace('_', '-')} is set" for k, v in filters.items() if v is not None]
+    return problems
+
+
+COMPARE_QUESTION = (
+    "With many ordering agents routing the same product from the same start-of-cycle snapshot, "
+    "a deterministic 'pick the best' herds, and drawing in proportion to spare capacity (MWWk) "
+    "only partly avoids it. Does the paper's unsplittable Tidal Water Filling (uTWF: each agent, "
+    "from its own order size a, the product's number of ordering agents M and the producers' "
+    "spare capacity, draws one producer with Definition 2's p_n, so that M agents of its size "
+    "would level the spare capacity together) beat both `round_robin` and MWWk on the 23 loaded "
+    "12-producer worlds of EXP-0057? (task 5.5; Goren / Vargaftik / Moses, DISC 2020)")
+COMPARE_SKELETON = """# {title}
+
+{banner}**Status: {status}.** Not an acceptance read. {n_rows} episode rows over {n_worlds}
+worlds ({n_episodes} world-episodes): arm {arm} (`{router}`, R = 2, EXP-0057's draw keys) and
+the RR neutrality replay, `entity_planner` producer, horizon {horizon}; RR, MWWk and TS are
+EXP-0057's recorded rows. Produced by `python -m {driver} --mode arm-compare` (see
+`spec.json`); the reading in `reading.json`.
+
+## Question
+
+{question}
+
+## Pre-registered reading (task 5.5)
+
+{rule}
+
+## Result
+
+TODO (plain English first): what uTWF does and why (the herding literature), the reading and its
+two mean comparisons against their floors (`compare.csv` mean rows), the worlds where uTWF loses
+to RR beyond the floor, uTWF - TS (reported), the 42-producer table (reported), the neutrality
+replay (`neutrality.csv`) and the herding columns (`routing_metrics.csv`).
+
+## Conclusions
+
+TODO.
+"""
+
+
+def run_arm_compare(*, atlas_path: str | Path, out_dir: str | Path, arm: str,
+                    exp0057_episodes: str | Path | None = None,
+                    orderer_ckpt: str | Path | None = None, roster: Roster | None = None,
+                    workers: int = 1, horizon: int = HORIZON,
+                    worlds: Sequence[str] | None = None, max_worlds: int | None = None,
+                    shock_profile: str | None = None, source_commit: str = "",
+                    dry_run: bool = False,
+                    run_job_fn: Callable[[Job], dict[str, str]] = run_decoder_job,
+                    log: Callable[[str], None] = print) -> int:
+    """Run (or resume) `--mode arm-compare` into `out_dir`; return the exit status (0, or
+    `CONTRACT_INVALID` on contract failures, missing rows, digest differences or a neutrality
+    mismatch). The orderer checkpoint is pinned by SHA-256 only (no arm plays it: it is the
+    provenance of EXP-0057's TS rows)."""
+    from .split_need import NEUTRALITY_COLUMNS, neutrality
+
+    if shock_profile not in (None, SHOCKS_I_SMOKE):
+        raise ValueError(f"--shock-profile takes {SHOCKS_I_SMOKE} only (a dry run's window)")
+    roster = roster if roster is not None else load_roster(DEFAULT_ROSTER)
+    arm_entry = compare_arm(arm)
+    atlas_path = Path(atlas_path)
+    atlas = load_atlas(atlas_path)
+    views = select_views(atlas, worlds, max_worlds)
+    ref_path = Path(exp0057_episodes) if exp0057_episodes is not None else None
+    ref_sha = sha256_file(ref_path) if ref_path is not None else None
+    orderer = ({"path": str(orderer_ckpt), "sha256": sha256_file(orderer_ckpt)}
+               if orderer_ckpt is not None else None)
+    out = Path(out_dir)
+    if not dry_run:
+        problems = compare_run_problems(
+            atlas=atlas, roster=roster, horizon=horizon, source_commit=source_commit,
+            orderer_sha=orderer["sha256"] if orderer else None, reference_sha=ref_sha,
+            filters={"worlds": worlds, "max_worlds": max_worlds, "shock_profile": shock_profile})
+        if problems:
+            raise ValueError("not a valid arm-compare run (" + "; ".join(problems)
+                             + "); pass --dry-run for a smoke run")
+        counts = {s: sum(1 for v in views if v["size"] == s) for s in SIZES}
+        if counts != EXPECTED_WORLDS:
+            raise ValueError(f"the sample has {counts} worlds, D3 registers {EXPECTED_WORLDS}")
+    entries = [world_entry(v, shock_profile) for v in views]
+    table = [arm_entry, decoder_arm(RR, roster)]
+    grid = job_grid(entries, None)
+    expected: set[Key] = expected_keys(grid, table, 1)
+    played = {(w, int(ep)) for w, g in grid.items() for ep in g["episodes"]}
+    ref_subjects = {SUBJECT[a]: a for a in COMPARE_REFERENCE_ARMS}
+    reference = None
+    if ref_path is not None:  # fail before any job: the compared rows must all be there
+        reference = [d for d in read_reference(ref_path)
+                     if (d["world"], int(d["episode"])) in played and d["subject"] in ref_subjects]
+        have = {(d["world"], int(d["episode"]), ref_subjects[d["subject"]], int(d["replicate"]))
+                for d in reference}
+        need_arms = COMPARE_REFERENCE_ARMS if not dry_run else (RR,)
+        need = {(w, ep, a, r) for w, ep in played for a in need_arms
+                for r in range(COMPARE_REPLICATES[a])}
+        absent = sorted(need - have)
+        if absent:
+            raise ValueError(f"--exp0057-episodes lacks {len(absent)} of the {len(need)} "
+                             f"compared rows, e.g. {absent[:2]}")
+    source = source_fingerprint(source_commit or None)
+    pins = {
+        "driver": DRIVER, "mode": ARM_COMPARE, "arm": arm, "horizon": horizon,
+        "dry_run": dry_run,
+        "atlas": {"path": str(atlas_path), "sha256": sha256_file(atlas_path),
+                  "content_hash": atlas["content_hash"]},
+        "roster_version": roster.version,
+        "checkpoints": {"orderer": orderer["sha256"]} if orderer else {},
+        "reference": ({EXP0057: {"path": str(ref_path), "sha256": ref_sha}}
+                      if ref_path is not None else None),
+        "producer": PRODUCER, "arms": [UTWF, RR], "reference_arms": list(COMPARE_REFERENCE_ARMS),
+        "subjects": {UTWF: arm_entry["subject"], **{a: SUBJECT[a] for a in COMPARE_REFERENCE_ARMS}},
+        "arm_table": table, "shock_profile": shock_profile,
+        "sample": [{"world": v["world"], "size": v["size"], "class": v["class"],
+                    "rho": v["rho"], "choice": v["choice"], "pattern": v["pattern"],
+                    "shocks": v["shocks"], "noise_floor": v["noise_floor"]} for v in views],
+        "worlds": [v["record"] for v in views],
+        "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
+        "grid": grid,
+    }
+    old_spec, done = _prepare_resume(out, pins, grid, expected)
+    spec = _open_spec(out, old_spec, workers, {
+        "experiment": out.name, "driver": DRIVER, "mode": ARM_COMPARE,
+        "kind": "dry-run" if dry_run else "audit", "acceptance_read": False, "pins": pins,
+        "inputs": {"orderer": orderer} if orderer else {}, "source": source,
+        "pre_registered": {
+            "task": "add-m4-orderer-redesign 5.5 (inserted 2026-11-02)",
+            "sample": "EXP-0057's: atlas v2 train split, rho > 0.28, not collapse (23 at 12, 14 "
+                      "at 42), every confirm episode seed; 12 producers decide, 42 reported",
+            "arm": f"{UTWF} = {arm}: the paper's uTWF (Definition 2, Eq. (29)) from local "
+                   "information (own order quantity a, static stream count M_p, the producers' "
+                   "makeable_qty_now as queues); one keyed inverse-CDF draw (EXP-0057's keys) "
+                   "per agent and product, its orders whole to the drawn producer "
+                   "(notes/5.5.md); R = 2",
+            "rules": COMPARE_RULES, "next": COMPARE_NEXT,
+        },
+    })
+    ensure_failures_file(out)
+    jobs = build_jobs(entries, table, 1, horizon, None, None)
+    by_subject = {a["subject"]: a for a in table}
+    for j in jobs:
+        j["arm"] = by_subject[j["subject"]]["arm"]
+    if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
+        raise AssertionError("job list and pinned grid disagree")  # internal invariant
+    episodes = out / "episodes.csv"
+    done_keys = {job_key(r.world, r.episode, r.subject, r.replicate) for r in done}
+    try:
+        execute(out, spec, done_keys, read_episode_dicts(episodes), longest_first(jobs),
+                workers, run_job_fn, log, columns=COLUMNS)
+    except DigestMismatch as exc:  # recorded as a run row by execute; the run ends invalid
+        log(f"[decoder_check arm-compare] INVALID: {exc}")
+    rows = read_rows(episodes)
+    check_rows(rows, grid, expected, complete=False)
+    missing = expected - {job_key(r.world, r.episode, r.subject, r.replicate) for r in rows}
+    dicts = read_episode_dicts(episodes)
+
+    recorded = {f["message"] for f in read_failures(out)}
+    problems: list[tuple[str, str]] = []
+    neutral: list[dict] = []
+    if reference is not None:
+        rr_mine = [d for d in dicts if d.get("arm") == RR]
+        neutral, more = neutrality(rr_mine, [d for d in reference if d["subject"] == SUBJECT[RR]])
+        problems += more + reference_digest_problems(dicts, reference)
+    for check, msg in problems:
+        if msg not in recorded:
+            append_failure(out, run_failure(check, ValueError(msg)))
+            recorded.add(msg)
+            log(f"[decoder_check arm-compare] {check} {msg}")
+    write_csv(out / "neutrality.csv", NEUTRALITY_COLUMNS, neutral)
+
+    failures = read_failures(out)
+    invalid = bool(failures or missing)
+    mine = arm_units([d for d in dicts if d.get("arm") == UTWF])
+    reproduced = {w: world_mean(u[RR]) for w, u in arm_units(
+        [d for d in dicts if d.get("arm") == RR]).items() if RR in u}
+    theirs = (arm_units(reference, arm_of=ref_subjects) if reference is not None else
+              arm_units([d for d in dicts if d.get("arm") == RR]))  # dry run: own RR only
+    units = {w: {**theirs.get(w, {}), **mine.get(w, {})} for w in set(mine) | set(theirs)}
+    results = compare_table(units, views)
+    reading = {"experiment": COMPARE_EXPERIMENT, "mode": ARM_COMPARE, "arm": arm,
+               "dry_run": dry_run, "rules": COMPARE_RULES, "next_by_reading": COMPARE_NEXT,
+               "reference": EXP0057 if reference is not None else None,
+               "neutrality_checked": reference is not None,
+               "neutral_rows": sum(r["equal"] for r in neutral), "compared_rows": len(neutral),
+               "reading": compare_reading(results, READING_SIZE),
+               "reported_42": {**compare_reading(results, REPORTED_SIZE), "reported": True}}
+    if invalid:
+        reading = {**withheld_reading(reading, len(failures), len(missing)), "reading": None,
+                   "mode": ARM_COMPARE, "arm": arm, "next_by_reading": COMPARE_NEXT}
+    else:
+        reading.update({"status": "valid", "readings_withheld": False})
+    write_csv(out / "compare.csv", COMPARE_COLUMNS, compare_rows(results, reproduced))
+    write_csv(out / "routing_metrics.csv", METRIC_COLUMNS, metrics_table(dicts, table))
+    (out / "reading.json").write_text(json.dumps(reading, indent=2, sort_keys=True,
+                                                 default=str) + "\n")
+    if invalid:
+        spec["status"] = INVALID
+        spec["result"] = {"status": INVALID, "contract_failures": len(failures),
+                          "missing_rows": len(missing)}
+        status = f"INVALID ({len(failures)} contract failure(s), {len(missing)} missing row(s))"
+        code = CONTRACT_INVALID
+    else:
+        spec["status"] = "complete"
+        spec["result"] = {"status": "complete", "rows": len(rows), "contract_failures": 0,
+                          "acceptance_read": False, "reading": reading["reading"]["reading"],
+                          "neutral_rows": reading["neutral_rows"],
+                          "compared_rows": reading["compared_rows"]}
+        status = "complete"
+        code = 0
+    _write_spec(out, spec)
+    result_md = out / "RESULT.md"
+    if not result_md.exists() or result_md.read_text().endswith(SKELETON_END):
+        result_md.write_text(COMPARE_SKELETON.format(
+            title=out.name, banner=DRY_BANNER if dry_run else "", status=status,
+            n_rows=len(rows), n_worlds=len(grid),
+            n_episodes=sum(len(g["episodes"]) for g in grid.values()), arm=UTWF, router=arm,
+            horizon=horizon, driver=DRIVER, question=COMPARE_QUESTION,
+            rule=COMPARE_RULES["reading"][0].upper() + COMPARE_RULES["reading"][1:] + "."))
+    log(f"[decoder_check arm-compare] {'DRY RUN ' if dry_run else ''}{status}"
+        + (f", reading {reading['reading']['reading']}" if code == 0 else ""))
+    return code
+
+
 def _csv_strs(s: str | None) -> list[str] | None:
     return None if s is None else [x for x in s.split(",") if x]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("--mode", choices=MODES, default=CHECK,
+                   help="check: EXP-0057's decoder check (default); arm-compare: one keyed "
+                        "router (--arm) against EXP-0057's recorded rows (task 5.5, EXP-0067)")
     p.add_argument("--atlas", required=True, help="atlas_v2.json (EXP-0052 reclassified)")
-    p.add_argument("--orderer-ckpt", required=True, help="the trained orderer (EXP-0012)")
+    p.add_argument("--orderer-ckpt", help="the trained orderer (EXP-0012); required by check, "
+                                          "pinned by SHA-256 in a real arm-compare run")
+    p.add_argument("--arm", choices=sorted(COMPARE_ROUTERS), help="arm-compare: the router (utwf)")
+    p.add_argument("--exp0057-episodes", help="arm-compare: EXP-0057's episodes.csv (the "
+                                              "compared rows; needed in a real run)")
     p.add_argument("--exp0052-episodes", help="EXP-0052's episodes.csv (TR / RR / MWW "
                                               "reproduction; needed in a real run)")
     p.add_argument("--exp0056-episodes", help="EXP-0056's episodes.csv (TR / TW / RR "
@@ -1167,7 +1618,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--horizon", type=int, default=HORIZON)
     p.add_argument("--shock-profile", choices=(SHOCKS_I_SMOKE,))
     a = p.parse_args(argv)
+    if a.mode == ARM_COMPARE:
+        wrong = [f for f, v in (("--arms", a.arms), ("--exp0052-episodes", a.exp0052_episodes),
+                                ("--exp0056-episodes", a.exp0056_episodes)) if v is not None]
+        if wrong or a.arm is None:
+            p.error(f"--mode arm-compare takes --arm and --exp0057-episodes, not {wrong}"
+                    if wrong else "--mode arm-compare needs --arm")
+    else:
+        wrong = [f for f, v in (("--arm", a.arm), ("--exp0057-episodes", a.exp0057_episodes))
+                 if v is not None]
+        if wrong:
+            p.error(f"{wrong} belong to --mode arm-compare")
+        if a.orderer_ckpt is None:
+            p.error("the following arguments are required: --orderer-ckpt")
     commit = resolve_verified_commit() if a.verify_source_commit else a.source_commit
+    if a.mode == ARM_COMPARE:
+        try:
+            return run_arm_compare(
+                atlas_path=a.atlas, out_dir=a.out_dir, arm=a.arm,
+                exp0057_episodes=a.exp0057_episodes, orderer_ckpt=a.orderer_ckpt,
+                roster=load_roster(a.roster), workers=a.workers, horizon=a.horizon,
+                worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds,
+                shock_profile=a.shock_profile, source_commit=commit, dry_run=a.dry_run)
+        except (ContractRunError, DigestMismatch):  # recorded in contract_failures.csv
+            return CONTRACT_INVALID
     try:
         return run_decoder_check(
             atlas_path=a.atlas, out_dir=a.out_dir, orderer_ckpt=a.orderer_ckpt,

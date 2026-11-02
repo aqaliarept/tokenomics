@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from fractions import Fraction
 from pathlib import Path
 from typing import Callable
 
@@ -197,7 +198,7 @@ def test_diagnostic_router_kinds() -> None:
         "random_fixed_episode", "blend_noise_0.15", "blend_noise_0.6", "random_consumer_only",
         "random_producer_only", "random_whole", "even_split_random_leftover",
         "two_choice_spare", "spare_weighted_whole", "spare_rotating_whole",
-        "makeable_split", "makeable_weighted_whole", "mww_keyed"])
+        "makeable_split", "makeable_weighted_whole", "mww_keyed", "utwf"])
     assert sorted(TRAINED_WRAPPERS) == ["trained_sampled_whole", "trained_split_rotating",
                                         "trained_whole"]
     assert sorted(n for n, k in ROUTER_KIND.items() if k != STOCHASTIC) == [
@@ -1949,3 +1950,315 @@ def test_score_fidelity_wrapper_changes_no_action() -> None:
     assert exact.values["spearman"] and set(exact.values["spearman"]) == {1.0}
     assert exact.values["top1"] and set(exact.values["top1"]) == {1.0}
     assert max(exact.values["kl"]) < 1e-3
+
+
+# --- M4 uTWF router (add-m4-orderer-redesign task 5.5, notes/5.5.md) ---
+
+UTWF = "utwf"
+
+
+def _b_star(made: list[int], own: int, agents: int) -> list[Fraction]:
+    """Lemma 1's closed form: p_n = b*_n / ((M - 1) a), b*_n = max{0, WaterLevel(Q, (M - 1) a)
+    - Q_n} (the paper's proof of Lemma 1)."""
+    from tokenomics.eval.routing_diagnostics import paper_water_level, spare_queues
+
+    q = spare_queues(made)
+    level = paper_water_level(q, (agents - 1) * own)
+    return [max(Fraction(0), level - x) / ((agents - 1) * own) for x in q]
+
+
+def test_paper_water_level_is_algorithm_1() -> None:
+    """Algorithm 1 by hand: Q = (0, 2, 5), a = 3 raises queue 0 to 2 (a = 1 left), then pours
+    1 over the two minimal queues: 2.5. All-equal queues: Min + a / N. A pour that exactly
+    fills a gap stops at the next level. a = 0: Min(Q). On 2,000 random cases the poured water
+    sum_n max{0, WL - Q_n} equals a."""
+    from tokenomics.eval.routing_diagnostics import paper_water_level
+
+    assert paper_water_level([0, 2, 5], 3) == Fraction(5, 2)
+    assert paper_water_level([4, 4, 4], 6) == 6
+    assert paper_water_level([0, 4, 8], 4) == 4 and paper_water_level([0, 4, 8], 12) == 8
+    assert paper_water_level([3, 1], 0) == 1
+    rng = np.random.default_rng(29)
+    for _ in range(2000):
+        q = [int(x) for x in rng.integers(0, 15, size=int(rng.integers(1, 8)))]
+        a = Fraction(int(rng.integers(1, 40)), int(rng.integers(1, 4)))
+        level = paper_water_level(q, a)
+        assert sum(max(Fraction(0), level - x) for x in q) == a
+
+
+def test_utwf_hand_computed_decisions() -> None:
+    """Eq. (29) by hand. Spare (10, 6, 2) -> Q = (0, 4, 8).
+    M = 3, a = 4: WL(Q, 12) = 8, g* = (8, 4, 0); WL(Q, 8) = 6, U = {0, 1};
+    (a - sum_{n not in U} g*) / |U| = (4 - 0) / 2 = 2; p = ((8 - 2) / 8, (4 - 2) / 8, 0) =
+    (3/4, 1/4, 0).
+    M = 2, a = 4: WL(Q, 8) = 6, g* = (6, 2, 0); WL(Q, 4) = 4, U = {0}; (4 - 2) / 1 = 2;
+    p = ((6 - 2) / 4, max{0, 0 / 4}, 0) = (1, 0, 0): producer 1 has g* > 0 yet p = 0 (Lemma 1:
+    p > 0 iff n in U)."""
+    from tokenomics.eval.routing_diagnostics import utwf_probabilities
+
+    assert utwf_probabilities([10, 6, 2], 4, 3) == [Fraction(3, 4), Fraction(1, 4), 0]
+    assert utwf_probabilities([10, 6, 2], 4, 2) == [1, 0, 0]
+
+
+def test_utwf_probabilities_sum_to_one_and_follow_lemma_1() -> None:
+    """3,000 random (spare, a, M) cases: sum p = 1 exactly (no normalisation), p_n > 0 iff
+    Q_n < WaterLevel(Q, (M - 1) a) (Lemma 1), p equals Lemma 1's closed form b* / ((M - 1) a),
+    and producers with equal spare get equal p."""
+    from tokenomics.eval.routing_diagnostics import (paper_water_level, spare_queues,
+                                                     utwf_probabilities)
+
+    rng = np.random.default_rng(2008)
+    for _ in range(3000):
+        made = [int(x) for x in rng.integers(0, 30, size=int(rng.integers(1, 9)))]
+        own, agents = int(rng.integers(1, 25)), int(rng.integers(2, 12))
+        p = utwf_probabilities(made, own, agents)
+        q = spare_queues(made)
+        level = paper_water_level(q, (agents - 1) * own)
+        assert sum(p) == 1 and all(x >= 0 for x in p)
+        assert [x > 0 for x in p] == [qn < level for qn in q]
+        assert p == _b_star(made, own, agents)
+        assert all(p[i] == p[j] for i in range(len(made)) for j in range(len(made))
+                   if made[i] == made[j])
+
+
+def test_utwf_edges() -> None:
+    """M = 1 (the paper: JSQ) and a = 0 put equal mass on the most spare producers; all-zero
+    (or all-equal) spare gives 1/N through the formula; one producer gets 1; a load beyond
+    every spare is levelled over every producer (the container has no top: queues are
+    unbounded in the paper); bad input is refused."""
+    from tokenomics.eval.routing_diagnostics import utwf_probabilities
+
+    for own, agents in ((5, 1), (0, 4)):
+        assert utwf_probabilities([7, 3, 7], own, agents) == [Fraction(1, 2), 0, Fraction(1, 2)]
+    assert utwf_probabilities([0, 0, 0, 0], 3, 5) == [Fraction(1, 4)] * 4
+    assert utwf_probabilities([6, 6], 100, 9) == [Fraction(1, 2)] * 2
+    assert utwf_probabilities([9], 4, 6) == [1]
+    # (M - 1) a = 150 over Q = (0, 2): level 76, b* = (76, 74): near-even
+    assert utwf_probabilities([3, 1], 50, 4) == [Fraction(76, 150), Fraction(74, 150)]
+    for bad in ([], [3, -1]):
+        with pytest.raises(ValueError, match="utwf"):
+            utwf_probabilities(bad, 3, 2)
+
+
+def test_spare_capacity_is_the_queue() -> None:
+    """The Q_n <-> spare mapping: Q_n = max m - m_n. Any common shift of the queues (Q = c - m
+    with c = max m, max m + 7 or 0, i.e. negative queues) gives the same p (water filling sees
+    only differences), and the most spare producer is the shortest queue: with a small load all
+    mass is on it, and p falls as spare falls."""
+    from tokenomics.eval.routing_diagnostics import (paper_water_level, spare_queues,
+                                                     utwf_probabilities)
+
+    made, own, agents = [12, 5, 9, 0], 3, 4
+    assert spare_queues(made) == [0, 7, 3, 12]
+    want = utwf_probabilities(made, own, agents)
+    for c in (max(made), max(made) + 7, 0):
+        q = [c - x for x in made]
+        level = paper_water_level(q, (agents - 1) * own)
+        assert [max(Fraction(0), level - x) / ((agents - 1) * own) for x in q] == want
+    assert want[0] > want[2] > want[1] == want[3] == 0
+    assert utwf_probabilities(made, 1, 2) == [1, 0, 0, 0]
+
+
+def _utwf_inputs(env: TokenomicsAECEnv, agent: str) -> tuple:
+    """What uTWF reads for `agent`: per held product (a^(m), M_p, makeable units), the
+    (weights, uniform) handed to `inverse_cdf` (recorded by patching it), and the action."""
+    from tokenomics.eval import routing_diagnostics as rd
+
+    _, aid = env._role[agent]
+    incoming = env.system.ordering_agents[aid].incoming
+    inputs = {}
+    for _, oid, _, elig in _slots(env, agent):
+        product = env.system.orders[oid].product
+        inputs[product] = (sum(oi.quantity for oi in incoming.values() if oi.product == product),
+                           rd.product_agents(env, product), tuple(_makeables(env, oid, elig)))
+    draws: list[tuple[bytes, float]] = []
+    inverse_cdf_ = rd.inverse_cdf
+
+    def recorded(weights: np.ndarray, u: float) -> int:
+        draws.append((np.asarray(weights, dtype=np.float64).tobytes(), u))
+        return inverse_cdf_(weights, u)
+
+    rd.inverse_cdf = recorded
+    try:
+        action = np.asarray(DIAGNOSTIC_ROUTERS[UTWF](env, agent)).tobytes()
+    finally:
+        rd.inverse_cdf = inverse_cdf_
+    return inputs, draws, action
+
+
+def test_utwf_on_a_fixture_draws_eq_29_from_local_inputs() -> None:
+    """On the shocked fixture, at every decision: the weights uTWF draws from equal Eq. (29)
+    on (the agent's own order quantity, the configuration's stream count, the producers'
+    `makeable_qty_now`); the uniform is MWWk's at the agent's first slot of the product; every
+    order of the product goes whole to the one drawn producer; M_p is the configuration's,
+    not the number of agents ordering the product this cycle."""
+    from tokenomics.domain.system import product_stream_agents
+    from tokenomics.eval.routing_diagnostics import utwf_probabilities
+
+    cfg = _shocked_world_config()
+    streams: dict[int, int] = defaultdict(int)
+    for _, product in product_stream_agents(cfg):
+        streams[product] += 1
+    seen = {"decisions": 0, "multi_producer": 0, "m_differs_from_active": 0}
+
+    def order(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        inputs, draws, action = _utwf_inputs(e, agent)
+        _, aid = e._role[agent]
+        view = e.system.ordering_agents[aid].view(e.system.producer_infos)
+        act = np.frombuffer(action, dtype=np.float32).copy()
+        cmd = decode_ordering(e.spec_, act, view)
+        slots = _slots(e, agent)
+        assert len(draws) == len(inputs)  # one draw per held product
+        for (product, (own, agents, made)), (w, u) in zip(inputs.items(), draws):
+            assert agents == streams[product]
+            want = [float(x) for x in utwf_probabilities(list(made), own, agents)]
+            assert np.frombuffer(w, dtype=np.float64).tolist() == want
+            first = min(k for k, oid, _, _ in slots if e.system.orders[oid].product == product)
+            assert u == keyed_uniform(FIXTURE_KEY, agent, e.system.cycle_counter, first)
+            receivers = {s.producer_id for _, oid, _, _ in slots
+                         if e.system.orders[oid].product == product for s in cmd.orders[oid]}
+            assert len(receivers) == 1
+            assert all(len(cmd.orders[oid]) == 1 for _, oid, _, _ in slots)
+            active = sum(1 for a in e.system.ordering_agents.values()
+                         if any(o.product == product for o in a.incoming.values()))
+            seen["decisions"] += 1
+            seen["multi_producer"] += sum(x > 0 for x in want) >= 2
+            seen["m_differs_from_active"] += agents != active
+        return act
+
+    env = joint_stack_env(cfg, 4)
+    set_draw_key(env, FIXTURE_KEY)
+    run_episode(env, PRODUCING_BASELINES["entity_planner"], order, seed=0)
+    assert seen["decisions"] >= 20 and seen["multi_producer"] >= 5
+    assert seen["m_differs_from_active"] >= 1
+
+
+def test_utwf_ignores_other_agents_orders() -> None:
+    """Local information only, on the shocked world (unequal spare, so p depends on a): a large
+    extra order of the same product in every other agent's `incoming` (more total demand)
+    leaves the target's inputs, weights and action unchanged; the same extra quantity on the
+    target's own order changes its a^(m) and, on some decisions, its draw weights (the check
+    is not vacuous)."""
+    checked = moved = 0
+    for snap in _utwf_snapshots((2, 3), _shocked_world_config(), 4).values():
+        ordering = [a for a in snap.agents if snap._role[a][0] == "order"]
+        for target in ordering:
+            held = snap.system.ordering_agents[snap._role[target][1]].incoming
+            if not held:
+                continue
+            product = next(iter(held.values())).product
+            others = [a for a in ordering if a != target
+                      and snap.system.stream_products[snap._role[a][1]] == product]
+            if not others:
+                continue
+            ref = _utwf_inputs(copy.deepcopy(snap), target)
+            info = next(iter(held.values()))
+            e = copy.deepcopy(snap)
+            for other in others:
+                extra = dataclasses.replace(info, id=10 ** 9, quantity=info.quantity * 50)
+                e.system.ordering_agents[e._role[other][1]].incoming[extra.id] = extra
+            assert _utwf_inputs(e, target) == ref
+            checked += 1
+            mine = copy.deepcopy(snap)
+            own = mine.system.ordering_agents[mine._role[target][1]].incoming
+            own[info.id] = dataclasses.replace(info, quantity=info.quantity * 50)
+            own_changed = _utwf_inputs(mine, target)
+            assert own_changed[0] != ref[0]
+            moved += own_changed[1] != ref[1]
+    assert checked >= 5 and moved >= 2
+
+
+def test_utwf_conserves_never_splits_and_replays() -> None:
+    """uTWF: quantity and tokens conserved, one sub-order per order to an eligible producer; the
+    same key replays action for action whatever the action-space seed, another replicate draws
+    differently, no key is refused."""
+    for cfg, horizon in ((_m4_config(), HORIZON), (_shocked_world_config(), 4)):
+        a, stats_a = _record(cfg, DIAGNOSTIC_ROUTERS[UTWF], horizon=horizon, action_seed=1)
+        b, stats_b = _record(cfg, DIAGNOSTIC_ROUTERS[UTWF], horizon=horizon, action_seed=2)
+        other, _ = _record(cfg, DIAGNOSTIC_ROUTERS[UTWF], horizon=horizon,
+                           key=DrawKey("fixture", 0, 1))
+        assert a and len(a) == len(b)
+        for r in a:
+            subs = r["subs"]
+            assert len(subs) == 1 and subs[0][1] == r["q"] and subs[0][2] == r["tokens"]
+            assert {p for p, _, _ in subs} <= r["eligible"]
+        assert [r["subs"] for r in a] == [r["subs"] for r in b] and stats_a == stats_b
+        assert all(np.array_equal(x["row"], y["row"]) for x, y in zip(a, b)
+                   if x["row"] is not None)
+        assert [r["subs"] for r in a] != [r["subs"] for r in other]
+    env = joint_stack_env(_m4_config(), HORIZON)
+    with pytest.raises(RuntimeError, match="set_draw_key"):
+        run_episode(env, PRODUCING_BASELINES["entity_planner"], DIAGNOSTIC_ROUTERS[UTWF], seed=0)
+
+
+def _utwf_snapshots(cycles: tuple[int, ...], cfg: Configuration | None = None,
+                    horizon: int = HORIZON) -> dict[int, TokenomicsAECEnv]:
+    """Deepcopies of the env as the ordering phase of each cycle starts (uTWF playing)."""
+    snaps: dict[int, TokenomicsAECEnv] = {}
+
+    def order(e: TokenomicsAECEnv, agent: str) -> np.ndarray:
+        if e.system.cycle_counter in cycles and e.system.cycle_counter not in snaps:
+            snaps[e.system.cycle_counter] = copy.deepcopy(e)
+        return DIAGNOSTIC_ROUTERS[UTWF](e, agent)
+
+    env = joint_stack_env(cfg if cfg is not None else _m4_config(), horizon)
+    set_draw_key(env, DrawKey("perm", 3, 1))
+    run_episode(env, PRODUCING_BASELINES["entity_planner"], order, seed=3)
+    assert sorted(snaps) == list(cycles)
+    return snaps
+
+
+@pytest.mark.parametrize("world", ["m4", "shocked"])
+def test_adr0058_utwf_turn_weights_equal_start_of_ordering_weights(world: str) -> None:
+    """ADR-0058 (as task 4.3): every order-holding ordering agent's inputs (a^(m), M_p,
+    makeable units), draw weights, uniforms and action at its own turn (every earlier agent
+    stepped with uTWF) equal those on a deepcopy of the start-of-ordering snapshot (no agent
+    stepped). A leak of any same-cycle quantity, including totals that a receiver permutation
+    keeps (units placed this cycle, the count of agents that acted), breaks it."""
+    snaps = (_utwf_snapshots((2, 3, 4, 5, 6, 7)) if world == "m4"
+             else _utwf_snapshots((2, 3), _shocked_world_config(), 4))
+    checked = with_bids = uneven = 0
+    for snap in snaps.values():
+        e = copy.deepcopy(snap)
+        ordering = [a for a in snap.agents if snap._role[a][0] == "order"]
+        for agent in ordering:
+            assert e.agent_selection == agent
+            if snap.system.ordering_agents[snap._role[agent][1]].incoming:
+                start = _utwf_inputs(copy.deepcopy(snap), agent)
+                turn = _utwf_inputs(e, agent)
+                assert turn == start and start[1]
+                checked += 1
+                with_bids += any(p.bids for p in e.system.producing_agents.values())
+                uneven += any(len(set(np.frombuffer(w).tolist())) >= 2 for w, _ in start[1])
+            e.step(DIAGNOSTIC_ROUTERS[UTWF](e, agent))
+    # every agent but each cycle's first decides after same-cycle bids; on the shocked world
+    # the spare differs across producers, so p depends on a^(m) (the check is not vacuous)
+    assert checked >= (20 if world == "m4" else 12) and with_bids >= checked - len(snaps)
+    assert uneven >= (4 if world == "shocked" else 0)
+
+
+def test_adr0058_utwf_earlier_agents_leave_inputs_and_suborders_unchanged() -> None:
+    """The 2.1 permutation check for uTWF: earlier agents' actions permuted or replaced by
+    `even_split` leave the target's inputs, weights and sub-orders byte-identical."""
+    assert _permutation_check(UTWF, _obs_scorer) >= 3
+
+
+def test_utwf_sees_no_shock_schedule() -> None:
+    """Hidden shock state does not change uTWF's actions (the 2.1 sentinel)."""
+    from test_shock_reactive import _hidden, _recorded, _same, _smoke_world
+
+    config, seed = _smoke_world()
+
+    def actions(wrap: Callable[[Policy], Policy]) -> tuple[list, dict]:
+        log: list = []
+        env = joint_stack_env(config, 12)
+        set_draw_key(env, DrawKey("smoke", seed, 0))
+        stats = run_episode(env, PRODUCING_BASELINES["entity_planner"],
+                            _recorded(wrap(DIAGNOSTIC_ROUTERS[UTWF]), log), seed=seed,
+                            action_seed=replicate_seed("w", seed, 0))
+        return log, stats
+
+    open_log, open_stats = actions(lambda p: p)
+    hidden_log, hidden_stats = actions(_hidden)
+    assert open_log and _same(open_log, hidden_log)
+    assert open_stats == hidden_stats and open_stats["shock_events"] == 3

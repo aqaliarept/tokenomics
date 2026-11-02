@@ -29,6 +29,14 @@ TS - MWWk is paired; the key is set per episode with `set_draw_key`. The agent i
 only, never an input, and both read only the slot's orders, the frozen producer rows and the
 scores (ADR-0058).
 
+The M4 water-filling task (add-m4-orderer-redesign task 5.5, EXP-0067) adds `utwf`: the
+unsplittable Tidal Water Filling of Goren, Vargaftik and Moses ("Distributed Dispatching in the
+Parallel Server Model", DISC 2020, Definition 2, Eq. (29)), from local information only. Each
+ordering agent knows its own order quantity a, the static number M of ordering agents of the
+product and the producers' `makeable_qty_now` (the "queues": more spare = a shorter queue); it
+draws one producer with the paper's p_n, so that the expected work of all M agents, each
+assuming the others hold as much as it does, levels the producers' spare capacity.
+
 They are white-box `Policy`s like `proportional` / `blend_0.5` and emit the raw ordering action
 decode reads (ADR-0025/0026). A router that wants an exact integer split (a whole order, a
 chosen leftover placement) emits `log(units)` for each receiving producer and `-BOUND` for the
@@ -55,6 +63,7 @@ import operator
 import weakref
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -394,6 +403,112 @@ def ordering_sampled_whole(base: Policy) -> Policy:
     return policy
 
 
+# --- M4 uTWF router (add-m4-orderer-redesign task 5.5, EXP-0067; notes/5.5.md) ---
+
+
+def paper_water_level(queues: Sequence[int | Fraction], arrivals: int | Fraction) -> Fraction:
+    """Algorithm 1 of Goren / Vargaftik / Moses (DISC 2020), WaterLevel(Q, a), line by line:
+    pour `arrivals` units of water into the container shaped by the queue lengths, shortest
+    first, and return the level. Exact (Fractions). Algorithm 1 returns nothing for a = 0 (its
+    loop does not run); here a <= 0 returns Min(Q), the level of an empty pour."""
+    q = [Fraction(x) for x in queues]
+    a = Fraction(arrivals)
+    if not q:
+        raise ValueError("paper_water_level needs at least one queue")
+    if a <= 0:
+        return min(q)
+    while a > 0:
+        lo = min(q)
+        min_set = [i for i, x in enumerate(q) if x == lo]
+        if len(min_set) == len(q):
+            return lo + a / len(q)
+        delta = min(x for x in q if x != lo) - lo
+        if delta * len(min_set) < a:
+            a -= delta * len(min_set)
+            for i in min_set:
+                q[i] += delta
+        else:
+            return lo + a / len(min_set)
+    raise AssertionError("unreachable: Algorithm 1 returns inside its loop")
+
+
+def spare_queues(made: Sequence[int]) -> list[int]:
+    """The paper's queue lengths Q_n from spare capacity: Q_n = max_k m_k - m_n, so the producer
+    with the most `makeable_qty_now` is the shortest queue (0). Water filling depends only on
+    queue differences (a common shift moves WaterLevel by the same amount and leaves g*, U and
+    p unchanged), so the shift max_k m_k only keeps Q_n >= 0 as in the paper."""
+    top = max(made)
+    return [top - int(x) for x in made]
+
+
+def utwf_probabilities(made: Sequence[int], own: int, agents: int) -> list[Fraction]:
+    """uTWF's p_n (Definition 2, Eq. (29)) for one ordering agent: `made` = the eligible
+    producers' `makeable_qty_now` (queues via `spare_queues`), `own` = a^(m), its own order
+    quantity this cycle, `agents` = M, the product's number of ordering agents. Verbatim:
+
+        g*_n = Q*_n - Q_n,  Q*_n = max{Q_n, WaterLevel(Q, M a^(m))}      (Section 3, Eq. (1))
+        U = {n | Q_n < WaterLevel(Q, (M - 1) a^(m))}                      (footnote 5)
+        p_n = max{0, [g*_n - (a^(m) - sum_{n' not in U} g*_{n'}) / |U|] / ((M - 1) a^(m))}
+
+    The p_n sum to 1 exactly (Lemma 1 + the KKT conditions, Eq. (20)); this is checked, never
+    normalised away. M = 1 (the paper: JSQ) and a^(m) <= 0 (the limit (M - 1) a -> 0) put equal
+    mass on the shortest queues (the most spare); all-equal spare (also all zero) gives the
+    uniform 1/N through the formula itself."""
+    if not made or any(int(x) < 0 for x in made):
+        raise ValueError(f"utwf needs >= 1 non-negative makeable count, got {list(made)}")
+    q = spare_queues(made)
+    if agents <= 1 or own <= 0:  # JSQ: equal mass on the shortest queues
+        lo = min(q)
+        ties = sum(1 for x in q if x == lo)
+        return [Fraction(1, ties) if x == lo else Fraction(0) for x in q]
+    a = Fraction(own)
+    full = paper_water_level(q, agents * a)
+    g = [max(Fraction(0), full - x) for x in q]  # g*_n = max{Q_n, WL} - Q_n
+    level_u = paper_water_level(q, (agents - 1) * a)
+    u = [n for n, x in enumerate(q) if x < level_u]
+    x = (a - sum(g[n] for n in range(len(q)) if n not in u)) / len(u)
+    p = [max(Fraction(0), (g[n] - x) / ((agents - 1) * a)) for n in range(len(q))]
+    if sum(p) != 1:
+        raise AssertionError(f"uTWF probabilities sum to {sum(p)} (Lemma 1 violated): "
+                             f"made {list(made)}, a {own}, M {agents}")
+    return p
+
+
+def product_agents(env: "TokenomicsAECEnv", product: Product) -> int:
+    """M_p: the number of ordering agents (product streams, ADR-0052) of `product`, fixed by the
+    configuration (`domain.system.product_stream_agents`), whether or not they order this cycle."""
+    streams = env.system.stream_products
+    if not streams:
+        raise ValueError("utwf needs product-stream ordering (joint_stack): M_p is the number "
+                         "of product streams")
+    return sum(1 for p in streams.values() if p == product)
+
+
+def ordering_utwf(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+    """uTWF (Definition 2): per product p the agent holds, a^(m) = the summed quantity of its
+    own orders of p this cycle (the jobs it received this round), one producer drawn from p_n by
+    inverse CDF with MWWk's keyed uniform at the agent's first slot of p, and every order of p
+    the agent routes sent whole to it ("sends all its jobs to server n"). Reads only the agent's
+    own orders, M_p and the frozen producer rows (ADR-0058)."""
+    key = draw_key(env)
+    cycle = env.system.cycle_counter
+    _, aid = env._role[agent]
+    incoming = env.system.ordering_agents[aid].incoming
+    mat = _matrix(env)
+    chosen: dict[Product, int] = {}
+    for k, oid, q, elig in _slots(env, agent):
+        if not elig:
+            continue
+        product = env.system.orders[oid].product
+        if product not in chosen:
+            own = sum(oi.quantity for oi in incoming.values() if oi.product == product)
+            p = utwf_probabilities(_makeables(env, oid, elig), own, product_agents(env, product))
+            chosen[product] = inverse_cdf(np.asarray([float(x) for x in p], dtype=np.float64),
+                                          keyed_uniform(key, agent, cycle, k))
+        mat[k, elig] = _whole(elig, chosen[product], q)
+    return _flat(mat)
+
+
 # --- DIAGNOSTICS 19 split check (task 11.2, design D13): wrappers over a trained orderer ---
 
 
@@ -483,6 +598,7 @@ DIAGNOSTIC_ROUTERS: dict[str, Policy] = {
     "makeable_split": ordering_makeable_split,
     "makeable_weighted_whole": ordering_makeable_weighted_whole,
     "mww_keyed": ordering_mww_keyed,  # M4 D3 MWWk (keyed: needs set_draw_key)
+    "utwf": ordering_utwf,  # M4 task 5.5 uTWF (keyed: needs set_draw_key)
 }
 
 ROUTER_KIND: dict[str, str] = {

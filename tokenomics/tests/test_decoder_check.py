@@ -660,3 +660,287 @@ def test_missing_replicate_is_incomplete_not_paired() -> None:
     assert r.fidelity is None and r.ts_tw is None and dc.TS not in r.means
     assert dc.fidelity_reading([r])["reading"] == "incomplete"
     assert dc.primary_reading([r])["reading"] == "incomplete"
+
+
+# --- task 5.5: --mode arm-compare (uTWF against EXP-0057's recorded rows, EXP-0067) ---
+
+EXP0057 = REPO / "experiments/EXP-0057-decoder-check/artifacts/episodes.csv"
+needs_exp0057 = pytest.mark.skipif(not (_lfs_present(ATLAS_V2) and _lfs_present(EXP0057)),
+                                   reason="EXP-0052 atlas / EXP-0057 records absent")
+COMPARE_OUTPUTS = ("spec.json", "episodes.csv", "compare.csv", "neutrality.csv",
+                   "routing_metrics.csv", "reading.json", "contract_failures.csv", "RESULT.md")
+UTWF_SUBJECT = "entity_planner/utwf"
+
+
+def _cmp_rows(world: str, wf: tuple[float, float], rr: float, mwwk: tuple[float, float],
+              ts: tuple[float, float] | None = None, size: int = 12, episode: int = 1
+              ) -> list[dict[str, str]]:
+    rows = [{"world": world, "size": str(size), "episode": str(episode), "subject": UTWF_SUBJECT,
+             "replicate": str(r), "units": repr(float(u)), "arm": dc.UTWF}
+            for r, u in enumerate(wf)]
+    rows += _rows(world, dc.RR, {episode: {0: rr}}, size)
+    rows += _rows(world, dc.MWWK, {episode: dict(enumerate(mwwk))}, size)
+    if ts is not None:
+        rows += _rows(world, dc.TS, {episode: dict(enumerate(ts))}, size)
+    return rows
+
+
+def _cmp(worlds: list[tuple[dict, list[dict]]], size: int = 12) -> dict:
+    views = [v for v, _ in worlds]
+    rows = [r for _, rs in worlds for r in rs]
+    return dc.compare_reading(dc.compare_table(dc.arm_units(rows), views), size)
+
+
+def _even(i: int, d_rr: float, d_mwwk: float, size: int = 12, floor: float = 10.0
+          ) -> tuple[dict, list[dict]]:
+    """One-episode world, every replicate equal (own 3 SE = 0, so floor_w = the atlas floor):
+    uTWF = 100 + d_rr over RR = 100, uTWF - MWWk = d_mwwk."""
+    w = f"c{size}-{i:02d}"
+    wf = 100.0 + d_rr
+    return _view(w, size, floor), _cmp_rows(w, (wf, wf), 100.0, (wf - d_mwwk, wf - d_mwwk),
+                                            (wf, wf), size)
+
+
+def test_compare_reading_branches_and_edges() -> None:
+    """utwf_strongest needs both mean differences strictly above their mean floor AND at most
+    1/6 of the worlds lost to RR beyond floor_w (3 of 23 passes, 4 fails; a loss exactly at the
+    floor is no loss); everything else is utwf_not_better; TS is reported only."""
+    good = [_even(i, 20.0, 20.0) for i in range(23)]
+    r = _cmp(good)
+    assert r["reading"] == dc.UTWF_STRONGEST and r["worlds"] == 23 and r["max_losses"] == 3
+    assert r["utwf_minus_rr"]["mean_diff"] == 20.0 and r["utwf_minus_rr"]["mean_floor"] == 10.0
+    assert r["next"] == dc.COMPARE_NEXT[dc.UTWF_STRONGEST]
+    # exactly at the floor on the mean: not beyond it
+    assert _cmp([_even(i, 10.0, 20.0) for i in range(23)])["reading"] == dc.UTWF_NOT_BETTER
+    assert _cmp([_even(i, 20.0, 10.0) for i in range(23)])["reading"] == dc.UTWF_NOT_BETTER
+    # losses: 3 worlds 30 below RR (mean still (20 * 20 - 3 * 30) / 23 = 13.5 > 10)
+    three = [_even(i, 20.0, 20.0) for i in range(20)] + [_even(20 + i, -30.0, 20.0)
+                                                         for i in range(3)]
+    r3 = _cmp(three)
+    assert r3["losses_to_rr"] == 3 and r3["losses_rule"] and r3["reading"] == dc.UTWF_STRONGEST
+    assert r3["utwf_minus_rr"]["mean_diff"] > r3["utwf_minus_rr"]["mean_floor"]
+    four = [_even(i, 30.0, 20.0) for i in range(19)] + [_even(19 + i, -11.0, 20.0)
+                                                        for i in range(4)]
+    r4 = _cmp(four)
+    assert r4["losses_to_rr"] == 4 and not r4["losses_rule"] and r4["reading"] == dc.UTWF_NOT_BETTER
+    at_floor = [_even(i, 30.0, 20.0) for i in range(19)] + [_even(19 + i, -10.0, 20.0)
+                                                            for i in range(4)]
+    assert _cmp(at_floor)["losses_to_rr"] == 0
+    # TS never decides; a missing TS is reported as None, a missing MWWk is incomplete
+    no_ts = [(v, [x for x in rows if x["arm"] != dc.TS]) for v, rows in good]
+    assert _cmp(no_ts)["reading"] == dc.UTWF_STRONGEST
+    assert _cmp(no_ts)["utwf_minus_ts_reported"] is None
+    no_mwwk = [(v, [x for x in rows if x["arm"] != dc.MWWK]) for v, rows in good]
+    assert _cmp(no_mwwk)["reading"] == dc.INCOMPLETE
+
+
+def test_compare_reading_uses_12_producers_and_the_n1_floor() -> None:
+    """42-producer worlds never enter the 12-producer reading (they get their own, reported);
+    the own 3 SE enters the floor with >= 2 paired observations (uTWF - RR pairs each replicate
+    against RR's row, uTWF - MWWk replicate by replicate), the atlas floor otherwise."""
+    twelve = [_even(i, 20.0, 20.0) for i in range(23)]
+    big = [_even(i, -500.0, -500.0, size=42) for i in range(14)]
+    assert _cmp(twelve + big)["reading"] == dc.UTWF_STRONGEST
+    assert _cmp(twelve + big, 42)["reading"] == dc.UTWF_NOT_BETTER
+    view, rows = _view("n1"), _cmp_rows("n1", (100.0, 200.0), 100.0, (100.0, 100.0))
+    (w,) = dc.compare_table(dc.arm_units(rows), [view])
+    assert w.utwf_rr.pairs == 2 and w.utwf_mwwk.pairs == 2
+    assert w.utwf_rr.own3se == pytest.approx(150.0) and w.utwf_rr.floor == pytest.approx(150.0)
+    assert not w.utwf_rr.diff > w.utwf_rr.floor  # 50 < 150: not beyond its own spread
+    flat = dc.compare_table(dc.arm_units(_cmp_rows("f", (140.0, 140.0), 100.0, (100.0, 100.0))),
+                            [_view("f", floor=25.0)])[0]
+    assert flat.utwf_rr.own3se == 0.0 and flat.utwf_rr.floor == 25.0 and flat.loses_to_rr is False
+
+
+def test_compare_arm_refuses_other_routers() -> None:
+    entry = dc.compare_arm("utwf")
+    assert entry["subject"] == UTWF_SUBJECT and entry["replicates"] == 2 and entry["random"]
+    assert entry["arm"] == dc.UTWF and not entry["trained"] and not entry["roster"]
+    for bad in ("mww_keyed", "round_robin", "trained_sampled_whole"):
+        with pytest.raises(ValueError, match="arm-compare takes"):
+            dc.compare_arm(bad)
+
+
+def _never(job: dict) -> dict:  # a guard that lets a run through fails here, fast
+    raise AssertionError(f"a refused run started a job: {job['world']} {job['subject']}")
+
+
+@needs_exp0057
+@needs_ckpt
+def test_arm_compare_real_run_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real arm-compare run needs the registered atlas, orderer (by SHA-256) and EXP-0057
+    episodes.csv, a frozen roster, a 40-hex commit, horizon 100 and no filter; each alone is
+    refused, naming it; a reference lacking a compared row is refused before any job."""
+    kw = dict(atlas_path=ATLAS_V2, out_dir=tmp_path / "o", arm="utwf",
+              exp0057_episodes=EXP0057, orderer_ckpt=ORDERER,
+              roster=load_roster(dc.DEFAULT_ROSTER), source_commit="a" * 40, run_job_fn=_never)
+    other = tmp_path / "other.csv"
+    other.write_text("world\n")
+    cases = [({"worlds": [SHOCKED]}, "--worlds is set"),
+             ({"max_worlds": 1}, "--max-worlds is set"),
+             ({"shock_profile": "shocks-i-smoke"}, "--shock-profile is set"),
+             ({"horizon": 12}, "horizon 12 != 100"),
+             ({"source_commit": ""}, "no full 40-hex source commit"),
+             ({"exp0057_episodes": None}, "--exp0057-episodes None"),
+             ({"exp0057_episodes": other}, "is not the registered EXP-0057"),
+             ({"orderer_ckpt": None}, "orderer checkpoint None"),
+             ({"orderer_ckpt": other}, "orderer checkpoint"),
+             ({"roster": build_roster_v2()}, "is not frozen")]
+    for edit, msg in cases:
+        with pytest.raises(ValueError, match="not a valid arm-compare run") as err:
+            dc.run_arm_compare(**{**kw, **edit})
+        assert msg in str(err.value), (edit, str(err.value))
+        inner = str(err.value).split("(", 1)[1].rsplit("); pass", 1)[0]
+        assert ";" not in inner, str(err.value)
+    full = dc.sample_views
+    monkeypatch.setattr(dc, "sample_views",
+                        lambda atlas: [v for v in full(atlas) if v["world"] != SHOCKED])
+    with pytest.raises(ValueError, match="the sample has .* D3 registers"):
+        dc.run_arm_compare(**kw)
+    monkeypatch.setattr(dc, "sample_views", full)
+    # the registered sha with a row dropped: refused before any job (dry run, same check)
+    rows = dc.read_reference(EXP0057)
+    short = tmp_path / "short.csv"
+    with short.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(r for r in rows if not (r["world"] == SHOCKED and r["subject"]
+                                            == dc.SUBJECT[dc.RR]))
+    with pytest.raises(ValueError, match="lacks 2 of the 2 compared rows"):
+        dc.run_arm_compare(**{**kw, "exp0057_episodes": short, "dry_run": True,
+                              "worlds": [SHOCKED]})
+
+
+def _smoke_reference(path: Path, arms: tuple[str, ...] = (dc.RR, dc.MWWK)) -> None:
+    """An EXP-0057-shaped episodes.csv for 12-0060 at horizon 12 (smoke shocks) from the same
+    job path, without torch: the stand-in reference of a dry run."""
+    view = next(v for v in dc.select_views(load_atlas(ATLAS_V2), [SHOCKED]))
+    roster = load_roster(dc.DEFAULT_ROSTER)
+    table = [dc.decoder_arm(a, roster) for a in arms]
+    jobs = build_jobs([dc.world_entry(view, "shocks-i-smoke")], table, 1, 12, None, None)
+    rows = []
+    for j, a in ((j, t["arm"]) for j in jobs for t in table if t["subject"] == j["subject"]):
+        j["arm"] = a
+        rows.append(dc.run_decoder_job(j))
+    dc.write_csv(path, dc.COLUMNS, rows)
+
+
+def _compare_dry(out: Path, ref: Path | None, **kw: object) -> int:
+    return dc.run_arm_compare(
+        atlas_path=ATLAS_V2, out_dir=out, arm="utwf", exp0057_episodes=ref,
+        worlds=[SHOCKED], horizon=12, shock_profile="shocks-i-smoke", dry_run=True,
+        log=lambda m: None, **kw)  # type: ignore[arg-type]
+
+
+def _edit_reference(src: Path, dst: Path, subject: str, column: str, value: str) -> None:
+    rows = dc.read_reference(src)
+    for r in rows:
+        if r["subject"] == subject:
+            r[column] = value
+    with dst.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+
+@needs_inputs
+def test_arm_compare_dry_run_layout_neutrality_and_mismatch_exit_2(tmp_path: Path) -> None:
+    """1 world (12-0060, 2 episodes), horizon 12, smoke, --workers 1, no torch: uTWF x 2 + the
+    RR replay per episode (6 rows), every output; the RR replay equals the reference's row on
+    every compared cell; a resume runs nothing; a reference whose RR units differ is an
+    `exp0057_neutrality` failure and one whose MWWk digests differ a digest failure: exit 2,
+    readings withheld."""
+    ref = tmp_path / "ref_episodes.csv"
+    _smoke_reference(ref)
+    out = tmp_path / "EXP-cmp"
+    logs: list[str] = []
+    assert dc.run_arm_compare(
+        atlas_path=ATLAS_V2, out_dir=out, arm="utwf", exp0057_episodes=ref,
+        worlds=[SHOCKED], horizon=12, shock_profile="shocks-i-smoke", dry_run=True,
+        log=logs.append) == 0
+    for f in COMPARE_OUTPUTS:
+        assert (out / f).exists(), f
+    rows = dc.read_reference(out / "episodes.csv")
+    assert sorted((r["subject"], r["replicate"]) for r in rows) == sorted(
+        [(UTWF_SUBJECT, "0"), (UTWF_SUBJECT, "1"), (dc.SUBJECT[dc.RR], "0")] * 2)
+    assert {r["arm"] for r in rows} == {dc.UTWF, dc.RR}
+    neutral = list(csv.DictReader((out / "neutrality.csv").open()))
+    assert len(neutral) == 2 and all(n["equal"] == "true" for n in neutral)
+    assert all(int(n["compared"]) > 40 for n in neutral)
+    reading = json.loads((out / "reading.json").read_text())
+    assert reading["status"] == "valid" and reading["neutral_rows"] == 2
+    assert reading["reading"]["reading"] in (dc.UTWF_STRONGEST, dc.UTWF_NOT_BETTER)
+    assert reading["reading"]["worlds"] == 1 and reading["reported_42"]["reading"] == "incomplete"
+    world = next(r for r in csv.DictReader((out / "compare.csv").open()) if r["scope"] == "world")
+    assert world["uTWF"] and world["MWWk"] and world["RR"] == world["RR_reproduced"]
+    assert world["utwf_rr_pairs"] == "4" and world["utwf_mwwk_pairs"] == "4" and world["TS"] == ""
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["mode"] == "arm-compare" and spec["pins"]["arm"] == "utwf"
+    assert spec["kind"] == "dry-run" and spec["status"] == "complete"
+    assert "DRY RUN" in (out / "RESULT.md").read_text()
+    # resume: nothing left to run
+    assert _compare_dry(out, ref, run_job_fn=_never) == 0
+    # neutrality mismatch -> exit 2
+    bad = tmp_path / "ref_bad_units.csv"
+    _edit_reference(ref, bad, dc.SUBJECT[dc.RR], "units", "1.0")
+    out2 = tmp_path / "EXP-cmp-bad"
+    assert _compare_dry(out2, bad) == dc.CONTRACT_INVALID
+    failures = list(csv.DictReader((out2 / "contract_failures.csv").open()))
+    assert [f["check"] for f in failures] == ["exp0057_neutrality"] * 2
+    assert all("units" in f["message"] for f in failures)
+    withheld = json.loads((out2 / "reading.json").read_text())
+    assert withheld["readings_withheld"] is True and withheld["reading"] is None
+    assert json.loads((out2 / "spec.json").read_text())["status"] == "invalid"
+    # a reference digest that differs from this run's -> exit 2 (digest pairing across runs)
+    dig = tmp_path / "ref_bad_digest.csv"
+    _edit_reference(ref, dig, dc.SUBJECT[dc.MWWK], "demand_digest", "0" * 64)
+    out3 = tmp_path / "EXP-cmp-digest"
+    assert _compare_dry(out3, dig) == dc.CONTRACT_INVALID
+    assert {f["check"] for f in csv.DictReader((out3 / "contract_failures.csv").open())} == {
+        DIGEST}
+
+
+@needs_exp0057
+def test_arm_compare_is_neutral_against_the_real_exp0057_rows(tmp_path: Path) -> None:
+    """Horizon 100, 12-0005 (one episode), the registered EXP-0057 episodes.csv: the RR replay
+    equals EXP-0057's RR row on every compared cell, every row's digests equal EXP-0057's, and
+    uTWF is compared with the recorded RR, MWWk and TS rows."""
+    out = tmp_path / "EXP-real"
+    assert sha256_file(EXP0057) == "69656f9e2034bc2f41049591d492a70e692cd9d770b10e60d14291021d9d593c"
+    assert dc.run_arm_compare(
+        atlas_path=ATLAS_V2, out_dir=out, arm="utwf", exp0057_episodes=EXP0057,
+        worlds=["ws-atlas-v1-12-0005"], dry_run=True, log=lambda m: None) == 0
+    reading = json.loads((out / "reading.json").read_text())
+    assert reading["neutral_rows"] == reading["compared_rows"] == 1
+    world = next(r for r in csv.DictReader((out / "compare.csv").open()) if r["scope"] == "world")
+    ref = [r for r in dc.read_reference(EXP0057) if r["world"] == "ws-atlas-v1-12-0005"]
+    rr = next(float(r["units"]) for r in ref if r["subject"] == dc.SUBJECT[dc.RR])
+    mwwk = [float(r["units"]) for r in ref if r["subject"] == dc.SUBJECT[dc.MWWK]]
+    assert float(world["RR"]) == rr == float(world["RR_reproduced"])
+    assert float(world["MWWk"]) == sum(mwwk) / 2 and world["TS"] != ""
+
+
+def test_cli_modes_route_and_refuse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default mode is the check, called exactly as before 5.5; arm-compare flags are
+    refused in it and check flags in arm-compare."""
+    seen: dict[str, dict] = {}
+    monkeypatch.setattr(dc, "run_decoder_check", lambda **kw: seen.setdefault("check", kw) and 0)
+    monkeypatch.setattr(dc, "run_arm_compare", lambda **kw: seen.setdefault("cmp", kw) and 0)
+    monkeypatch.setattr(dc, "load_roster", lambda path: "roster")
+    base = ["--atlas", "a.json", "--out-dir", "o"]
+    assert dc.main(base + ["--orderer-ckpt", "o.pt"]) == 0
+    assert sorted(seen["check"]) == sorted([
+        "atlas_path", "out_dir", "orderer_ckpt", "roster", "exp0052_episodes",
+        "exp0056_episodes", "workers", "horizon", "worlds", "max_worlds", "arms",
+        "shock_profile", "source_commit", "dry_run"])
+    assert dc.main(base + ["--mode", "arm-compare", "--arm", "utwf",
+                           "--exp0057-episodes", "e.csv"]) == 0
+    assert seen["cmp"]["arm"] == "utwf" and seen["cmp"]["exp0057_episodes"] == "e.csv"
+    for bad in (base,  # check needs --orderer-ckpt
+                base + ["--orderer-ckpt", "o.pt", "--arm", "utwf"],
+                base + ["--orderer-ckpt", "o.pt", "--exp0057-episodes", "e.csv"],
+                base + ["--mode", "arm-compare"],
+                base + ["--mode", "arm-compare", "--arm", "utwf", "--arms", "RR"],
+                base + ["--mode", "arm-compare", "--arm", "mww_keyed"]):
+        with pytest.raises(SystemExit):
+            dc.main(bad)

@@ -274,3 +274,129 @@ not add up. `--verify-source-commit` needs a clean tree: commit 4.5 first.
   52–55 s in task 4.4 (observer on), about the cell price (54.4 s; up to 1% above it).
 - The spread between TS's two replicates at 42 (49.8 vs 54.4 s) is larger than the observer's
   measured cost, so the overhead column is noise-level on the TS arms.
+
+## §EXP-0067 (task 5.5, uTWF; re-sized after the 2026-11-02 rework)
+
+**Question.** How much will the uTWF arm-compare run (`python -m tokenomics.eval.decoder_check
+--mode arm-compare --arm utwf`, task 5.5) cost on a pod, and on which shape?
+- The real run is 213 jobs: EXP-0057's 71 world-episodes (43 at 12 producers over 23 worlds,
+  28 at 42 over 14 worlds) × 3. Each world-episode runs uTWF × 2 replicates plus one RR
+  neutrality replay.
+- Horizon 100, `entity_planner` producer, tracer on.
+- RR, MWWk and TS are read from EXP-0057's rows and never rerun. No arm loads torch.
+- The rework replaces the WF arm (`mww_waterfill`) with uTWF. The job count is unchanged; the
+  per-job cost changed, so the section is re-measured.
+
+**Method.**
+- A throwaway probe (`/tmp/impl_m4_5_5/timing_55.py`; its core loop is quoted in
+  `notes/5.5.md`) builds single jobs exactly as `run_arm_compare` builds them (`world_entry`,
+  `compare_arm("utwf")`, `decoder_arm(RR)`, `build_jobs`). It times
+  `decoder_check.run_decoder_job`, the driver's own worker.
+- Checks on every timed row: its digests against EXP-0057's rows of the same world-episode, and
+  the RR row against EXP-0057's RR row on every compared cell (`split_need.neutrality`). No
+  problem on any row.
+- The pool is simulated with task 2.3's `extrapolate_23.simulate`: list scheduling in
+  `longest_first` order, pod = 0.646 × local, 3.5 s worker start, 60 s parent, billed = vCPU ×
+  (10 min setup + wall).
+
+**Local box.** 2 CPUs, heavily shared during this measurement: other agents' test suites kept
+the load average at 2.5–4.8. `OMP_NUM_THREADS=1`, one command at a time, the confirm's first
+episode, horizon 100.
+
+### Measured seconds
+
+| world | arm | r0 | r1 | quiet-box reference (round 1) |
+|---|---|---|---|---|
+| 12-0352 | uTWF | 4.59 | 4.49 | MWWk 3.74 (§EXP-0057) |
+| 12-0352 | RR | 3.47 | – | 3.34 |
+| 42-0076 | uTWF | 32.90 | 32.35 | MWWk 22.64 (§EXP-0057) |
+| 42-0076 | RR | 51.83, repeat 24.15 | – | 22.96 |
+
+- The first 42-0076 RR timing (51.8 s) is a contention spike. The repeat (24.2 s) and round 1's
+  quiet-box value (23.0 s) agree.
+- uTWF costs ≈ 1.3–1.4 × RR / MWWk: it runs Algorithm 1 twice per agent and product turn on
+  exact `Fraction`s. Some of the gap is the load on the box.
+- Peak RSS per job process is 51–53 MB (no torch). The parent's `spec.json` environment
+  manifest imports torch once (CLI dry run: 632 MB peak), so cpu8 needs ≈ 0.6 + 8 × 0.1 GB, far
+  inside `--mem 16`.
+
+### Extrapolation (213 jobs)
+
+| model | local s (12 / 42) | pod compute vCPU-h | longest job (pod) |
+|---|---|---|---|
+| **cell, the 51.8 s RR spike kept (the estimate)** | 544 / 3,294 = 3,838 | **0.69** | 33.5 s (42 RR) |
+| cell, the spike replaced by its repeat | 544 / 2,519 = 3,063 | 0.55 | 21.3 s (42 uTWF) |
+| world (§EXP-0057's per-world RR × this section's uTWF / RR, spike excluded) | 289 / 1,553 = 1,842 | 0.33 | 20.3 s |
+
+| shape | wall (estimate) | workers busy | **billed (estimate)** | stop = 2 × est. | billed, setup 3 min / 1 min |
+|---|---|---|---|---|---|
+| **cpu8** | **6.2 min** | 0.99 | **2.16** | **4.3 (32 min of pod life)** | 1.23 / 0.96 |
+| cpu16 | 3.6 min | 0.98 | 3.64 | 7.3 (27 min) | 1.77 / 1.24 |
+
+- Setup is ≈ 60% of the cpu8 bill (1.33 of 2.16 at 10 min). EXP-0057 and EXP-0066 set up in
+  under a minute; at 1 min cpu8 bills ≈ 1.0.
+- cpu16 costs +1.5 vCPU-h at 10 min setup to save ≈ 2.6 min of wall.
+- Against round 1's WF sizing (cpu8 1.94 billed, stop 3.9), this is +0.2. The stop moves
+  3.9 → 4.3.
+
+**Recommended shape: cpu8** (task 5.6's `[remote:cpu8]`): a fresh secure pod (`--create-pod
+--vcpu 8 --mem 16`, `--workers 8`).
+- **Estimate 2.2 billed vCPU-h**: 0.69 compute + 1.33 setup, plus parent and tail.
+- **≈ 6 min driver wall.**
+- **Hard stop 4.3 vCPU-h = 32 min of cpu8 pod life** (2 × estimate). `run_pod_training.py` has
+  no stop flag; the experiment implementer enforces the stop by wall clock (carry-forward).
+
+Under the "prefer larger pods" rule, cpu16 estimates 3.6 with a stop of 7.3. Both fit under the
+40 vCPU-h auto-approval.
+
+### Pod command (task 5.6)
+
+Stage the three inputs into the git-ignored `tokenomics/_pod_ckpts/` (`.gitignore:24`). The
+driver syncs the inner package dir only, and `--verify-source-commit` still sees a clean tree.
+Check the SHA-256s after copying:
+
+| staged file | source | SHA-256 |
+|---|---|---|
+| `tokenomics/_pod_ckpts/exp0067/atlas_v2.json` | `experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json` | `7517314f297ac39e1c00da3fb734bb40fcfecc9492ee2e67936fc910f8cf9568` (content hash `220886a7cf12…`, checked by the driver) |
+| `tokenomics/_pod_ckpts/exp0067/orderer_scorer.pt` | `experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt` | `d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c` (pinned by SHA-256 only: EXP-0057's TS rows came from it; no arm plays it) |
+| `tokenomics/_pod_ckpts/exp0067/exp0057_episodes.csv` | `experiments/EXP-0057-decoder-check/artifacts/episodes.csv` (git-lfs: pull it first) | `69656f9e2034bc2f41049591d492a70e692cd9d770b10e60d14291021d9d593c` |
+
+```
+cd /srv/research/tokenomics
+mkdir -p tokenomics/_pod_ckpts/exp0067
+cp experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json tokenomics/_pod_ckpts/exp0067/
+cp experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt tokenomics/_pod_ckpts/exp0067/
+cp experiments/EXP-0057-decoder-check/artifacts/episodes.csv tokenomics/_pod_ckpts/exp0067/exp0057_episodes.csv
+sha256sum tokenomics/_pod_ckpts/exp0067/*
+python3 run_pod_training.py --create-pod --image runpod/base:0.7.0-ubuntu2004 --cpu \
+  --python python3.12 --vcpu 8 --mem 16 --disk 30 --pod-name exp0067-utwf \
+  --verify-source-commit \
+  --train "-u -m tokenomics.eval.decoder_check --mode arm-compare --arm utwf \
+    --atlas /workspace/tokenomics/_pod_ckpts/exp0067/atlas_v2.json \
+    --orderer-ckpt /workspace/tokenomics/_pod_ckpts/exp0067/orderer_scorer.pt \
+    --exp0057-episodes /workspace/tokenomics/_pod_ckpts/exp0067/exp0057_episodes.csv \
+    --workers 8 --source-commit {SOURCE_COMMIT} --out-dir /workspace/tokenomics/runs/exp0067" \
+  --pull "/workspace/tokenomics/runs/exp0067:./experiments/EXP-0067-waterfill-router"
+rm -rf tokenomics/_pod_ckpts/exp0067
+```
+
+**What the driver refuses and exits 2 on.**
+- It refuses a real run unless:
+  - the atlas content hash, the orderer SHA-256 and the EXP-0057 `episodes.csv` SHA-256 are the
+    registered ones;
+  - the roster is frozen, the horizon is 100 and the commit is 40-hex;
+  - no filter is set.
+
+  It also refuses before any job if EXP-0057's file lacks any compared RR / MWWk / TS row.
+- It exits 2 on contract failures, missing rows, a digest that differs across arms or from
+  EXP-0057's, or an RR replay that is not neutral against EXP-0057.
+- `--verify-source-commit` needs a clean tree: commit 5.5 first.
+
+**Uncertainties.**
+- The timings were taken on a contended box. The estimate keeps the slowest measured value per
+  cell, including the 51.8 s RR spike, so it is conservative. Without the spike, cpu8 bills 2.0
+  with a stop of 4.0.
+- Only the first confirm episode of the two loaded worlds was timed.
+- uTWF's per-turn cost grows with the eligible producers per product (Algorithm 1 is
+  O(min(N, a)) per pour, on `Fraction`s). 42-0076 (f14) is the costliest choice level in the
+  sample, so the 42 cell should bound the 42 jobs.
