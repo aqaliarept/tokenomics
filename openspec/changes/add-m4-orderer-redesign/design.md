@@ -645,6 +645,14 @@ billed ≈ 1.41 (task 3.1); the launch-fit rule uses billed spend, so the real c
 | **Tranche B1 (relational check)** | | | **24.9–48.9** | | | **proposed authorisation 65, released only after `plateau`** |
 | Tranche B2 (GNN, EXP-0064+) | 3 | sized at licensing | placeholder ≈ 46 (2 × 20 training + 5.6 read) | ≤ 40 per run | design update + probe | approved by the user at licensing |
 
+> **Re-sized by task 5.4 (2026-11-02).** The power rule chose 8-episode reads (TR − RR 2.50% at
+> 4 episodes). The current estimates, stops and the 8-episode launch-fit for EXP-0058–0060 are in
+> `sizing.md` §EXP-0058–0060, which supersedes this table's figures for those runs. That section
+> sizes the bar and the probe together on EXP-0058's cpu8 pod (supervisor decision 1), plans on
+> the world model and keeps the cell model as a worst-case bound. Its supervisor decision
+> (2026-11-02) makes the per-run launch-fit rule on billed spend the binding guard. The table
+> above is kept as the proposal-time plan.
+
 **8-episode case** (if task 5.4's paired MDE is > 2% at 4 episodes):
 
 | Run | Estimate | Hard stop |

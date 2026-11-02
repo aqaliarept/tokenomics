@@ -400,3 +400,247 @@ rm -rf tokenomics/_pod_ckpts/exp0067
 - uTWF's per-turn cost grows with the eligible producers per product (Algorithm 1 is
   O(min(N, a)) per pour, on `Fraction`s). 42-0076 (f14) is the costliest choice level in the
   sample, so the 42 cell should bound the 42 jobs.
+
+## §EXP-0058–0060 (task 5.4)
+
+**Result first.** The paired MDE gives **8-episode reads**: TR − RR is 2.50% at 4 episodes and
+1.77% at 8. **The 8-episode tranche-A launch-fit exceeds 95 under every planning model that keeps
+D10's 10-minute pod setup**, so the task ends by reporting to the supervisor (tasks.md 5.4).
+Nothing below is launched or authorised by this section.
+
+**Question.** How much will the step-2 runs cost on pods? Which episode count does D7's power
+rule pick? Do the runs fit tranche A?
+- EXP-0058 is the bar precompute and the gradient probe, on one cpu8 pod (supervisor decision 1,
+  notes/carry-forward.md).
+- EXP-0059 is the pilot.
+- EXP-0060a–e are the main runs and the validation reads.
+
+**Pre-registration.** `tokenomics/tokenomics/train/registry/es_prereg_m4_v1.json`, SHA-256
+**`b9d449c15db6860950aab8dbc49bc0e3d67635d4d50e6f1c817d1e04fedcbabf`** (= `PREREG_SHA256`,
+re-checked with `sha256sum`).
+
+### Method
+- **Horizon 12, the drivers' own timings.** Each job's `episode_seconds` is recorded by the
+  driver.
+  - `order_es_worlds --mode bar --dry-run --atlas-worlds 2 --target 2 --pool 1
+    --episodes-per-world 1 --horizon 12 --shock-profile shocks-i-smoke`: the first two loaded
+    atlas training worlds, 12-0005 and 12-0060, one seed each, all 10 bar arms.
+  - `order_es --mode train --dry-run --arm A2 --generations 1 --pairs 2 --monitor-every 1` on
+    that bar: A2 members and the monitor (centre and A0 at R = 2).
+  - `order_es_validate --mode validate --dry-run --episodes 1` on 12-0050 and on 42-0066:
+    every validation arm, including the shared-only ablation.
+- **Horizon 100, a direct cross-check.** A probe (`/tmp/impl_m4_5_4/h_probe.py`) runs the
+  drivers' workers on the bar's jobs: `run_bar_job` for TR / RR, and `run_es_job` for A0 (the
+  monitor job) and an A2 member. It ran on 12-0060 and 12-0005, one episode per command, plus the
+  validation dry run at horizon 100 on 12-0050. Each probe row reproduces its bar row's units
+  (TR 68, A0 132 at horizon 12).
+- **Box.** 2 CPUs, shared. Commands ran one at a time with BLAS / torch at 1 thread, no worker
+  pool (`--workers 1`), at `nice -n 19`. The 1-minute load average (before / after) is
+  recorded per command below.
+
+### Measured seconds (local)
+
+| what | world | arm | seconds | load (1 min) |
+|---|---|---|---|---|
+| bar, h12 | 12-0005 / 12-0060 | TR | 0.504 / 0.488 | 1.00 → 1.00 |
+| | | A0 | 0.442 / 0.456 | |
+| | | RR | 0.232 / 0.220 | |
+| | | MWW r0, r1 | 0.219, 0.218 / 0.245, 0.247 | |
+| | | roster (blend, even, obs_price, prop., shock_reactive) | 0.11–0.23 / 0.12–0.27 | |
+| ES dry train, h12 | 12-0060 / 12-0005 | A2 member (centre and ± pairs, 5 each) | 0.445–0.462 / 0.448–0.484 | 0.93 → 0.95 |
+| | | monitor A2 centre (R = 2, generations 0 and 1) | 0.448–0.552 / 0.442–0.497 | |
+| | | monitor A0 (R = 2) | 0.394, 0.457 / 0.376, 0.371 | |
+| probe, h12 | 12-0060 | TR / A0 / A2 | 0.59 / 0.48 / 0.58 | 0.57–0.67 |
+| **probe, h100** | **12-0060** | **RR / TR / A0 / A2** | **1.78 / 3.65 / 3.11 / 3.61** | 0.74–1.10 |
+| **probe, h100** | **12-0005** | **RR / TR / A0 / A2** | **1.57 / 3.44 / 2.85 / 3.31** | 1.17–1.25 |
+| validation dry run, h12 | 12-0050 | candidate (A2) r0, r1 / ablation / A0 / TR / RR / MWW | 0.455, 0.473 / 0.728, 0.586 / 0.398, 0.403 / 0.478 / 0.206 / 0.210, 0.212 | 1.64 → 1.69 |
+| **validation dry run, h100** | **12-0050** | **candidate / ablation / A0 / TR / RR / MWW** | **3.58, 3.81 / 4.48, 4.35 / 3.26, 3.26 / 3.46 / 1.60 / 1.72, 1.72** | 0.62 → 0.92 |
+| validation dry run, h12 | 42-0066 | candidate / ablation / A0 / TR / RR / MWW | 6.18, 6.33 / 9.07, 9.24 / 5.30, 5.27 / 6.84 / 3.46 / 4.06, 3.70 | 1.50 → 1.42 |
+
+Peak RSS was 470–490 MB per command; torch is loaded once per process. The horizon-12 A2 times
+are at the registered initial θ (the centre). Perturbed members cost the same: 0.445–0.484 s
+against the centre's 0.462–0.476 s.
+
+### Per-order / TR ratio (design D10 assumed ≈ 1.3)
+
+| size, horizon | A2 (per-order, residual) / TR | A0 / TR | ablation / TR | ablation / candidate |
+|---|---|---|---|---|
+| 12, h100 (12-0060 / 12-0005 / 12-0050) | 0.99 / 0.96 / 1.10 | 0.85 / 0.83 / 0.94 | – / – / 1.29 | 1.18 |
+| 12, h12 (12-0060 probe; 12-0050 validation) | 0.98; 0.99 | 0.82; 0.84 | 1.52 | 1.54 |
+| 42, h12 (42-0066 validation) | 0.93 | 0.77 | 1.35 | 1.46 |
+
+- The per-order policy costs **0.96–1.10 × TR at 12 producers and 0.93 × at 42**, not 1.3 ×.
+- The shared-only ablation is the most expensive arm: 1.29 × TR at 12 (horizon 100) and
+  1.35 × at 42 (horizon 12). This answers carry-forward 5.4, "time the shared-only ablation at
+  42", at horizon 12. No 42-producer horizon-100 episode was run locally: notes/5.2 records a
+  24-minute memory thrash for 42-producer episodes on this box.
+
+### Extrapolation to horizon 100 (`/tmp/impl_m4_5_4/size_54.py`)
+
+- **Per-job price.** A job's local horizon-100 seconds = its world's RR seconds × the largest
+  measured arm / RR ratio at that size. At 42 producers it is TR × the arm / TR ratio.
+  - The ratios at 12, horizon 100:
+
+    | arm | member (A1 / A2) | A0 | TR | MWW | roster rules | ablation | `portable` |
+    |---|---|---|---|---|---|---|---|
+    | ratio to RR | 2.38 | 2.04 | 2.49 | 1.15 | 1.22 | 2.80 | 3.7 (assumed 1.5 × TR, for EXP-0061 only) |
+
+    TR 2.49 and MWW 1.15 are §EXP-0057's on 12-0060; the roster rules use the horizon-12 bar
+    rows.
+  - At 42 producers: the arm / TR ratios above (member 0.93, A0 0.78, ablation 1.35), with TR
+    and RR priced from §EXP-0057.
+- **Two price levels.**
+  - **cell**: every 12-producer job at 12-0352, the slowest of the 23 atlas training worlds (RR
+    3.91 s). Every 42-producer job at 42-0076 (TR 60.93 s, RR 22.71 s).
+  - **world**: each atlas world's own RR seconds (§EXP-0057, `probes/timing_23.jsonl`; mean 1.81
+    s at 12, 14.89 s at 42). The 41 fresh draws, which have the same lever distribution, are
+    priced at the mean.
+  - At 12 the two differ by 2.2×, because 12-0352 is an outlier. The ES runs are almost all
+    12-producer jobs drawn over 64 worlds, so the world level is the central estimate and the
+    cell level the conservative bound.
+- **Job counts.**
+
+  | run | jobs |
+  |---|---|
+  | bar | 64 worlds × 2 episodes × 10 arms = 1,280, plus a replacement wave of 5 dropped fresh draws (12% of 41, the carry-forward's upper drop rate) and one tail wave: 1,400 |
+  | probe | 2 arms × 24 members × 12 world-episodes = 576 |
+  | pilot | 20 × 300 + 3 × 32 centre + 32 A0 = 6,128 |
+  | EXP-0060a (resumed; this dir replays A0's 32 monitor jobs once) | 20 × 300 + 2 × 32 + 32 = 6,096 |
+  | EXP-0060b / d | 40 × 300 + 5 × 32 + 32 = 12,192 |
+  | seed-0 validation | 16 worlds (13 at 12, 3 at 42) × episodes × 14 (2 candidates × (R = 2 + ablation R = 2), A0 × 2, RR, MWW × 2, TR) |
+  | final validation | × 4 (the seed-1 candidate and its ablation) |
+
+- **Pool model** (task 2.3's `extrapolate_23.simulate`): list scheduling, longest first, pod =
+  0.646 × local, 60 s parent, 4 s per pool opened.
+  - ES generations are barriers, simulated one by one. 300 jobs on 32 workers leave workers
+    idle at each generation's end, so busy = **0.77–0.84** on cpu32. D10 assumed full use.
+  - Billed = vCPU × (setup + wall).
+
+### Minimum detectable effect (design D7; `order_es_validate --mode power`, frozen rule)
+
+Inputs: EXP-0052 confirm rows on the 9 gating validation worlds (12-0050 0089 0092 0109 0330
+0350 0384 0464 0494); `episodes.csv` `0e22ddd0…`, atlas `220886a7…`, reclassified
+`worlds.csv` `9993bb66…`. Mean validation bar **1,831.4**. The pooled within-world SD of the
+paired per-episode differences has df = 7: 12-0330 and 12-0464 have one confirm episode.
+
+| pair (stochastic arms R = 2) | s | MDE at 4 episodes | at 8 episodes |
+|---|---|---|---|
+| MWW − RR | 68.95 | 34.5 units = 1.882% | 24.4 = 1.331% |
+| **TR − RR (deciding: the max)** | 91.65 | **45.8 = 2.502%** | **32.4 = 1.769%** |
+
+- **D7 rule: 2.502% > 2% at 4 episodes → 8 episodes; 1.769% ≤ 3% at 8 → not to the user.** The
+  reviewer's values are confirmed exactly.
+- **Reported only, never used:**
+  - Single-arm `se` column (reclassified `worlds.csv`), world mean 3·√Σ se_w² / 9: 48.1 units
+    (2.63%) at the confirm's counts. Scaled to n episodes as se_w·√(e_w / n): 33.2 (1.81%) at 4
+    and 23.5 (1.28%) at 8.
+  - Atlas formula (`atlas.standard_error` at the read's counts, 5.3's `atlas_se`, world-mean
+    term 3·√Σ SE_w² / 9): MWW − RR 30.8 / 21.8 units (1.68% / 1.19%), TR − RR 24.2 / 17.1
+    (1.32% / 0.93%) at 4 / 8.
+  - D7's text quotes "44 / 31" for the single-arm column. My scaling reproduces its "48" at the
+    confirm's counts but not 44 / 31, so the convention behind those figures is unknown. Neither
+    value enters the rule.
+
+### Estimates per run (billed vCPU-h at a 10-min setup; stop = 2 × estimate, capped at 40)
+
+| run | shape | compute (pod vCPU-h), world / cell | wall min, world / cell | **estimate, world** | estimate, cell | stop, world (cell) |
+|---|---|---|---|---|---|---|
+| EXP-0058 bar + probe (one pod, 2 min restart) | cpu8 | 0.63 + 0.44 / 1.37 + 0.96 | 6.1 + 4.4 / 11.6 + 8.3 | **3.0** | 4.3 | 6.0 (8.5); **probe step alone 0.85 → stop 1.7 (cell 2.8) ≤ 4** |
+| EXP-0059 pilot A1 s0 g1–20 | cpu32 | 4.74 / 10.23 | 12.6 / 23.8 | **12.1** | 18.0 | 24.1 (36.1) |
+| EXP-0060a A1 s0 resumed g21–40 | cpu32 | 4.72 / 10.17 | 12.5 / 23.6 | **12.0** | 17.9 | 24.0 (35.8) |
+| EXP-0060b A2 s0 g1–40 | cpu32 | 9.44 / 20.36 | 24.1 / 46.4 | **18.2** | 30.1 | 36.4 (**40 cap; only 1.33 × the cell estimate**) |
+| EXP-0060c seed-0 validation, 8 episodes | cpu16 | 3.23 / 5.59 | 13.2 / 22.1 | **6.2** | 8.6 | 12.4 (17.1) |
+| (EXP-0060c at 4 episodes, for comparison) | cpu16 | 1.61 / 2.79 | 7.2 / 11.6 | 4.6 | 5.8 | 9.2 (11.5) |
+| EXP-0060d seed 1, selected arm (conditional) | cpu32 | as 0060b | | **18.2** | 30.1 | 36.4 (40) |
+| EXP-0060e final validation, 8 episodes (conditional) | cpu16 | 1.13 / 1.95 | 5.4 / 8.4 | **4.1** | 4.9 | 8.2 (9.8) |
+
+- cpu16 for the validation reads: cpu32 would cost +3 vCPU-h of setup to save ≈ 6–10 min.
+- Every stop is ≤ 40, and the probe step is ≤ 4.
+- At a **1-minute setup**, which EXP-0057 / 0066 actually saw, the world-level estimates fall
+  to:
+
+  | run | 0058 | 0059 | 0060a | 0060b / d | 0060c | 0060e |
+  |---|---|---|---|---|---|---|
+  | estimate | 1.8 | 7.3 | 7.2 | 13.4 | 3.8 | 1.7 |
+
+### Launch-fit, 8-episode reads (tranche A, authorised 100; check line 95)
+
+"Spend before" uses billed actuals for runs already done (EXP-0057 1.41, EXP-0066 ≈ 1.7) and
+planned estimates after them. EXP-0067 (task 5.6, not yet run) is counted at its §EXP-0067
+estimate 2.16 / stop 4.33. EXP-0061 is re-priced with this section's per-job prices: 12 held-out
+worlds at 12 + 8 at 42, 8 episodes, candidate + ablation + A0 at R = 2, RR, MWW × 2, TR and
+`portable`. Task 8.2 owns its final sizing. EXP-0062 keeps D10's 1.6 / 3.
+
+| run | estimate, world | stop | spend before + stop |
+|---|---|---|---|
+| EXP-0067 uTWF (planned) | 2.16 | 4.33 | 3.1 + 4.3 = 7.4 |
+| EXP-0058 bar + probe | 3.0 | 6.0 | 5.3 + 6.0 = 11.3 |
+| EXP-0059 pilot | 12.1 | 24.1 | 8.3 + 24.1 = 32.4 |
+| EXP-0060a | 12.0 | 24.0 | 20.3 + 24.0 = 44.3 |
+| EXP-0060b | 18.2 | 36.4 | 32.3 + 36.4 = 68.7 |
+| EXP-0060c (8 ep) | 6.2 | 12.4 | 50.5 + 12.4 = 62.9 |
+| EXP-0060d (conditional) | 18.2 | 36.4 | 56.7 + 36.4 = **93.1** |
+| EXP-0060e (8 ep, conditional) | 4.1 | 8.2 | 74.9 + 8.2 = 83.1 |
+| EXP-0061 held-out (8 ep, re-priced) | 8.2 | 16.3 | 79.0 + 16.3 = **95.3 > 95** |
+| EXP-0062 | 1.6 | 3.0 | 87.2 + 3.0 = 90.2 |
+| success-path total | **88.8** | | max **95.3** |
+
+The maximum under each model and setup assumption:
+
+| model, setup | max, EXP-0061 re-priced | max, D10's EXP-0061 (8.1 / 17) | §EXP-0058–0060 alone | success-path total |
+|---|---|---|---|---|
+| world, 10 min (the table above) | **95.3** | **96.0** | 93.1 | 88.8 |
+| cell, 10 min | **141.9** | 136.1 | 124.1 (EXP-0060d) | 132.1 |
+| world, 1 min | 65.5 | 70.8 | — | 61.1 |
+| cell, 1 min | 111.9 | 110.9 | — | 104.5 |
+
+**Verdict: the 8-episode launch-fit exceeds 95.** It exceeds even on the central (world) model
+with D10's 10-minute setup, at EXP-0061, and far exceeds on the conservative cell model. Only the
+observed sub-minute setup together with world-level prices fits (≤ 71). Per tasks.md 5.4 this is
+reported to the supervisor, who decides between three options:
+- accept the world model as the planning estimate;
+- re-base setup on the observed sub-minute setups;
+- take a budget or plan change to the user (e.g. fewer 42-producer validation jobs).
+
+None of these is decided here.
+
+**Why it moved against D10.**
+- (+) The minibatch barrier leaves cpu32 workers 16–23% idle.
+- (+) 8-episode reads, and the shared-only ablation at 1.3–1.35 × TR on 2 candidates.
+- (+) EXP-0061 re-priced: 42-producer jobs at 42-0076's TR level.
+- (−) The per-order policy costs ≈ 1.0 × TR, not 1.3 ×.
+- (±) D10 priced member episodes at 5.9 s local. This section prices them at 4.3 s (world) or
+  9.3 s (cell).
+
+**Uncertainties.**
+- Horizon 12 → 100 measured 6.2–6.4 × on these worlds, sub-linear because of the fixed
+  per-episode cost. The horizon-100 numbers above are measured directly at 12 producers, and
+  derived from horizon 12 with §EXP-0057's 42-producer horizon-100 TR only at 42.
+- The ablation's premium over the candidate falls from 1.5 × at horizon 12 to 1.18 × at
+  horizon 100 (12-0050). Using the horizon-12 ratio at 42 is conservative.
+- The bar's drop and replacement rate is assumed at the carry-forward's upper 12%. The A0 death
+  rate is unknown until EXP-0058.
+- The fresh draws' per-world cost is assumed equal to the atlas training mean.
+- The plan text still has the older placement:
+  - tasks.md 6.1 / 6.2 put the bar inside the pilot's cpu32 pod (6.2), with 6.1 = probe only
+    (2.0 / 4);
+  - this section sizes supervisor decision 1 (bar then probe on EXP-0058's cpu8 pod, 6.2 reusing
+    the bar), as notes/5.1 / 5.2 and their commands do;
+  - the plan-text pass should align tasks.md 6.1 / 6.2.
+
+**Supervisor decision (2026-11-02, under the user's M4 budget authority, notes/user-decisions.md).**
+Task 5.4's stop fired: with 8-episode reads the world model's max spend + stop is 95.3 (EXP-0061),
+over the 95 reporting line but under the approved tranche A of 100; the cell model gives 141.9.
+- **Planning basis: the world model at D10's 10-minute setup.** It prices each atlas world at its
+  own measured time; the cell model prices every world as the slowest (12-0352, 2.2 × the mean)
+  and is a worst case, kept as a bound, not a plan. The observed setup (< 1 min on EXP-0057 /
+  0066 / 0067) is extra margin, not planned on.
+- **The binding guard is the per-run launch-fit rule on billed spend** (design D10): before each
+  launch, billed spend so far in tranche A + that run's hard stop ≤ 100, recorded in the task.
+  Billed so far in tranche A: EXP-0057 ≈ 1.41, EXP-0066 ≈ 1.7, EXP-0067 ≈ 2.0 (16 vCPU, ≈ 7–8 min
+  of pod life) ≈ 5.1, against D10's planned 3.5 before EXP-0058.
+- **On a launch-fit miss later:** the supervisor decides (budget authority). The validation
+  sample is frozen in the pre-registration and is not trimmed to fit; the response is a recorded
+  tranche extension, never a changed read.
+- tasks.md 6.x / 7.x "Resources" lines and the 6.1 / 6.2 placement are aligned in the plan-text
+  pass at the 5.4 commit.
