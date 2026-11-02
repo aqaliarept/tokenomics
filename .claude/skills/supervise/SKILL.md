@@ -44,6 +44,13 @@ Workers talk through the harness, not the bus. In a T3 thread: `delegate_task` t
 
 How you judge, decide and report, in every mode. They sharpen the per-task loop; they never replace a human gate.
 
+- **Understand the idea from its source of truth before delegating.** Every task implements an idea that already lives somewhere: a paper or external method, an ADR, a design decision (D-number), a spec requirement, a user decision (`notes/user-decisions.md`), or a prior EXP result. Before writing a brief, read that source yourself, not a summary of it or your memory of it. Be able to state in two sentences what it says, what information it uses, and where our version must differ. Write that into the brief:
+  - name the source of truth;
+  - say what "faithful" means (the formula, the information set, the rule);
+  - list the deviations already approved.
+
+  An idea taken from a paper or external method is implemented as the source defines it (inputs, formulas, assumptions), unless the user approved a deviation. Any other deviation goes to the user before any code is written. When you propose an idea to the user, say how far your version differs from the source; never present an adaptation as the original. (Failure seen 2026-11-02: an exact-demand "water-filling" router was briefed as Tidal Water Filling. The paper estimates total load from local information and the agent count M and uses corrected probabilities. The user caught it after the code was done.)
+- **Make reviewers enforce fidelity.** Every reviewer brief names the source of truth and a "fidelity" check: compare the artifact against the source itself (fetch the paper, open the ADR / design section / user decision), not against the implementer's description. The reviewer lists every deviation it finds and marks each as approved (cite where) or unapproved (a concern). Do not accept an APPROVED that does not show the fidelity check was done. If the review summary does not mention the source, send it back.
 - **Distrust good numbers first.** A result that looks too clean gets a check before it gets a headline: a sudden spike in a class count, 100% acceptance, a "bound" that loses to the thing it bounds. Put the suspicion in the reviewer brief as a concrete "challenge especially" item.
 - **Root cause before next move.** A surprising or disappointing result gets a discriminating check that tells the competing explanations apart before any new strategy (CLAUDE.md root-cause rule). Every proposal names the diagnosed cause it addresses. An undiagnosed finding is recorded as open with its check named. It never becomes a recommendation.
 - **Measurement ≠ mechanism.** Say plainly what the data shows, what it only suggests ("correlation, not cause"), and what is unknown.
@@ -208,6 +215,8 @@ RESOURCES: <local|local-exclusive|remote:<profile>>. The box is shared (<nproc> 
 ~<avail> MB RAM): keep commands within the class. If a command needs more, stop and tell
 the supervisor instead of running it. Tell the reviewer when your own full-suite run is done.
 TASK: <task text + relevant spec/design excerpts>
+SOURCE OF TRUTH: <paper / ADR / design D-n / user decision>. Implement it as the source defines it;
+approved deviations: <list or none>. Any other deviation: stop and report before coding.
 SCOPE: <files>  ACCEPTANCE: <command or check>
 Mutation checks (deleting a guard, planting a leak) run on a copy (a temp copy of the tree or a
 git worktree), never on the live file: a deleted guard once let a test start a real run locally.
@@ -245,7 +254,9 @@ paragraph if an arc opens or closes.
 ```
 Task <id> of goal <goal-slug>. Implementer: <impl-name>. Supervisor: supervisor.
 KIND: <code|experiment>. RESOURCES: <class>. Review against: <task text, spec/design
-excerpts, acceptance>. Base commit: <sha>. Do not run local-exclusive checks (full suite)
+excerpts, acceptance>. SOURCE OF TRUTH: <paper / ADR / design D-n / user decision, with path or
+URL>. Fidelity: open the source itself, not the implementer's summary; list every deviation as
+approved (cite where) or unapproved (a concern). Base commit: <sha>. Do not run local-exclusive checks (full suite)
 until the implementer says its own run finished; do not rerun remote work locally.
 Code: verify correctness, tests that fail on regression (mutation-check key guards), spec
 agreement and scope. Experiment: audit the setup before the numbers, recompute the numbers
