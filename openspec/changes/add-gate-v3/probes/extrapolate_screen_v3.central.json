@@ -1,0 +1,411 @@
+{
+ "central": true,
+ "drift": 1.1972846715328467,
+ "pod_factor": 0.646,
+ "runs": {
+  "pilot": {
+   "class": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 0.8513303822222493,
+     "ws_loaded": 0.28615611895394527,
+     "ws_wide": 5.064794826681316
+    },
+    "compute_vcpu_h": 6.202281327857521,
+    "jobs": 4416,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 6.824833300347309,
+       "planning": 9.224833300347308
+      },
+      "busy": 0.9858191783161052,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 18.449666600694616,
+      "stop_pod_life_min": 69.18624975260481,
+      "wall_min": 24.593124876302408,
+      "wave_walls_min": [
+       23.593124876302408
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 7.431323702842279,
+       "planning": 12.23132370284228
+      },
+      "busy": 0.9744879091842378,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 24.46264740568456,
+      "stop_pod_life_min": 45.86746388565855,
+      "wall_min": 12.933731942829274,
+      "wave_walls_min": [
+       11.933731942829274
+      ]
+     }
+    }
+   },
+   "upper": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 0.8513303822222493,
+     "ws_loaded": 0.3288486465576353,
+     "ws_wide": 6.5578481319855015
+    },
+    "compute_vcpu_h": 7.738027160765452,
+    "jobs": 4416,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 8.304027436042299,
+       "planning": 10.7040274360423
+      },
+      "busy": 0.9957961359034677,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 21.4080548720846,
+      "stop_pod_life_min": 80.28020577031724,
+      "wall_min": 30.140102885158623,
+      "wave_walls_min": [
+       29.140102885158623
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 8.848096211037356,
+       "planning": 13.648096211037357
+      },
+      "busy": 0.9944223123324897,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 27.296192422074714,
+      "stop_pod_life_min": 51.180360791390086,
+      "wall_min": 15.590180395695041,
+      "wave_walls_min": [
+       14.590180395695041
+      ]
+     }
+    }
+   },
+   "waves": [
+    [
+     {
+      "members": 11,
+      "roster": "roster-v3-pilot-ep (pilot, not a gate roster)",
+      "runs_per_world_episode": 23,
+      "worlds": 36
+     }
+    ]
+   ]
+  },
+  "screen": {
+   "class": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 7.995102719998113,
+     "ws_loaded": 2.6761202401135624,
+     "ws_wide": 6.187179117249636
+    },
+    "compute_vcpu_h": 16.858402077363106,
+    "jobs": 35488,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 17.45335734138452,
+       "planning": 19.85335734138452
+      },
+      "busy": 0.9963580470891319,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 39.70671468276904,
+      "stop_pod_life_min": 148.9001800603839,
+      "wall_min": 64.45009003019194,
+      "wave_walls_min": [
+       40.06058987493391,
+       23.389500155258037
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 18.101628655897013,
+       "planning": 22.901628655897014
+      },
+      "busy": 0.9896354384600996,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 45.80325731179403,
+      "stop_pod_life_min": 85.8811074596138,
+      "wall_min": 32.9405537298069,
+      "wave_walls_min": [
+       20.05074717348725,
+       11.889806556319652
+      ]
+     }
+    }
+   },
+   "upper": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 7.995102719998113,
+     "ws_loaded": 3.088317724193783,
+     "ws_wide": 8.268591122938227
+    },
+    "compute_vcpu_h": 19.352011567131793,
+    "jobs": 35488,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 19.913039241992276,
+       "planning": 22.313039241992275
+      },
+      "busy": 0.9985709617236876,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 44.62607848398455,
+      "stop_pod_life_min": 167.34779431494206,
+      "wall_min": 73.67389715747103,
+      "wave_walls_min": [
+       41.60050999905908,
+       31.073387158411965
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 20.46647035310313,
+       "planning": 25.266470353103127
+      },
+      "busy": 0.9975364637664821,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 50.532940706206254,
+      "stop_pod_life_min": 94.74926382413673,
+      "wall_min": 37.37463191206837,
+      "wave_walls_min": [
+       20.819096666195716,
+       15.55553524587265
+      ]
+     }
+    }
+   },
+   "waves": [
+    [
+     {
+      "members": 88,
+      "roster": "roster-v3",
+      "runs_per_world_episode": 216,
+      "worlds": 30
+     }
+    ],
+    [
+     {
+      "members": 13,
+      "roster": "w2-model",
+      "runs_per_world_episode": 29,
+      "worlds": 6
+     }
+    ]
+   ]
+  },
+  "screen-red1": {
+   "class": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 7.995102719998113,
+     "ws_loaded": 1.8627494438266543,
+     "ws_wide": 4.359854345699765
+    },
+    "compute_vcpu_h": 14.21770650952645,
+    "jobs": 33038,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 14.817168310265224,
+       "planning": 17.217168310265222
+      },
+      "busy": 0.9953703982500332,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 34.434336620530445,
+      "stop_pod_life_min": 129.12876232698918,
+      "wall_min": 54.56438116349459,
+      "wave_walls_min": [
+       37.01048535914004,
+       16.553895804354546
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 15.45850263609013,
+       "planning": 20.258502636090128
+      },
+      "busy": 0.9879008168056554,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 40.517005272180256,
+      "stop_pod_life_min": 75.96938488533797,
+      "wall_min": 27.98469244266899,
+      "wave_walls_min": [
+       18.52560903654321,
+       8.459083406125782
+      ]
+     }
+    }
+   },
+   "upper": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 7.995102719998113,
+     "ws_loaded": 2.1579751695075666,
+     "ws_wide": 5.891187973953557
+    },
+    "compute_vcpu_h": 16.044265863461277,
+    "jobs": 33038,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 16.621689422107917,
+       "planning": 19.021689422107915
+      },
+      "busy": 0.9972594946885799,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 38.04337884421583,
+      "stop_pod_life_min": 142.66267066580937,
+      "wall_min": 61.331335332904686,
+      "wave_walls_min": [
+       38.111725418987554,
+       22.21960991391713
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 17.18201195954977,
+       "planning": 21.98201195954977
+      },
+      "busy": 0.9955893325194084,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 43.96402391909954,
+      "stop_pod_life_min": 82.43254484831164,
+      "wall_min": 31.216272424155818,
+      "wave_walls_min": [
+       19.08762580053059,
+       11.128646623625231
+      ]
+     }
+    }
+   },
+   "waves": [
+    [
+     {
+      "members": 88,
+      "roster": "roster-v3",
+      "runs_per_world_episode": 216,
+      "worlds": 30
+     }
+    ],
+    [
+     {
+      "members": 13,
+      "roster": "w2-model",
+      "runs_per_world_episode": 29,
+      "worlds": 6
+     }
+    ]
+   ]
+  },
+  "screen-red12": {
+   "class": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 4.293666275555973,
+     "sparse_wide-repro": 0.1156698888888884,
+     "ws_loaded": 1.8627494438266543,
+     "ws_wide": 4.359854345699765
+    },
+    "compute_vcpu_h": 10.631939953970893,
+    "jobs": 20638,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 11.23139144767475,
+       "planning": 13.63139144767475
+      },
+      "busy": 0.9938196110299786,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 27.2627828953495,
+      "stop_pod_life_min": 102.23543585756062,
+      "wall_min": 41.11771792878031,
+      "wave_walls_min": [
+       23.563822124425766,
+       16.553895804354546
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 11.872748119884127,
+       "planning": 16.672748119884126
+      },
+      "busy": 0.9838848615013245,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 33.34549623976825,
+      "stop_pod_life_min": 62.522805449565475,
+      "wall_min": 21.261402724782737,
+      "wave_walls_min": [
+       11.802319318656957,
+       8.459083406125782
+      ]
+     }
+    }
+   },
+   "upper": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 4.293666275555973,
+     "sparse_wide-repro": 0.1156698888888884,
+     "ws_loaded": 2.1579751695075666,
+     "ws_wide": 5.891187973953557
+    },
+    "compute_vcpu_h": 12.458499307905724,
+    "jobs": 20638,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 13.03888154655218,
+       "planning": 15.43888154655218
+      },
+      "busy": 0.9962377574728478,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 30.87776309310436,
+      "stop_pod_life_min": 115.79161159914135,
+      "wall_min": 47.895805799570674,
+      "wave_walls_min": [
+       24.676195885653545,
+       22.21960991391713
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 13.592991713984407,
+       "planning": 18.392991713984408
+      },
+      "busy": 0.9945853441327918,
+      "longest_job_pod_s": 36.34949818933353,
+      "stop": 36.785983427968816,
+      "stop_pod_life_min": 68.97371892744152,
+      "wall_min": 24.486859463720762,
+      "wave_walls_min": [
+       12.358212840095534,
+       11.128646623625231
+      ]
+     }
+    }
+   },
+   "waves": [
+    [
+     {
+      "members": 40,
+      "roster": "v3-new-members",
+      "runs_per_world_episode": 116,
+      "worlds": 24
+     },
+     {
+      "members": 88,
+      "roster": "roster-v3",
+      "runs_per_world_episode": 216,
+      "worlds": 6
+     }
+    ],
+    [
+     {
+      "members": 13,
+      "roster": "w2-model",
+      "runs_per_world_episode": 29,
+      "worlds": 6
+     }
+    ]
+   ]
+  }
+ }
+}

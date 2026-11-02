@@ -1,0 +1,411 @@
+{
+ "central": false,
+ "drift": 1.1972846715328467,
+ "pod_factor": 0.646,
+ "runs": {
+  "pilot": {
+   "class": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 1.0192848170448736,
+     "ws_loaded": 0.34261033488889014,
+     "ws_wide": 6.064001210444483
+    },
+    "compute_vcpu_h": 7.425896362378199,
+    "jobs": 4416,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 8.06406731304486,
+       "planning": 10.464067313044863
+      },
+      "busy": 0.9860786986214397,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 20.928134626089726,
+      "stop_pod_life_min": 78.48050484783647,
+      "wall_min": 29.24025242391823,
+      "wave_walls_min": [
+       28.24025242391823
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 8.68300799215598,
+       "planning": 13.483007992155981
+      },
+      "busy": 0.9749952168669543,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 26.966015984311962,
+      "stop_pod_life_min": 50.56127997058493,
+      "wall_min": 15.280639985292462,
+      "wave_walls_min": [
+       14.280639985292462
+      ]
+     }
+    }
+   },
+   "upper": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 1.0192848170448736,
+     "ws_loaded": 0.39372544377777235,
+     "ws_wide": 7.8516110466667905
+    },
+    "compute_vcpu_h": 9.264621307489312,
+    "jobs": 4416,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 9.835083777933749,
+       "planning": 12.235083777933747
+      },
+      "busy": 0.9960083709692883,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 24.470167555867494,
+      "stop_pod_life_min": 91.76312833450311,
+      "wall_min": 35.881564167251554,
+      "wave_walls_min": [
+       34.881564167251554
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 10.37928799926709,
+       "planning": 15.179287999267089
+      },
+      "busy": 0.9948457020427666,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 30.358575998534178,
+      "stop_pod_life_min": 56.92232999725158,
+      "wall_min": 18.461164998625794,
+      "wave_walls_min": [
+       17.461164998625794
+      ]
+     }
+    }
+   },
+   "waves": [
+    [
+     {
+      "members": 11,
+      "roster": "roster-v3-pilot-ep (pilot, not a gate roster)",
+      "runs_per_world_episode": 23,
+      "worlds": 36
+     }
+    ]
+   ]
+  },
+  "screen": {
+   "class": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 9.572413933988429,
+     "ws_loaded": 3.2040777426668914,
+     "ws_wide": 7.407814717111202
+    },
+    "compute_vcpu_h": 20.184306393764345,
+    "jobs": 35488,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 20.78745373665299,
+       "planning": 23.18745373665299
+      },
+      "busy": 0.9965530959545462,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 46.37490747330598,
+      "stop_pod_life_min": 173.90590302489744,
+      "wall_min": 76.9529515124487,
+      "wave_walls_min": [
+       47.95649584578205,
+       27.99645566666666
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 21.454435569542017,
+       "planning": 26.254435569542018
+      },
+      "busy": 0.990020364166365,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 52.508871139084036,
+      "stop_pod_life_min": 98.45413338578257,
+      "wall_min": 39.227066692891285,
+      "wave_walls_min": [
+       23.999017899557945,
+       14.228048793333338
+      ]
+     }
+    }
+   },
+   "upper": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 9.572413933988429,
+     "ws_loaded": 3.69759547200058,
+     "ws_wide": 9.899857406666882
+    },
+    "compute_vcpu_h": 23.169866812653236,
+    "jobs": 35488,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 23.732393173097353,
+       "planning": 26.132393173097356
+      },
+      "busy": 0.9987416288714964,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 52.26478634619471,
+      "stop_pod_life_min": 195.99294879823017,
+      "wall_min": 87.99647439911509,
+      "wave_walls_min": [
+       49.80021860578178,
+       37.19625579333331
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 24.28582428420866,
+       "planning": 29.08582428420866
+      },
+      "busy": 0.9978771493048689,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 58.17164856841732,
+      "stop_pod_life_min": 109.07184106578246,
+      "wall_min": 44.53592053289124,
+      "wave_walls_min": [
+       24.918950969557905,
+       18.61696956333333
+      ]
+     }
+    }
+   },
+   "waves": [
+    [
+     {
+      "members": 88,
+      "roster": "roster-v3",
+      "runs_per_world_episode": 216,
+      "worlds": 30
+     }
+    ],
+    [
+     {
+      "members": 13,
+      "roster": "w2-model",
+      "runs_per_world_episode": 29,
+      "worlds": 6
+     }
+    ]
+   ]
+  },
+  "screen-red1": {
+   "class": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 9.572413933988429,
+     "ws_loaded": 2.230241355999994,
+     "ws_wide": 5.219986778222212
+    },
+    "compute_vcpu_h": 17.02264206820879,
+    "jobs": 33038,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 17.631185018430802,
+       "planning": 20.0311850184308
+      },
+      "busy": 0.9956012241611482,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 40.0623700368616,
+      "stop_pod_life_min": 150.233887638231,
+      "wall_min": 65.1169438191155,
+      "wave_walls_min": [
+       44.30465246244884,
+       19.81229135666667
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 18.289861301097616,
+       "planning": 23.089861301097617
+      },
+      "busy": 0.9883556697535523,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 46.179722602195234,
+      "stop_pod_life_min": 86.58697987911606,
+      "wall_min": 33.293489939558036,
+      "wave_walls_min": [
+       22.172993386224697,
+       10.120496553333334
+      ]
+     }
+    }
+   },
+   "upper": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 9.572413933988429,
+     "ws_loaded": 2.5837105920001022,
+     "ws_wide": 7.053429058333429
+    },
+    "compute_vcpu_h": 19.209553584319902,
+    "jobs": 33038,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 19.79171048509743,
+       "planning": 22.191710485097428
+      },
+      "busy": 0.9974648140360196,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 44.383420970194855,
+      "stop_pod_life_min": 166.4378286382307,
+      "wall_min": 73.21891431911536,
+      "wave_walls_min": [
+       45.62315030578203,
+       26.595764013333316
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 20.35339259531984,
+       "planning": 25.15339259531984
+      },
+      "busy": 0.9959986809260031,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 50.30678519063968,
+      "stop_pod_life_min": 94.3252222324494,
+      "wall_min": 37.1626111162247,
+      "wave_walls_min": [
+       22.845887442891364,
+       13.316723673333335
+      ]
+     }
+    }
+   },
+   "waves": [
+    [
+     {
+      "members": 88,
+      "roster": "roster-v3",
+      "runs_per_world_episode": 216,
+      "worlds": 30
+     }
+    ],
+    [
+     {
+      "members": 13,
+      "roster": "w2-model",
+      "runs_per_world_episode": 29,
+      "worlds": 6
+     }
+    ]
+   ]
+  },
+  "screen-red12": {
+   "class": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 5.140740816399762,
+     "sparse_wide-repro": 0.13848978492457426,
+     "ws_loaded": 2.230241355999994,
+     "ws_wide": 5.219986778222212
+    },
+    "compute_vcpu_h": 12.72945873554699,
+    "jobs": 20638,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 13.337989345314439,
+       "planning": 15.737989345314437
+      },
+      "busy": 0.9941273489608972,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 31.475978690628875,
+      "stop_pod_life_min": 118.03492008985828,
+      "wall_min": 49.017460044929145,
+      "wave_walls_min": [
+       28.205168688262475,
+       19.81229135666667
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 13.996692382964477,
+       "planning": 18.796692382964476
+      },
+      "busy": 0.9844882767326585,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 37.59338476592895,
+      "stop_pod_life_min": 70.48759643611679,
+      "wall_min": 25.243798218058394,
+      "wave_walls_min": [
+       14.123301664725064,
+       10.120496553333334
+      ]
+     }
+    }
+   },
+   "upper": {
+    "by_family_vcpu_h": {
+     "sparse_wide": 5.140740816399762,
+     "sparse_wide-repro": 0.13848978492457426,
+     "ws_loaded": 2.5837105920001022,
+     "ws_wide": 7.053429058333429
+    },
+    "compute_vcpu_h": 14.916370251658101,
+    "jobs": 20638,
+    "shapes": {
+     "cpu16": {
+      "billed": {
+       "observed": 15.502069534647768,
+       "planning": 17.90206953464777
+      },
+      "busy": 0.9965016452322986,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 35.80413906929554,
+      "stop_pod_life_min": 134.26552150985827,
+      "wall_min": 57.13276075492913,
+      "wave_walls_min": [
+       29.536996741595818,
+       26.595764013333316
+      ]
+     },
+     "cpu32": {
+      "billed": {
+       "observed": 16.05631366948336,
+       "planning": 20.85631366948336
+      },
+      "busy": 0.9951115092206759,
+      "longest_job_pod_s": 43.520697000000006,
+      "stop": 41.71262733896672,
+      "stop_pod_life_min": 78.2111762605626,
+      "wall_min": 29.1055881302813,
+      "wave_walls_min": [
+       14.788864456947966,
+       13.316723673333335
+      ]
+     }
+    }
+   },
+   "waves": [
+    [
+     {
+      "members": 40,
+      "roster": "v3-new-members",
+      "runs_per_world_episode": 116,
+      "worlds": 24
+     },
+     {
+      "members": 88,
+      "roster": "roster-v3",
+      "runs_per_world_episode": 216,
+      "worlds": 6
+     }
+    ],
+    [
+     {
+      "members": 13,
+      "roster": "w2-model",
+      "runs_per_world_episode": 29,
+      "worlds": 6
+     }
+    ]
+   ]
+  }
+ }
+}
