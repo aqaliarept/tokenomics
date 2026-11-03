@@ -1,0 +1,773 @@
+{
+ "arms": {
+  "A0": {
+   "n_params": 0,
+   "name": "A0",
+   "rank": 0,
+   "residual": false
+  },
+  "A1": {
+   "n_params": 44,
+   "name": "A1",
+   "rank": 0,
+   "residual": true
+  },
+  "A2": {
+   "n_params": 268,
+   "name": "A2",
+   "rank": 4,
+   "residual": true
+  },
+  "A2-R2": {
+   "n_params": 156,
+   "name": "A2-R2",
+   "rank": 2,
+   "residual": true
+  }
+ },
+ "change": "add-m4-orderer-redesign",
+ "changes": {
+  "changed": [
+   "es.minibatch 12 -> 24 (probe and ES estimate; es.weak_minibatch stays 24, so `weak` and `signal` both train at 24)",
+   "probe.minibatch 6 -> 24, drawn from the recorded probe stream at size 24",
+   "es.disqualification: the noise margin (noise_margin) on run-down and starvation; death unchanged",
+   "probe.arms + A1-S2 (probe.sigma_arms): A1 at 2 x sigma (0.10) on the same eps_i, minibatches and draw keys, diagnostic only, with its pre-registered step reading (flat_at_sigma / heterogeneity / sigma_only / no_signal)"
+  ],
+  "from": {
+   "file": "es_prereg_m4_v1.json",
+   "note": "v1 is never edited; v2 is a new file",
+   "sha256": "b9d449c15db6860950aab8dbc49bc0e3d67635d4d50e6f1c817d1e04fedcbabf"
+  },
+  "not_tuned": "the margin is fixed from A0's own re-keyed rows; no probe cosine, member outcome or training result was read to choose it",
+  "unchanged": "everything else, the readings section and every threshold (D7 signal 0.3 / weak 0.1, the power rule, X / Y, floors) included; training arms and sigma (0.05) unchanged",
+  "why": {
+   "evidence": [
+    "EXP-0058: the v1 gradient-signal probe read no_signal (A1 cosine -0.070; 37 / 48 A1 and 42 / 48 A2 member scores disqualified)",
+    "EXP-0068 (DIAGNOSTICS 25): heterogeneous by the registered statistic (A1 minibatch pair-difference / re-keyed-noise median ratio 1.76 on the 4-df minibatch reference, with chance sign agreement across minibatches); not robust: against the 24-df per-world reference the same rule reads inconclusive (A1 0.85, A2 0.94); flat at sigma not excluded (EXP-0068 review round 1)",
+    "EXP-0068 check 2: the relative rule self-disqualifies re-keyed A0 on 16 / 48 (33%) episodes"
+   ],
+   "supervisor_decisions": "2026-11-02 (notes/6.1d.md): c = 2, pooled SDs, target <= 2 / 48, leave-one-world-out reported only",
+   "user_decision": "\"Bigger batches + fix rule\" (2026-11-02) and \"Add a larger-sigma arm\" (2026-11-03), notes/user-decisions.md"
+  }
+ },
+ "es": {
+  "adam": {
+   "beta1": 0.9,
+   "beta2": 0.999,
+   "eps": 1e-08,
+   "lr": 0.02
+  },
+  "algorithm": "antithetic OpenAI-ES: members theta +- sigma * eps_i (eps_i ~ N(0, I), i < pairs) plus the center every generation; per-parameter sigma",
+  "center_every_generation": true,
+  "disqualification": {
+   "noise_margin": {
+    "c": 2.0,
+    "edge_cases": [
+     "death has no margin (binary, unchanged)",
+     "a missing A0 value (fill None, r_start 0 or None) leaves the v1 test",
+     "the comparison is strict: flagged only when A0 - member > margin",
+     "applies only to D6's training-time rule (ES members, the probe), never to D7's validation clauses"
+    ],
+    "formula": "margin_k = c x sqrt(2) x sigma_k; sigma_k = pooled within-group SD (sqrt(sum ss / sum df), groups of >= 2 values) of A0 across re-keyed replicates r0..r4; run-down: r_end / r_start, one group per world-episode; starvation: a consumer's fill, one group per world-episode x consumer (replicates with a fill only)",
+    "not_tuned": "fixed from A0's own re-keyed rows; no probe cosine, member outcome or training result was read to choose c, the statistic or the target",
+    "rundown": 0.09607384166738028,
+    "sigma": {
+     "df_rundown": 48,
+     "df_starvation": 596,
+     "rundown": 0.03396723246882364,
+     "starvation": 0.04134791461413535
+    },
+    "source": {
+     "experiment": "EXP-0068",
+     "file": "noise_floor.csv",
+     "rows": "A0 at replicates r0..r4 on EXP-0058's 12 probe world-episodes (60 rows)",
+     "sha256": "bd93269d785bbc551905d85d687ed79c0a2a362bedb0fed166249343b6427ac6"
+    },
+    "starvation": 0.11694956324630984,
+    "target": {
+     "circularity": "measured in-sample: the margin is fitted on the same rows",
+     "episodes": 48,
+     "leave_one_world_out": "reported only: refit without each world-episode, count that world-episode's self-flags (0 of 48 in total)",
+     "measured": 0,
+     "rule": "re-keyed A0 (r1..r4) against its own r0 on EXP-0068's rows under the margin flags <= 2 of 48 (<= 5%)",
+     "self_flags_max": 2
+    }
+   },
+   "rule": "a member's world-episode disqualifies when it dies and A0 does not, when r_end < x * r_start and A0's does not, or when a consumer's fill < y and A0 does not starve that consumer (per consumer), A0 on the same world-episode and keys (the bar's A0 row); one disqualifying world-episode -> the member takes the worst rank; pre-registration v2: run-down and starvation also need the member below A0's own value on that world-episode and key (r_end / r_start; the consumer's fill) by more than the noise margin (strictly), death unchanged; a missing A0 value (no fill, r_start 0) leaves the v1 test",
+   "side_effect_params": "e2aee97ac38524d709862bc956c43940413ac0cb44c846304a4b8c3d324c3a99",
+   "x_rundown": 0.7515841609654592,
+   "y_starvation": 0.7301724137931035
+  },
+  "estimate": "g_j = sum_i (r(+i) - r(-i)) * eps_ij / (2 * pairs * sigma_j)",
+  "first_opt_seed": 0,
+  "fitness": {
+   "B_we": "max over RR, MWW (R = 2 mean), TR and the roster v2 deterministic members (bar.csv)",
+   "D_we": "mean scheduled consumer demand per cycle (bar.csv)",
+   "H": "holding_units_per_cycle",
+   "U": "consumer units (consumer_completed_units)",
+   "formula": "f = mean over the minibatch of U / B_we - h * H / D_we",
+   "h": 0.1
+  },
+  "generations": {
+   "main": 40,
+   "pilot": 20
+  },
+  "history_alpha": 0.3,
+  "history_mode": "agent",
+  "horizon": 100,
+  "max_read_size": 42,
+  "minibatch": 24,
+  "monitor": {
+   "arms": [
+    "center",
+    "A0"
+   ],
+   "at_generation_0": true,
+   "every": 10,
+   "replicates": 2,
+   "world_episodes": 16
+  },
+  "noise": "eps of generation g: numpy default_rng(int(sha256('|'.join([noise_stream, 'train', opt_seed, g]))[:16], 16)).standard_normal((pairs, n_params))",
+  "noise_stream": "m4-es-noise-v1",
+  "nonfinite": "a member whose policy raises NonFiniteChoice takes the worst rank and is logged; never a contract failure",
+  "opt_seeds": [
+   0,
+   1
+  ],
+  "pairs": 12,
+  "producer": "entity_planner",
+  "rank_shaping": "centered ranks over the 2 * pairs members (rank / (2 pairs - 1) - 0.5, average ranks on ties); disqualified and non-finite members share the worst rank; the center is not ranked",
+  "schedule_stream": "m4-es-schedule-v1",
+  "static_clip_42_stop": "a real ES run (probe or train) refuses a bar whose normaliser.json flags static_psi_clip_42 (a 42-producer static count pinned at the clip); the run stops and goes to the supervisor",
+  "train_replicate": 0,
+  "training_size": 12,
+  "update": "Adam ascending g - weight_decay * theta (L2 coupled into the gradient, OpenAI-ES l2coeff)",
+  "weak_minibatch": 24,
+  "weight_decay": {
+   "kind": "l2_coupled",
+   "value": 0.005
+  }
+ },
+ "format": "m4-es-prereg-v2",
+ "normaliser": {
+  "centre": "median (numpy percentile 50, linear)",
+  "clip": 5.0,
+  "clip_rule": "normalised values clipped to +-clip",
+  "fit_rows": "A0's unnormalised rows (after the input transforms) on the training world-episodes of the bar precompute only (horizon 100, agent-history mode, after the infeasible-world replacement): one phi row per (decision, eligible producer), one psi row per decision",
+  "fitting_code": {
+   "covers": "the normaliser fit and apply, the input transforms, scale floors and clip, fit-row loading, and the code that builds and feeds the rows (PerOrderPolicy, the shared / history / order / product row builders, the agent-local history)",
+   "defs": {
+    "env/agent_history.py": [
+     "FEATURES",
+     "N_FEATURES",
+     "KINDS",
+     "OUTCOME_KINDS",
+     "PRIOR_UNITS",
+     "PRIOR_RATE",
+     "NO_LATENCY",
+     "_PairState",
+     "_EMPTY",
+     "AgentHistory",
+     "stream_producers",
+     "_FoldHook",
+     "_ResetHook",
+     "attach_agent_history",
+     "env_agent_id"
+    ],
+    "train/order_es_worlds.py": [
+     "rows_digest",
+     "load_fit_rows",
+     "fit_normaliser",
+     "fit_rows_sha256"
+    ],
+    "train/orderer_scorer.py": [
+     "_BOUND",
+     "_ORDERER_PRODUCT_FEATURES",
+     "_ORDERER_PRODUCER_ROW_FEATURES",
+     "_product_features",
+     "_producer_row_features"
+    ],
+    "train/per_order_scorer.py": [
+     "CLIP",
+     "HAS_COMPLETED",
+     "OWN_TURN_FEATURES",
+     "ORDER_FEATURES",
+     "PHI_FEATURES",
+     "PSI_FEATURES",
+     "N_PHI",
+     "N_PSI",
+     "LOG1P_PHI",
+     "LOG1P_PSI",
+     "SCALE_FLOORS",
+     "_LOG1P_PHI_COLS",
+     "_LOG1P_PSI_COLS",
+     "_SHARED",
+     "_HIST",
+     "transform_phi",
+     "transform_psi",
+     "input_transforms",
+     "apply_scale_floors",
+     "FeatureNormaliser",
+     "RawRows",
+     "shared_rows",
+     "history_rows",
+     "order_features",
+     "PerOrderPolicy"
+    ]
+   },
+   "not_covered": "the domain / env state the row builders read (product_stream_view, bid outcome kinds): recorded by each run's package tree hash only",
+   "rule": "SHA-256 over, per package-relative file in sorted order, the file name, NUL, the source lines of the listed top-level definitions, decorators included, in list order (each '# name' then its lines), NUL",
+   "sha256": "7dca5e2c7cb7f833e6fcf3ead3a7047b79bc8b28617b4954f3b2128934f19c4c"
+  },
+  "phi_features": [
+   "total_current_capacity",
+   "total_max_capacity",
+   "capacity_headroom",
+   "min_capacity_ratio",
+   "mean_capacity_ratio",
+   "requested_load",
+   "reserved_load",
+   "total_load",
+   "cut_off_price",
+   "outstanding_inbound_units",
+   "active_restoration",
+   "active_upgrade",
+   "active_inventory_expansion",
+   "acceptance_rate",
+   "completion_rate",
+   "rejection_rate",
+   "eligible",
+   "accept_qty_now",
+   "complete_qty_now",
+   "makeable_qty_now",
+   "capacity_bottleneck_ratio",
+   "input_bottleneck_ratio",
+   "bottleneck_ratio",
+   "slot_makeability",
+   "recent_routed_qty",
+   "recent_completed_qty",
+   "recent_rejected_qty",
+   "recent_success_rate",
+   "recent_throughput",
+   "recent_completion_latency",
+   "recent_failure_latency",
+   "routed_ema",
+   "accepted_ema",
+   "completed_ema",
+   "failed_ema",
+   "rejected_ema",
+   "completion_latency",
+   "completion_rate",
+   "log_recency",
+   "never_routed",
+   "has_completed",
+   "assigned_units",
+   "assigned_orders"
+  ],
+  "psi_features": [
+   "open_demand_quantity",
+   "open_demand_tokens",
+   "recent_average_cycle_demand",
+   "recent_rejected_quantity",
+   "product_depth",
+   "recipe_input_count",
+   "recipe_input_units",
+   "recipe_capacity_type_count",
+   "eligible_producer_count",
+   "quantity",
+   "tokens_per_unit",
+   "ttl_remaining",
+   "kind"
+  ],
+  "scale": "IQR (75th - 25th, numpy linear)",
+  "scale_floor_rule": "a floored column's scale = max(the rule's scale, its floor); floor of psi.eligible_producer_count = log1p(4) - log1p(2), the spread of its two 12-producer values",
+  "scale_floors": {
+   "psi.eligible_producer_count": 0.5108256237659907
+  },
+  "transform_rule": "the listed columns are log1p-transformed before the fit and before every apply (policy and fit rows alike); the rest enter raw",
+  "transforms": {
+   "psi.eligible_producer_count": "log1p"
+  },
+  "version": "median-iqr-log1p-v2",
+  "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0 (all-equal values have std 0 exactly)"
+ },
+ "note": "frozen by task 6.1d after EXP-0068 (re-frozen 2026-11-03 with the A1-S2 probe arm and the qualified EXP-0068 evidence, still before any v2 ES data); enforced sections from order_es.registered_sections(2), `readings` from order_es_validate.readings_registration() (unchanged from v1)",
+ "policy": {
+  "architecture_version": "orderer-per-order-residual-v2",
+  "base_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+  "bound": 2.0,
+  "decoder_version": "per-order-choice-v1",
+  "input_transforms": {
+   "psi.eligible_producer_count": "log1p"
+  },
+  "ordering_decode": "choice-v1",
+  "u_init": {
+   "seed": 0,
+   "std": 0.1
+  }
+ },
+ "probe": {
+  "a2_rank2_below": 0.1,
+  "arms": [
+   "A1",
+   "A2",
+   "A1-S2"
+  ],
+  "cosine": "cosine between the two minibatches' estimates; an all-zero estimate leaves it undefined, read as no_signal",
+  "estimate": "per minibatch, the training estimate (centered ranks over that minibatch's member fitness); noise from noise_stream with ('probe', arm)",
+  "minibatch": 24,
+  "minibatch_source": "the recorded probe stream at size 24 (order_es_worlds.probe_minibatches(training world-episodes, 24): two disjoint minibatches on 48 distinct worlds), not the bar's size-6 schedule.json entry",
+  "minibatches": 2,
+  "pairs": 12,
+  "readings": {
+   "signal": 0.3,
+   "weak": 0.1
+  },
+  "sigma_arms": {
+   "A1-S2": {
+    "base_arm": "A1",
+    "decision": "user, 2026-11-03, 'Add a larger-sigma arm' (notes/user-decisions.md)",
+    "role": "diagnostic only: never a training arm unless the user decides later (not in TRAINABLE_ARMS)",
+    "same_as_A1": "initial theta (0), noise stream and eps_i (purpose probe|A1), the 24 pairs, both minibatch-24 minibatches and every draw key; only sigma differs",
+    "sigma": 0.1,
+    "sigma_scale": 2.0
+   },
+   "reading": {
+    "licence": "training is licensed by A1's reading alone, as registered (D7)",
+    "next": {
+     "flat_at_sigma": "the step size becomes a design question; back to the user",
+     "heterogeneity": "heterogeneity was the issue; minibatch 24 suffices; pilot at sigma",
+     "no_signal": "no_signal again: DIAGNOSTICS entry, back to the user",
+     "sigma_only": "reported; proceed with sigma"
+    },
+    "rules": {
+     "flat_at_sigma": "only A1-S2 reads signal / weak",
+     "heterogeneity": "both do",
+     "no_signal": "neither does",
+     "sigma_only": "only A1 does"
+    },
+    "thresholds": "D7's, unchanged: a cosine >= 0.1 reads signal / weak"
+   }
+  },
+  "signal_next": {
+   "minibatch": 24
+  },
+  "theta": "each arm's registered initial theta (A1: 0; A2: w = 0, theta_tau = 0, u ~ N(0, 0.1) seed 0, v = 0), so Delta = 0 for both",
+  "variance_ratio": "var of paired (same minibatch) f(+i) - f(-i) over var of unpaired f_1(+i) - f_2(-i), f_2(+i) - f_1(-i) (ddof 1, raw fitness, non-finite members excluded); reported",
+  "weak_next": {
+   "minibatch": 24
+  }
+ },
+ "readings": {
+  "design": "add-m4-orderer-redesign D6 / D7 / D9 (task 5.3)",
+  "floors": {
+   "atlas_per_world": "SE_w = atlas.standard_error(n_w episodes, differing_w, the compared stochastic arms at their R, the atlas v2 `spreads` of the world's size / choice stratum); floor_w = max(3 SE_w, 0.01 bar_w)",
+   "atlas_world_mean": "max(3 sqrt(sum_w SE_w^2) / W, 0.01 * mean_w bar_w)",
+   "bar_w": "validation: max of the read's RR, MWW and TR world means; monitor: the bar table's B_we",
+   "floor_bar_share": 0.01,
+   "floor_se": 3.0,
+   "min_own_pairs": 2,
+   "monitor_strata": "a monitor world-episode is its own world (1 episode, R = 2), stratum (12, its choice), differing from its pattern / shocks",
+   "own_per_world": "3 * stdev(paired observations) / sqrt(count), paired per episode and replicate (same replicates pair by replicate, a deterministic arm's one row against each replicate); only with >= 2 paired observations on the world (the n = 1 rule), else the atlas floor alone",
+   "own_world_mean": "3 sqrt(sum_w s^2 / n_w) / W, s^2 the pooled within-world variance of the paired observations over the worlds with >= 2 of them (df = sum (n_w - 1)); none when no world has 2 (the n = 1 rule)",
+   "rule": "per comparison (candidate vs A0, RR, MWW, TR and its shared-only ablation; A2 vs A1; center vs A0 on the monitor set): max(atlas-spread floor at the read's counts, own 3 SE)",
+   "tie": "a gain at or below its floor is a tie"
+  },
+  "format": "m4-es-readings-v1",
+  "gains": {
+   "g_tr": "center - A0 on the training-monitor set at the run's last generation (16 fixed world-episodes, replicates 0 and 1, the run dir's monitor.csv, which holds A0's rows in a resumed dir too), equal-weight over world-episodes",
+   "g_val": "the candidate - A0 on the 12-producer loaded validation worlds (world mean)"
+  },
+  "kill_ratio": 0.3333333333333333,
+  "labels": {
+   "computed": "at the seed-0 read and again at the final read (both seeds' candidates; a label on either is recorded)",
+   "concentration_arms": [
+    "candidate",
+    "ablation",
+    "A0",
+    "MWW",
+    "RR"
+   ],
+   "concentration_measures": [
+    "trace_lead_concurrent_top_share_consumer",
+    "trace_routed_share_dispersion",
+    "trace_share_swing_consumer"
+   ],
+   "herding": "candidate share_swing_consumer world mean - MWW's > 3 SE_w (the candidate's own spread over its rows with swing pairs) on >= 1/3 of the loaded validation worlds",
+   "herding_world_share": 0.3333333333333333,
+   "history_inert": "|candidate - ablation| <= F_val(ablation) on the 12-producer loaded validation world mean",
+   "label_se": 3.0,
+   "not_via_deconcentration": "candidate - A0 of trace_lead_concurrent_top_share_consumer (rows with >= 1 concurrent group, paired by episode and replicate, 12-producer loaded worlds, world mean) is not below -3 SE (own pooled SE as the floors')",
+   "table": {
+    "herding": [
+     "success",
+     "plateau"
+    ],
+    "history_inert": [
+     "success",
+     "plateau"
+    ],
+    "not_via_deconcentration": [
+     "success"
+    ]
+   },
+   "undefined": "a measure whose count column is 0 on a row is undefined there and skipped"
+  },
+  "lost_to_rr_share": 0.16666666666666666,
+  "next": {
+   "budget_limited": "to the user (more generations need approval)",
+   "kill": "diagnose the cross-world cause, stop",
+   "other": "diagnose, stop",
+   "plateau": "seed 1, then the step-3 gate",
+   "seed_disagreement": "diagnose, stop",
+   "success": "seed 1, then held-out",
+   "unresolved": "diagnose, stop"
+  },
+  "normaliser_pins": {
+   "check": "validation refuses a bar whose normaliser.json `prereg` hashes otherwise, or a candidate whose normaliser is not the bar's",
+   "clip": 5.0,
+   "fitting_code_sha256": "7dca5e2c7cb7f833e6fcf3ead3a7047b79bc8b28617b4954f3b2128934f19c4c",
+   "rule_sha256": "01ec5c46118a86ea0ec5d202375dc186848a337d0f90b1e8f3cfc3319a09277a",
+   "scale_floors": {
+    "psi.eligible_producer_count": 0.5108256237659907
+   },
+   "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0 (all-equal values have std 0 exactly)"
+  },
+  "power_rule": {
+   "deciding": "max",
+   "estimator": "per world, per episode d = mean over the replicates of a - the same for b; s = pooled within-world SD of d over the worlds with >= 2 episodes (df = sum (n_w - 1)); MDE(n) = 3 s / sqrt(n) / sqrt(W); share = MDE / mean bar",
+   "justification": "success needs the candidate above each of A0, RR, MWW and TR, so the read is as weak as its noisiest comparison; MWW - RR stands for a stochastic-vs-deterministic pair (candidate vs RR / TR), TR - RR for a pair carrying the trained scorer; the larger of the two is taken so the choice cannot follow the smaller value",
+   "mean_bar": "equal-weight mean over the same worlds of the atlas bar (reclassified/worlds.csv `bar`)",
+   "outcome": "computed by task 5.4 (`--mode power`) and recorded in sizing.md with this file's SHA-256; never frozen here",
+   "pairs": [
+    [
+     "MWW",
+     "RR"
+    ],
+    [
+     "TR",
+     "RR"
+    ]
+   ],
+   "replicates": 2,
+   "rows": "EXP-0052 confirm episodes.csv on the 9 loaded 12-producer atlas v2 validation worlds (rho > 0.28, class not collapse), entity_planner",
+   "rule": {
+    "else_episodes": 8,
+    "four_episodes_max_share": 0.02,
+    "to_user_above_at_eight": 0.03
+   },
+   "stochastic_arms_R": 2
+  },
+  "precedence": [
+   "unresolved",
+   "kill",
+   "success",
+   "plateau",
+   "budget_limited",
+   "other"
+  ],
+  "probe_interpretation": "the probe starts each arm at its registered initial theta (Delta = 0; probe.theta). A2's cosine is structurally lower than A1's: at v = 0 its u block (172 of 268 parameters) has no first-order effect, so its estimate carries noise there. The thresholds read on A1 and are not moved for A2 (A2 < 0.1 with A1 >= 0.1 -> A2 uses R = 2)",
+  "readings": {
+   "budget_limited": "no success, and seed-0 read: any seed-0 arm's improvement >= its F_tr; seed-1 read: the seed-1 run's own improvement >= its F_tr",
+   "improvement": "center world mean at the last generation - at 10 generations before (monitor set; the earlier value from the run dir's rows, or from its checkpoint's monitor history when the run was resumed past it, which must equal the dir's rows wherever both exist); missing -> still improving",
+   "kill": "the selected candidate has g_tr > F_tr but g_val < g_tr / 3",
+   "other": "anything else",
+   "plateau": [
+    "(i) every seed-0 arm's last-10-generation monitor improvement < its F_tr (seed-1 read: and the seed-1 run's own)",
+    "(ii) |A2 - A1| (seed 0) <= F_val(A2 vs A1) on validation",
+    "(iii) the candidate - MWW <= F_val(MWW) or the candidate - RR <= F_val(RR)"
+   ],
+   "success": [
+    "the candidate - each of A0, RR, MWW and TR > F_val(ref) on the world mean",
+    "worlds lost to RR by more than floor_w: count * 6 <= worlds",
+    "zero deaths of the candidate",
+    "run-down share (r_end < X r_start) and starvation share (a consumer fill < Y) of the candidate's rows <= RR's"
+   ],
+   "unresolved": "g_tr <= F_tr for every candidate read"
+  },
+  "seed_combination": {
+   "carry": "seed 0 success or plateau and seed 1 unresolved / kill / budget_limited / other -> the seed-1 reading with its Next",
+   "seed_1_rules": "the seed-1 candidate is read with the same table, selection not redone; clause (ii) from seed 0; clause (i) = seed 0's (i) and the seed-1 run's own improvement < F_tr; budget_limited when the seed-1 run's improvement >= F_tr",
+   "seed_1_runs_only_after": [
+    "success",
+    "plateau"
+   ],
+   "table": [
+    [
+     "success",
+     "success",
+     "success"
+    ],
+    [
+     "plateau",
+     "plateau",
+     "plateau"
+    ],
+    [
+     "success",
+     "plateau",
+     "seed_disagreement"
+    ],
+    [
+     "plateau",
+     "success",
+     "seed_disagreement"
+    ]
+   ]
+  },
+  "selection": "among the seed-0 candidates (A1 / A2 or A2-R2), the highest 12-producer loaded validation world mean; A2 - A1 within F_val(A2 vs A1) goes to A1",
+  "units": "consumer units per world-episode (consumer_completed_units); a world's value is the equal-weight mean over its episodes of the replicate means; a read is the equal-weight mean over its worlds",
+  "validation": {
+   "arms": {
+    "A0": "zero residual, choice-v1",
+    "MWW": "makeable_weighted_whole, logits-v1",
+    "RR": "round_robin, logits-v1",
+    "TR": "trained orderer as deployed, logits-v1",
+    "ablation": "the candidate with history_mode shared_only (D9), choice-v1, never retrained",
+    "candidate": "each run's candidate.json, choice-v1, agent history"
+   },
+   "draw_key": "per-order arms: DrawKey(world, episode seed, replicate); MWW: the gate's replicate action seeds",
+   "episode_stage": "m4-es-validate",
+   "episodes": [
+    4,
+    8
+   ],
+   "gating": "12-producer validation worlds with rho > 0.28 and class not collapse (9)",
+   "held_out": "never played or read here (held-out ledger: task 8.1)",
+   "nonfinite": "a candidate raising NonFiniteChoice in validation is a contract failure (the run is invalid)",
+   "producer": "entity_planner",
+   "producer_column": "none: the user chose entity_planner (2026-10-30, open decision 5), so no EXP-0035-producer column",
+   "replicates": {
+    "A0": 2,
+    "MWW": 2,
+    "RR": 1,
+    "TR": 1,
+    "ablation": 2,
+    "candidate": 2
+   },
+   "reported": "42-producer worlds (3 loaded, unretrained), light (rho <= 0.28) and collapse worlds, rho quartiles (nearest rank within size)",
+   "rho_loaded": 0.28,
+   "sizes": [
+    12,
+    42
+   ],
+   "split": "validation"
+  }
+ },
+ "sigma": {
+  "theta_tau": 0.05,
+  "u": 0.05,
+  "v": 0.05,
+  "w": 0.05
+ },
+ "status": "frozen",
+ "worlds": {
+  "arms": [
+   "RR",
+   "MWW",
+   "TR",
+   "blend_0.5",
+   "even_split",
+   "obs_price",
+   "proportional",
+   "shock_reactive",
+   "A0"
+  ],
+  "decode_by_arm": {
+   "A0": "choice-v1",
+   "MWW": "logits-v1",
+   "RR": "logits-v1",
+   "TR": "logits-v1",
+   "blend_0.5": "logits-v1",
+   "even_split": "logits-v1",
+   "obs_price": "logits-v1",
+   "proportional": "logits-v1",
+   "shock_reactive": "logits-v1"
+  },
+  "guards": {
+   "side_effect_params": "e2aee97ac38524d709862bc956c43940413ac0cb44c846304a4b8c3d324c3a99",
+   "x_rundown": 0.7515841609654592,
+   "y_starvation": 0.7301724137931035
+  },
+  "horizon": 100,
+  "normaliser": {
+   "centre": "median (numpy percentile 50, linear)",
+   "clip": 5.0,
+   "clip_rule": "normalised values clipped to +-clip",
+   "fit_rows": "A0's unnormalised rows (after the input transforms) on the training world-episodes of the bar precompute only (horizon 100, agent-history mode, after the infeasible-world replacement): one phi row per (decision, eligible producer), one psi row per decision",
+   "fitting_code": {
+    "covers": "the normaliser fit and apply, the input transforms, scale floors and clip, fit-row loading, and the code that builds and feeds the rows (PerOrderPolicy, the shared / history / order / product row builders, the agent-local history)",
+    "defs": {
+     "env/agent_history.py": [
+      "FEATURES",
+      "N_FEATURES",
+      "KINDS",
+      "OUTCOME_KINDS",
+      "PRIOR_UNITS",
+      "PRIOR_RATE",
+      "NO_LATENCY",
+      "_PairState",
+      "_EMPTY",
+      "AgentHistory",
+      "stream_producers",
+      "_FoldHook",
+      "_ResetHook",
+      "attach_agent_history",
+      "env_agent_id"
+     ],
+     "train/order_es_worlds.py": [
+      "rows_digest",
+      "load_fit_rows",
+      "fit_normaliser",
+      "fit_rows_sha256"
+     ],
+     "train/orderer_scorer.py": [
+      "_BOUND",
+      "_ORDERER_PRODUCT_FEATURES",
+      "_ORDERER_PRODUCER_ROW_FEATURES",
+      "_product_features",
+      "_producer_row_features"
+     ],
+     "train/per_order_scorer.py": [
+      "CLIP",
+      "HAS_COMPLETED",
+      "OWN_TURN_FEATURES",
+      "ORDER_FEATURES",
+      "PHI_FEATURES",
+      "PSI_FEATURES",
+      "N_PHI",
+      "N_PSI",
+      "LOG1P_PHI",
+      "LOG1P_PSI",
+      "SCALE_FLOORS",
+      "_LOG1P_PHI_COLS",
+      "_LOG1P_PSI_COLS",
+      "_SHARED",
+      "_HIST",
+      "transform_phi",
+      "transform_psi",
+      "input_transforms",
+      "apply_scale_floors",
+      "FeatureNormaliser",
+      "RawRows",
+      "shared_rows",
+      "history_rows",
+      "order_features",
+      "PerOrderPolicy"
+     ]
+    },
+    "not_covered": "the domain / env state the row builders read (product_stream_view, bid outcome kinds): recorded by each run's package tree hash only",
+    "rule": "SHA-256 over, per package-relative file in sorted order, the file name, NUL, the source lines of the listed top-level definitions, decorators included, in list order (each '# name' then its lines), NUL",
+    "sha256": "7dca5e2c7cb7f833e6fcf3ead3a7047b79bc8b28617b4954f3b2128934f19c4c"
+   },
+   "phi_features": [
+    "total_current_capacity",
+    "total_max_capacity",
+    "capacity_headroom",
+    "min_capacity_ratio",
+    "mean_capacity_ratio",
+    "requested_load",
+    "reserved_load",
+    "total_load",
+    "cut_off_price",
+    "outstanding_inbound_units",
+    "active_restoration",
+    "active_upgrade",
+    "active_inventory_expansion",
+    "acceptance_rate",
+    "completion_rate",
+    "rejection_rate",
+    "eligible",
+    "accept_qty_now",
+    "complete_qty_now",
+    "makeable_qty_now",
+    "capacity_bottleneck_ratio",
+    "input_bottleneck_ratio",
+    "bottleneck_ratio",
+    "slot_makeability",
+    "recent_routed_qty",
+    "recent_completed_qty",
+    "recent_rejected_qty",
+    "recent_success_rate",
+    "recent_throughput",
+    "recent_completion_latency",
+    "recent_failure_latency",
+    "routed_ema",
+    "accepted_ema",
+    "completed_ema",
+    "failed_ema",
+    "rejected_ema",
+    "completion_latency",
+    "completion_rate",
+    "log_recency",
+    "never_routed",
+    "has_completed",
+    "assigned_units",
+    "assigned_orders"
+   ],
+   "psi_features": [
+    "open_demand_quantity",
+    "open_demand_tokens",
+    "recent_average_cycle_demand",
+    "recent_rejected_quantity",
+    "product_depth",
+    "recipe_input_count",
+    "recipe_input_units",
+    "recipe_capacity_type_count",
+    "eligible_producer_count",
+    "quantity",
+    "tokens_per_unit",
+    "ttl_remaining",
+    "kind"
+   ],
+   "scale": "IQR (75th - 25th, numpy linear)",
+   "scale_floor_rule": "a floored column's scale = max(the rule's scale, its floor); floor of psi.eligible_producer_count = log1p(4) - log1p(2), the spread of its two 12-producer values",
+   "scale_floors": {
+    "psi.eligible_producer_count": 0.5108256237659907
+   },
+   "transform_rule": "the listed columns are log1p-transformed before the fit and before every apply (policy and fit rows alike); the rest enter raw",
+   "transforms": {
+    "psi.eligible_producer_count": "log1p"
+   },
+   "version": "median-iqr-log1p-v2",
+   "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0 (all-equal values have std 0 exactly)"
+  },
+  "producer": "entity_planner",
+  "replicates": {
+   "A0": 1,
+   "MWW": 2,
+   "RR": 1,
+   "TR": 1,
+   "blend_0.5": 1,
+   "even_split": 1,
+   "obs_price": 1,
+   "proportional": 1,
+   "shock_reactive": 1
+  },
+  "roster_version": "5050508ecb25f0eda0ae0a61b0dde4ba948a6e9b0d901cd14cde28e0db161f38",
+  "schedule": {
+   "generations": 40,
+   "minibatch": 12,
+   "monitor": 16,
+   "monitor_replicates": 2,
+   "opt_seeds": [
+    0,
+    1
+   ],
+   "probe_minibatch": 6,
+   "stream": "m4-es-schedule-v1"
+  },
+  "selection": {
+   "atlas_worlds": 23,
+   "episodes_per_world": 2,
+   "fresh_atlas": "m4-es-train-v1",
+   "fresh_pool": 256,
+   "max_replaced_share": 0.25,
+   "min_feasible": 50,
+   "rho_loaded": 0.28,
+   "saturation_fill": 0.95,
+   "target": 64,
+   "train_stage": "m4-es-train"
+  }
+ }
+}

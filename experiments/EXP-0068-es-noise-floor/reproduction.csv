@@ -1,0 +1,13 @@
+world,episode,units,bar_a0_units,dead,bar_a0_dead,holding_units_per_cycle,bar_a0_holding_units_per_cycle,equal
+ws-atlas-v1-12-0139,1946809725,723.0,723.0,false,false,96.37,96.37,True
+ws-atlas-v1-12-0155,474856157,680.0,680.0,false,false,64.76,64.76,True
+ws-atlas-v1-12-0308,203183553,2739.0,2739.0,false,false,110.65,110.65,True
+ws-m4-es-train-v1-12-0000,867835099,2236.0,2236.0,false,false,113.78,113.78,True
+ws-m4-es-train-v1-12-0002,1600056319,2610.0,2610.0,false,false,77.94,77.94,True
+ws-m4-es-train-v1-12-0003,1973389111,2401.0,2401.0,false,false,101.15,101.15,True
+ws-m4-es-train-v1-12-0004,47747607,1788.0,1788.0,false,false,137.88,137.88,True
+ws-m4-es-train-v1-12-0005,200560606,3120.0,3120.0,false,false,140.41,140.41,True
+ws-m4-es-train-v1-12-0014,226572137,1481.0,1481.0,false,false,112.63,112.63,True
+ws-m4-es-train-v1-12-0033,141870395,1987.0,1987.0,false,false,123.68,123.68,True
+ws-m4-es-train-v1-12-0044,1092109868,2266.0,2266.0,false,false,72.87,72.87,True
+ws-m4-es-train-v1-12-0051,1572602726,774.0,774.0,false,false,89.58,89.58,True

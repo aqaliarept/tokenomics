@@ -1081,3 +1081,42 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - **Cost.** ≈ 6.9 vCPU-h billed: the bar pod 6.04 and the probe pod 0.87; tranche A ≈ 12.0 of
     100. The bar pod idled to its hard stop while a between-steps check ran on the overloaded
     local box, so the probe ran on its own pod (DIAGNOSTICS 26).
+
+### Why the probe found no direction (noise floor)
+
+- **EXP-0068 — noise floor for EXP-0058's `no_signal`. Heterogeneous by the registered
+  statistic, not robust to the reference estimate.**
+  - **The question.** Task 6.1a had already shown, offline, that switching off the
+    disqualification rule does not bring a gradient direction back (A1 cosine 0.03). Two causes
+    were left: perturbations too small to beat draw noise ("flat"), or effects that depend on the
+    worlds ("heterogeneous").
+  - **The run.** A0 was replayed on the probe's 12 world-episodes under 4 fresh random-draw keys,
+    which measures how much draw noise alone moves a world-episode's fitness.
+  - **Check 3, against that noise (√2 × A0's re-keying spread).** The registered one-sided rule
+    reads A1's median ratio over its 24 minibatch-level perturbation pairs. It is **1.76**: the
+    pairs change minibatch fitness by a median of 0.019 of the bar, while re-keying moves it by an
+    SD of only 0.007–0.008.
+    - With the pairs' signs agreeing across the two minibatches no better than chance (6.1a),
+      the registered rule reads **heterogeneous**.
+    - **Not robust (review round 1).** That re-keying SD came from only 5 replicates of the
+      minibatch mean (4 df).
+      - Built instead from the per-world-episode spreads (each world-episode has its own key; 24
+        df), it is about twice as large: 0.018 / 0.013.
+      - Against it, the same rule reads inconclusive: A1 0.85, A2 0.94.
+      - The per-world ratios (0.68 / 0.81) and the within-minibatch coherence of the pair
+        differences (about that of noise) agree.
+      - So whether the perturbations act above draw noise at all, i.e. heterogeneous vs flat at
+        σ, is open. The registered reading stands as registered.
+  - **Check 2.** The relative disqualification rule fires on draw noise alone. A re-keyed A0 is
+    "disqualified" against itself on 16 of 48 episodes (33%). The flags fall on the 5
+    world-episodes where the probe's members drew run-down or starvation flags. The sixth,
+    12-0155, where the members died, shows none.
+  - **Validity and cost.** A0 at the original key reproduces the bar on all 12 world-episodes;
+    0 contract failures; the offline recompute matches. ≈ 0.23 vCPU-h billed (tranche A ≈ 12.2
+    of 100).
+  - **Next.** The supervisor takes the fork to the user (for example the minibatch size or
+    sampling, and separately the rule's noise firing); 6.2 stays gated.
+    - The user chose "Bigger batches + fix rule" (task 6.1d: minibatch 24, noise margin,
+      pre-registration v2).
+    - The sensitivity above bears on that choice. The minibatch-24 re-probe (EXP-0069) tests
+      cross-minibatch agreement directly.

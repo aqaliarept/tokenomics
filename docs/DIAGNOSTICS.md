@@ -892,10 +892,18 @@ split-needed 103 vs 865, choice-fixable 398 vs 1,935, unfillable 3,072 vs 773. O
 
 ## 25. An ES probe finds no gradient signal (`no_signal`)
 
-_Status: partially diagnosed (task 6.1a, 2026-11-02). Check 1 discriminated: disqualification
-is not the cause of EXP-0058's `no_signal`. "Flat at σ" versus "heterogeneous" is still open:
-check 3 needs A0's replicate spread, which the records lack, and task 6.1b runs it together with
-check 2._
+_Status (2026-11-02): **heterogeneous by the registered statistic, not robust to the reference
+estimate**.
+- Check 1 (task 6.1a) excluded disqualification as the cause.
+- Check 3 (task 6.1b, EXP-0068, the registered one-sided rule) puts A1's minibatch pair
+  differences above draw noise (median ratio 1.76 > 1). With the cross-minibatch sign
+  disagreement, that reads heterogeneous.
+  - The 1.76 rests on a 4-df reference: A0's minibatch-mean spread over 5 replicates.
+  - The same reference estimated from the per-world-episode spreads (24 df) is about twice as
+    large, and against it the same rule reads inconclusive (A1 0.85, A2 0.94).
+  - So flat at σ is not excluded (review round 1 of 6.1b).
+- Check 2 (EXP-0068) also shows the relative rule firing on draw noise alone on 5 of the 12
+  world-episodes._
 
 **Problem (plain English):** before an ES run, the gradient-signal probe (design D7,
 `order_es --mode probe`) scores the same perturbation pairs on two disjoint minibatches. The two
@@ -937,6 +945,12 @@ improved. The competing explanations call for different responses:
        (5 / 12), that reads **heterogeneous**.
      - **Median ≤ 1 → inconclusive.**
      - The world-episode level, A2, and the shares above 1× / 2× are reported only.
+   - **Lesson (review round 1 of 6.1b; for any future use of this check):**
+     - Estimate the minibatch-level reference from the per-world-episode re-keying SDs:
+       √(Σ_w SD_w²) / n_w, valid because each world-episode has its own draw key, with n_w × K
+       degrees of freedom.
+     - Do not estimate it from the minibatch means' own replicate SD (K degrees of freedom).
+     - With K = 4 the latter can come out at half its value, which doubles the ratio.
    - Ruling flatness *in* needs a two-sided reference: the spread of d itself across keys (the
      same pairs played at r1..rK). That is extra pair jobs and the supervisor's call; it is not
      part of 6.1b as specified.
@@ -977,6 +991,32 @@ improved. The competing explanations call for different responses:
     0.0036 (12-0000: 0.032);
   - on 12-0014 / 12-0044 A0's later-flagged consumers clear Y by 0.025–0.038;
   - flagged members fall below by a median of 0.011–0.037.
+- **Checks 2 and 3 (task 6.1b, EXP-0068, `order_es --mode noise-floor`).** A0 at keys r0..r4 on
+  the probe's 12 world-episodes; r0 reproduces the bar on 12 / 12; 0 contract failures;
+  `--recompute` MATCH.
+  - **Check 3:** A1's minibatch median ratio |d| / (√2 × A0's re-keying SD) is **1.759** (A2
+    1.924). 75% of A1's pairs are above 1 and 50% above 2.
+    - A0's minibatch-mean SD is 0.0084 / 0.0065, against a median |d| of 0.019.
+    - World-episode level, reported only: medians 0.68 / 0.81.
+    - **By the registered rule: above noise, so heterogeneous.**
+    - **Sensitivity (reported only; the registered reading stands).**
+      - The minibatch reference from the per-world-episode SDs, √(Σ SD_w²) / 6 with 24 df, is
+        0.0180 / 0.0129, against the driver's 4-df 0.0084 / 0.0065.
+      - Against it the median ratios are **A1 0.846 / A2 0.938** (46% of pairs above 1):
+        inconclusive.
+      - Within a minibatch, the six per-world d add up barely more coherently than noise:
+        |mean d| ÷ (rms / √6) has median 0.93 (A1) / 0.86 (A2), against ≈ 0.76 (median) / 0.83
+        (mean) for pure noise.
+      - So the 1.76 comes mostly from the low 4-df reference, not from a coherent effect. Whether
+        the perturbations move outcomes above draw noise, i.e. heterogeneous vs flat at σ, is
+        open.
+  - **Check 2:** a re-keyed A0 is self-disqualified on **16 / 48 (33%)** episodes (12 run-down,
+    5 starvation). They fall on the 5 world-episodes where members drew run-down or starvation flags:
+    12-0005 4 / 4, 12-0139 3 / 4, 12-0000 3 / 4, 12-0014 3 / 4, 12-0044 3 / 4. The sixth
+    world-episode with member flags, 12-0155, where the members died, shows none, and so does
+    every other world-episode (12-0002 included).
+    - The relative rule fires on draw noise on those worlds. This is a separate finding from the
+      `no_signal` cause, which check 1 settled.
 
 ## 26. A pod bills idle while a local step runs between two pod steps
 

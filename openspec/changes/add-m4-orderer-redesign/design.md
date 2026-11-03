@@ -338,10 +338,23 @@ choice  = inverse-CDF draw of softmax(s/τ) with the D3 key; the whole order goe
   every generation. Adam lr 0.02, weight decay 0.005. Optimizer seeds {0, 1}; seed 0 runs first
   (D10). Pilot: generations 1–20. Main: the pilot's checkpoint is **resumed** to generation 40.
   All values live in the frozen pre-registration file; a real run refuses any mismatch.
-- **Common random numbers.** In a generation every member plays the same 12 training
+- **Common random numbers.** In a generation every member plays the same minibatch of training
   world-episodes: the same world, episode seed, shock / demand draws and sampling keys. Keys
   exclude the member. The minibatch schedule comes from a recorded seed stream disjoint from
   every atlas seed.
+- **Minibatch size: 12 under pre-registration v1, 24 under v2** (task 6.1d, 2026-11-02; user
+  decision "Bigger batches + fix rule", notes/user-decisions.md). The reason is EXP-0068's
+  reading of EXP-0058's `no_signal` as **heterogeneous by the registered statistic**: A1's
+  minibatch median ratio was 1.76, with chance sign agreement across minibatches (DIAGNOSTICS
+  25).
+  - That reading is not robust to the reference estimate. With the 24-df reference built from
+    the per-world spreads, the same rule reads inconclusive (A1 0.85), so flat at σ is not
+    excluded.
+  - Under either branch, a 6-world-episode estimate is too noisy to agree with another one, and
+    a larger minibatch addresses both: it averages over more worlds, and it averages down draw
+    noise. A size-24
+  generation draws from the same recorded stream as the 12 (`minibatch_for`). The ES design is
+  otherwise unchanged: 12 pairs, 20 + 20 generations, the same σ and Adam.
 - **Scheduling.** Within a generation, jobs are submitted longest first. The predicted cost per
   (world, producer) comes from the bar precompute's timings. This keeps the 32 workers busy
   across 1.7–7.3 s episodes.
@@ -359,6 +372,42 @@ choice  = inverse-CDF draw of softmax(s/τ) with the D3 key; the whole order goe
   - A disqualified member takes the worst rank.
   - Absolute X / Y would flag A0 and the bar arms on worlds where the bar fills ≈ 46% (task 1.2
     measures the rates), which would flatten the gradient.
+- **Noise margin (pre-registration v2 only; task 6.1d, supervisor decisions 2026-11-02).**
+  - **Why.** EXP-0068 check 2 found that A0 re-keyed against itself is "disqualified" by this
+    rule on 16 of 48 episodes (33%), on the 5 knife-edge world-episodes that flagged EXP-0058's
+    members. On those worlds the rule fires on draw noise.
+  - **Rule.** A run-down or starvation flag also needs the member to fall below A0's own value
+    on that world-episode and keys by **more than** a margin m_k:
+    - run-down compares A0's r_end / r_start with the member's;
+    - starvation compares A0's fill of that consumer with the member's.
+    - The A0 values are the bar precompute's A0 rows: `episodes.csv` in the bar dir, checked
+      against `bar.csv` on load.
+  - **Margin.** m_k = c · √2 · σ_k with c = 2, where √2 · σ is the noise of a difference
+    between two independently keyed episodes. σ_k is the pooled within-group SD
+    (√(Σ ss / Σ df)) of A0 across the re-keyed replicates r0..r4 in EXP-0068's
+    `noise_floor.csv` (60 rows, SHA-256 `bd93269d785b…`):
+    - run-down, one group per world-episode: σ = 0.03397, df 48, **m = 0.09607**;
+    - starvation, one group per world-episode × consumer, all consumers: σ = 0.04135, df 596,
+      **m = 0.11695**.
+    One number per flag kind: a per-world spread exists for only 12 of the 128 training
+    world-episodes.
+  - **Edge cases.**
+    - Death keeps no margin; it is binary, and A0 never died re-keyed.
+    - A missing A0 value (a fill of None, or r_start 0) leaves the v1 test.
+    - The comparison is strict.
+    - The margin applies only to this training-time rule (ES members and the probe), never to
+      D7's validation clauses.
+  - **Target.** Re-keyed A0 (r1..r4 against r0) on EXP-0068's rows flags ≤ 2 of 48 (≤ 5%).
+    - **Measured: 0 of 48.**
+    - This is in-sample, because the margin is fitted on the same rows, so it is circular by
+      construction.
+    - A leave-one-world-out refit is reported only, never deciding: refit without each
+      world-episode, then count its own self-flags. It gave 0 of 4 on each of the 12, with refit
+      run-down margins 0.069–0.100 and starvation 0.113–0.122.
+  - **Not tuned.** c, the statistic and the target were fixed from A0's own re-keyed rows. No
+    probe cosine, member outcome or training result was read to choose them.
+  - Registered in `es_prereg_m4_v2.json` (SHA-256 `511e939a4121…`; re-frozen 2026-11-03 with the A1-S2 probe arm below and the qualified EXP-0068 evidence, before any v2 data). v1 (`b9d449c1…`) is not
+    edited, and a v1 run is byte-identical to before.
 - **"A0 infeasible" branch (D5 of the baseline plan).**
   - A training world on which A0 dies in the bar precompute is replaced by the next draw in the
     fixed order.
@@ -397,7 +446,41 @@ equal-weight mean over worlds.
 pilot).**
 - A1 and A2 at their registered initial θ (Δ = 0; A2's u is its seeded draw, v = 0;
   pre-registration `probe.theta`). Each of the 12 pairs is scored on two disjoint CRN
-  minibatches of 6 world-episodes.
+  minibatches: 6 world-episodes each under v1 (EXP-0058, from the bar's `schedule.json`), **24
+  each under v2** (EXP-0069, task 6.1e).
+- **The v2 probe's minibatches** are taken from the recorded probe stream at size 24
+  (`order_es_worlds.probe_minibatches(training world-episodes, 24)`): two disjoint minibatches on
+  48 distinct worlds, checked disjoint and full. They are not taken from the bar's size-6 entry.
+  - **Why (EXP-0068).** EXP-0058's two 6-world-episode estimates disagreed (cosine −0.07). EXP-0068
+    read `heterogeneous` by the registered statistic, which is not robust to the reference
+    estimate; flat at σ is not excluded. A size-24 probe asks directly whether the estimate
+    agrees across minibatches at the size the ES will train on.
+  - The thresholds (0.3 / 0.1) and the readings are unchanged.
+  - Under v2 the probe also uses D6's noise margin.
+- **Larger-step arm A1-S2 (v2 only; user decision "Add a larger-sigma arm", 2026-11-03).**
+  - **Why.** Against the 24-df per-world reference, EXP-0068's check 3 reads inconclusive, so
+    flat at σ is not excluded. A size-24 probe at σ alone could not tell flatness from
+    heterogeneity.
+  - **What it is.** A1 at σ' = 2σ = 0.10 on normalised features, with everything else shared
+    with the σ arm:
+    - A1's initial θ (0);
+    - the same ε_i (A1's probe noise stream);
+    - the same 24 pairs, the same two minibatch-24 minibatches and every draw key.
+    Only σ differs: θ ± σ'·ε_i, and the estimate is scaled by σ'.
+  - **Role.** A1-S2 is diagnostic only, never a training arm unless the user decides later. It
+    is not trainable in code, and not an arm of `per_order_scorer`.
+  - **The step reading** (registered before data; each arm read with D7's thresholds, cosine
+    ≥ 0.1 = `signal` / `weak`):
+
+    | A1 (σ) | A1-S2 (2σ) | Step reading | Next |
+    |---|---|---|---|
+    | < 0.1 | ≥ 0.1 | `flat_at_sigma` | the step size becomes a design question; back to the user |
+    | ≥ 0.1 | ≥ 0.1 | `heterogeneity` | minibatch 24 suffices; pilot at σ |
+    | < 0.1 | < 0.1 | `no_signal` | DIAGNOSTICS entry; back to the user |
+    | ≥ 0.1 | < 0.1 | `sigma_only` | reported; proceed with σ |
+
+  - **Training is licensed by A1's reading alone** (D7's reading table below). In both rows where A1
+    is below 0.1 the pilot does not launch.
 - A2's cosine is structurally lower than A1's: at v = 0 its u block (172 of 268 parameters) has
   no first-order effect, so its estimate carries noise there. The thresholds read on A1 and are
   not moved for A2.
@@ -411,6 +494,10 @@ pilot).**
 | `no_signal` | A1 cosine < 0.1 | diagnose, stop |
 
 - A2 cosine < 0.1 while A1 ≥ 0.1 → A2 uses R = 2.
+- **Under v2, `signal` and `weak` both train at minibatch 24.** `weak`'s registered remedy (24)
+  is now the base size, so `weak` re-sizes nothing. Both readings proceed to the pilot.
+  `signal`'s Next records minibatch 24 (pre-registration v2 `probe.signal_next`). The reading
+  still records which threshold the cosine cleared.
 
 **Pilot (EXP-0059, A1 seed 0, generations 1–20).**
 - `feasible`: g_tr > F_tr. The main runs proceed.
@@ -652,6 +739,47 @@ billed ≈ 1.41 (task 3.1); the launch-fit rule uses billed spend, so the real c
 > the world model and keeps the cell model as a worst-case bound. Its supervisor decision
 > (2026-11-02) makes the per-run launch-fit rule on billed spend the binding guard. The table
 > above is kept as the proposal-time plan.
+
+**Re-sized for minibatch 24 (task 6.1d, supervisor decisions 2026-11-02; budget option (a)).**
+- **Reason.** The user's decision "Bigger batches + fix rule" follows EXP-0058's `no_signal`,
+  which EXP-0068 read as `heterogeneous` by the registered statistic (not robust to the
+  reference estimate). It doubles every ES generation's member jobs
+  (minibatch 12 → 24) and quadruples the probe's (6 → 24 per minibatch). The ES design is
+  unchanged (12 pairs; 20 + 20 generations; seeds {0, 1}).
+- **Tranche A is extended to 125 vCPU-h, conditionally.** The extra 25 is drawn only if EXP-0069 (A1's reading)
+  (the v2 re-probe) reads `signal` or `weak`. On `no_signal` the tranche stays at 100, and the
+  run goes back to the user.
+- **The hard-stop cap is excepted for EXP-0060b and EXP-0060d.** They may carry stops up to 55
+  (2 × the 27.4 estimate), above the 40-per-run cap. Every other run keeps the cap.
+- **The launch-fit is re-checked per run on billed spend against 125.** The supervisor records
+  the check in the task.
+- **Estimates.** World model, 10-minute setup, minibatch-barrier pool simulation as in sizing.md
+  §EXP-0058–0060. Validation reads are unchanged (8 episodes).
+
+| Run | Shape | Jobs | Compute (pod vCPU-h) | Estimate (billed) | At 1-min setup | Hard stop | Launch-fit at planned estimates |
+|---|---|---|---|---|---|---|---|
+| EXP-0069 v2 re-probe, A1 + A2 + A1-S2 | cpu16 (cpu8: 4.1 / 8.3; cell-model 8.7) | 3,456 | 2.64 | 5.6 | 3.2 | 11.2 | 12.2 + 11.2 = 23.4 |
+| EXP-0059 pilot, A1 s0, g1–20 | cpu32 | 12,128 | 9.39 | 16.7 | 11.9 | 33.3 | 17.8 + 33.3 = 51.1 |
+| EXP-0060a A1 s0 resumed, g21–40 | cpu32 | 12,096 | 9.37 | 16.6 | 11.8 | 33.2 | 34.5 + 33.2 = 67.7 |
+| EXP-0060b A2 s0, g1–40 | cpu32 | 24,192 | 18.74 | 27.4 | 22.6 | **54.8 (exception)** | 51.1 + 54.8 = 105.9 |
+| EXP-0060c seed-0 validation, 8 ep | cpu16 | 1,792 | 3.23 | 6.2 | 3.8 | 12.4 | 78.5 + 12.4 = 90.9 |
+| EXP-0060d seed 1 (conditional) | cpu32 | 24,192 | 18.74 | 27.4 | 22.6 | **54.8 (exception)** | 84.7 + 54.8 = **139.5 > 125** |
+| EXP-0060e final validation, 8 ep (conditional) | cpu16 | 512 | 1.13 | 4.1 | 1.7 | 8.2 | 112.1 + 8.2 = 120.3 |
+| EXP-0061 held-out, 8 ep | cpu16 | 1,760 | 5.21 | 8.2 | 5.8 | 16.3 | 116.2 + 16.3 = 132.5 |
+| EXP-0062 per-order cost | cpu8 | – | – | 1.6 | 1.6 | 3.0 | 124.4 + 3.0 = 127.4 |
+| success-path total | | | | **126.0** | **97.2** | | |
+
+- "Spend before" starts at the ≈ 12.2 billed so far and adds the planned estimates.
+- **At planned estimates the success path does not fit 125.** It fails at EXP-0060d (139.5),
+  then EXP-0061 and EXP-0062. The supervisor's decision makes the per-run check on billed spend
+  the binding guard.
+  - At the ≈ 1-minute setups the EXP-0057–0068 pods actually saw, billed spend before EXP-0060d
+    would be ≈ 65.5, so its check is 65.5 + 54.8 = **120.3 ≤ 125**.
+  - The later checks are EXP-0060e 96.3, EXP-0061 106.1 and EXP-0062 98.6, all ≤ 125.
+- **A misfit at launch goes to the user.**
+- **The A1-S2 arm (D7) adds 1,152 probe jobs** (+0.9 billed at planned estimates; + 0.9 to every later "spend before"). It is a probe arm only, so no training run grows.
+- **Weak and signal cost the same under v2**, because both train at 24 (D7). So the probe's
+  reading no longer re-sizes the pilot.
 
 **8-episode case** (if task 5.4's paired MDE is > 2% at 4 episodes):
 

@@ -141,6 +141,10 @@ PREREG_PATH = es.PREREG_PATH
 # SHA-256 of the frozen file (task 5.3): a real validate run refuses any other file, and any run
 # trained under another file; task 5.4 records it in sizing.md
 PREREG_SHA256 = "b9d449c15db6860950aab8dbc49bc0e3d67635d4d50e6f1c817d1e04fedcbabf"
+# pre-registration v2 (task 6.1d): frozen by `--mode freeze --prereg-version 2`; a real probe /
+# train run accepts either frozen file and plays the rule its version registers
+PREREG_V2_PATH = es.PREREG_V2_PATH
+PREREG_V2_SHA256 = "511e939a41213dd401d390637bc7e5be1c3725f32fb1de3a9e70d7b1385ceeae"
 
 ROW_EXTRA = ("arm", "ordering_decode", "history_mode", "theta_sha256", "episode_seconds",
              "job_seconds")
@@ -325,9 +329,53 @@ def readings_registration() -> dict[str, Any]:
     })
 
 
-def frozen_prereg() -> dict[str, Any]:
+V2_CHANGES = {
+    "from": {"file": "es_prereg_m4_v1.json", "sha256": PREREG_SHA256,
+             "note": "v1 is never edited; v2 is a new file"},
+    "why": {"user_decision": "\"Bigger batches + fix rule\" (2026-11-02) and \"Add a "
+                             "larger-sigma arm\" (2026-11-03), notes/user-decisions.md",
+            "evidence": ["EXP-0058: the v1 gradient-signal probe read no_signal (A1 cosine "
+                         "-0.070; 37 / 48 A1 and 42 / 48 A2 member scores disqualified)",
+                         "EXP-0068 (DIAGNOSTICS 25): heterogeneous by the registered statistic "
+                         "(A1 minibatch pair-difference / re-keyed-noise median ratio 1.76 on "
+                         "the 4-df minibatch reference, with chance sign agreement across "
+                         "minibatches); not robust: against the 24-df per-world reference the "
+                         "same rule reads inconclusive (A1 0.85, A2 0.94); flat at sigma not "
+                         "excluded (EXP-0068 review round 1)",
+                         "EXP-0068 check 2: the relative rule self-disqualifies re-keyed A0 on "
+                         "16 / 48 (33%) episodes"],
+            "supervisor_decisions": "2026-11-02 (notes/6.1d.md): c = 2, pooled SDs, target "
+                                    "<= 2 / 48, leave-one-world-out reported only"},
+    "changed": ["es.minibatch 12 -> 24 (probe and ES estimate; es.weak_minibatch stays 24, so "
+                "`weak` and `signal` both train at 24)",
+                "probe.minibatch 6 -> 24, drawn from the recorded probe stream at size 24",
+                "es.disqualification: the noise margin (noise_margin) on run-down and "
+                "starvation; death unchanged",
+                "probe.arms + A1-S2 (probe.sigma_arms): A1 at 2 x sigma (0.10) on the same "
+                "eps_i, minibatches and draw keys, diagnostic only, with its pre-registered "
+                "step reading (flat_at_sigma / heterogeneity / sigma_only / no_signal)"],
+    "unchanged": "everything else, the readings section and every threshold (D7 signal 0.3 / "
+                 "weak 0.1, the power rule, X / Y, floors) included; training arms and sigma "
+                 "(0.05) unchanged",
+    "not_tuned": "the margin is fixed from A0's own re-keyed rows; no probe cosine, member "
+                 "outcome or training result was read to choose it",
+}
+
+
+def frozen_prereg(version: int = 1) -> dict[str, Any]:
     """The frozen pre-registration: order_es's enforced sections (byte-equal to
-    `registered_sections()`, its `worlds` section to `bar_registration()`) plus `readings`."""
+    `registered_sections(version)`, its `worlds` section to `bar_registration()`) plus
+    `readings`; v2 also records what changed and why (`changes`)."""
+    if version == 2:
+        return {"format": es.PREREG_V2_FORMAT, "status": es.FROZEN,
+                "change": "add-m4-orderer-redesign",
+                "note": "frozen by task 6.1d after EXP-0068 (re-frozen 2026-11-03 with the "
+                        "A1-S2 probe arm and the qualified EXP-0068 evidence, still before any "
+                        "v2 ES data); enforced "
+                        "sections from order_es.registered_sections(2), `readings` from "
+                        "order_es_validate.readings_registration() (unchanged from v1)",
+                "changes": V2_CHANGES, **es.registered_sections(2),
+                "readings": readings_registration()}
     return {"format": es.PREREG_FORMAT, "status": es.FROZEN, "change": "add-m4-orderer-redesign",
             "note": "frozen by task 5.3 before any ES data; enforced sections from "
                     "order_es.registered_sections(), `readings` from "
@@ -1714,11 +1762,12 @@ def run_power(*, exp0052_episodes: str | Path, atlas_path: str | Path,
     return doc
 
 
-def run_freeze(path: str | Path = PREREG_PATH, log: Callable[[str], None] = _log) -> int:
-    """Write the frozen pre-registration if absent; else compare (MATCH -> 0, else 2). Never
-    overwrites."""
+def run_freeze(path: str | Path = PREREG_PATH, log: Callable[[str], None] = _log,
+               version: int = 1) -> int:
+    """Write the frozen pre-registration (`version`) if absent; else compare (MATCH -> 0, else
+    2). Never overwrites."""
     p = Path(path)
-    text = prereg_text(frozen_prereg())
+    text = prereg_text(frozen_prereg(version))
     if not p.exists():
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
@@ -1759,9 +1808,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--exp0052-episodes", help="power: EXP-0052's episodes.csv")
     p.add_argument("--atlas-worlds", help="power: EXP-0052 reclassified/worlds.csv (bar)")
     p.add_argument("--out", help="power: output JSON; freeze: the file (default packaged)")
+    p.add_argument("--prereg-version", type=int, choices=(1, 2), default=1,
+                   help="freeze: which pre-registration (v2: task 6.1d)")
     a = p.parse_args(argv)
     if a.mode == FREEZE:
-        return run_freeze(a.out or PREREG_PATH)
+        return run_freeze(a.out or (PREREG_V2_PATH if a.prereg_version == 2 else PREREG_PATH),
+                          version=a.prereg_version)
     if a.mode == POWER:
         run_power(exp0052_episodes=a.exp0052_episodes, atlas_path=a.atlas,
                   atlas_worlds_csv=a.atlas_worlds, out=a.out)

@@ -1,0 +1,167 @@
+{
+  "acceptance_read": false,
+  "blas_threads": null,
+  "date": "2026-11-02",
+  "driver": "tokenomics.train.order_es",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "exp0068",
+  "inputs": {
+    "bar_dir": "/workspace/tokenomics/_pod_ckpts/exp0058_bar",
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "probe_dir": "/workspace/tokenomics/_pod_ckpts/exp0058_probe",
+    "probe_episodes": "/workspace/tokenomics/_pod_ckpts/exp0058_probe/probe_episodes.csv"
+  },
+  "kind": "noise-floor",
+  "pins": {
+    "driver": "tokenomics.train.order_es",
+    "dry_run": false,
+    "horizon": 100,
+    "inputs": {
+      "bar_csv_sha256": "3e078c43c41bcd2be21325dd9cebacd6536b546c261d913a2419605363609d9b",
+      "bar_spec_pins_sha256": "1e0028b01bf968aa1a2bdc6d19bf01a1ea45bc3aab97f47507c363fa08650a69",
+      "normaliser_fit_rows_sha256": "4b23e026952dde1eb950266424dc946cbb6ef695b13ddfb513a34ee43a0fa9b1",
+      "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+      "orderer_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+      "probe_episodes_sha256": "3c3e4df7895e20320adad80ea05f0dfa9af0a6d71cf0d6803172fb0780c0b5bc",
+      "probe_fitness_sha256": "379d5895f1853578be6c6f09ca4d684801ed3d9f0d42c16b75c3edea5f65ba80",
+      "probe_json_sha256": "facfacfa8e75c94db316e887663257327aedc226dfc299c298a7f634d3ad66a8",
+      "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+      "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9"
+    },
+    "mode": "noise-floor",
+    "ordering_decode": "choice-v1",
+    "producer": "entity_planner",
+    "replicates": 4,
+    "source_tree_sha256": "842e00f99e70ccd5d0bef725e329c1216e2da19f2bf83c15f6fa2a6a65fbc3e1",
+    "world_episodes": [
+      [
+        [
+          "ws-m4-es-train-v1-12-0014",
+          226572137
+        ],
+        [
+          "ws-m4-es-train-v1-12-0004",
+          47747607
+        ],
+        [
+          "ws-m4-es-train-v1-12-0005",
+          200560606
+        ],
+        [
+          "ws-m4-es-train-v1-12-0003",
+          1973389111
+        ],
+        [
+          "ws-m4-es-train-v1-12-0051",
+          1572602726
+        ],
+        [
+          "ws-atlas-v1-12-0139",
+          1946809725
+        ]
+      ],
+      [
+        [
+          "ws-m4-es-train-v1-12-0000",
+          867835099
+        ],
+        [
+          "ws-atlas-v1-12-0155",
+          474856157
+        ],
+        [
+          "ws-m4-es-train-v1-12-0044",
+          1092109868
+        ],
+        [
+          "ws-m4-es-train-v1-12-0002",
+          1600056319
+        ],
+        [
+          "ws-atlas-v1-12-0308",
+          203183553
+        ],
+        [
+          "ws-m4-es-train-v1-12-0033",
+          141870395
+        ]
+      ]
+    ]
+  },
+  "pre_registered": {
+    "design": "DIAGNOSTICS 25 checks 2 and 3 (task 6.1c); D6's relative rule and thresholds unchanged",
+    "replicates": 4
+  },
+  "result": {
+    "check3_summary": {
+      "minibatch/A1": {
+        "median_abs_d": 0.0187324470201016,
+        "median_ratio": 1.758835038598073,
+        "n": 24,
+        "share_above_1x": 0.75,
+        "share_above_2x": 0.5,
+        "with_noise": 24
+      },
+      "minibatch/A2": {
+        "median_abs_d": 0.019467278920155595,
+        "median_ratio": 1.9241882270530817,
+        "n": 24,
+        "share_above_1x": 0.75,
+        "share_above_2x": 0.4583333333333333,
+        "with_noise": 24
+      },
+      "world_episode/A1": {
+        "median_abs_d": 0.030645696264074374,
+        "median_ratio": 0.676786238552445,
+        "n": 144,
+        "share_above_1x": 0.3541666666666667,
+        "share_above_2x": 0.09722222222222222,
+        "with_noise": 144
+      },
+      "world_episode/A2": {
+        "median_abs_d": 0.026106452349212494,
+        "median_ratio": 0.8138566898090934,
+        "n": 144,
+        "share_above_1x": 0.4097222222222222,
+        "share_above_2x": 0.10416666666666667,
+        "with_noise": 144
+      }
+    },
+    "contract_failures": 0,
+    "files": {
+      "check2.json": "ef740f93eb8c0c2b5e7b85f32749dcc897b767ea1a3ad492c6489674b30cbb41",
+      "check3.csv": "72a818c9106fc711374c2b7477bcf2a8ebcc8b0734a3bc48e81dd238eb50e453",
+      "check3.json": "f2bcdf65b920d70ccd15172d18b4a9f34c436779b81af324f9d0f8b7041e83f4",
+      "noise_floor.csv": "bd93269d785bbc551905d85d687ed79c0a2a362bedb0fed166249343b6427ac6",
+      "reproduction.csv": "6d84c04b754bfcaaef74be70bd9b53772105bb31b7748b7a8128ad38afd5c351"
+    },
+    "jobs": 60,
+    "r0_reproduced": 12,
+    "self_disqualification_rate": 0.3333333333333333,
+    "status": "complete"
+  },
+  "resumes": [],
+  "source": {
+    "commit": "6f0eda62b9c58ed7f1c380d463555111394cb9b6",
+    "n_files": 77,
+    "tree_sha256": "842e00f99e70ccd5d0bef725e329c1216e2da19f2bf83c15f6fa2a6a65fbc3e1"
+  },
+  "started": "2026-11-02T17:59:35.622184+00:00",
+  "status": "complete",
+  "workers": 8
+}

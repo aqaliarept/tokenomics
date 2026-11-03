@@ -1,0 +1,58 @@
+{
+ "a0_sd": {
+  "minibatch": {
+   "0": 0.008445418055661026,
+   "1": 0.006518151452050593
+  },
+  "world_episode": {
+   "ws-atlas-v1-12-0139:1946809725": 0.019603855647594006,
+   "ws-atlas-v1-12-0155:474856157": 0.046639982216928104,
+   "ws-atlas-v1-12-0308:203183553": 0.02379168279886593,
+   "ws-m4-es-train-v1-12-0000:867835099": 0.008368994672589754,
+   "ws-m4-es-train-v1-12-0002:1600056319": 0.017321348396849456,
+   "ws-m4-es-train-v1-12-0003:1973389111": 0.02445156523588257,
+   "ws-m4-es-train-v1-12-0004:47747607": 0.0862470829909289,
+   "ws-m4-es-train-v1-12-0005:200560606": 0.029226558286118278,
+   "ws-m4-es-train-v1-12-0014:226572137": 0.028961999623853447,
+   "ws-m4-es-train-v1-12-0033:141870395": 0.046167269951556594,
+   "ws-m4-es-train-v1-12-0044:1092109868": 0.027213164145336116,
+   "ws-m4-es-train-v1-12-0051:1572602726": 0.03913877041680747
+  }
+ },
+ "noise": "a difference of two independently keyed A0 episodes: sqrt(2) x A0's replicate SD (ddof 1, replicates 0..K); members share one key (CRN), so this is an upper reference for draw noise",
+ "reported_only": "ratios and shares are reported; the branch is read by the supervisor (DIAGNOSTICS 25), no threshold is registered here",
+ "summary": {
+  "minibatch/A1": {
+   "median_abs_d": 0.0187324470201016,
+   "median_ratio": 1.758835038598073,
+   "n": 24,
+   "share_above_1x": 0.75,
+   "share_above_2x": 0.5,
+   "with_noise": 24
+  },
+  "minibatch/A2": {
+   "median_abs_d": 0.019467278920155595,
+   "median_ratio": 1.9241882270530817,
+   "n": 24,
+   "share_above_1x": 0.75,
+   "share_above_2x": 0.4583333333333333,
+   "with_noise": 24
+  },
+  "world_episode/A1": {
+   "median_abs_d": 0.030645696264074374,
+   "median_ratio": 0.676786238552445,
+   "n": 144,
+   "share_above_1x": 0.3541666666666667,
+   "share_above_2x": 0.09722222222222222,
+   "with_noise": 144
+  },
+  "world_episode/A2": {
+   "median_abs_d": 0.026106452349212494,
+   "median_ratio": 0.8138566898090934,
+   "n": 144,
+   "share_above_1x": 0.4097222222222222,
+   "share_above_2x": 0.10416666666666667,
+   "with_noise": 144
+  }
+ }
+}

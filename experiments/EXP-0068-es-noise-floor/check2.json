@@ -1,0 +1,191 @@
+{
+ "by_flag": {
+  "rundown": 12,
+  "starvation": 5
+ },
+ "by_world_episode": {
+  "ws-atlas-v1-12-0139:1946809725": {
+   "replicates": 4,
+   "self_disqualified": 3
+  },
+  "ws-atlas-v1-12-0155:474856157": {
+   "replicates": 4,
+   "self_disqualified": 0
+  },
+  "ws-atlas-v1-12-0308:203183553": {
+   "replicates": 4,
+   "self_disqualified": 0
+  },
+  "ws-m4-es-train-v1-12-0000:867835099": {
+   "replicates": 4,
+   "self_disqualified": 3
+  },
+  "ws-m4-es-train-v1-12-0002:1600056319": {
+   "replicates": 4,
+   "self_disqualified": 0
+  },
+  "ws-m4-es-train-v1-12-0003:1973389111": {
+   "replicates": 4,
+   "self_disqualified": 0
+  },
+  "ws-m4-es-train-v1-12-0004:47747607": {
+   "replicates": 4,
+   "self_disqualified": 0
+  },
+  "ws-m4-es-train-v1-12-0005:200560606": {
+   "replicates": 4,
+   "self_disqualified": 4
+  },
+  "ws-m4-es-train-v1-12-0014:226572137": {
+   "replicates": 4,
+   "self_disqualified": 3
+  },
+  "ws-m4-es-train-v1-12-0033:141870395": {
+   "replicates": 4,
+   "self_disqualified": 0
+  },
+  "ws-m4-es-train-v1-12-0044:1092109868": {
+   "replicates": 4,
+   "self_disqualified": 3
+  },
+  "ws-m4-es-train-v1-12-0051:1572602726": {
+   "replicates": 4,
+   "self_disqualified": 0
+  }
+ },
+ "episodes": 48,
+ "flagged": [
+  {
+   "episode": 1946809725,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 1,
+   "world": "ws-atlas-v1-12-0139"
+  },
+  {
+   "episode": 1946809725,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 3,
+   "world": "ws-atlas-v1-12-0139"
+  },
+  {
+   "episode": 1946809725,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 4,
+   "world": "ws-atlas-v1-12-0139"
+  },
+  {
+   "episode": 867835099,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 2,
+   "world": "ws-m4-es-train-v1-12-0000"
+  },
+  {
+   "episode": 867835099,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 3,
+   "world": "ws-m4-es-train-v1-12-0000"
+  },
+  {
+   "episode": 867835099,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 4,
+   "world": "ws-m4-es-train-v1-12-0000"
+  },
+  {
+   "episode": 200560606,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 1,
+   "world": "ws-m4-es-train-v1-12-0005"
+  },
+  {
+   "episode": 200560606,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 2,
+   "world": "ws-m4-es-train-v1-12-0005"
+  },
+  {
+   "episode": 200560606,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 3,
+   "world": "ws-m4-es-train-v1-12-0005"
+  },
+  {
+   "episode": 200560606,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 4,
+   "world": "ws-m4-es-train-v1-12-0005"
+  },
+  {
+   "episode": 226572137,
+   "reasons": [
+    "starvation:c8"
+   ],
+   "replicate": 2,
+   "world": "ws-m4-es-train-v1-12-0014"
+  },
+  {
+   "episode": 226572137,
+   "reasons": [
+    "starvation:c8"
+   ],
+   "replicate": 3,
+   "world": "ws-m4-es-train-v1-12-0014"
+  },
+  {
+   "episode": 226572137,
+   "reasons": [
+    "starvation:c8"
+   ],
+   "replicate": 4,
+   "world": "ws-m4-es-train-v1-12-0014"
+  },
+  {
+   "episode": 1092109868,
+   "reasons": [
+    "rundown",
+    "starvation:c9"
+   ],
+   "replicate": 1,
+   "world": "ws-m4-es-train-v1-12-0044"
+  },
+  {
+   "episode": 1092109868,
+   "reasons": [
+    "starvation:c9"
+   ],
+   "replicate": 2,
+   "world": "ws-m4-es-train-v1-12-0044"
+  },
+  {
+   "episode": 1092109868,
+   "reasons": [
+    "rundown"
+   ],
+   "replicate": 3,
+   "world": "ws-m4-es-train-v1-12-0044"
+  }
+ ],
+ "rate": 0.3333333333333333,
+ "rule": "disqualifying(A0(r_k), bar row = A0(r0)), k >= 1 (design D6's relative rule, unchanged)",
+ "self_disqualified": 16
+}

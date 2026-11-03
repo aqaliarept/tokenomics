@@ -138,6 +138,32 @@ An ES population member SHALL be disqualified on a world-episode only when it vi
 - **WHEN** more than a quarter of the candidate training worlds need replacement because the control dies, or fewer than 50 feasible worlds can be drawn
 - **THEN** the run stops as `no_feasible_start` and goes to the user
 
+### Requirement: Disqualification noise margin
+Under pre-registration v2, a run-down or starvation flag SHALL also require the member to fall below the control's value on that world-episode by more than a registered margin, one per flag kind, from the control's re-keyed spread (EXP-0068). Death SHALL keep no margin. The margin SHALL apply only to training-time disqualification.
+
+#### Scenario: Member within the control's re-keyed noise
+- **WHEN** under pre-registration v2 a member's run-down ratio is below X, the control's is not, and the control's ratio exceeds the member's by no more than the registered run-down margin
+- **THEN** the member is not disqualified for run-down on that world-episode
+
+#### Scenario: Member beyond the control's re-keyed noise
+- **WHEN** under pre-registration v2 a member leaves a consumer below Y, the control does not, and the control's fill of that consumer exceeds the member's by more than the registered starvation margin
+- **THEN** the member is disqualified on that world-episode
+
+#### Scenario: v1 unchanged
+- **WHEN** a run loads pre-registration v1
+- **THEN** disqualification applies no margin and its results are byte-identical to before
+
+### Requirement: Larger-step probe arm
+Under pre-registration v2 the gradient-signal probe SHALL also play A1 at twice its perturbation scale on the same noise directions, minibatches and draw keys. A pre-registered step reading SHALL compare the two arms with the probe's thresholds. The larger-step arm SHALL be diagnostic only and SHALL NOT be trained.
+
+#### Scenario: Only the larger step finds a direction
+- **WHEN** A1's cosine is below 0.1 and the larger-step arm's is at least 0.1
+- **THEN** the step reading is `flat_at_sigma`, no pilot launches and the step size goes to the user
+
+#### Scenario: Both steps find a direction
+- **WHEN** both cosines are at least 0.1
+- **THEN** the step reading is `heterogeneity` and training proceeds at the registered step with minibatch 24
+
 ### Requirement: Ordered ES readings
 Step-2 readings SHALL use consumer units, with the training gain g_tr (center − control, monitor set) and the validation gain g_val (selected candidate − control, loaded 12-producer validation worlds). They SHALL be assigned by a fixed precedence: `unresolved`, `kill`, `success`, `plateau`, `budget_limited`, `other`. A pre-registered table SHALL combine the two seeds' readings.
 

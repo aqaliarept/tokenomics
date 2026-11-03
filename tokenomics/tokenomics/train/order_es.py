@@ -95,6 +95,17 @@ WEAK_MINIBATCH = 24  # D7 `weak`: the pilot and main runs re-sized to minibatch 
 NOISE_STREAM = "m4-es-noise-v1"
 TRAINABLE_ARMS = ("A1", "A2", "A2-R2")
 PROBE_ARMS = ("A1", "A2")
+# Diagnostic probe arms (pre-registration v2 only; user decision "Add a larger-sigma arm",
+# 2026-11-03, notes/user-decisions.md): a label -> (base arm, sigma scale). The base arm's policy,
+# initial theta and noise stream (the same eps_i), sigma x scale. Never trainable
+# (TRAINABLE_ARMS), never in `per_order_scorer.ARMS`.
+SIGMA_ARMS: dict[str, tuple[str, float]] = {"A1-S2": ("A1", 2.0)}
+V2_PROBE_ARMS = ("A1", "A2", "A1-S2")
+STEP_FLAT, STEP_BOTH, STEP_SIGMA_ONLY = "flat_at_sigma", "heterogeneity", "sigma_only"
+STEP_NEXT = {STEP_FLAT: "the step size becomes a design question; back to the user",
+             STEP_BOTH: "heterogeneity was the issue; minibatch 24 suffices; pilot at sigma",
+             STEP_SIGMA_ONLY: "reported; proceed with sigma",
+             "no_signal": "no_signal again: DIAGNOSTICS entry, back to the user"}
 SIGNAL, WEAK, NO_SIGNAL = "signal", "weak", "no_signal"
 SIGNAL_COSINE, WEAK_COSINE = 0.3, 0.1
 A2_RANK2_BELOW = 0.1  # A2 cosine < 0.1 while A1 >= 0.1 -> A2 uses R = 2
@@ -104,6 +115,25 @@ TRAINING_SIZE = 12
 
 PREREG_FORMAT = "m4-es-prereg-v1"
 PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m4_v1.json"
+# pre-registration v2 (task 6.1d; user decision "Bigger batches + fix rule", 2026-11-02, after
+# EXP-0058 `no_signal` and EXP-0068 `heterogeneous`): minibatch 24 for the probe and the ES
+# estimate, and a noise margin on the relative disqualification rule. v1 stays as frozen.
+PREREG_V2_FORMAT = "m4-es-prereg-v2"
+PREREG_V2_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m4_v2.json"
+PREREG_FORMATS = {PREREG_FORMAT: 1, PREREG_V2_FORMAT: 2}
+V2_MINIBATCH = 24  # probe minibatch and ES minibatch under v2 (the user's "bigger batches")
+# the noise margin (supervisor decisions 2026-11-02): c x sqrt(2) x the pooled within-world-
+# episode SD of A0 across re-keys, from EXP-0068's noise_floor.csv (A0 at r0..r4 on the probe's
+# 12 world-episodes); run-down pooled over the 12 world-episodes, starvation over every
+# (world-episode, consumer); computed by `noise_margins`, registered as constants
+NOISE_MARGIN_C = 2.0
+EXP0068_NOISE_FLOOR_SHA256 = "bd93269d785bbc551905d85d687ed79c0a2a362bedb0fed166249343b6427ac6"
+NOISE_MARGIN_TARGET = {"self_flags_max": 2, "episodes": 48}  # <= 5% of EXP-0068's re-keyed A0
+# `noise_margins(EXP-0068 noise_floor.csv rows)` (sigma: run-down 0.03396723246882364, df 48;
+# starvation 0.04134791461413535, df 596); a test recomputes them from the pinned file
+NOISE_MARGIN_V2 = {"rundown": 0.09607384166738028, "starvation": 0.11694956324630984}
+NOISE_SIGMA_V2 = {"rundown": 0.03396723246882364, "df_rundown": 48,
+                  "starvation": 0.04134791461413535, "df_starvation": 596}
 DRAFT, FROZEN = "draft", "frozen"
 CHECKPOINT_FORMAT = "m4-es-checkpoint-v1"
 CENTER, A0_LABEL = "c", "A0"
@@ -209,9 +239,77 @@ def bar_pin_problems(pins: Mapping[str, Any]) -> list[str]:
             f"{', '.join(diff[:6])}"] if diff else []
 
 
-def registered_sections() -> dict[str, Any]:
-    """The sections of es_prereg_m4_v1.json this module enforces, built from its constants: a
-    real run refuses a file whose sections differ (spec "Unregistered change refused")."""
+def registered_sections(version: int = 1) -> dict[str, Any]:
+    """The sections of es_prereg_m4_v<version>.json this module enforces, built from its
+    constants: a real run refuses a file whose sections differ (spec "Unregistered change
+    refused"). Version 2 = version 1 with minibatch 24 (probe and ES) and the noise margin."""
+    v1 = _registered_v1()
+    if version == 1:
+        return v1
+    if version != 2:
+        raise ValueError(f"no pre-registration version {version}")
+    v2 = json.loads(json.dumps(v1))
+    v2["es"]["minibatch"] = V2_MINIBATCH
+    v2["es"]["disqualification"]["rule"] = DQ_TEXT_V2
+    v2["es"]["disqualification"]["noise_margin"] = NOISE_MARGIN_REGISTRATION
+    v2["probe"]["minibatch"] = V2_MINIBATCH
+    v2["probe"]["minibatch_source"] = PROBE_MINIBATCH_SOURCE_V2
+    v2["probe"]["signal_next"] = {"minibatch": V2_MINIBATCH}
+    v2["probe"]["arms"] = list(V2_PROBE_ARMS)
+    v2["probe"]["sigma_arms"] = SIGMA_ARM_REGISTRATION
+    return _json_norm(v2)
+
+
+DQ_TEXT_V2 = (DQ_TEXT + "; pre-registration v2: run-down and starvation also need the member "
+              "below A0's own value on that world-episode and key (r_end / r_start; the "
+              "consumer's fill) by more than the noise margin (strictly), death unchanged; a "
+              "missing A0 value (no fill, r_start 0) leaves the v1 test")
+PROBE_MINIBATCH_SOURCE_V2 = ("the recorded probe stream at size 24 (order_es_worlds."
+                             "probe_minibatches(training world-episodes, 24): two disjoint "
+                             "minibatches on 48 distinct worlds), not the bar's size-6 "
+                             "schedule.json entry")
+SIGMA_ARM_REGISTRATION = {
+    "A1-S2": {"base_arm": "A1", "sigma_scale": 2.0, "sigma": 2.0 * SIGMA,
+              "same_as_A1": "initial theta (0), noise stream and eps_i (purpose probe|A1), the "
+                            "24 pairs, both minibatch-24 minibatches and every draw key; only "
+                            "sigma differs",
+              "role": "diagnostic only: never a training arm unless the user decides later "
+                      "(not in TRAINABLE_ARMS)",
+              "decision": "user, 2026-11-03, 'Add a larger-sigma arm' (notes/user-decisions.md)"},
+    "reading": {"thresholds": "D7's, unchanged: a cosine >= 0.1 reads signal / weak",
+                "rules": {STEP_FLAT: "only A1-S2 reads signal / weak", STEP_BOTH: "both do",
+                          STEP_SIGMA_ONLY: "only A1 does", NO_SIGNAL: "neither does"},
+                "next": STEP_NEXT,
+                "licence": "training is licensed by A1's reading alone, as registered (D7)"},
+}
+NOISE_MARGIN_REGISTRATION = {
+    "formula": "margin_k = c x sqrt(2) x sigma_k; sigma_k = pooled within-group SD (sqrt(sum "
+               "ss / sum df), groups of >= 2 values) of A0 across re-keyed replicates r0..r4; "
+               "run-down: r_end / r_start, one group per world-episode; starvation: a "
+               "consumer's fill, one group per world-episode x consumer (replicates with a "
+               "fill only)",
+    "c": NOISE_MARGIN_C, "rundown": NOISE_MARGIN_V2["rundown"],
+    "starvation": NOISE_MARGIN_V2["starvation"], "sigma": NOISE_SIGMA_V2,
+    "source": {"experiment": "EXP-0068", "file": "noise_floor.csv",
+               "sha256": EXP0068_NOISE_FLOOR_SHA256,
+               "rows": "A0 at replicates r0..r4 on EXP-0058's 12 probe world-episodes (60 rows)"},
+    "edge_cases": ["death has no margin (binary, unchanged)",
+                   "a missing A0 value (fill None, r_start 0 or None) leaves the v1 test",
+                   "the comparison is strict: flagged only when A0 - member > margin",
+                   "applies only to D6's training-time rule (ES members, the probe), never to "
+                   "D7's validation clauses"],
+    "target": {"rule": "re-keyed A0 (r1..r4) against its own r0 on EXP-0068's rows under the "
+                       "margin flags <= 2 of 48 (<= 5%)",
+               **NOISE_MARGIN_TARGET, "measured": 0,
+               "circularity": "measured in-sample: the margin is fitted on the same rows",
+               "leave_one_world_out": "reported only: refit without each world-episode, count "
+                                      "that world-episode's self-flags (0 of 48 in total)"},
+    "not_tuned": "fixed from A0's own re-keyed rows; no probe cosine, member outcome or "
+                 "training result was read to choose c, the statistic or the target",
+}
+
+
+def _registered_v1() -> dict[str, Any]:
     return _json_norm({
         "es": {**ES_TEXT, "pairs": PAIRS, "center_every_generation": True,
                "adam": ADAM, "weight_decay": {"value": WEIGHT_DECAY, "kind": "l2_coupled"},
@@ -261,6 +359,11 @@ PREREG_REQUIRED: tuple[tuple[str, ...], ...] = (
 )
 
 
+def prereg_version(doc: Mapping[str, Any]) -> int:
+    """1 or 2 from the file's `format` (anything else is refused by the schema check)."""
+    return PREREG_FORMATS.get(str(doc.get("format")), 0)
+
+
 def prereg_schema_problems(doc: Any) -> list[str]:
     if not isinstance(doc, dict):
         return ["pre-registration is not a JSON object"]
@@ -271,8 +374,9 @@ def prereg_schema_problems(doc: Any) -> list[str]:
             node = node.get(k) if isinstance(node, dict) else None
         if node is None:
             out.append(f"pre-registration lacks {'.'.join(path)}")
-    if doc.get("format") != PREREG_FORMAT:
-        out.append(f"pre-registration format {doc.get('format')!r} != {PREREG_FORMAT!r}")
+    if doc.get("format") not in PREREG_FORMATS:
+        out.append(f"pre-registration format {doc.get('format')!r} not in "
+                   f"{sorted(PREREG_FORMATS)}")
     if doc.get("status") not in (DRAFT, FROZEN):
         out.append(f"pre-registration status {doc.get('status')!r} not in {(DRAFT, FROZEN)}")
     return out
@@ -297,7 +401,7 @@ def prereg_problems(doc: Any, *, mode: str, arm: str | None = None,
         return out
     if doc["status"] != FROZEN:
         out.append(f"pre-registration status is {doc['status']!r}, a real run needs {FROZEN!r}")
-    reg = registered_sections()
+    reg = registered_sections(prereg_version(doc))
     for sec, want in reg.items():
         diff = _diff_paths(_json_norm(doc.get(sec)), want)
         if diff:
@@ -345,11 +449,34 @@ def prereg_file_problems(path: str | Path | None) -> list[str]:
     `prereg_problems`) differs is refused at launch, not only at the validation read."""
     if path is None:
         return []
-    from .order_es_validate import PREREG_SHA256
+    from .order_es_validate import PREREG_SHA256, PREREG_V2_SHA256
 
     got = sha256_file(str(path))
-    return [] if got == PREREG_SHA256 else [
-        f"pre-registration file {got[:12]} is not the frozen {PREREG_SHA256[:12]} (task 5.3)"]
+    if got not in (PREREG_SHA256, PREREG_V2_SHA256):
+        return [f"pre-registration file {got[:12]} is not the frozen {PREREG_SHA256[:12]} "
+                f"(task 5.3) or v2 {PREREG_V2_SHA256[:12]} (task 6.1d)"]
+    want = 1 if got == PREREG_SHA256 else 2
+    have = prereg_version(load_prereg(path))
+    return [] if have == want else [
+        f"pre-registration file {got[:12]} is v{want} by its SHA but says v{have}"]
+
+
+def _v2_pins(inp: Inputs, margin: NoiseMargin | None) -> dict[str, Any]:
+    """Pins a v2 run adds (none under v1, so v1 pins stay byte-identical): the margin and the
+    bar A0 rows it reads."""
+    if margin is None:
+        return {}
+    return {"disqualification": {"prereg_version": 2, "noise_margin": {
+        "rundown": margin.rundown, "starvation": margin.starvation},
+        "a0_refs_sha256": sha256_file(str(inp.bar_dir / "episodes.csv"))}}
+
+
+def run_rule(prereg: Mapping[str, Any] | None) -> tuple[int, NoiseMargin | None]:
+    """(version, margin) a run plays under: v1 (or no file, dry runs) -> no margin."""
+    if prereg is None or prereg_version(prereg) < 2:
+        return 1, None
+    m = prereg["es"]["disqualification"]["noise_margin"]
+    return 2, NoiseMargin(float(m["rundown"]), float(m["starvation"]))
 
 
 def load_prereg(path: str | Path) -> dict[str, Any]:
@@ -426,8 +553,24 @@ def noise(opt_seed: int, generation: int, pairs: int, n_params: int,
     return np.random.default_rng(seed).standard_normal((pairs, n_params))
 
 
+def base_arm(name: str) -> str:
+    """The `per_order_scorer.ARMS` arm a (possibly diagnostic) arm label plays."""
+    return SIGMA_ARMS[name][0] if name in SIGMA_ARMS else name
+
+
+def arm_spec(name: str) -> ArmSpec:
+    return ARMS[base_arm(name)]
+
+
+def arm_sigma(name: str) -> np.ndarray:
+    """sigma_j of an arm label: the base arm's, times the label's scale (A1-S2: 2 x 0.05)."""
+    s = arm_spec(name).sigma()
+    return s * SIGMA_ARMS[name][1] if name in SIGMA_ARMS else s
+
+
 def probe_noise(arm: str, pairs: int, n_params: int) -> np.ndarray:
-    return noise(0, 0, pairs, n_params, purpose=f"probe|{arm}")
+    """The probe's eps; a sigma variant reuses its base arm's stream (the same directions)."""
+    return noise(0, 0, pairs, n_params, purpose=f"probe|{base_arm(arm)}")
 
 
 def member_labels(pairs: int) -> list[tuple[str, int, int]]:
@@ -492,9 +635,11 @@ def variance_ratio(f1: Mapping[str, float | None], f2: Mapping[str, float | None
     return None if vu == 0.0 else float(np.var(paired, ddof=1)) / vu
 
 
-def probe_reading(cos: Mapping[str, float | None]) -> dict[str, Any]:
+def probe_reading(cos: Mapping[str, float | None], minibatch: int | None = None
+                  ) -> dict[str, Any]:
     """D7: `signal` A1 cosine >= 0.3, `weak` 0.1 <= A1 < 0.3, else `no_signal` (an undefined
-    cosine too); A2 cosine < 0.1 (or undefined) while A1 >= 0.1 -> A2 uses R = 2."""
+    cosine too); A2 cosine < 0.1 (or undefined) while A1 >= 0.1 -> A2 uses R = 2. `minibatch` =
+    the training minibatch a `signal` sends on (v1: `ow.MINIBATCH`; v2: 24, `weak` too)."""
     a1 = cos.get("A1")
     reading = (NO_SIGNAL if a1 is None or a1 < WEAK_COSINE
                else WEAK if a1 < SIGNAL_COSINE else SIGNAL)
@@ -503,10 +648,28 @@ def probe_reading(cos: Mapping[str, float | None]) -> dict[str, Any]:
     nxt = {SIGNAL: "pilot as registered",
            WEAK: f"minibatch {WEAK_MINIBATCH}; pilot and main runs re-sized and launch-fit-checked",
            NO_SIGNAL: "diagnose, stop"}[reading]
-    return {"reading": reading, "next": nxt, "a1_cosine": a1, "a2_cosine": a2,
-            "a2_rank": 2 if rank2 else ARMS["A2"].rank,
-            "a2_arm": "A2-R2" if rank2 else "A2",
-            "minibatch": WEAK_MINIBATCH if reading == WEAK else ow.MINIBATCH}
+    out = {"reading": reading, "next": nxt, "a1_cosine": a1, "a2_cosine": a2,
+           "a2_rank": 2 if rank2 else ARMS["A2"].rank,
+           "a2_arm": "A2-R2" if rank2 else "A2",
+           "minibatch": WEAK_MINIBATCH if reading == WEAK else (
+               ow.MINIBATCH if minibatch is None else minibatch)}
+    if "A1-S2" in cos:  # v2's larger-sigma arm: diagnostic only, never licenses training
+        out.update(step_reading(a1, cos["A1-S2"]))
+    return out
+
+
+def step_reading(a1: float | None, a1s2: float | None) -> dict[str, Any]:
+    """Pre-registered (v2, before data; user decision 2026-11-03): A1 at sigma and A1-S2 at
+    2 sigma, each read with D7's thresholds (>= 0.1 = `signal` / `weak`). Only 2 sigma ->
+    `flat_at_sigma` (the step is a design question, to the user); both -> `heterogeneity`
+    (minibatch 24 suffices); neither -> `no_signal` (DIAGNOSTICS entry, to the user); only sigma
+    -> `sigma_only` (reported; proceed with sigma). Training is licensed by A1's reading only."""
+    def hit(c: float | None) -> bool:
+        return c is not None and c >= WEAK_COSINE
+    s, s2 = hit(a1), hit(a1s2)
+    step = (STEP_BOTH if s and s2 else STEP_FLAT if s2 else STEP_SIGMA_ONLY if s
+            else NO_SIGNAL)
+    return {"a1s2_cosine": a1s2, "step_reading": step, "step_next": STEP_NEXT[step]}
 
 
 # --- fitness and disqualification ---
@@ -550,17 +713,45 @@ def _opt(s: str) -> float | None:
     return None if s in ("", "None") else float(s)
 
 
-def disqualifying(row: Mapping[str, str], bar: BarRow) -> list[str]:
-    """The relative guards (D6) a member violates on one world-episode and A0 does not."""
+@dataclass(frozen=True)
+class NoiseMargin:
+    """Pre-registration v2's margin on the relative rule (D6): a member is flagged for run-down /
+    starvation only when it is also below A0's own value on that world-episode and key by more
+    than the margin. Death has no margin."""
+
+    rundown: float
+    starvation: float
+
+
+@dataclass(frozen=True)
+class A0Ref:
+    """A0's values on one training world-episode (the bar's A0 row): r_end / r_start and each
+    consumer's fill (None: no fill, e.g. no orders)."""
+
+    ratio: float | None
+    fills: Mapping[str, float | None]
+
+
+def disqualifying(row: Mapping[str, str], bar: BarRow, margin: NoiseMargin | None = None,
+                  ref: A0Ref | None = None) -> list[str]:
+    """The relative guards (D6) a member violates on one world-episode and A0 does not. With a
+    v2 `margin`, run-down and starvation also need the member below A0's value (`ref`) by more
+    than the margin; a missing A0 value leaves the v1 test. Without one, v1 exactly."""
+    if margin is not None and ref is None:
+        raise ValueError("a noise margin needs A0's reference values (the bar's episodes.csv)")
     out = []
     if _bool(row["dead"]) and not bar.a0_dead:
         out.append("death")
     rs, re_ = _opt(row["r_start"]), _opt(row["r_end"])
     if rs is not None and re_ is not None and re_ < ow.X_RUNDOWN * rs and not bar.a0_rundown:
-        out.append("rundown")
+        if (margin is None or ref.ratio is None or rs == 0
+                or ref.ratio - re_ / rs > margin.rundown):
+            out.append("rundown")
     fills = json.loads(row["consumer_fill_rate"])
     starved = sorted(c for c, v in fills.items()
-                     if v is not None and v < ow.Y_STARVATION and c not in bar.a0_starved)
+                     if v is not None and v < ow.Y_STARVATION and c not in bar.a0_starved
+                     and (margin is None or ref.fills.get(c) is None
+                          or ref.fills[c] - v > margin.starvation))
     if starved:
         out.append("starvation:" + ",".join(starved))
     return out
@@ -569,6 +760,71 @@ def disqualifying(row: Mapping[str, str], bar: BarRow) -> list[str]:
 def we_fitness(row: Mapping[str, str], bar: BarRow, h: float = H_HOLDING) -> float:
     holding = _opt(row["holding_units_per_cycle"]) or 0.0
     return float(row["units"]) / bar.bar - h * holding / bar.demand_per_cycle
+
+
+def _pooled_sd(groups: Sequence[Sequence[float]]) -> tuple[float, int]:
+    """Pooled within-group SD (sqrt(sum ss / sum df)) over groups of >= 2 values, and its df."""
+    ss, df = 0.0, 0
+    for g in groups:
+        if len(g) >= 2:
+            m = fmean(g)
+            ss += sum((x - m) ** 2 for x in g)
+            df += len(g) - 1
+    if df == 0:
+        raise ValueError("no group with >= 2 values: the pooled SD is undefined")
+    return math.sqrt(ss / df), df
+
+
+def a0_values(rows: Sequence[Mapping[str, str]]
+              ) -> dict[tuple[str, int], dict[int, A0Ref]]:
+    """(world, episode) -> replicate -> A0's run-down ratio and fills, from A0 rows (EXP-0068's
+    `noise_floor.csv`, or the bar's A0 rows)."""
+    out: dict[tuple[str, int], dict[int, A0Ref]] = {}
+    for d in rows:
+        rs, re_ = _opt(d["r_start"]), _opt(d["r_end"])
+        out.setdefault((d["world"], int(d["episode"])), {})[int(d["replicate"])] = A0Ref(
+            None if rs in (None, 0) or re_ is None else re_ / rs,
+            json.loads(d["consumer_fill_rate"]))
+    return out
+
+
+def noise_margins(rows: Sequence[Mapping[str, str]], c: float = NOISE_MARGIN_C,
+                  exclude: frozenset[tuple[str, int]] = frozenset()) -> dict[str, Any]:
+    """Pre-registration v2's margin from A0's re-keyed rows (EXP-0068 `noise_floor.csv`):
+    sigma = the pooled within-world-episode SD across replicates of the run-down ratio (one
+    group per world-episode) and of each consumer's fill (one group per world-episode x
+    consumer, replicates with a fill only); margin = c x sqrt(2) x sigma (sqrt 2: the noise of a
+    difference of two keyed episodes). `exclude` drops world-episodes (leave-one-out refits)."""
+    vals = {k: v for k, v in a0_values(rows).items() if k not in exclude}
+    s_rd, df_rd = _pooled_sd([[r.ratio for r in reps.values() if r.ratio is not None]
+                              for reps in vals.values()])
+    cons = sorted({cc for reps in vals.values() for r in reps.values() for cc in r.fills})
+    s_st, df_st = _pooled_sd([[r.fills[cc] for r in reps.values()
+                               if r.fills.get(cc) is not None]
+                              for reps in vals.values() for cc in cons])
+    return {"c": c, "sigma_rundown": s_rd, "df_rundown": df_rd, "sigma_starvation": s_st,
+            "df_starvation": df_st, "rundown": c * math.sqrt(2.0) * s_rd,
+            "starvation": c * math.sqrt(2.0) * s_st}
+
+
+def self_flags(rows: Sequence[Mapping[str, str]], bar: Mapping[tuple[str, int], BarRow],
+               margin: NoiseMargin | None,
+               only: frozenset[tuple[str, int]] | None = None) -> tuple[int, int]:
+    """(flagged, episodes): re-keyed A0 (replicates >= 1) against its own r0 under the relative
+    rule (with or without the margin); r0 is the reference, as the bar's A0 row is in training."""
+    vals = a0_values(rows)
+    hit = n = 0
+    for d in rows:
+        k, r = (d["world"], int(d["episode"])), int(d["replicate"])
+        if r == 0 or (only is not None and k not in only):
+            continue
+        n += 1
+        hit += bool(disqualifying(d, bar[k], margin, vals[k][0]))
+    return hit, n
+
+
+def _missing_ref(k: tuple[str, int]) -> A0Ref:
+    raise ValueError(f"no A0 reference values for {k[0]} ep {k[1]} (the bar's episodes.csv)")
 
 
 @dataclass(frozen=True)
@@ -580,7 +836,8 @@ class MemberScore:
 
 
 def score_member(rows: Sequence[Mapping[str, str]], bar: Mapping[tuple[str, int], BarRow],
-                 h: float = H_HOLDING) -> MemberScore:
+                 h: float = H_HOLDING, margin: NoiseMargin | None = None,
+                 refs: Mapping[tuple[str, int], A0Ref] | None = None) -> MemberScore:
     """Minibatch-mean fitness and the relative disqualification of one member."""
     if any(_bool(r["nonfinite"]) for r in rows):
         return MemberScore(None, False, ("nonfinite",), True)
@@ -588,7 +845,9 @@ def score_member(rows: Sequence[Mapping[str, str]], bar: Mapping[tuple[str, int]
     for r in rows:
         b = bar[(r["world"], int(r["episode"]))]
         fs.append(we_fitness(r, b, h))
-        reasons += [f"{r['world']}:{r['episode']}:{x}" for x in disqualifying(r, b)]
+        k = (r["world"], int(r["episode"]))
+        reasons += [f"{r['world']}:{r['episode']}:{x}" for x in disqualifying(
+            r, b, margin, None if margin is None else (refs or {}).get(k) or _missing_ref(k))]
     return MemberScore(fmean(fs), bool(reasons), tuple(reasons), False)
 
 
@@ -611,6 +870,7 @@ class Inputs:
     costs: dict[str, float]
     world_episodes: list[tuple[str, int]]
     hashes: dict[str, str] = field(default_factory=dict)
+    a0_refs: dict[tuple[str, int], A0Ref] | None = None  # v2 margin: the bar's A0 rows
 
     @property
     def horizon(self) -> int:
@@ -680,6 +940,34 @@ def load_inputs(bar_dir: str | Path) -> Inputs:
         "bar_spec_pins_sha256": _sha(spec.get("pins"))})
 
 
+def load_a0_refs(inp: Inputs) -> dict[tuple[str, int], A0Ref]:
+    """A0's reference values per training world-episode for the v2 noise margin, from the bar
+    run's own `episodes.csv` (A0 at the training replicate), each checked against `bar.csv`
+    (units, run-down flag, starved consumers): a file that disagrees is refused."""
+    path = inp.bar_dir / "episodes.csv"
+    if not path.exists():
+        raise ValueError(f"{path} is missing: the v2 noise margin needs the bar's A0 rows "
+                         "(EXP-0058 keeps them as artifacts/bar_episodes.csv)")
+    rows = [d for d in read_csv(path) if d.get("arm") == ow.A0
+            and int(d["replicate"]) == ow.TRAIN_REPLICATE]
+    refs = {k: reps[ow.TRAIN_REPLICATE] for k, reps in a0_values(rows).items()}
+    by = {(d["world"], int(d["episode"])): d for d in rows}
+    for k, b in inp.bar.items():
+        d = by.get(k)
+        if d is None:
+            raise ValueError(f"the bar's episodes.csv has no A0 row for {k[0]} ep {k[1]}")
+        fills = json.loads(d["consumer_fill_rate"])
+        starved = frozenset(c for c, v in fills.items()
+                            if v is not None and v < ow.Y_STARVATION)
+        rs, re_ = _opt(d["r_start"]), _opt(d["r_end"])
+        rundown = bool(rs is not None and re_ is not None and re_ < ow.X_RUNDOWN * rs)
+        if (float(d["units"]) != b.a0_units or starved != b.a0_starved
+                or rundown != b.a0_rundown or _bool(d["dead"]) != b.a0_dead):
+            raise ValueError(f"the bar's episodes.csv A0 row for {k[0]} ep {k[1]} disagrees "
+                             "with bar.csv")
+    return {k: refs[k] for k in inp.bar}
+
+
 def minibatch_for(inp: Inputs, opt_seed: int, generation: int, size: int) -> list[tuple[str, int]]:
     """Generation g's CRN minibatch: schedule.json's entry (checked against the recorded stream)
     when the schedule holds it, else the stream itself (the `weak` size or more generations)."""
@@ -694,8 +982,17 @@ def minibatch_for(inp: Inputs, opt_seed: int, generation: int, size: int) -> lis
     return want
 
 
-def probe_batches(inp: Inputs) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+def probe_batches(inp: Inputs, size: int | None = None
+                  ) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    """The probe's two minibatches: the bar's schedule.json entry (its size, 6 under v1), or at
+    another size (v2: 24) the recorded probe stream itself (`ow.probe_minibatches`)."""
     p = inp.schedule["probe"]
+    if size is not None and size != int(p["size"]):
+        a, b = ow.probe_minibatches(inp.world_episodes, size)
+        if len(a) != size or len(b) != size or set(a) & set(b):
+            raise ValueError(f"the training world-episodes do not hold two disjoint probe "
+                             f"minibatches of {size}")
+        return a, b
     got = [_fmt_we(m) for m in p["minibatches"]]
     want = ow.probe_minibatches(inp.world_episodes, int(p["size"]))
     if (got[0], got[1]) != want:
@@ -784,7 +1081,7 @@ def run_es_job(job: Job) -> dict[str, str]:
         tracer = RoutingTracer()  # no forks here: the only overflow-order counter (4.3 review)
         tracer.attach(env)
         monitor = ContractMonitor(env)
-        arm = ARMS[job["arm"]]
+        arm = arm_spec(job["arm"])  # a sigma variant plays its base arm's policy
         policy = PerOrderPolicy(ow._base_scorer(job), arm, np.asarray(job["theta"], np.float64),
                                 _normaliser(job) if arm.residual else None, AGENT)
         if theta_sha256(policy.theta) != job["theta_sha256"]:
@@ -1081,9 +1378,13 @@ def training_pins(*, inp: Inputs, arm: ArmSpec, opt_seed: int, pairs: int, minib
         "source_tree_sha256": source_fingerprint()["tree_sha256"]})
 
 
-def _probe_doc_problems(doc: Mapping[str, Any], arm: str, minibatch: int) -> list[str]:
+def _probe_doc_problems(doc: Mapping[str, Any], arm: str, minibatch: int,
+                        version: int = 1) -> list[str]:
     r = doc.get("reading", {})
     out = []
+    if doc.get("prereg_version", 1) != version:  # a v1 probe never licenses a v2 run (6.1d)
+        out.append(f"the probe ran under pre-registration v{doc.get('prereg_version', 1)}, "
+                   f"this run under v{version}")
     if r.get("reading") not in (SIGNAL, WEAK):
         out.append(f"probe reading {r.get('reading')!r}: training needs signal or weak")
     elif minibatch != r.get("minibatch"):
@@ -1119,8 +1420,14 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
     filters = {"pairs": pairs, "monitor_every": monitor_every, "init": init}
     n_pairs = PAIRS if pairs is None else pairs
     every = MONITOR_EVERY if monitor_every is None else monitor_every
-    size = int(inp.schedule["minibatch_size"]) if minibatch is None else minibatch
     prereg = load_prereg(prereg_path) if prereg_path else None
+    version, margin = run_rule(prereg)
+    if minibatch is not None:
+        size = minibatch
+    else:
+        size = V2_MINIBATCH if version == 2 else int(inp.schedule["minibatch_size"])
+    if margin is not None:
+        inp.a0_refs = load_a0_refs(inp)
     probe_doc = json.loads(Path(probe_path).read_text()) if probe_path else None
     if not dry_run:
         issues = [] if prereg is None else prereg_problems(
@@ -1128,7 +1435,8 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
             minibatch=size, pairs=n_pairs, monitor_every=every)
         issues += prereg_file_problems(prereg_path)
         issues += (["no probe reading (--probe-reading, EXP-0058 probe.json)"]
-                   if probe_doc is None else _probe_doc_problems(probe_doc, arm, size))
+                   if probe_doc is None
+                   else _probe_doc_problems(probe_doc, arm, size, version))
         problems = real_run_problems(inp=inp, prereg=prereg, prereg_issues=issues,
                                      source_commit=source_commit, orderer_sha=pin["sha256"],
                                      filters=filters)
@@ -1150,6 +1458,7 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
         probe_sha=sha256_file(probe_path) if probe_path else None,
         init_sha=theta_sha256(theta0),
         per_order={**per_order_pins(policy0)["per_order"], "theta_sha256": None})
+    tpins = _json_norm({**tpins, **_v2_pins(inp, margin)})
     resume_doc = load_checkpoint(resume_from) if resume_from else None
     if resume_doc is not None:
         if resume_doc["training_pins"] != tpins:
@@ -1277,7 +1586,8 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
         if failures or len(rows) != len(jobs):
             return invalid(f"generation {g}: {failures} contract failure(s), "
                            f"{len(jobs) - len(rows)} missing row(s)")
-        scores = {lab: score_member(_member_rows(rows, lab), inp.bar) for lab in thetas}
+        scores = {lab: score_member(_member_rows(rows, lab), inp.bar, margin=margin,
+                                    refs=inp.a0_refs) for lab in thetas}
         ranked = rank_and_estimate(eps, sigma, {k: s.fitness for k, s in scores.items()},
                                    {k: s.disqualified for k, s in scores.items()})
         new_theta, new_adam = adam_ascend(state.theta, ranked.estimate, state.adam)
@@ -1337,15 +1647,15 @@ PROBE_FITNESS_COLUMNS = ("arm", "batch", "member", "sign", "pair", "fitness", "d
                          "nonfinite", "rank", "reasons")
 
 
-def probe_from_rows(fitness: Sequence[Mapping[str, str]], arms: Sequence[str], pairs: int
-                    ) -> dict[str, Any]:
+def probe_from_rows(fitness: Sequence[Mapping[str, str]], arms: Sequence[str], pairs: int,
+                    minibatch: int | None = None) -> dict[str, Any]:
     """Recompute every arm's estimates, cosine, variance ratio and the reading from the recorded
     per-member fitness rows (`probe_fitness.csv`) and the recorded noise stream."""
     per_arm: dict[str, Any] = {}
     for arm in arms:
-        spec_arm = ARMS[arm]
+        spec_arm = arm_spec(arm)
         eps = probe_noise(arm, pairs, spec_arm.n_params)
-        sigma = spec_arm.sigma()
+        sigma = arm_sigma(arm)
         fits: list[dict[str, float | None]] = []
         ests = []
         for b in (0, 1):
@@ -1363,7 +1673,7 @@ def probe_from_rows(fitness: Sequence[Mapping[str, str]], arms: Sequence[str], p
                         "nonfinite": sum(d["nonfinite"] == "True" for d in fitness
                                          if d["arm"] == arm)}
     return {"arms": per_arm,
-            "reading": probe_reading({a: v["cosine"] for a, v in per_arm.items()})}
+            "reading": probe_reading({a: v["cosine"] for a, v in per_arm.items()}, minibatch)}
 
 
 def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
@@ -1378,13 +1688,16 @@ def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
     if out.resolve() == Path(bar_dir).resolve():
         raise ValueError("--out-dir must differ from --bar-dir (it may contain it)")
     for a in arms:
-        if a not in ARMS or not ARMS[a].residual:
+        if base_arm(a) not in ARMS or not arm_spec(a).residual:
             raise ValueError(f"probe arm {a!r} is not a residual arm")
     inp = load_inputs(bar_dir)
     pin = _checked_orderer(out, orderer_ckpt)
     n_pairs = PAIRS if pairs is None else pairs
-    mb = probe_batches(inp)
     prereg = load_prereg(prereg_path) if prereg_path else None
+    version, margin = run_rule(prereg)
+    mb = probe_batches(inp, V2_MINIBATCH if version == 2 else None)
+    if margin is not None:
+        inp.a0_refs = load_a0_refs(inp)
     if not dry_run:
         issues = [] if prereg is None else prereg_problems(
             prereg, mode=PROBE, arms=arms, minibatch=len(mb[0]), pairs=n_pairs)
@@ -1399,27 +1712,28 @@ def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
         "driver": DRIVER, "mode": PROBE, "arms": list(arms), "pairs": n_pairs,
         "minibatches": [list(map(list, m)) for m in mb], "horizon": inp.horizon,
         "dry_run": dry_run, "hyper": {"h": H_HOLDING, "noise_stream": NOISE_STREAM,
-                                      "sigma": {a: theta_sha256(ARMS[a].sigma()) for a in arms}},
+                                      "sigma": {a: theta_sha256(arm_sigma(a)) for a in arms}},
         "inputs": {**inp.hashes, "orderer_sha256": pin["sha256"],
                    "prereg_sha256": sha256_file(prereg_path) if prereg_path else None},
         **decode_pins(CHOICE_V1), "producer": PRODUCER,
         "policy": {"decoder_version": DECODER_VERSION,
                    "architecture_version": ARCHITECTURE_VERSION,
                    "normaliser_version": NORMALISER_VERSION},
-        "source_tree_sha256": source_fingerprint()["tree_sha256"]})
+        "source_tree_sha256": source_fingerprint()["tree_sha256"],
+        **_v2_pins(inp, margin)})
     spec, resumed = _open_run(out, pins, {
         "experiment": out.name, "driver": DRIVER, "kind": "dry-run" if dry_run else PROBE,
         "acceptance_read": False, "inputs": {"orderer": pin, "bar_dir": str(inp.bar_dir),
                                              "prereg": prereg_path},
         "source": source_fingerprint(source_commit or None),
         "pre_registered": {"design": "add-m4-orderer-redesign D7 gradient-signal probe",
-                           "probe": registered_sections()["probe"]}}, workers)
+                           "probe": registered_sections(version)["probe"]}}, workers)
     log(f"[order_es] {'DRY RUN ' if dry_run else ''}probe {','.join(arms)}: {n_pairs} pairs x "
         f"2 minibatches of {len(mb[0])}" + (" (resumed)" if resumed else ""))
     jobs = []
     for a in arms:
-        eps = probe_noise(a, n_pairs, ARMS[a].n_params)
-        thetas = member_thetas(ARMS[a].initial_theta(), eps, ARMS[a].sigma())
+        eps = probe_noise(a, n_pairs, arm_spec(a).n_params)
+        thetas = member_thetas(arm_spec(a).initial_theta(), eps, arm_sigma(a))
         for lab, th in thetas.items():
             if lab == CENTER:
                 continue
@@ -1447,13 +1761,14 @@ def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
         return CONTRACT_INVALID
     fit_rows = []
     for a in arms:
-        eps = probe_noise(a, n_pairs, ARMS[a].n_params)
+        eps = probe_noise(a, n_pairs, arm_spec(a).n_params)
         for b in (0, 1):
             mine = {jid: d for jid, d in rows.items()
                     if d["arm"] == a and int(d["batch"]) == b}
-            scores = {lab: score_member(_member_rows(mine, lab), inp.bar)
+            scores = {lab: score_member(_member_rows(mine, lab), inp.bar, margin=margin,
+                                        refs=inp.a0_refs)
                       for lab, _, _ in member_labels(n_pairs)}
-            ranked = rank_and_estimate(eps, ARMS[a].sigma(),
+            ranked = rank_and_estimate(eps, arm_sigma(a),
                                        {k: s.fitness for k, s in scores.items()},
                                        {k: s.disqualified for k, s in scores.items()})
             for lab, sign, i in member_labels(n_pairs):
@@ -1464,11 +1779,14 @@ def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
                                  "nonfinite": str(s.nonfinite), "rank": repr(ranked.ranks[lab]),
                                  "reasons": ";".join(s.reasons)})
     write_csv(out / "probe_fitness.csv", PROBE_FITNESS_COLUMNS, fit_rows)
-    result = probe_from_rows(read_csv(out / "probe_fitness.csv"), arms, n_pairs)
+    result = probe_from_rows(read_csv(out / "probe_fitness.csv"), arms, n_pairs,
+                             V2_MINIBATCH if version == 2 else None)
     doc = {"status": "complete", "dry_run": dry_run, "pairs": n_pairs,
+           **({"prereg_version": 2, "training_minibatch": V2_MINIBATCH} if version == 2
+              else {}),
            "minibatches": [list(map(list, m)) for m in mb], **result,
            "noise": {a: {"stream": NOISE_STREAM, "purpose": f"probe|{a}"} for a in arms},
-           "pre_registered": registered_sections()["probe"],
+           "pre_registered": registered_sections(version)["probe"],
            "note": "dry run: not the EXP-0058 reading" if dry_run else ""}
     (out / "probe.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     spec["status"] = "complete"
