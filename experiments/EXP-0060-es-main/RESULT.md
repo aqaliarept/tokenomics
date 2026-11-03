@@ -1,14 +1,41 @@
-# EXP-0060: ES main runs and validation reads (in progress)
+# EXP-0060: ES main runs and validation reads, step 2 of the M4 ladder
 
-**Status: in progress.** Task group 7 of `add-m4-orderer-redesign`. Done so far:
-- **EXP-0060a** (task 7.1): A1 seed 0, resumed for generations 21–40;
-- **EXP-0060b** (task 7.2): A2 at rank 2 (A2-R2), seed 0, generations 1–40.
+**Status: complete, valid. Final reading (D7, both seeds): `plateau`.**
+- **Selected:** A1, seed 0.
+- **Labels:** `herding` and `history_inert`, on both seeds.
+- **Next (registered):** record `history_inert` and `herding`, and ask the user to release
+  tranche B1, the relational check (step-3 gate).
+- **Runs:**
+  - EXP-0060a (7.1): A1 seed 0, resumed for generations 21–40;
+  - EXP-0060b (7.2): A2-R2 seed 0, generations 1–40;
+  - val-seed0 (7.3): the seed-0 read;
+  - EXP-0060d (7.4): A1 seed 1, generations 1–40;
+  - final (7.5): the seed-combined read.
 
-- **val-seed0** (task 7.3): the seed-0 validation read reads **`plateau`** and selects A1-s0.
+## In plain English: what step 2 found
 
-- **EXP-0060d** (task 7.4): A1 seed 1, generations 1–40.
+**The question.** Can a small learned correction to the per-order router, trained by
+evolution strategies on whole-episode outcomes, beat the simple routing rules on worlds it never
+trained on?
 
-Still to run: the final read (7.5, `--seed-combine --reuse-references val-seed0`).
+**The answer: it learns, and the learning repeats and generalises, but only up to the level of
+the simple rules.**
+- **It learns.** Both optimizer seeds of A1 improve on the router's starting point A0 on the
+  training-monitor worlds by about +70 consumer units (+3.5–3.8%).
+- **The gain holds on unseen validation worlds:** +68.7 (seed 0) and +45.3 (seed 1) over A0.
+- **It does not beat the simple rules.** Against round robin it is level (+26.0 and +2.5, both
+  inside the noise floor). Against MWW, the strongest simple rule, it is clearly worse (−59.0 and
+  −82.5, beyond the floor). It beats the old trained orderer by about +600.
+- **Other findings.** The larger model (A2-R2) is no better. The router's agent-local history
+  adds nothing measurable (`history_inert`). Its choices herd (`herding`).
+- **Why the reading is `plateau`** (pre-registered):
+  - the training gain levelled off below the floor's size over the last 10 generations;
+  - the larger model is not better;
+  - the candidate is within or below the floor of MWW or of RR.
+
+**What it licenses.** D7 says a `plateau` goes to the step-3 gate: the relational check (A2+R,
+tranche B1). Releasing B1 is the user's decision. `history_inert` must be cited before history
+becomes GNN edge attributes. `herding` is carried into the relational check's record.
 
 ## EXP-0060a: A1 seed 0, generations 21–40 (resumed from EXP-0059)
 
@@ -255,17 +282,66 @@ The read itself is 7.5's.
   - Stop 37. Launch-fit 54.6 + 37 = 91.6 ≤ 125. Tranche A ≈ 72.5.
 - **Files:** `artifacts/a1-s1/`, the run dir as pulled.
 
+## final: the seed-combined read (task 7.5)
+
+**Final reading: `plateau`** (seed 0 `plateau` + seed 1 `plateau`). Selected A1-s0. Labels
+`herding` and `history_inert` on both seeds. `seed_disagreement` does not arise.
+
+### Seed 1 on validation (A1-s1, 9 gating worlds × 8 episodes)
+
+| comparison | A1-s1 | floor | (A1-s0, from val-seed0) |
+|---|---|---|---|
+| − A0 (g_val) | +45.3 | 30.0 | +68.7 |
+| − RR | +2.5 | 32.8 | +26.0 |
+| − MWW | −82.5 | 26.4 | −59.0 |
+| − TR | +590.9 | 31.6 | +614.4 |
+| − its shared-only ablation | +4.1 | 36.7 | +2.8 |
+
+- **Mean:** 1,804.9. 1 death; 2 worlds lost to RR beyond floor_w; run-down share 0.73 against
+  RR's 0.65.
+- **Not `success`:** the references are not all beaten, there is a death, and the flags are
+  worse than RR's.
+- **Seed-1 clauses** (D7 seed combination): g_tr +68.0 > F_tr 54.75, so not `unresolved`.
+  g_val 45.3 ≥ g_tr / 3, so not `kill`.
+  - The run's own last-10-generation improvement is +2.3 < F_tr, so not `budget_limited`, and
+    plateau (i) holds.
+  - (ii) comes from seed 0; (iii) holds.
+- **Label table:**
+
+  | label | value | consequence |
+  |---|---|---|
+  | `history_inert` | yes, both seeds | recorded; must be cited before history becomes GNN edge attributes (D8, task 12.1) |
+  | `herding` | yes, both seeds | under `plateau`: recorded and carried into the relational check's record |
+  | `not_via_deconcentration` | n/a (no gain to explain) | — |
+
+### Verification (task 7.5's verify line)
+- `contract_failures.csv` is header only.
+- 2,304 rows on 128 world-episodes, each with one digest pair, equal to val-seed0's digests.
+- The 1,792 reused val-seed0 rows are identical in the combined `episodes.csv`; 512 rows are new
+  (A1-s1 and its ablation).
+- Every played world is in the validation split.
+- `--mode recompute` gives **MATCH** (`plateau`). It was run on a copy whose `pins.reuse.path`
+  points to the local val-seed0, because the recorded path is the pod's.
+
+### Cost
+- Pod `hluwwmpny5rpyh`, secure 16 vCPU, 22:53:00 launch → terminated by 22:58:45 (≤ 5.8 min),
+  **≈ 1.5 vCPU-h** billed.
+- Stop 8.2. Launch-fit 72.5 + 8.2 = 80.7 ≤ 125.
+- **Tranche A billed in total ≈ 74.0 of 125.**
+- **Pull location:** the read was pulled into `final/` rather than the EXP root, so the rsync
+  could not overwrite this filled RESULT.md.
+
 ## Conclusions
 
-- **EXP-0060a:** A1 seed 0 at generation 40 has g_tr +73.2 > F_tr 54.75 on the training-monitor
-  set. The gain broadened (10 / 16 up, losses −118) and was still rising (+16.4 over the last
-  10). DIAGNOSTICS 27 → diagnosed: under-trained.
-- **EXP-0060b:** A2-R2 seed 0 at generation 40 has g_tr +83.7 > F_tr 54.75 (12 / 16 up,
-  losses −94.5, still rising +28.0).
-- **val-seed0 (7.3): `plateau`, A1-s0 selected.**
-  - Against A0: +68.7 (floor 37.7). Against RR: +26.0 (inside 39.1). Against MWW: −59.0
-    (beyond 35.8). Against TR: +614.
-  - Labels `history_inert` and `herding`. 0 contract failures; recompute MATCH.
-- **EXP-0060d (7.4):** A1 seed 1 at generation 40 has g_tr +68.0 > F_tr 54.75 and is flat over
-  the last 10 generations (+2.3).
-- **Next:** the final read (7.5). The supervisor launches it.
+- **Final reading: `plateau`.** Selected A1-s0. `herding` and `history_inert` are recorded on
+  both seeds.
+- **The learned per-order correction is real and generalises:** over A0, +68.7 / +45.3 on
+  validation and about +70 in training, on both seeds.
+- **It ends level with round robin and below MWW:** −59.0 / −82.5, beyond the floor. Step 2 does
+  not produce a router that beats the simple rules.
+- **Training:** A1 seed 0 g_tr +73.2 (EXP-0060a), A2-R2 +83.7 (EXP-0060b), A1 seed 1 +68.0
+  (EXP-0060d), all > F_tr 54.75. A2-R2 is not better than A1 on validation (−14.1, inside the
+  floor).
+- **Next (registered):** ask the user to release tranche B1, the relational check (step-3 gate).
+- **No DIAGNOSTICS entry is due:** that is required only on `unresolved` / `kill` / `other`.
+- **Tranche A ≈ 74.0 of 125 billed.**

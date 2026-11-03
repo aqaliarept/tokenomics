@@ -1207,3 +1207,18 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   flattened over the last 10 generations (+2.3). Cost ≈ 17.9 vCPU-h on cpu16 (tranche A ≈ 72.5
   of 125). The final read (7.5) combines both seeds.
 
+### The final read: step 2 ends at `plateau` (EXP-0060 final)
+
+- **The seed-combined read is `plateau`.** Seed 1 of A1 confirms seed 0.
+  - On validation it beats A0 by +45.3 (floor 30.0), ties round robin (+2.5) and stays below MWW
+    (−82.5, beyond the floor).
+  - Its training gain had levelled off (+2.3 over the last 10 generations), so the run is not
+    `budget_limited`.
+  - `herding` and `history_inert` hold on both seeds.
+- **What step 2 established.** Outcome-trained ES on a whole-order, per-order residual over the
+  trained scores improves real outcomes and generalises to unseen worlds, by about +45 to +70
+  consumer units over its start. But it plateaus at the level of the simple rules: level with
+  round robin, below makeable-weighted whole routing.
+- **The registered next step** is the step-3 gate: the relational check (A2+R), tranche B1, which
+  the user releases. Tranche A billed ≈ 74.0 of 125.
+
