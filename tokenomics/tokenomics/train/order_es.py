@@ -1785,7 +1785,8 @@ def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
            **({"prereg_version": 2, "training_minibatch": V2_MINIBATCH} if version == 2
               else {}),
            "minibatches": [list(map(list, m)) for m in mb], **result,
-           "noise": {a: {"stream": NOISE_STREAM, "purpose": f"probe|{a}"} for a in arms},
+           "noise": {a: {"stream": NOISE_STREAM, "purpose": f"probe|{base_arm(a)}"}
+                     for a in arms},
            "pre_registered": registered_sections(version)["probe"],
            "note": "dry run: not the EXP-0058 reading" if dry_run else ""}
     (out / "probe.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")

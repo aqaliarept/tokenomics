@@ -26,8 +26,9 @@ rule). Labels (`not_via_deconcentration`, `history_inert`, `herding`) follow D7'
 frozen power rule to EXP-0052's confirm rows (task 5.4 records the outcome). `--mode freeze`
 writes / checks the frozen pre-registration `train/registry/es_prereg_m4_v1.json`.
 
-A real validate run needs the frozen pre-registration (file SHA-256 `PREREG_SHA256`, every run
-trained under it), the registered atlas and orderer, complete real 40-generation runs on the same
+A real validate run needs a frozen pre-registration (v1 `PREREG_SHA256` or v2
+`PREREG_V2_SHA256`, task 6.1f; `--prereg`, default v1) with every run trained under that same
+file, the registered atlas and orderer, complete real 40-generation runs on the same
 bar, horizon 100, 4 or 8 episodes, a 40-hex source commit and no filters. Contract failures,
 missing rows or digest differences end it invalid (exit 2). It never writes the held-out ledger.
 """
@@ -145,6 +146,27 @@ PREREG_SHA256 = "b9d449c15db6860950aab8dbc49bc0e3d67635d4d50e6f1c817d1e04fedcbab
 # train run accepts either frozen file and plays the rule its version registers
 PREREG_V2_PATH = es.PREREG_V2_PATH
 PREREG_V2_SHA256 = "511e939a41213dd401d390637bc7e5be1c3725f32fb1de3a9e70d7b1385ceeae"
+# the frozen pre-registrations a read accepts, by file SHA-256 -> version (task 6.1f). Their
+# `readings` sections are identical (v2 changed training only), so what decides a read is the
+# same under both; a read and its runs must share one file.
+FROZEN_PREREGS = {PREREG_SHA256: 1, PREREG_V2_SHA256: 2}
+
+
+def run_prereg_version(training_pins: Mapping[str, Any]) -> int:
+    """The pre-registration version a train run's rule ran under: v2 runs pin
+    `disqualification.prereg_version` (order_es `_v2_pins`); v1 runs pin none."""
+    return int((training_pins.get("disqualification") or {}).get("prereg_version", 1))
+
+
+def read_prereg_version(prereg_sha: str, prereg: Mapping[str, Any]) -> int:
+    """A read's version: by the frozen file's SHA, else (a dry run's draft) by its format."""
+    return FROZEN_PREREGS.get(prereg_sha, es.prereg_version(prereg))
+
+
+def prereg_mix_problems(cands: Sequence["Candidate"], version: int) -> list[str]:
+    """A v1 / v2 mix: a run trained under another version than the read's (any mode)."""
+    return [f"pre-registration mix: run {c.label} was trained under v{c.prereg_version}, this "
+            f"read uses v{version} (--prereg)" for c in cands if c.prereg_version != version]
 
 ROW_EXTRA = ("arm", "ordering_decode", "history_mode", "theta_sha256", "episode_seconds",
              "job_seconds")
@@ -395,7 +417,7 @@ def prereg_read_problems(doc: Any) -> list[str]:
         return out
     if doc["status"] != es.FROZEN:
         out.append(f"pre-registration status is {doc['status']!r}, a real run needs 'frozen'")
-    want = {**es.registered_sections(), "readings": readings_registration()}
+    want = {**es.registered_sections(es.prereg_version(doc)), "readings": readings_registration()}
     for sec, w in want.items():
         diff = es._diff_paths(es._json_norm(doc.get(sec)), w)
         if diff:
@@ -1182,6 +1204,7 @@ class Candidate:
     training_sha256: str
     prereg_sha256: str | None
     kind: str
+    prereg_version: int = 1  # the run's training rule (6.1f); no v2 pin = v1
 
 
 def legacy_table() -> list[dict]:
@@ -1349,7 +1372,7 @@ def load_candidate(run_dir: str | Path, inp: es.Inputs, cells: Mapping[str, Cell
                      comp["theta_sha256"], comp["normaliser"], comp["normaliser_sha256"],
                      sha256_file(str(rd / "candidate.json")), str(rd), stats,
                      spec["pins"]["training_sha256"], tp["inputs"].get("prereg_sha256"),
-                     str(spec.get("kind")))
+                     str(spec.get("kind")), run_prereg_version(tp))
 
 
 
@@ -1403,8 +1426,9 @@ def real_run_problems(*, atlas: Mapping, inp: es.Inputs, prereg: Mapping, prereg
     counts = {s: sum(1 for c in cells.values() if c.size == s and c.group == LOADED)
               for s in SIZES}
     out = [msg for bad, msg in (
-        (prereg_sha != PREREG_SHA256,
-         f"pre-registration file {prereg_sha[:12]} is not the frozen {PREREG_SHA256[:12]}"),
+        (prereg_sha not in FROZEN_PREREGS,
+         f"pre-registration file {prereg_sha[:12]} is not the frozen {PREREG_SHA256[:12]} "
+         f"(v1) or {PREREG_V2_SHA256[:12]} (v2)"),
         (atlas.get("content_hash") != REGISTERED_ATLAS_HASH,
          f"atlas {str(atlas.get('content_hash'))[:12]} is not the registered EXP-0052 "
          f"reclassified atlas {REGISTERED_ATLAS_HASH[:12]}"),
@@ -1427,9 +1451,9 @@ def real_run_problems(*, atlas: Mapping, inp: es.Inputs, prereg: Mapping, prereg
     for c in cands:
         if c.kind != es.TRAIN:
             out.append(f"run {c.label} is a {c.kind!r} run, a real read needs train runs")
-        if c.prereg_sha256 != PREREG_SHA256:
+        if c.prereg_sha256 != prereg_sha or prereg_sha not in FROZEN_PREREGS:
             out.append(f"run {c.label} was trained under pre-registration "
-                       f"{str(c.prereg_sha256)[:12]}, not the frozen {PREREG_SHA256[:12]}")
+                       f"{str(c.prereg_sha256)[:12]}, not the frozen {prereg_sha[:12]}")
         if c.stats.generation != MAIN_GENERATIONS:
             out.append(f"run {c.label} ended at generation {c.stats.generation}, the main runs "
                        f"train {MAIN_GENERATIONS}")
@@ -1513,6 +1537,9 @@ def run_validate(*, runs: Sequence[str], bar_dir: str | Path, atlas_path: str | 
     prereg_sha = sha256_file(str(prereg_path))
     if es.prereg_schema_problems(prereg):
         raise ValueError("pre-registration: " + "; ".join(es.prereg_schema_problems(prereg)))
+    mix = prereg_mix_problems(cands, read_prereg_version(prereg_sha, prereg))
+    if mix:
+        raise ValueError("; ".join(mix))
     source = source_fingerprint(source_commit or None)
     pins: dict[str, Any] = {
         "driver": DRIVER, "mode": VALIDATE, "horizon": horizon, "dry_run": dry_run,
@@ -1719,6 +1746,10 @@ def run_recompute(*, out_dir: str | Path, runs: Sequence[str], bar_dir: str | Pa
     for c in cands:
         if pins["candidates"].get(c.label, {}).get("theta_sha256") != c.theta_sha256:
             raise ValueError(f"run {c.label} is not a candidate of this read")
+    version = FROZEN_PREREGS.get(str(pins.get("prereg_sha256")))
+    mix = [] if version is None else prereg_mix_problems(cands, version)
+    if mix:
+        raise ValueError("; ".join(mix))
     cells = {s["world"]: Cell(s["world"], int(s["size"]), s["choice"], bool(s["differing"]),
                               spread_from_dict(spreads[f"{s['size']}/{s['choice']}"])
                               if f"{s['size']}/{s['choice']}" in spreads else None,
@@ -1741,8 +1772,16 @@ def run_recompute(*, out_dir: str | Path, runs: Sequence[str], bar_dir: str | Pa
 
 def run_power(*, exp0052_episodes: str | Path, atlas_path: str | Path,
               atlas_worlds_csv: str | Path, out: str | Path | None,
+              prereg_path: str | Path | None = None,
               log: Callable[[str], None] = _log) -> dict[str, Any]:
-    """The frozen power rule on EXP-0052's confirm rows (task 5.4 records the outcome)."""
+    """The frozen power rule on EXP-0052's confirm rows (task 5.4 records the outcome). The rule
+    is `readings.power_rule`, the same in v1 and v2; `prereg_path` (default v1) only says which
+    frozen file the record pins (task 6.1f)."""
+    prereg_path = Path(prereg_path) if prereg_path else PREREG_PATH
+    prereg_sha = sha256_file(str(prereg_path))
+    if prereg_sha not in FROZEN_PREREGS or prereg_read_problems(es.load_prereg(prereg_path)):
+        raise ValueError(f"--prereg {prereg_path}: not a frozen pre-registration "
+                         f"({prereg_sha[:12]})")
     atlas = load_atlas(atlas_path)
     cells = world_cells(validation_views(atlas), atlas["spreads"])
     worlds = gating_worlds(cells)
@@ -1753,7 +1792,7 @@ def run_power(*, exp0052_episodes: str | Path, atlas_path: str | Path,
         "exp0052_episodes_sha256": sha256_file(str(exp0052_episodes)),
         "atlas_content_hash": atlas["content_hash"],
         "atlas_worlds_csv_sha256": sha256_file(str(atlas_worlds_csv))},
-        "prereg_sha256": sha256_file(str(PREREG_PATH)),
+        "prereg_sha256": prereg_sha,
         "rule": {**doc["rule"], "registered": readings_registration()["power_rule"]["rule"]}})
     text = json.dumps(doc, indent=2, sort_keys=True) + "\n"
     if out is not None:
@@ -1793,7 +1832,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--atlas", help="atlas_v2.json (EXP-0052 reclassified)")
     p.add_argument("--orderer-ckpt", help="the trained orderer (EXP-0012)")
     p.add_argument("--episodes", type=int, help="episodes per validation world (4 or 8)")
-    p.add_argument("--prereg", help="pre-registration file (default: the packaged frozen file)")
+    p.add_argument("--prereg", help="validate / power: the frozen pre-registration (default: v1; "
+                                    "v2-trained runs need es_prereg_m4_v2.json)")
     p.add_argument("--seed-combine", action="store_true")
     p.add_argument("--reuse-references", help="the seed-0 read's dir (with --seed-combine)")
     p.add_argument("--out-dir", help="validate / recompute dir")
@@ -1816,7 +1856,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                           version=a.prereg_version)
     if a.mode == POWER:
         run_power(exp0052_episodes=a.exp0052_episodes, atlas_path=a.atlas,
-                  atlas_worlds_csv=a.atlas_worlds, out=a.out)
+                  atlas_worlds_csv=a.atlas_worlds, out=a.out, prereg_path=a.prereg)
         return 0
     runs = _csv_strs(a.runs) or []
     if a.mode == RECOMPUTE:

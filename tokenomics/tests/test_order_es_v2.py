@@ -249,6 +249,9 @@ def test_v2_probe_and_train_dry_runs(real_bar: Path, tmp_path: Path) -> None:
     assert doc["reading"]["step_reading"] in (es.STEP_FLAT, es.STEP_BOTH, es.STEP_SIGMA_ONLY,
                                               es.NO_SIGNAL)
     assert doc["pre_registered"]["sigma_arms"] == es.SIGMA_ARM_REGISTRATION
+    # the record names the stream A1-S2 actually plays: A1's (EXP-0069 erratum, 6.1f)
+    assert {a: n["purpose"] for a, n in doc["noise"].items()} == {
+        "A1": "probe|A1", "A2": "probe|A2", "A1-S2": "probe|A1"}
     # A1-S2 plays A1's policy on the same world-episodes and keys, at twice A1's deviations
     eps = {d["job_id"]: d for d in _rows(out / "probe_episodes.csv")}
     key = {(d["arm"], d["member"], d["world"], d["episode"], d["replicate"]) for d in
@@ -260,7 +263,10 @@ def test_v2_probe_and_train_dry_runs(real_bar: Path, tmp_path: Path) -> None:
     spec1 = json.loads((v1 / "spec.json").read_text())
     assert "disqualification" not in spec1["pins"]
     assert all(len(m) == 6 for m in spec1["pins"]["minibatches"])
-    assert "prereg_version" not in json.loads((v1 / "probe.json").read_text())
+    doc1 = json.loads((v1 / "probe.json").read_text())
+    assert "prereg_version" not in doc1
+    assert doc1["noise"] == {a: {"stream": es.NOISE_STREAM, "purpose": f"probe|{a}"}
+                             for a in ("A1", "A2")}  # v1: unchanged
     tr = tmp_path / "train"
     assert es.run_train(bar_dir=real_bar, out_dir=tr, orderer_ckpt=str(ORDERER), arm="A1",
                         opt_seed=0, generations=1, pairs=1, monitor_every=1,

@@ -928,3 +928,144 @@ def _with_theta(s0: Path, dst: Path) -> Path:
     r["runs"]["A2-s0"]["theta_sha256"] = "0" * 64
     (dst / "reading.json").write_text(json.dumps(r))
     return dst
+
+
+# --- pre-registration v2 reads (task 6.1f) ---
+
+
+@pytest.fixture(scope="module")
+def v2_runs(inputs: dict[str, Path], tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
+    """Three dry runs trained under pre-registration v2 (noise margin, its pins) on the same
+    2-world bar; the minibatch is the bar's schedule size (a dry run's 2 worlds)."""
+    from test_order_es import _fake
+
+    root = tmp_path_factory.mktemp("val2")
+    bar = inputs["bar"]
+    size = int(es.load_inputs(bar).schedule["minibatch_size"])
+    out = {}
+    for arm, seed in (("A1", 0), ("A2", 0), ("A1", 1)):
+        d = root / f"{arm}-s{seed}"
+        assert es.run_train(bar_dir=bar, out_dir=d, orderer_ckpt=str(ORDERER), arm=arm,
+                            opt_seed=seed, generations=2, pairs=2, monitor_every=1,
+                            minibatch=size, prereg_path=str(v.PREREG_V2_PATH), dry_run=True,
+                            run_job_fn=_fake(bar), log=QUIET) == 0
+        tp = json.loads((d / "spec.json").read_text())["pins"]["training"]
+        assert v.run_prereg_version(tp) == 2
+        assert tp["inputs"]["prereg_sha256"] == v.PREREG_V2_SHA256
+        out[f"{arm}-s{seed}"] = d
+    return out
+
+
+def _validate_dirs(inputs: dict[str, Path], out: Path, runs: list[Path], **kw: object) -> int:
+    args: dict = dict(runs=[str(r) for r in runs], bar_dir=inputs["bar"], atlas_path=ATLAS_V2,
+                      orderer_ckpt=str(ORDERER), out_dir=out, episodes=1, worlds=[VAL_WORLD],
+                      horizon=12, shock_profile="shocks-i-smoke", dry_run=True, log=QUIET)
+    args.update(kw)
+    return v.run_validate(**args)
+
+
+def test_both_frozen_files_decide_alike() -> None:
+    """The decision register is unchanged: v1 and v2 carry the same `readings` section (= the
+    code's), each passes its own section check, and a v2 file with v1's training sections, or
+    with a changed reading, is refused."""
+    d1, d2 = es.load_prereg(v.PREREG_PATH), es.load_prereg(v.PREREG_V2_PATH)
+    assert d1["readings"] == d2["readings"] == es._json_norm(v.readings_registration())
+    assert v.prereg_read_problems(d1) == [] == v.prereg_read_problems(d2)
+    assert v.FROZEN_PREREGS == {v.PREREG_SHA256: 1, v.PREREG_V2_SHA256: 2}
+    swapped = {**d2, "es": d1["es"]}
+    assert any("es." in x for x in v.prereg_read_problems(swapped))
+    changed = copy.deepcopy(d2)
+    changed["readings"]["kill_ratio"] = 0.5
+    assert any("readings" in x for x in v.prereg_read_problems(changed))
+    assert v.run_prereg_version({}) == 1 and v.run_prereg_version(
+        {"disqualification": {"prereg_version": 2}}) == 2
+
+
+@needs_inputs
+def test_v2_trained_runs_validate(inputs: dict[str, Path], v2_runs: dict[str, Path],
+                                  tmp_path: Path) -> None:
+    """A v2 read of v2-trained runs plays, reads and recomputes like a v1 one; as a real read
+    it raises none of the pre-registration refusals (only the dry-run inputs' own)."""
+    out = tmp_path / "val2"
+    runs = [v2_runs["A1-s0"], v2_runs["A2-s0"]]
+    assert _validate_dirs(inputs, out, runs, prereg_path=v.PREREG_V2_PATH) == 0
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["pins"]["prereg_sha256"] == v.PREREG_V2_SHA256
+    reading = json.loads((out / "reading.json").read_text())
+    assert reading["status"] == "valid" and reading["final"]["reading"] in v.PRECEDENCE
+    assert v.run_recompute(out_dir=out, runs=[str(r) for r in runs], bar_dir=inputs["bar"],
+                           orderer_ckpt=str(ORDERER), log=QUIET) == 0
+    with pytest.raises(ValueError) as exc:
+        _validate_dirs(inputs, tmp_path / "real", runs, prereg_path=v.PREREG_V2_PATH,
+                       dry_run=False, episodes=5)
+    msg = str(exc.value)
+    assert "the bar run is a dry run" in msg
+    for absent in ("is not the frozen", "trained under pre-registration",
+                   "pre-registration differs", "pre-registration mix"):
+        assert absent not in msg, absent
+
+
+@needs_inputs
+def test_prereg_mix_refused(inputs: dict[str, Path], v2_runs: dict[str, Path],
+                            tmp_path: Path) -> None:
+    """v2 runs under v1 (the default), v1 runs under v2, and a mixed pair are refused before
+    any job, in every mode; the recompute refuses a read whose pins name the other version."""
+    with pytest.raises(ValueError, match="run A1-s0 was trained under v2, this read uses v1"):
+        _validate_dirs(inputs, tmp_path / "a", [v2_runs["A1-s0"], v2_runs["A2-s0"]])
+    with pytest.raises(ValueError, match="run A1-s0 was trained under v1, this read uses v2"):
+        _validate_dirs(inputs, tmp_path / "b", [inputs["A1-s0"], inputs["A2-s0"]],
+                       prereg_path=v.PREREG_V2_PATH)
+    with pytest.raises(ValueError) as exc:
+        _validate_dirs(inputs, tmp_path / "c", [inputs["A1-s0"], v2_runs["A2-s0"]])
+    assert "run A2-s0 was trained under v2" in str(exc.value) and "A1-s0" not in str(exc.value)
+    for d in ("a", "b", "c"):
+        assert not (tmp_path / d / "episodes.csv").exists()
+    out = tmp_path / "v2read"
+    runs = [v2_runs["A1-s0"], v2_runs["A2-s0"]]
+    assert _validate_dirs(inputs, out, runs, prereg_path=v.PREREG_V2_PATH) == 0
+    spec = json.loads((out / "spec.json").read_text())
+    spec["pins"]["prereg_sha256"] = v.PREREG_SHA256
+    (out / "spec.json").write_text(json.dumps(spec))
+    with pytest.raises(ValueError, match="pre-registration mix"):
+        v.run_recompute(out_dir=out, runs=[str(r) for r in runs], bar_dir=inputs["bar"],
+                        orderer_ckpt=str(ORDERER), log=QUIET)
+
+
+@needs_inputs
+def test_seed_combine_under_v2(inputs: dict[str, Path], v2_runs: dict[str, Path],
+                               tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The seed-1 read under v2 reuses a v2 seed-0 read; a v1 seed-1 read cannot reuse it (the
+    reuse pins include the pre-registration file), nor a v1 seed-0 read a v2 seed-1 read."""
+    monkeypatch.setattr(v, "first_match", lambda clauses: v.SUCCESS)
+    s0 = tmp_path / "s0v2"
+    assert _validate_dirs(inputs, s0, [v2_runs["A1-s0"], v2_runs["A2-s0"]],
+                          prereg_path=v.PREREG_V2_PATH) == 0
+    assert _validate_dirs(inputs, tmp_path / "s1v2", [v2_runs["A1-s0"], v2_runs["A1-s1"]],
+                          prereg_path=v.PREREG_V2_PATH, seed_combine=True,
+                          reuse_references=s0) == 0
+    with pytest.raises(ValueError, match=r"other pins: \['prereg_sha256'\]"):
+        _validate_dirs(inputs, tmp_path / "s1v1", [inputs["A1-s0"], inputs["A1-s1"]],
+                       seed_combine=True, reuse_references=s0)
+    s0v1 = tmp_path / "s0v1"
+    assert _validate_dirs(inputs, s0v1, [inputs["A1-s0"], inputs["A2-s0"]]) == 0
+    with pytest.raises(ValueError, match=r"other pins: \['prereg_sha256'\]"):
+        _validate_dirs(inputs, tmp_path / "s1x", [v2_runs["A1-s0"], v2_runs["A1-s1"]],
+                       prereg_path=v.PREREG_V2_PATH, seed_combine=True, reuse_references=s0v1)
+
+
+@pytest.mark.skipif(not (_lfs_present(EXP0052) and _lfs_present(ATLAS_V2)),
+                    reason="EXP-0052 rows absent")
+def test_power_under_either_frozen_file(tmp_path: Path) -> None:
+    """The power rule is the same under v1 and v2: the records differ only in the pinned file;
+    a non-frozen file is refused."""
+    kw = dict(exp0052_episodes=EXP0052, atlas_path=ATLAS_V2, atlas_worlds_csv=ATLAS_WORLDS,
+              out=None, log=QUIET)
+    d1 = v.run_power(**kw)
+    d2 = v.run_power(**kw, prereg_path=v.PREREG_V2_PATH)
+    assert d1["prereg_sha256"] == v.PREREG_SHA256 and d2["prereg_sha256"] == v.PREREG_V2_SHA256
+    assert {k: x for k, x in d1.items() if k != "prereg_sha256"} == {
+        k: x for k, x in d2.items() if k != "prereg_sha256"}
+    other = tmp_path / "p.json"
+    other.write_text(v.PREREG_V2_PATH.read_text().replace('"kill_ratio"', '"kill_ratio" ', 1))
+    with pytest.raises(ValueError, match="not a frozen pre-registration"):
+        v.run_power(**kw, prereg_path=other)
