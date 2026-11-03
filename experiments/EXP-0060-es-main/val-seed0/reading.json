@@ -1,0 +1,450 @@
+{
+  "candidates": {
+    "A1-s0": {
+      "comparisons": {
+        "A0": {
+          "a": "A1-s0",
+          "atlas_floor": 25.683342929673895,
+          "b": "A0",
+          "df": 135,
+          "diff": 68.71527777777777,
+          "floor": 37.68921284726303,
+          "own3se": 37.68921284726303,
+          "worlds": 9
+        },
+        "MWW": {
+          "a": "A1-s0",
+          "atlas_floor": 25.683342929673895,
+          "b": "MWW",
+          "df": 135,
+          "diff": -59.0,
+          "floor": 35.825792165132356,
+          "own3se": 35.825792165132356,
+          "worlds": 9
+        },
+        "RR": {
+          "a": "A1-s0",
+          "atlas_floor": 21.809954253727724,
+          "b": "RR",
+          "df": 135,
+          "diff": 25.979166666666668,
+          "floor": 39.1004630342243,
+          "own3se": 39.1004630342243,
+          "worlds": 9
+        },
+        "TR": {
+          "a": "A1-s0",
+          "atlas_floor": 21.809954253727724,
+          "b": "TR",
+          "df": 135,
+          "diff": 614.3680555555555,
+          "floor": 36.89105308138687,
+          "own3se": 36.89105308138687,
+          "worlds": 9
+        },
+        "ablation": {
+          "a": "A1-s0",
+          "atlas_floor": 25.683342929673895,
+          "b": "A1-s0/shared",
+          "df": 135,
+          "diff": 2.75,
+          "floor": 35.78437223560442,
+          "own3se": 35.78437223560442,
+          "worlds": 9
+        }
+      },
+      "deaths": 1,
+      "g_val": 68.71527777777777,
+      "label": "A1-s0",
+      "lost_to_rr": 1,
+      "mean": 1828.3125,
+      "plateau_iii": true,
+      "rr_rundown_share": 0.6527777777777778,
+      "rr_starved_share": 1.0,
+      "rundown_share": 0.7361111111111112,
+      "starved_share": 1.0,
+      "success_clauses": {
+        "beats_refs": false,
+        "flags_no_worse": false,
+        "lost_to_rr": true,
+        "no_deaths": false
+      },
+      "worlds": 9
+    },
+    "A2-R2-s0": {
+      "comparisons": {
+        "A0": {
+          "a": "A2-R2-s0",
+          "atlas_floor": 25.683342929673895,
+          "b": "A0",
+          "df": 135,
+          "diff": 54.59027777777778,
+          "floor": 29.283348451428463,
+          "own3se": 29.283348451428463,
+          "worlds": 9
+        },
+        "MWW": {
+          "a": "A2-R2-s0",
+          "atlas_floor": 25.683342929673895,
+          "b": "MWW",
+          "df": 135,
+          "diff": -73.125,
+          "floor": 29.900292447163892,
+          "own3se": 29.900292447163892,
+          "worlds": 9
+        },
+        "RR": {
+          "a": "A2-R2-s0",
+          "atlas_floor": 21.809954253727724,
+          "b": "RR",
+          "df": 135,
+          "diff": 11.854166666666666,
+          "floor": 36.58989556115084,
+          "own3se": 36.58989556115084,
+          "worlds": 9
+        },
+        "TR": {
+          "a": "A2-R2-s0",
+          "atlas_floor": 21.809954253727724,
+          "b": "TR",
+          "df": 135,
+          "diff": 600.2430555555555,
+          "floor": 36.990901893799055,
+          "own3se": 36.990901893799055,
+          "worlds": 9
+        },
+        "ablation": {
+          "a": "A2-R2-s0",
+          "atlas_floor": 25.683342929673895,
+          "b": "A2-R2-s0/shared",
+          "df": 135,
+          "diff": 19.479166666666668,
+          "floor": 33.2261588677032,
+          "own3se": 33.2261588677032,
+          "worlds": 9
+        }
+      },
+      "deaths": 0,
+      "g_val": 54.59027777777778,
+      "label": "A2-R2-s0",
+      "lost_to_rr": 2,
+      "mean": 1814.1875,
+      "plateau_iii": true,
+      "rr_rundown_share": 0.6527777777777778,
+      "rr_starved_share": 1.0,
+      "rundown_share": 0.75,
+      "starved_share": 1.0,
+      "success_clauses": {
+        "beats_refs": false,
+        "flags_no_worse": false,
+        "lost_to_rr": false,
+        "no_deaths": true
+      },
+      "worlds": 9
+    }
+  },
+  "driver": "tokenomics.train.order_es_validate",
+  "dry_run": false,
+  "final": {
+    "labels": [
+      "history_inert",
+      "herding"
+    ],
+    "next": "seed 1, then the step-3 gate",
+    "reading": "plateau",
+    "selected": "A1-s0"
+  },
+  "gating_worlds": [
+    "ws-atlas-v1-12-0050",
+    "ws-atlas-v1-12-0089",
+    "ws-atlas-v1-12-0092",
+    "ws-atlas-v1-12-0109",
+    "ws-atlas-v1-12-0330",
+    "ws-atlas-v1-12-0350",
+    "ws-atlas-v1-12-0384",
+    "ws-atlas-v1-12-0464",
+    "ws-atlas-v1-12-0494"
+  ],
+  "label_measures": {
+    "A1-s0": {
+      "deconcentration": {
+        "defined_worlds": 9,
+        "df": 135,
+        "diff": -0.02442725679345166,
+        "not_via_deconcentration": false,
+        "se3": 0.009224305346182874
+      },
+      "herding": true,
+      "history_inert": true,
+      "not_via_deconcentration": false
+    },
+    "A2-R2-s0": {
+      "deconcentration": {
+        "defined_worlds": 9,
+        "df": 135,
+        "diff": -0.017071285900555455,
+        "not_via_deconcentration": false,
+        "se3": 0.008758360746885734
+      },
+      "herding": true,
+      "history_inert": true,
+      "not_via_deconcentration": false
+    }
+  },
+  "prereg_sha256": "511e939a41213dd401d390637bc7e5be1c3725f32fb1de3a9e70d7b1385ceeae",
+  "readings_withheld": false,
+  "rules": {
+    "design": "add-m4-orderer-redesign D6 / D7 / D9 (task 5.3)",
+    "floors": {
+      "atlas_per_world": "SE_w = atlas.standard_error(n_w episodes, differing_w, the compared stochastic arms at their R, the atlas v2 `spreads` of the world's size / choice stratum); floor_w = max(3 SE_w, 0.01 bar_w)",
+      "atlas_world_mean": "max(3 sqrt(sum_w SE_w^2) / W, 0.01 * mean_w bar_w)",
+      "bar_w": "validation: max of the read's RR, MWW and TR world means; monitor: the bar table's B_we",
+      "floor_bar_share": 0.01,
+      "floor_se": 3.0,
+      "min_own_pairs": 2,
+      "monitor_strata": "a monitor world-episode is its own world (1 episode, R = 2), stratum (12, its choice), differing from its pattern / shocks",
+      "own_per_world": "3 * stdev(paired observations) / sqrt(count), paired per episode and replicate (same replicates pair by replicate, a deterministic arm's one row against each replicate); only with >= 2 paired observations on the world (the n = 1 rule), else the atlas floor alone",
+      "own_world_mean": "3 sqrt(sum_w s^2 / n_w) / W, s^2 the pooled within-world variance of the paired observations over the worlds with >= 2 of them (df = sum (n_w - 1)); none when no world has 2 (the n = 1 rule)",
+      "rule": "per comparison (candidate vs A0, RR, MWW, TR and its shared-only ablation; A2 vs A1; center vs A0 on the monitor set): max(atlas-spread floor at the read's counts, own 3 SE)",
+      "tie": "a gain at or below its floor is a tie"
+    },
+    "format": "m4-es-readings-v1",
+    "gains": {
+      "g_tr": "center - A0 on the training-monitor set at the run's last generation (16 fixed world-episodes, replicates 0 and 1, the run dir's monitor.csv, which holds A0's rows in a resumed dir too), equal-weight over world-episodes",
+      "g_val": "the candidate - A0 on the 12-producer loaded validation worlds (world mean)"
+    },
+    "kill_ratio": 0.3333333333333333,
+    "labels": {
+      "computed": "at the seed-0 read and again at the final read (both seeds' candidates; a label on either is recorded)",
+      "concentration_arms": [
+        "candidate",
+        "ablation",
+        "A0",
+        "MWW",
+        "RR"
+      ],
+      "concentration_measures": [
+        "trace_lead_concurrent_top_share_consumer",
+        "trace_routed_share_dispersion",
+        "trace_share_swing_consumer"
+      ],
+      "herding": "candidate share_swing_consumer world mean - MWW's > 3 SE_w (the candidate's own spread over its rows with swing pairs) on >= 1/3 of the loaded validation worlds",
+      "herding_world_share": 0.3333333333333333,
+      "history_inert": "|candidate - ablation| <= F_val(ablation) on the 12-producer loaded validation world mean",
+      "label_se": 3.0,
+      "not_via_deconcentration": "candidate - A0 of trace_lead_concurrent_top_share_consumer (rows with >= 1 concurrent group, paired by episode and replicate, 12-producer loaded worlds, world mean) is not below -3 SE (own pooled SE as the floors')",
+      "table": {
+        "herding": [
+          "success",
+          "plateau"
+        ],
+        "history_inert": [
+          "success",
+          "plateau"
+        ],
+        "not_via_deconcentration": [
+          "success"
+        ]
+      },
+      "undefined": "a measure whose count column is 0 on a row is undefined there and skipped"
+    },
+    "lost_to_rr_share": 0.16666666666666666,
+    "next": {
+      "budget_limited": "to the user (more generations need approval)",
+      "kill": "diagnose the cross-world cause, stop",
+      "other": "diagnose, stop",
+      "plateau": "seed 1, then the step-3 gate",
+      "seed_disagreement": "diagnose, stop",
+      "success": "seed 1, then held-out",
+      "unresolved": "diagnose, stop"
+    },
+    "normaliser_pins": {
+      "check": "validation refuses a bar whose normaliser.json `prereg` hashes otherwise, or a candidate whose normaliser is not the bar's",
+      "clip": 5.0,
+      "fitting_code_sha256": "7dca5e2c7cb7f833e6fcf3ead3a7047b79bc8b28617b4954f3b2128934f19c4c",
+      "rule_sha256": "01ec5c46118a86ea0ec5d202375dc186848a337d0f90b1e8f3cfc3319a09277a",
+      "scale_floors": {
+        "psi.eligible_producer_count": 0.5108256237659907
+      },
+      "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0 (all-equal values have std 0 exactly)"
+    },
+    "power_rule": {
+      "deciding": "max",
+      "estimator": "per world, per episode d = mean over the replicates of a - the same for b; s = pooled within-world SD of d over the worlds with >= 2 episodes (df = sum (n_w - 1)); MDE(n) = 3 s / sqrt(n) / sqrt(W); share = MDE / mean bar",
+      "justification": "success needs the candidate above each of A0, RR, MWW and TR, so the read is as weak as its noisiest comparison; MWW - RR stands for a stochastic-vs-deterministic pair (candidate vs RR / TR), TR - RR for a pair carrying the trained scorer; the larger of the two is taken so the choice cannot follow the smaller value",
+      "mean_bar": "equal-weight mean over the same worlds of the atlas bar (reclassified/worlds.csv `bar`)",
+      "outcome": "computed by task 5.4 (`--mode power`) and recorded in sizing.md with this file's SHA-256; never frozen here",
+      "pairs": [
+        [
+          "MWW",
+          "RR"
+        ],
+        [
+          "TR",
+          "RR"
+        ]
+      ],
+      "replicates": 2,
+      "rows": "EXP-0052 confirm episodes.csv on the 9 loaded 12-producer atlas v2 validation worlds (rho > 0.28, class not collapse), entity_planner",
+      "rule": {
+        "else_episodes": 8,
+        "four_episodes_max_share": 0.02,
+        "to_user_above_at_eight": 0.03
+      },
+      "stochastic_arms_R": 2
+    },
+    "precedence": [
+      "unresolved",
+      "kill",
+      "success",
+      "plateau",
+      "budget_limited",
+      "other"
+    ],
+    "probe_interpretation": "the probe starts each arm at its registered initial theta (Delta = 0; probe.theta). A2's cosine is structurally lower than A1's: at v = 0 its u block (172 of 268 parameters) has no first-order effect, so its estimate carries noise there. The thresholds read on A1 and are not moved for A2 (A2 < 0.1 with A1 >= 0.1 -> A2 uses R = 2)",
+    "readings": {
+      "budget_limited": "no success, and seed-0 read: any seed-0 arm's improvement >= its F_tr; seed-1 read: the seed-1 run's own improvement >= its F_tr",
+      "improvement": "center world mean at the last generation - at 10 generations before (monitor set; the earlier value from the run dir's rows, or from its checkpoint's monitor history when the run was resumed past it, which must equal the dir's rows wherever both exist); missing -> still improving",
+      "kill": "the selected candidate has g_tr > F_tr but g_val < g_tr / 3",
+      "other": "anything else",
+      "plateau": [
+        "(i) every seed-0 arm's last-10-generation monitor improvement < its F_tr (seed-1 read: and the seed-1 run's own)",
+        "(ii) |A2 - A1| (seed 0) <= F_val(A2 vs A1) on validation",
+        "(iii) the candidate - MWW <= F_val(MWW) or the candidate - RR <= F_val(RR)"
+      ],
+      "success": [
+        "the candidate - each of A0, RR, MWW and TR > F_val(ref) on the world mean",
+        "worlds lost to RR by more than floor_w: count * 6 <= worlds",
+        "zero deaths of the candidate",
+        "run-down share (r_end < X r_start) and starvation share (a consumer fill < Y) of the candidate's rows <= RR's"
+      ],
+      "unresolved": "g_tr <= F_tr for every candidate read"
+    },
+    "seed_combination": {
+      "carry": "seed 0 success or plateau and seed 1 unresolved / kill / budget_limited / other -> the seed-1 reading with its Next",
+      "seed_1_rules": "the seed-1 candidate is read with the same table, selection not redone; clause (ii) from seed 0; clause (i) = seed 0's (i) and the seed-1 run's own improvement < F_tr; budget_limited when the seed-1 run's improvement >= F_tr",
+      "seed_1_runs_only_after": [
+        "success",
+        "plateau"
+      ],
+      "table": [
+        [
+          "success",
+          "success",
+          "success"
+        ],
+        [
+          "plateau",
+          "plateau",
+          "plateau"
+        ],
+        [
+          "success",
+          "plateau",
+          "seed_disagreement"
+        ],
+        [
+          "plateau",
+          "success",
+          "seed_disagreement"
+        ]
+      ]
+    },
+    "selection": "among the seed-0 candidates (A1 / A2 or A2-R2), the highest 12-producer loaded validation world mean; A2 - A1 within F_val(A2 vs A1) goes to A1",
+    "units": "consumer units per world-episode (consumer_completed_units); a world's value is the equal-weight mean over its episodes of the replicate means; a read is the equal-weight mean over its worlds",
+    "validation": {
+      "arms": {
+        "A0": "zero residual, choice-v1",
+        "MWW": "makeable_weighted_whole, logits-v1",
+        "RR": "round_robin, logits-v1",
+        "TR": "trained orderer as deployed, logits-v1",
+        "ablation": "the candidate with history_mode shared_only (D9), choice-v1, never retrained",
+        "candidate": "each run's candidate.json, choice-v1, agent history"
+      },
+      "draw_key": "per-order arms: DrawKey(world, episode seed, replicate); MWW: the gate's replicate action seeds",
+      "episode_stage": "m4-es-validate",
+      "episodes": [
+        4,
+        8
+      ],
+      "gating": "12-producer validation worlds with rho > 0.28 and class not collapse (9)",
+      "held_out": "never played or read here (held-out ledger: task 8.1)",
+      "nonfinite": "a candidate raising NonFiniteChoice in validation is a contract failure (the run is invalid)",
+      "producer": "entity_planner",
+      "producer_column": "none: the user chose entity_planner (2026-10-30, open decision 5), so no EXP-0035-producer column",
+      "replicates": {
+        "A0": 2,
+        "MWW": 2,
+        "RR": 1,
+        "TR": 1,
+        "ablation": 2,
+        "candidate": 2
+      },
+      "reported": "42-producer worlds (3 loaded, unretrained), light (rho <= 0.28) and collapse worlds, rho quartiles (nearest rank within size)",
+      "rho_loaded": 0.28,
+      "sizes": [
+        12,
+        42
+      ],
+      "split": "validation"
+    }
+  },
+  "runs": {
+    "A1-s0": {
+      "arm": "A1",
+      "f_tr": 54.753057179718525,
+      "g_tr": 73.1875,
+      "generation": 40,
+      "improvement": 16.40625,
+      "label": "A1-s0",
+      "opt_seed": 0,
+      "theta_sha256": "169f402915ece660b59411bc7a237d33a5ce5f12037b7faf9f3a6e52a262d68d"
+    },
+    "A2-R2-s0": {
+      "arm": "A2-R2",
+      "f_tr": 54.753057179718525,
+      "g_tr": 83.65625,
+      "generation": 40,
+      "improvement": 27.96875,
+      "label": "A2-R2-s0",
+      "opt_seed": 0,
+      "theta_sha256": "bfafd85f2f04909095bf047c8a2471a2bfa4119251a7fba7112f0134c2c681bc"
+    }
+  },
+  "seed0": {
+    "a2_vs_a1": {
+      "a": "A2-R2-s0",
+      "atlas_floor": 25.683342929673895,
+      "b": "A1-s0",
+      "df": 135,
+      "diff": -14.125,
+      "floor": 39.83036512651009,
+      "own3se": 39.83036512651009,
+      "worlds": 9
+    },
+    "clauses": {
+      "budget_limited": false,
+      "kill": false,
+      "plateau": true,
+      "success": false,
+      "unresolved": false
+    },
+    "f_tr": 54.753057179718525,
+    "g_tr": 73.1875,
+    "g_val": 68.71527777777777,
+    "labels": [
+      "history_inert",
+      "herding"
+    ],
+    "next": "seed 1, then the step-3 gate",
+    "plateau": {
+      "i": true,
+      "ii": true,
+      "iii": true
+    },
+    "reading": "plateau",
+    "selected": "A1-s0"
+  },
+  "seed_combine": false,
+  "status": "valid"
+}

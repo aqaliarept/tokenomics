@@ -4,8 +4,9 @@
 - **EXP-0060a** (task 7.1): A1 seed 0, resumed for generations 21–40;
 - **EXP-0060b** (task 7.2): A2 at rank 2 (A2-R2), seed 0, generations 1–40.
 
-Still to run: the seed-0 validation read (7.3), and the seed-1 run and final read if licensed
-(7.4–7.5).
+- **val-seed0** (task 7.3): the seed-0 validation read reads **`plateau`** and selects A1-s0.
+
+Still to run: the seed-1 run for A1 (7.4, licensed by `plateau`) and the final read (7.5).
 
 ## EXP-0060a: A1 seed 0, generations 21–40 (resumed from EXP-0059)
 
@@ -137,6 +138,83 @@ validation worlds, selects one, and gives D7's reading.
 
 **Files:** `artifacts/a2-s0/`, the run dir as pulled. `members.csv` is git-lfs.
 
+## val-seed0: the seed-0 validation read (task 7.3)
+
+**Reading: `plateau`. Selected: A1-s0. Labels: `history_inert`, `herding`.**
+- **Next (D7):** seed 1 for A1 (7.4), then the step-3 gate.
+- **Read:** `order_es_validate --mode validate --prereg …v2.json --episodes 8` at `7b16e55…`, on
+  the 16 validation worlds × 8 episodes.
+- **Gating:** D7 gates on the 9 loaded 12-producer worlds.
+
+### In plain English
+
+**The question.** Both trained routers (A1 and the larger A2-R2) beat their starting point A0
+on the training monitor. Do they also beat the simple and the old orderers on validation worlds
+they never trained on? The pre-registered references are:
+- A0, the starting point;
+- RR, round robin;
+- MWW, makeable-weighted whole routing, the strongest simple rule;
+- TR, the old trained orderer.
+
+`success` would need the router to beat every one of them by more than each comparison's floor,
+with no deaths and no worse run-down or starvation than RR.
+
+**What happened** (mean consumer units per world-episode, 9 worlds × 8 episodes):
+
+| comparison | A1-s0 (selected) | floor | A2-R2-s0 | floor |
+|---|---|---|---|---|
+| − A0 (g_val) | **+68.7** | 37.7 | +54.6 | 29.3 |
+| − RR | +26.0 | 39.1 | +11.9 | 36.6 |
+| − MWW | **−59.0** | 35.8 | −73.1 | 29.9 |
+| − TR | +614.4 | 36.9 | +600.2 | 37.0 |
+| − its shared-only ablation | +2.8 | 35.8 | +19.5 | 33.2 |
+
+- **The training gain carries over.** On unseen worlds, A1 beats A0 by +68.7. That is close to
+  its training-monitor gain (+73.2), so this is not a cross-world failure (`kill` would need
+  g_val < g_tr / 3).
+- **It does not beat the simple rules.** It is level with round robin (+26, inside the floor)
+  and clearly below MWW (−59, beyond the floor). It is far above the old trained orderer
+  (+614). So **no `success`**:
+  - not every reference is beaten;
+  - A1 also had 1 death;
+  - its run-down share is worse than RR's (0.74 vs 0.65).
+- **`plateau` holds.** All three registered conditions are true:
+  - (i) both arms were still improving on the monitor set, but by less than F_tr over the last
+    10 generations (A1 +16.4, A2-R2 +28.0, against 54.75);
+  - (ii) A2-R2 is not better than A1: −14.1, inside the floor of 39.8. A1 is selected;
+  - (iii) A1 sits within or below the floor of MWW or of RR.
+- **Labels.**
+  - `history_inert`: the agent-local history adds nothing measurable (A1 − its shared-only
+    ablation = +2.8, floor 35.8).
+  - `herding` is flagged for both arms. Under `plateau` it is recorded and carried into the
+    relational check's record (D7).
+  - `not_via_deconcentration` does not apply (no gain to explain).
+
+**What it licenses.** Per D7's seed rule: seed 1 for the selected arm (A1, task 7.4), and the
+final read (7.5) combines both seeds. A final `plateau` would record `history_inert` and
+`herding` and ask the user to release tranche B1, the relational check. Nothing else is
+licensed.
+
+### Details
+- **Verify (task 7.3's line):**
+  - `contract_failures.csv` is header only;
+  - 1,792 episode rows on 128 world-episodes, each with one demand / shock digest pair;
+  - every played world is in the atlas validation split (no held-out world);
+  - `order_es_validate --mode recompute` from `episodes.csv` and the two runs' logs gives
+    **MATCH** (`plateau`).
+- **Per-candidate (`reading.json`):**
+  - A1-s0: mean 1,828.3; 1 death; worlds lost to RR beyond floor_w: 1 (≤ 1/6 of 9 holds);
+    run-down share 0.736 against RR 0.653; starved share 1.0 against RR 1.0.
+  - A2-R2-s0: mean 1,814.2; 0 deaths; 2 worlds lost to RR; run-down 0.750.
+- **Gating worlds:** atlas 12-0050, 0089, 0092, 0109, 0330, 0350, 0384, 0464, 0494.
+- **Reported tables:** the 42-producer, light-world and ρ-quartile tables are in
+  `validation.csv`; concentration in `concentration.csv`; herding in `herding.csv`.
+- **Cost:** pod `km36vk8roekqa3`, secure 16 vCPU, 21:29:26 launch → terminated by 21:42:24
+  (≤ 13.0 min), **≈ 3.5 vCPU-h** billed.
+  - Estimate 6.2, stop 12.4. Launch-fit 51.1 + 12.4 = 63.5 ≤ 125. Tranche A ≈ 54.6.
+  - Staging under `_pod_ckpts/` only, from a worktree at 7b16e55, with the real-run checks
+    passed locally first.
+
 ## Conclusions
 
 - **EXP-0060a:** A1 seed 0 at generation 40 has g_tr +73.2 > F_tr 54.75 on the training-monitor
@@ -144,5 +222,8 @@ validation worlds, selects one, and gives D7's reading.
   10). DIAGNOSTICS 27 → diagnosed: under-trained.
 - **EXP-0060b:** A2-R2 seed 0 at generation 40 has g_tr +83.7 > F_tr 54.75 (12 / 16 up,
   losses −94.5, still rising +28.0).
-- **Next:** the seed-0 validation read (7.3: A1 vs A2-R2, selection and D7's reading). The
-  supervisor decides.
+- **val-seed0 (7.3): `plateau`, A1-s0 selected.**
+  - Against A0: +68.7 (floor 37.7). Against RR: +26.0 (inside 39.1). Against MWW: −59.0
+    (beyond 35.8). Against TR: +614.
+  - Labels `history_inert` and `herding`. 0 contract failures; recompute MATCH.
+- **Next:** 7.4, seed 1 for A1, as licensed by `plateau`. The supervisor decides the launch.

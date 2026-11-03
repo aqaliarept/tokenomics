@@ -1,0 +1,848 @@
+{
+  "acceptance_read": false,
+  "blas_threads": 1,
+  "date": "2026-11-03",
+  "decode_pins": {
+    "ordering_decode": "choice-v1"
+  },
+  "driver": "tokenomics.train.order_es_validate",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "exp0060-val0",
+  "inputs": {
+    "atlas": "/workspace/tokenomics/_pod_ckpts/atlas_v2.json",
+    "bar_dir": "/workspace/tokenomics/_pod_ckpts/exp0058_bar",
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "prereg": "/workspace/tokenomics/tokenomics/train/registry/es_prereg_m4_v2.json",
+    "reuse_references": null,
+    "runs": [
+      "/workspace/tokenomics/_pod_ckpts/a1-s0",
+      "/workspace/tokenomics/_pod_ckpts/a2-s0"
+    ]
+  },
+  "kind": "validate",
+  "pins": {
+    "atlas": {
+      "content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+      "sha256": "7517314f297ac39e1c00da3fb734bb40fcfecc9492ee2e67936fc910f8cf9568"
+    },
+    "bar": {
+      "bar_csv_sha256": "3e078c43c41bcd2be21325dd9cebacd6536b546c261d913a2419605363609d9b",
+      "bar_spec_pins_sha256": "1e0028b01bf968aa1a2bdc6d19bf01a1ea45bc3aab97f47507c363fa08650a69",
+      "normaliser_fit_rows_sha256": "4b23e026952dde1eb950266424dc946cbb6ef695b13ddfb513a34ee43a0fa9b1",
+      "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+      "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+      "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9"
+    },
+    "candidates": {
+      "A1-s0": {
+        "arm": "A1",
+        "candidate_sha256": "d19332e1a625a3090d8571b444589604a589f26bef3cbc16592ba01147f579a9",
+        "generation": 40,
+        "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+        "opt_seed": 0,
+        "theta_sha256": "169f402915ece660b59411bc7a237d33a5ce5f12037b7faf9f3a6e52a262d68d",
+        "training_sha256": "ab3719d65b4b8f9451e19fbdb23acfd7e74cc05d9178c12d3c0d4474af092e99"
+      },
+      "A2-R2-s0": {
+        "arm": "A2-R2",
+        "candidate_sha256": "26f9d438a1a2dfab801dbf5fe2a2493cc8bde8f8da68fce78599340484ec51c3",
+        "generation": 40,
+        "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+        "opt_seed": 0,
+        "theta_sha256": "bfafd85f2f04909095bf047c8a2471a2bfa4119251a7fba7112f0134c2c681bc",
+        "training_sha256": "9c546eb10a4f2be2ddfd95eebc20d0d457d35f470c4521ae2e3371d782f161a8"
+      }
+    },
+    "decode_by_arm": {
+      "A0": "choice-v1",
+      "A1-s0": "choice-v1",
+      "A1-s0/shared": "choice-v1",
+      "A2-R2-s0": "choice-v1",
+      "A2-R2-s0/shared": "choice-v1",
+      "MWW": "logits-v1",
+      "RR": "logits-v1",
+      "TR": "logits-v1"
+    },
+    "driver": "tokenomics.train.order_es_validate",
+    "dry_run": false,
+    "episodes": 8,
+    "grid": {
+      "ws-atlas-v1-12-0049": {
+        "episodes": [
+          1244409763,
+          1181125560,
+          862851525,
+          1628871696,
+          1804562215,
+          711828661,
+          726690803,
+          1734741217
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0050": {
+        "episodes": [
+          791296963,
+          893594565,
+          431483215,
+          1090048758,
+          432688154,
+          1176562980,
+          1939424915,
+          1753345843
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0089": {
+        "episodes": [
+          557501532,
+          752603009,
+          644656323,
+          1374727501,
+          1424288246,
+          1725888980,
+          1650490484,
+          1171576205
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0092": {
+        "episodes": [
+          1467225721,
+          1499167235,
+          828724062,
+          1174280531,
+          668957616,
+          2129261737,
+          631708227,
+          74460693
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0109": {
+        "episodes": [
+          1842069467,
+          238702599,
+          495238430,
+          2131484251,
+          1213081781,
+          1281860810,
+          1002514443,
+          312653958
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0211": {
+        "episodes": [
+          1138896669,
+          1754156400,
+          1981108517,
+          1022329,
+          98324576,
+          1509947779,
+          1587914652,
+          1394447512
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0312": {
+        "episodes": [
+          238561569,
+          292365267,
+          445764222,
+          625608793,
+          2103817937,
+          1821384849,
+          1783014371,
+          1521596669
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0330": {
+        "episodes": [
+          274427528,
+          1661066232,
+          1771006591,
+          1693469367,
+          1860717134,
+          1422281027,
+          1873452205,
+          146328724
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0350": {
+        "episodes": [
+          440918002,
+          2012415501,
+          511516489,
+          1053465292,
+          826082893,
+          1810483040,
+          1154005753,
+          651184611
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0356": {
+        "episodes": [
+          1122077501,
+          695607647,
+          1236887368,
+          1557945947,
+          2087931086,
+          1509047109,
+          943580622,
+          260727145
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0384": {
+        "episodes": [
+          314492585,
+          1429668387,
+          854239652,
+          1753530397,
+          55375469,
+          1163778937,
+          2052216649,
+          1967193086
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0464": {
+        "episodes": [
+          1511872399,
+          1452162893,
+          279861919,
+          191627157,
+          310231358,
+          1333705772,
+          993828425,
+          252175215
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0494": {
+        "episodes": [
+          748809953,
+          1685369483,
+          474736713,
+          68421832,
+          1648920000,
+          1770460127,
+          568174101,
+          1915120783
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-42-0066": {
+        "episodes": [
+          859885926,
+          1931842278,
+          2114024813,
+          1655025715,
+          484506268,
+          1140445017,
+          837598323,
+          138420007
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0072": {
+        "episodes": [
+          440527670,
+          1648953272,
+          334067566,
+          632255201,
+          195673160,
+          1616379907,
+          1517505145,
+          825318641
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0102": {
+        "episodes": [
+          1603433184,
+          1200128420,
+          870635598,
+          1849025724,
+          1987849008,
+          579138966,
+          41904992,
+          1992170369
+        ],
+        "regime": "shocked",
+        "size": 42
+      }
+    },
+    "horizon": 100,
+    "mode": "validate",
+    "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+    "ordering_decode": "choice-v1",
+    "per_order": {
+      "A1-s0": {
+        "architecture_version": "orderer-per-order-residual-v2",
+        "arm": "A1",
+        "base_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+        "decoder_version": "per-order-choice-v1",
+        "history_mode": "agent",
+        "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+        "theta_sha256": "169f402915ece660b59411bc7a237d33a5ce5f12037b7faf9f3a6e52a262d68d"
+      },
+      "A1-s0/shared": {
+        "architecture_version": "orderer-per-order-residual-v2",
+        "arm": "A1",
+        "base_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+        "decoder_version": "per-order-choice-v1",
+        "history_mode": "shared_only",
+        "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+        "theta_sha256": "169f402915ece660b59411bc7a237d33a5ce5f12037b7faf9f3a6e52a262d68d"
+      },
+      "A2-R2-s0": {
+        "architecture_version": "orderer-per-order-residual-v2",
+        "arm": "A2-R2",
+        "base_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+        "decoder_version": "per-order-choice-v1",
+        "history_mode": "agent",
+        "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+        "theta_sha256": "bfafd85f2f04909095bf047c8a2471a2bfa4119251a7fba7112f0134c2c681bc"
+      },
+      "A2-R2-s0/shared": {
+        "architecture_version": "orderer-per-order-residual-v2",
+        "arm": "A2-R2",
+        "base_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+        "decoder_version": "per-order-choice-v1",
+        "history_mode": "shared_only",
+        "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+        "theta_sha256": "bfafd85f2f04909095bf047c8a2471a2bfa4119251a7fba7112f0134c2c681bc"
+      }
+    },
+    "prereg_sha256": "511e939a41213dd401d390637bc7e5be1c3725f32fb1de3a9e70d7b1385ceeae",
+    "producer": "entity_planner",
+    "sample": [
+      {
+        "choice": "dense",
+        "class": "open",
+        "differing": true,
+        "pattern": "seasonal",
+        "rho": 0.24418604651162792,
+        "shocks": false,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0049"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "differing": true,
+        "pattern": "cyclic",
+        "rho": 0.438066098443457,
+        "shocks": true,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0050"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "differing": true,
+        "pattern": "burst",
+        "rho": 0.6979591836734695,
+        "shocks": true,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0089"
+      },
+      {
+        "choice": "dense",
+        "class": "hard",
+        "differing": true,
+        "pattern": "hit",
+        "rho": 3.057017543859649,
+        "shocks": true,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0092"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "differing": true,
+        "pattern": "switch",
+        "rho": 0.8767150137201097,
+        "shocks": true,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0109"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "differing": true,
+        "pattern": "seasonal",
+        "rho": 0.1510989010989011,
+        "shocks": true,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0211"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "collapse",
+        "differing": true,
+        "pattern": "hit",
+        "rho": 0.75,
+        "shocks": true,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0312"
+      },
+      {
+        "choice": "dense",
+        "class": "hard",
+        "differing": false,
+        "pattern": "cyclic",
+        "rho": 0.40306122448979587,
+        "shocks": false,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0330"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "hard",
+        "differing": true,
+        "pattern": "burst",
+        "rho": 0.3185840707964602,
+        "shocks": false,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0350"
+      },
+      {
+        "choice": "dense",
+        "class": "hard",
+        "differing": true,
+        "pattern": "burst",
+        "rho": 0.1344339622641509,
+        "shocks": true,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0356"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "differing": true,
+        "pattern": "switch",
+        "rho": 0.8935643564356436,
+        "shocks": false,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0384"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "hard",
+        "differing": false,
+        "pattern": "cyclic",
+        "rho": 0.3045230631437528,
+        "shocks": false,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0464"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "differing": true,
+        "pattern": "iid",
+        "rho": 0.7191011235955056,
+        "shocks": true,
+        "size": 12,
+        "split": "validation",
+        "world": "ws-atlas-v1-12-0494"
+      },
+      {
+        "choice": "sparse_f14",
+        "class": "hard",
+        "differing": true,
+        "pattern": "iid",
+        "rho": 0.5982507288629737,
+        "shocks": false,
+        "size": 42,
+        "split": "validation",
+        "world": "ws-atlas-v1-42-0066"
+      },
+      {
+        "choice": "sparse_f14",
+        "class": "open",
+        "differing": true,
+        "pattern": "hit",
+        "rho": 0.2943396226415094,
+        "shocks": false,
+        "size": 42,
+        "split": "validation",
+        "world": "ws-atlas-v1-42-0072"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "differing": true,
+        "pattern": "burst",
+        "rho": 0.41750457038391225,
+        "shocks": true,
+        "size": 42,
+        "split": "validation",
+        "world": "ws-atlas-v1-42-0102"
+      }
+    ],
+    "seed_combine": false,
+    "shock_profile": null,
+    "source_commit": "7b16e55aa1d1ebbef0ad7d4fda2e53f8c0583a35",
+    "source_tree_sha256": "cf58956984049f9d55bca1d5cc329671435d930429bd8ac23584981b88368ea8",
+    "spreads": {
+      "12/dense": {
+        "df_ep": 58,
+        "df_rep": 65,
+        "estimator": "pooled_mad",
+        "merged_ep": true,
+        "merged_rep": false,
+        "sd_ep": 163.91554543264883,
+        "sd_rep": 131.15923968156477,
+        "sigma_ep": 54.77670981101847,
+        "sigma_rep": 44.03103946531629
+      },
+      "12/sparse_f2": {
+        "df_ep": 58,
+        "df_rep": 46,
+        "estimator": "pooled_mad",
+        "merged_ep": true,
+        "merged_rep": false,
+        "sd_ep": 163.91554543264883,
+        "sd_rep": 90.09819522392608,
+        "sigma_ep": 54.77670981101847,
+        "sigma_rep": 72.86088673427338
+      },
+      "12/sparse_f4": {
+        "df_ep": 58,
+        "df_rep": 43,
+        "estimator": "pooled_mad",
+        "merged_ep": true,
+        "merged_rep": false,
+        "sd_ep": 163.91554543264883,
+        "sd_rep": 92.1712258989807,
+        "sigma_ep": 54.77670981101847,
+        "sigma_rep": 40.8859652177937
+      },
+      "42/dense": {
+        "df_ep": 31,
+        "df_rep": 73,
+        "estimator": "pooled_mad",
+        "merged_ep": true,
+        "merged_rep": true,
+        "sd_ep": 155.6649628052546,
+        "sd_rep": 315.0061751949617,
+        "sigma_ep": 140.4799830560091,
+        "sigma_rep": 121.60953757087356
+      },
+      "42/sparse_f14": {
+        "df_ep": 31,
+        "df_rep": 73,
+        "estimator": "pooled_mad",
+        "merged_ep": true,
+        "merged_rep": true,
+        "sd_ep": 155.6649628052546,
+        "sd_rep": 315.0061751949617,
+        "sigma_ep": 140.4799830560091,
+        "sigma_rep": 121.60953757087356
+      },
+      "42/sparse_f2": {
+        "df_ep": 31,
+        "df_rep": 73,
+        "estimator": "pooled_mad",
+        "merged_ep": true,
+        "merged_rep": true,
+        "sd_ep": 155.6649628052546,
+        "sd_rep": 315.0061751949617,
+        "sigma_ep": 140.4799830560091,
+        "sigma_rep": 121.60953757087356
+      },
+      "42/sparse_f4": {
+        "df_ep": 31,
+        "df_rep": 73,
+        "estimator": "pooled_mad",
+        "merged_ep": true,
+        "merged_rep": true,
+        "sd_ep": 155.6649628052546,
+        "sd_rep": 315.0061751949617,
+        "sigma_ep": 140.4799830560091,
+        "sigma_rep": 121.60953757087356
+      },
+      "42/sparse_f7": {
+        "df_ep": 31,
+        "df_rep": 73,
+        "estimator": "pooled_mad",
+        "merged_ep": true,
+        "merged_rep": true,
+        "sd_ep": 155.6649628052546,
+        "sd_rep": 315.0061751949617,
+        "sigma_ep": 140.4799830560091,
+        "sigma_rep": 121.60953757087356
+      }
+    }
+  },
+  "pre_registered": {
+    "design": "add-m4-orderer-redesign D6 / D7 / D9 (task 5.3)",
+    "prereg_sha256": "511e939a41213dd401d390637bc7e5be1c3725f32fb1de3a9e70d7b1385ceeae",
+    "readings": {
+      "design": "add-m4-orderer-redesign D6 / D7 / D9 (task 5.3)",
+      "floors": {
+        "atlas_per_world": "SE_w = atlas.standard_error(n_w episodes, differing_w, the compared stochastic arms at their R, the atlas v2 `spreads` of the world's size / choice stratum); floor_w = max(3 SE_w, 0.01 bar_w)",
+        "atlas_world_mean": "max(3 sqrt(sum_w SE_w^2) / W, 0.01 * mean_w bar_w)",
+        "bar_w": "validation: max of the read's RR, MWW and TR world means; monitor: the bar table's B_we",
+        "floor_bar_share": 0.01,
+        "floor_se": 3.0,
+        "min_own_pairs": 2,
+        "monitor_strata": "a monitor world-episode is its own world (1 episode, R = 2), stratum (12, its choice), differing from its pattern / shocks",
+        "own_per_world": "3 * stdev(paired observations) / sqrt(count), paired per episode and replicate (same replicates pair by replicate, a deterministic arm's one row against each replicate); only with >= 2 paired observations on the world (the n = 1 rule), else the atlas floor alone",
+        "own_world_mean": "3 sqrt(sum_w s^2 / n_w) / W, s^2 the pooled within-world variance of the paired observations over the worlds with >= 2 of them (df = sum (n_w - 1)); none when no world has 2 (the n = 1 rule)",
+        "rule": "per comparison (candidate vs A0, RR, MWW, TR and its shared-only ablation; A2 vs A1; center vs A0 on the monitor set): max(atlas-spread floor at the read's counts, own 3 SE)",
+        "tie": "a gain at or below its floor is a tie"
+      },
+      "format": "m4-es-readings-v1",
+      "gains": {
+        "g_tr": "center - A0 on the training-monitor set at the run's last generation (16 fixed world-episodes, replicates 0 and 1, the run dir's monitor.csv, which holds A0's rows in a resumed dir too), equal-weight over world-episodes",
+        "g_val": "the candidate - A0 on the 12-producer loaded validation worlds (world mean)"
+      },
+      "kill_ratio": 0.3333333333333333,
+      "labels": {
+        "computed": "at the seed-0 read and again at the final read (both seeds' candidates; a label on either is recorded)",
+        "concentration_arms": [
+          "candidate",
+          "ablation",
+          "A0",
+          "MWW",
+          "RR"
+        ],
+        "concentration_measures": [
+          "trace_lead_concurrent_top_share_consumer",
+          "trace_routed_share_dispersion",
+          "trace_share_swing_consumer"
+        ],
+        "herding": "candidate share_swing_consumer world mean - MWW's > 3 SE_w (the candidate's own spread over its rows with swing pairs) on >= 1/3 of the loaded validation worlds",
+        "herding_world_share": 0.3333333333333333,
+        "history_inert": "|candidate - ablation| <= F_val(ablation) on the 12-producer loaded validation world mean",
+        "label_se": 3.0,
+        "not_via_deconcentration": "candidate - A0 of trace_lead_concurrent_top_share_consumer (rows with >= 1 concurrent group, paired by episode and replicate, 12-producer loaded worlds, world mean) is not below -3 SE (own pooled SE as the floors')",
+        "table": {
+          "herding": [
+            "success",
+            "plateau"
+          ],
+          "history_inert": [
+            "success",
+            "plateau"
+          ],
+          "not_via_deconcentration": [
+            "success"
+          ]
+        },
+        "undefined": "a measure whose count column is 0 on a row is undefined there and skipped"
+      },
+      "lost_to_rr_share": 0.16666666666666666,
+      "next": {
+        "budget_limited": "to the user (more generations need approval)",
+        "kill": "diagnose the cross-world cause, stop",
+        "other": "diagnose, stop",
+        "plateau": "seed 1, then the step-3 gate",
+        "seed_disagreement": "diagnose, stop",
+        "success": "seed 1, then held-out",
+        "unresolved": "diagnose, stop"
+      },
+      "normaliser_pins": {
+        "check": "validation refuses a bar whose normaliser.json `prereg` hashes otherwise, or a candidate whose normaliser is not the bar's",
+        "clip": 5.0,
+        "fitting_code_sha256": "7dca5e2c7cb7f833e6fcf3ead3a7047b79bc8b28617b4954f3b2128934f19c4c",
+        "rule_sha256": "01ec5c46118a86ea0ec5d202375dc186848a337d0f90b1e8f3cfc3319a09277a",
+        "scale_floors": {
+          "psi.eligible_producer_count": 0.5108256237659907
+        },
+        "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0 (all-equal values have std 0 exactly)"
+      },
+      "power_rule": {
+        "deciding": "max",
+        "estimator": "per world, per episode d = mean over the replicates of a - the same for b; s = pooled within-world SD of d over the worlds with >= 2 episodes (df = sum (n_w - 1)); MDE(n) = 3 s / sqrt(n) / sqrt(W); share = MDE / mean bar",
+        "justification": "success needs the candidate above each of A0, RR, MWW and TR, so the read is as weak as its noisiest comparison; MWW - RR stands for a stochastic-vs-deterministic pair (candidate vs RR / TR), TR - RR for a pair carrying the trained scorer; the larger of the two is taken so the choice cannot follow the smaller value",
+        "mean_bar": "equal-weight mean over the same worlds of the atlas bar (reclassified/worlds.csv `bar`)",
+        "outcome": "computed by task 5.4 (`--mode power`) and recorded in sizing.md with this file's SHA-256; never frozen here",
+        "pairs": [
+          [
+            "MWW",
+            "RR"
+          ],
+          [
+            "TR",
+            "RR"
+          ]
+        ],
+        "replicates": 2,
+        "rows": "EXP-0052 confirm episodes.csv on the 9 loaded 12-producer atlas v2 validation worlds (rho > 0.28, class not collapse), entity_planner",
+        "rule": {
+          "else_episodes": 8,
+          "four_episodes_max_share": 0.02,
+          "to_user_above_at_eight": 0.03
+        },
+        "stochastic_arms_R": 2
+      },
+      "precedence": [
+        "unresolved",
+        "kill",
+        "success",
+        "plateau",
+        "budget_limited",
+        "other"
+      ],
+      "probe_interpretation": "the probe starts each arm at its registered initial theta (Delta = 0; probe.theta). A2's cosine is structurally lower than A1's: at v = 0 its u block (172 of 268 parameters) has no first-order effect, so its estimate carries noise there. The thresholds read on A1 and are not moved for A2 (A2 < 0.1 with A1 >= 0.1 -> A2 uses R = 2)",
+      "readings": {
+        "budget_limited": "no success, and seed-0 read: any seed-0 arm's improvement >= its F_tr; seed-1 read: the seed-1 run's own improvement >= its F_tr",
+        "improvement": "center world mean at the last generation - at 10 generations before (monitor set; the earlier value from the run dir's rows, or from its checkpoint's monitor history when the run was resumed past it, which must equal the dir's rows wherever both exist); missing -> still improving",
+        "kill": "the selected candidate has g_tr > F_tr but g_val < g_tr / 3",
+        "other": "anything else",
+        "plateau": [
+          "(i) every seed-0 arm's last-10-generation monitor improvement < its F_tr (seed-1 read: and the seed-1 run's own)",
+          "(ii) |A2 - A1| (seed 0) <= F_val(A2 vs A1) on validation",
+          "(iii) the candidate - MWW <= F_val(MWW) or the candidate - RR <= F_val(RR)"
+        ],
+        "success": [
+          "the candidate - each of A0, RR, MWW and TR > F_val(ref) on the world mean",
+          "worlds lost to RR by more than floor_w: count * 6 <= worlds",
+          "zero deaths of the candidate",
+          "run-down share (r_end < X r_start) and starvation share (a consumer fill < Y) of the candidate's rows <= RR's"
+        ],
+        "unresolved": "g_tr <= F_tr for every candidate read"
+      },
+      "seed_combination": {
+        "carry": "seed 0 success or plateau and seed 1 unresolved / kill / budget_limited / other -> the seed-1 reading with its Next",
+        "seed_1_rules": "the seed-1 candidate is read with the same table, selection not redone; clause (ii) from seed 0; clause (i) = seed 0's (i) and the seed-1 run's own improvement < F_tr; budget_limited when the seed-1 run's improvement >= F_tr",
+        "seed_1_runs_only_after": [
+          "success",
+          "plateau"
+        ],
+        "table": [
+          [
+            "success",
+            "success",
+            "success"
+          ],
+          [
+            "plateau",
+            "plateau",
+            "plateau"
+          ],
+          [
+            "success",
+            "plateau",
+            "seed_disagreement"
+          ],
+          [
+            "plateau",
+            "success",
+            "seed_disagreement"
+          ]
+        ]
+      },
+      "selection": "among the seed-0 candidates (A1 / A2 or A2-R2), the highest 12-producer loaded validation world mean; A2 - A1 within F_val(A2 vs A1) goes to A1",
+      "units": "consumer units per world-episode (consumer_completed_units); a world's value is the equal-weight mean over its episodes of the replicate means; a read is the equal-weight mean over its worlds",
+      "validation": {
+        "arms": {
+          "A0": "zero residual, choice-v1",
+          "MWW": "makeable_weighted_whole, logits-v1",
+          "RR": "round_robin, logits-v1",
+          "TR": "trained orderer as deployed, logits-v1",
+          "ablation": "the candidate with history_mode shared_only (D9), choice-v1, never retrained",
+          "candidate": "each run's candidate.json, choice-v1, agent history"
+        },
+        "draw_key": "per-order arms: DrawKey(world, episode seed, replicate); MWW: the gate's replicate action seeds",
+        "episode_stage": "m4-es-validate",
+        "episodes": [
+          4,
+          8
+        ],
+        "gating": "12-producer validation worlds with rho > 0.28 and class not collapse (9)",
+        "held_out": "never played or read here (held-out ledger: task 8.1)",
+        "nonfinite": "a candidate raising NonFiniteChoice in validation is a contract failure (the run is invalid)",
+        "producer": "entity_planner",
+        "producer_column": "none: the user chose entity_planner (2026-10-30, open decision 5), so no EXP-0035-producer column",
+        "replicates": {
+          "A0": 2,
+          "MWW": 2,
+          "RR": 1,
+          "TR": 1,
+          "ablation": 2,
+          "candidate": 2
+        },
+        "reported": "42-producer worlds (3 loaded, unretrained), light (rho <= 0.28) and collapse worlds, rho quartiles (nearest rank within size)",
+        "rho_loaded": 0.28,
+        "sizes": [
+          12,
+          42
+        ],
+        "split": "validation"
+      }
+    }
+  },
+  "result": {
+    "acceptance_read": false,
+    "contract_failures": 0,
+    "labels": [
+      "history_inert",
+      "herding"
+    ],
+    "reading": "plateau",
+    "reading_sha256": "6d30a6e1ce16d98e4d54df94170948ca7619b17d3926fa63aa770e2494ced6f3",
+    "rows": 1792,
+    "status": "complete"
+  },
+  "resumes": [],
+  "source": {
+    "commit": "7b16e55aa1d1ebbef0ad7d4fda2e53f8c0583a35",
+    "n_files": 77,
+    "tree_sha256": "cf58956984049f9d55bca1d5cc329671435d930429bd8ac23584981b88368ea8"
+  },
+  "started": "2026-11-03T21:30:39.124016+00:00",
+  "status": "complete",
+  "workers": 16
+}

@@ -1189,3 +1189,17 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - It was still rising (+28.0 over the last 10). Both seed-0 arms now go to the validation read
     (7.3). Cost ≈ 17.1 vCPU-h (tranche A ≈ 51.1 of 125).
 
+### The seed-0 validation read (EXP-0060 val-seed0)
+
+- **`plateau`: the trained per-order router learns, but only to the level of the simple rules.**
+  - On the 9 loaded 12-producer validation worlds (8 episodes), the selected A1 beats its start
+    A0 by +68.7 consumer units (floor 37.7), about what it gained in training (+73.2). It
+    generalises.
+  - But it only ties round robin (+26.0, inside the floor) and stays below MWW, the strongest
+    simple rule (−59.0, beyond the floor). It is far above the old trained orderer (+614).
+  - A2-R2 is no better than A1 (−14.1, inside the floor), and the agent-local history adds
+    nothing measurable (`history_inert`). `herding` is flagged.
+- **What it licenses.** The registered next step is seed 1 for A1 (7.4) and the final read
+  (7.5). A final `plateau` asks the user to release tranche B1, the relational (GNN-gate) check.
+  Cost ≈ 3.5 vCPU-h (tranche A ≈ 54.6 of 125).
+
