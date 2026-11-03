@@ -225,6 +225,10 @@ class ScreeningRecord:
     headroom: tuple[Headroom, ...] | None = None
     # v3+ (add-gate-v3 D3 step 4); None and omitted from the payload otherwise (hash unchanged).
     exclusions: tuple[Exclusion, ...] | None = None
+    # v3+ (add-gate-v3 D3 step 3, gate-harness "Region worlds whose best baseline dies are
+    # replaced"): per region world the screen saw bar-dead, the episode and the argmax member that
+    # died. None and omitted otherwise.
+    bar_deaths: tuple[tuple[str, int, str], ...] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -234,7 +238,10 @@ class ScreeningRecord:
             "splits": list(self.splits),
             "headroom": None if self.headroom is None else [h.to_dict() for h in self.headroom],
         } | ({} if self.exclusions is None
-             else {"exclusions": [x.to_dict() for x in self.exclusions]})
+             else {"exclusions": [x.to_dict() for x in self.exclusions]}) | (
+            {} if self.bar_deaths is None
+            else {"bar_deaths": [{"world": w, "episode": ep, "member": m}
+                                 for w, ep, m in self.bar_deaths]})
 
     def excluded(self) -> set[tuple[str, int]]:
         """The excluded (family, size) pairs."""
@@ -251,6 +258,9 @@ class ScreeningRecord:
             headroom=None if d["headroom"] is None else tuple(Headroom(**h) for h in d["headroom"]),
             exclusions=(None if d.get("exclusions") is None
                         else tuple(Exclusion.from_dict(x) for x in d["exclusions"])),
+            bar_deaths=(None if d.get("bar_deaths") is None
+                        else tuple((b["world"], b["episode"], b["member"])
+                                   for b in d["bar_deaths"])),
         )
 
 
@@ -993,8 +1003,9 @@ def smoke_variant(e: WorldEntry) -> WorldEntry:
     carry-forward): `shock_profile` "shocks-i-smoke" with every start window at
     `SMOKE_START_WINDOW`, and its own world record. `gate_cli.test_only_problem` refuses it in a
     real run (`names_test_only_profile`)."""
+    from .routing_audit import config_digest
     from .shock_profiles import SHOCKS_I_SMOKE, SMOKE_START_WINDOW
-    from .world_space import point_from_record, world_record
+    from .world_space import point_from_record
 
     if e.family not in REGION_FAMILIES or e.regime != SHOCKED or e.region is None:
         raise ValueError(f"{e.id}: only a shocked region entry has a region smoke form")
@@ -1002,7 +1013,13 @@ def smoke_variant(e: WorldEntry) -> WorldEntry:
     g = copy.deepcopy(e.generator)
     g["params"]["shock_profile"] = SHOCKS_I_SMOKE
     g["params"]["shock_window"] = list(SMOKE_START_WINDOW)
-    return replace(e, generator=g, region={"pool": e.region["pool"], "record": world_record(point)})
+    # The start window moves no measured coordinate (demand and shock streams are drawn
+    # independently, and the coordinates read counts, magnitudes and durations only), so the
+    # record is the original with the window and the config hash replaced; a test pins it equal
+    # to a full `world_space.world_record` of the smoke point.
+    record = copy.deepcopy(e.region["record"]) | {
+        "shock_window": list(SMOKE_START_WINDOW), "config_sha256": config_digest(point.config())}
+    return replace(e, generator=g, region={"pool": e.region["pool"], "record": record})
 
 
 # --- zero-baseline screening (gate-harness "Zero-baseline screening") ---
@@ -1068,6 +1085,7 @@ class ReplacementPlan:
 
 def plan_replacements(
     registry: Registry, means: Mapping[str, float], splits: Collection[str] = (DEVELOPMENT,),
+    bad: Collection[str] = (),
 ) -> ReplacementPlan:
     """The single replacement rule behind both the eager and the on-demand screen (task 8.6).
 
@@ -1078,7 +1096,11 @@ def plan_replacements(
     queue. That is exact: every unresolved slot will consume at least one more reserve, so the
     next reserve in order is consulted whatever the pending one turns out to be. On-demand
     screening therefore runs exactly the reserves the eager screen consults. Raises when a group
-    runs out of reserves even if every pending reserve proves usable."""
+    runs out of reserves even if every pending reserve proves usable.
+
+    `bad` (add-gate-v3 D3 step 3) names worlds that need replacing whatever their mean: the
+    region worlds whose per-episode argmax member died (bar-death). A bad reserve is skipped like
+    a zero one. Empty by default, so v1 / v2 plans are unchanged."""
     targets = [e for e in registry.gate_worlds() if e.split in splits]
     missing = [e.id for e in targets if e.id not in means]
     if missing:
@@ -1092,8 +1114,9 @@ def plan_replacements(
     replacements: list[Replacement] = []
     consulted: list[str] = []
     pending: list[str] = []
+    bad = set(bad)
     for e in targets:
-        if means[e.id] != 0:
+        if means[e.id] != 0 and e.id not in bad:
             continue
         skipped: list[str] = []
         queue = queues.get(e.group, [])
@@ -1106,7 +1129,7 @@ def plan_replacements(
                 pending.append(r.id)
                 break
             consulted.append(r.id)
-            if means[r.id] != 0:
+            if means[r.id] != 0 and r.id not in bad:
                 replacements.append(Replacement(e.id, r.id, tuple(skipped)))
                 break
             skipped.append(r.id)

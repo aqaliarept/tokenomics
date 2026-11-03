@@ -72,6 +72,18 @@ DEVELOPMENT = "development"
 GATE_SIZES = (12, 42)
 
 NEVER_ARGMAX_RULE = "never-argmax-v1"
+# add-gate-v3 D3 step 5: the two-wave screen's rule.
+NEVER_ARGMAX_TWO_WAVE_RULE = "never-argmax-two-wave-v1"
+NEVER_ARGMAX_TWO_WAVE_TEXT = (
+    "Wave 1 runs every member on the wave-1 development worlds; wave 2 runs W2 = the members "
+    "that are the per-episode argmax on at least one admitted wave-1 episode, plus every member "
+    "whose producer is entity_planner, on the wave-2 worlds. A member is kept iff it is in W2 "
+    "and is the per-episode argmax on at least one admitted episode of either wave, the argmax "
+    "taken over the members run on that episode (every member tied at the max counts). Members "
+    "outside W2 are dropped as not carried to wave 2. Excluded family x size episodes are not "
+    "evidence."
+)
+WAVE2_PRODUCING = PILOT_PRODUCING  # every entity_planner member runs in wave 2 (D3 step 2)
 NEVER_ARGMAX_TEXT = (
     "Drop a member that is never the per-episode argmax on any development episode at any "
     "measured economy size. Every member attaining an episode's max value counts as its argmax "
@@ -159,6 +171,29 @@ class EpisodeKey:
 
 
 @dataclass(frozen=True)
+class WaveRecord:
+    """One member wave of a two-wave screen (add-gate-v3 D3 step 5): the members it ran, the
+    development episodes it contributed as evidence, and a digest of those rows."""
+
+    members: tuple[str, ...]
+    episodes: tuple[EpisodeKey, ...]
+    rows_digest: str
+
+    def to_dict(self) -> dict:
+        return {"members": list(self.members),
+                "episodes": [{"world": e.world, "size": e.size, "episode": e.episode}
+                             for e in self.episodes],
+                "rows_digest": self.rows_digest}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> WaveRecord:
+        return cls(members=tuple(d["members"]),
+                   episodes=tuple(EpisodeKey(e["world"], e["size"], e["episode"])
+                                  for e in d["episodes"]),
+                   rows_digest=d["rows_digest"])
+
+
+@dataclass(frozen=True)
 class PruningRecord:
     """What pruning did and on which evidence (gate-harness "Never-winning stack dropped"): the
     rule, the roster it was applied to, the development episodes, a digest of the exact rows, and
@@ -170,6 +205,10 @@ class PruningRecord:
     episodes: tuple[EpisodeKey, ...]
     rows_digest: str
     dropped: tuple[str, ...]
+    # Two-wave rule only (add-gate-v3 D3 step 5): each wave's record and the members not carried
+    # to wave 2. None, and left out of the payload, otherwise (v1 / v2 hashes unchanged).
+    waves: tuple[WaveRecord, ...] | None = None
+    not_carried: tuple[str, ...] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -181,7 +220,9 @@ class PruningRecord:
             ],
             "rows_digest": self.rows_digest,
             "dropped": list(self.dropped),
-        }
+        } | ({} if self.waves is None else {
+            "waves": [w.to_dict() for w in self.waves],
+            "not_carried": list(self.not_carried or ())})
 
     @classmethod
     def from_dict(cls, d: dict) -> PruningRecord:
@@ -189,6 +230,9 @@ class PruningRecord:
             rule=d["rule"], rule_text=d["rule_text"], parent_version=d["parent_version"],
             episodes=tuple(EpisodeKey(e["world"], e["size"], e["episode"]) for e in d["episodes"]),
             rows_digest=d["rows_digest"], dropped=tuple(d["dropped"]),
+            waves=(None if d.get("waves") is None
+                   else tuple(WaveRecord.from_dict(w) for w in d["waves"])),
+            not_carried=None if d.get("not_carried") is None else tuple(d["not_carried"]),
         )
 
 
@@ -470,6 +514,87 @@ def prune_roster(
         dropped=dropped,
     )
     kept = tuple(m for m in roster.members if m.id in winners)
+    return replace(roster, members=kept, frozen=False, pruning=record)
+
+
+def _check_wave_rows(rows: Collection[DevRow], members: set[str], what: str
+                     ) -> dict[EpisodeKey, set[str]]:
+    """The episodes of one wave's evidence, refusing what `prune_roster` refuses: non-development
+    rows, non-members, non-finite values, duplicates and an episode missing a member."""
+    seen: set[tuple[EpisodeKey, str]] = set()
+    by_ep: dict[EpisodeKey, set[str]] = {}
+    for r in rows:
+        if r.split != DEVELOPMENT:
+            raise ValueError(f"{what}: row on split {r.split!r}: only development evidence counts")
+        if r.member not in members:
+            raise ValueError(f"{what}: row for {r.member!r}, not a member of this wave")
+        if not math.isfinite(r.value):
+            raise ValueError(f"{what}: non-finite value for {r.member} on {r.world}/{r.episode}")
+        key = EpisodeKey(r.world, r.size, r.episode)
+        if (key, r.member) in seen:
+            raise ValueError(f"{what}: duplicate row for {r.member} on {key}")
+        seen.add((key, r.member))
+        by_ep.setdefault(key, set()).add(r.member)
+    for key, present in by_ep.items():
+        if present != members:
+            raise ValueError(f"{what}: episode {key} lacks rows for {sorted(members - present)}")
+    return by_ep
+
+
+def wave2_members(roster: Roster, wave1_rows: Collection[DevRow]) -> tuple[str, ...]:
+    """W2 (add-gate-v3 D3 step 2): the members that are the per-episode argmax on at least one
+    wave-1 episode (every tied member counts), plus every `entity_planner` member, in roster
+    order. `wave1_rows` must already exclude excluded family x size episodes."""
+    _check_wave_rows(wave1_rows, set(roster.member_ids), "wave 1")
+    winners = argmax_winners(wave1_rows)
+    return tuple(m.id for m in roster.members
+                 if m.id in winners or m.producing == WAVE2_PRODUCING)
+
+
+def prune_two_wave(roster: Roster, wave1_rows: Collection[DevRow],
+                   wave2_rows: Collection[DevRow], w2: Collection[str]) -> Roster:
+    """`never-argmax-two-wave-v1` (add-gate-v3 D3 step 5; gate-harness "Roster pruning uses
+    development evidence only" with its pre-registered member waves): keep a member iff it is in
+    W2 and is the per-episode argmax on at least one episode of either wave, each episode's argmax
+    taken over the members run on it. Returns an unfrozen roster carrying the record (both waves'
+    members, episodes and row digests, and the members not carried to wave 2).
+
+    Refuses a frozen or already pruned roster, a W2 that is not `wave2_members`' plan, wave rows
+    that do not cover their wave's members on every episode, and empty wave-1 evidence. Wave 2 may
+    be empty (no wave-2 world, or its family x size excluded)."""
+    if roster.frozen:
+        raise ValueError(f"roster {roster.version} is frozen; pruning happens only before freezing")
+    if roster.pruning is not None:
+        raise ValueError(f"roster {roster.version} is already pruned")
+    if not wave1_rows:
+        raise ValueError("no wave-1 development rows to prune on")
+    w2 = tuple(w2)
+    if w2 != wave2_members(roster, wave1_rows):
+        raise ValueError(f"W2 {list(w2)} is not the planned wave-2 member set")
+    ep1 = _check_wave_rows(wave1_rows, set(roster.member_ids), "wave 1")
+    ep2 = _check_wave_rows(wave2_rows, set(w2), "wave 2") if wave2_rows else {}
+    if set(ep1) & set(ep2):
+        raise ValueError(f"episodes in both waves: {sorted(set(ep1) & set(ep2))[:3]}")
+    winners = argmax_winners(wave1_rows) | argmax_winners(wave2_rows)
+    kept_ids = [mid for mid in roster.member_ids if mid in w2 and mid in winners]
+    if not kept_ids:
+        raise ValueError("two-wave pruning would keep no member")
+    def order(k: EpisodeKey) -> tuple[int, str, int]:
+        return (k.size, k.world, k.episode)
+
+    record = PruningRecord(
+        rule=NEVER_ARGMAX_TWO_WAVE_RULE,
+        rule_text=NEVER_ARGMAX_TWO_WAVE_TEXT,
+        parent_version=roster.version,
+        episodes=tuple(sorted([*ep1, *ep2], key=order)),
+        rows_digest=rows_digest([*wave1_rows, *wave2_rows]),
+        dropped=tuple(mid for mid in roster.member_ids if mid not in kept_ids),
+        waves=(WaveRecord(roster.member_ids, tuple(sorted(ep1, key=order)),
+                          rows_digest(wave1_rows)),
+               WaveRecord(w2, tuple(sorted(ep2, key=order)), rows_digest(wave2_rows))),
+        not_carried=tuple(mid for mid in roster.member_ids if mid not in w2),
+    )
+    kept = tuple(m for m in roster.members if m.id in set(kept_ids))
     return replace(roster, members=kept, frozen=False, pruning=record)
 
 

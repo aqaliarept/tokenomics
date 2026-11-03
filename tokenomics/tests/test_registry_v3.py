@@ -299,6 +299,11 @@ def test_smoke_variant_replays_and_is_test_only(v3: Registry) -> None:
 
     e = next(e for e in _region(v3) if e.regime == SHOCKED and e.family == WS_WIDE)
     sm = smoke_variant(e)
+    from tokenomics.eval.world_space import point_from_record, world_record
+
+    full = world_record(replace(point_from_record(e.region["record"]),
+                                shock_window=tuple(SMOKE_START_WINDOW)))
+    assert sm.region["record"] == full  # the cheap record equals a full re-measure
     assert sm.generator["params"]["shock_profile"] == SHOCKS_I_SMOKE
     assert sm.generator["params"]["shock_window"] == list(SMOKE_START_WINDOW)
     reg = replace(v3, entries=_swap(v3, e, sm))

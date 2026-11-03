@@ -65,6 +65,8 @@ from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, Policy
 from .gate import (
     CALIBRATION_RULE,
     CANDIDATE,
+    MARGINS,
+    PARAMS_V2,
     CSV_COLUMNS,
     DEFAULT_PARAMS,
     EMPTY_SHOCK_DIGEST,
@@ -75,6 +77,7 @@ from .gate import (
     Calibration,
     Headroom,
     SideEffectParams,
+    calibrate_families,
     calibrate_x_y,
     compute_report,
     episode_bests,
@@ -88,6 +91,7 @@ from .gate import (
     row_from_stats,
     row_to_dict,
     side_effect_params_json,
+    side_effect_params_json_v3,
 )
 from .resilience import DEFAULT_PARAMS as DEFAULT_RESILIENCE, ResilienceParams, shock_free_twin
 from .shock_profiles import load_shock_profile, names_test_only_profile
@@ -107,21 +111,31 @@ from .contract import (
 )
 from .provenance import environment_manifest, sha256_file, source_fingerprint
 from .families import DENSE, NEUTRAL_CAPACITY_SCALE, check_capacity_scale
+from .families import SHOCKED as SHOCKED_REGIME
+from .families import SPARSE_WIDE as SPARSE_WIDE_FAMILY
 from .registry import (
     DEFAULT_REGISTRY,
     DEVELOPMENT,
     EXCLUDED,
+    GATE,
+    REGION_FAMILIES,
+    REPLACED,
     RESERVE,
     SEALED,
     SEALED_ACCESS_LOG,
     SPLITS,
+    WS_WIDE,
     Registry,
+    ReplacementPlan,
+    ScreeningRecord,
     WorldEntry,
     check_sealed_access,
     load_preregistration,
     load_registry,
     plan_replacements,
+    record_exclusions,
     record_headroom,
+    smoke_variant,
     save_registry,
     screen_zero_baselines,
     world_baseline_means,
@@ -131,6 +145,9 @@ from .roster import (
     GATE_SIZES,
     JOINT_STACK,
     RANDOM_POLICY,
+    PILOT_V3_NAME,
+    ROSTER_V2,
+    WAVE2_PRODUCING,
     DevRow,
     Roster,
     contract_for,
@@ -138,8 +155,10 @@ from .roster import (
     load_roster,
     name_version_tag,
     prune_roster,
+    prune_two_wave,
     roster_from_dict,
     save_roster,
+    wave2_members,
 )
 from .seeding import replicate_seed
 
@@ -1110,6 +1129,11 @@ def run_screen(
     dry_run: bool = False,
     run_job_fn: Callable[[Job], dict[str, str]] = run_job,
     log: Callable[[str], None] = print,
+    member_waves: str | None = None,
+    worlds_per_family: int | None = None,
+    region_shocked_episodes: int | None = None,
+    reuse_rows: str | None = None,
+    shock_profile: str | None = None,
 ) -> tuple[ScreenOutcome, int]:
     """Run (or resume) the roster on the development gate worlds and the reserves they need, then
     `screen_outcome`; write the screening report and, if headroom passes, `frozen/`. Returns the
@@ -1132,6 +1156,27 @@ def run_screen(
         raise ValueError(f"reserves must be one of {RESERVE_MODES}, got {reserves!r}")
     if registry.screening is not None:
         raise ValueError(f"registry {registry.version[:12]} is already screened")
+    if not dry_run and roster.name == PILOT_V3_NAME:  # carry-forward from the 1.1 review
+        raise ValueError(f"roster {roster.name!r} is the pilot roster: a dry run only, never "
+                         "frozen as a gate roster")
+    if member_waves is not None and member_waves != MEMBER_WAVES_V3:
+        raise ValueError(f"--member-waves takes {MEMBER_WAVES_V3!r}, got {member_waves!r}")
+    if (member_waves == MEMBER_WAVES_V3) != (registry.version_tag >= 3):
+        raise ValueError(f"registry {registry.name!r} (v{registry.version_tag}) "
+                         + ("needs --member-waves v3 (design D3)" if registry.version_tag >= 3
+                            else "is screened in one wave; --member-waves v3 is for v3+"))
+    if member_waves == MEMBER_WAVES_V3:
+        return run_screen_v3(  # type: ignore[return-value]
+            out_dir=out_dir, horizon=horizon, workers=workers, registry=registry, roster=roster,
+            q=q, reserves=reserves, sizes=sizes, families=families, regimes=regimes,
+            max_worlds=max_worlds, worlds_per_family=worlds_per_family,
+            episodes_per_world=episodes_per_world, source_commit=source_commit,
+            dry_run=dry_run, region_shocked_episodes=region_shocked_episodes,
+            reuse_rows=reuse_rows, shock_profile=shock_profile, run_job_fn=run_job_fn, log=log)
+    if any(v is not None for v in (worlds_per_family, region_shocked_episodes, reuse_rows,
+                                   shock_profile)):
+        raise ValueError("--worlds-per-family / --region-shocked-episodes / --reuse-rows / "
+                         "--shock-profile belong to the two-wave screen (--member-waves v3)")
     # Output generation from the input registry's name (D10 "Versioned screen outputs").
     tag = registry.version_tag
     screened_on = registry.version if tag >= 2 else None
@@ -1261,6 +1306,731 @@ def run_screen(
         f"{'passed' if outcome.passed else 'FAILED'} headroom; "
         + ("" if outcome.calibration is None else
            f"X={outcome.calibration.x!r} Y={outcome.calibration.y!r}"))
+    return outcome, (0 if outcome.passed else HEADROOM_FAILED)
+
+
+# --- the two-wave v3 screen (add-gate-v3 task 3.1, design D3 / D4) ---
+
+MEMBER_WAVES_V3 = "v3"
+# The per-world routing reading (D3 step 4): the input-aware routers against the blind ones, all
+# with the entity_planner producer; a world counts at a relative gain >= 0.05 above its floor; a
+# family reads `routing_matters` when >= 1/3 of its admitted worlds count. Reported, never gating.
+INPUT_AWARE_ROUTERS = ("makeable_weighted_whole", "makeable_split")
+BLIND_ROUTERS = ("blend_0.5", "even_split", "obs_price", "proportional", "random", "shock_reactive",
+                 "round_robin", "even_split_rotating", "random_whole")
+ROUTING_PRODUCER = WAVE2_PRODUCING
+ROUTING_GAIN = 0.05
+ROUTING_SHARE = 1 / 3
+CALIBRATION_RULE_V3 = (
+    "add-gate-v3 D4: X and Y per gate family (sparse_wide pooled over its admitted sizes), each by "
+    "the D4 rule (`gate.CALIBRATION_RULE`) over that family's admitted final development episodes, "
+    "with the pruned two-wave roster; excluded family x size episodes enter no family."
+)
+DRY_ONLY_V3 = "not an acceptance read"
+
+
+def _rows_by(rows: Sequence[EpisodeRow], worlds: Collection[str],
+             members: Collection[str] | None = None) -> list[EpisodeRow]:
+    return [r for r in rows if r.world in worlds and (members is None or r.subject in members)]
+
+
+def _complete(rows: Sequence[EpisodeRow], scheduled: Sequence[tuple[WorldEntry, Roster]],
+              episodes_per_world: int | None) -> bool:
+    have = {job_key(r.world, r.episode, r.subject, r.replicate) for r in rows}
+    return all(job_key(j["world"], j["episode"], j["subject"], j["replicate"]) in have
+               for e, ros in scheduled
+               for j in build_jobs([e], ros, None, episodes_per_world=episodes_per_world))
+
+
+def episode_argmax(rows: Sequence[EpisodeRow], roster: Roster) -> dict[tuple[str, int], str]:
+    """(world, episode) -> the member with the largest replicate-mean units, ties to the smallest
+    member id (`gate.episode_bests`' pick)."""
+    vals: dict[tuple[str, int], dict[str, list[float]]] = {}
+    for r in rows:
+        vals.setdefault((r.world, r.episode), {}).setdefault(r.subject, []).append(r.units)
+    out = {}
+    for k, by_m in vals.items():
+        means = {m: fmean(v) for m, v in by_m.items() if m in set(roster.member_ids)}
+        best = max(means.values())
+        out[k] = min(m for m, v in means.items() if v == best)
+    return out
+
+
+def bar_dead_worlds(scope: Registry, roster: Roster, rows: Sequence[EpisodeRow]
+                    ) -> dict[str, tuple[int, str]]:
+    """Region worlds whose per-episode argmax member reached system death in some episode (any
+    replicate: a death has no mean), with the first such (episode, member) in registered episode
+    order (D3 step 3, gate-harness "Region worlds whose best baseline dies are replaced").
+    sparse_wide keeps its v2 rule and is never listed."""
+    best = episode_argmax(rows, roster)
+    dead = {(r.world, r.episode, r.subject) for r in rows if r.dead}
+    out: dict[str, tuple[int, str]] = {}
+    for e in scope.entries:
+        if e.family not in REGION_FAMILIES:
+            continue
+        for ep in e.episode_seeds:
+            m = best.get((e.id, ep))
+            if m is not None and (e.id, ep, m) in dead:
+                out[e.id] = (ep, m)
+                break
+    return out
+
+
+def _sub_registry(scope: Registry, keep: Callable[[WorldEntry], bool]) -> Registry | None:
+    entries = tuple(e for e in scope.entries if keep(e))
+    if not any(e.status == GATE and e.split == DEVELOPMENT for e in entries):
+        return None
+    return Registry(name=scope.name, seed_ranges=scope.seed_ranges, entries=entries,
+                    saturation_ceiling=scope.saturation_ceiling,
+                    shock_profiles=scope.shock_profiles)
+
+
+def _apply(scope: Registry, plan: ReplacementPlan) -> dict[str, WorldEntry]:
+    """The development gate worlds after a replacement plan (statuses as `screen_zero_baselines`
+    sets them)."""
+    final = {e.id: e for e in scope.gate_worlds(DEVELOPMENT)}
+    for rep_ in plan.replacements:
+        final.pop(rep_.replaced, None)
+        final[rep_.by] = scope.entry(rep_.by)
+    return final
+
+
+@dataclass(frozen=True)
+class WaveState:
+    """One member wave as far as the rows decide it: the worlds scheduled (gate worlds, then the
+    reserve sub-waves the replacement plan named), and, once complete, the final plan."""
+
+    roster: Roster
+    scheduled: tuple[WorldEntry, ...]
+    sub_waves: tuple[tuple[str, ...], ...]
+    complete: bool
+    plan: ReplacementPlan | None = None
+    means: tuple[tuple[str, float], ...] = ()
+    bar_dead: tuple[tuple[str, int, str], ...] = ()
+
+
+def _wave(scope: Registry | None, roster: Roster, rows: Sequence[EpisodeRow],
+          reserves: str, episodes_per_world: int | None) -> WaveState | None:
+    """Plan one wave from the rows: gate worlds first; while complete, the replacement plan
+    (zero-baseline, plus bar-death for region worlds) names the next reserve sub-wave."""
+    if scope is None:
+        return None
+    scheduled = list(scope.gate_worlds(DEVELOPMENT))
+    sub_waves: list[tuple[str, ...]] = []
+    while True:
+        pairs = [(e, roster) for e in scheduled]
+        if not _complete(rows, pairs, episodes_per_world):
+            return WaveState(roster, tuple(scheduled), tuple(sub_waves), False)
+        ids = {e.id for e in scheduled}
+        mine = _rows_by(rows, ids, set(roster.member_ids))
+        means = world_baseline_means(scope, roster, mine)
+        dead = bar_dead_worlds(scope, roster, mine)
+        plan = plan_replacements(scope, means, (DEVELOPMENT,), bad=set(dead))
+        if not plan.pending or reserves != "on-demand":
+            kept = {e.id for e in scope.gate_worlds(DEVELOPMENT)} | set(plan.consulted)
+            return WaveState(roster, tuple(scheduled), tuple(sub_waves), True, plan,
+                             tuple(sorted((w, m) for w, m in means.items() if w in kept)),
+                             tuple(sorted((w, ep, m) for w, (ep, m) in dead.items()
+                                          if w in kept)))
+        new = tuple(w for w in plan.pending if w not in ids)
+        if not new:
+            raise AssertionError("replacement plan names pending reserves already run")
+        sub_waves.append(new)
+        scheduled += [scope.entry(w) for w in new]
+
+
+def _dev_rows(rows: Sequence[EpisodeRow]) -> list[DevRow]:
+    acc: dict[tuple[str, int, int, str], list[float]] = {}
+    for r in rows:
+        acc.setdefault((r.world, r.size, r.episode, r.subject), []).append(r.units)
+    return [DevRow(w, DEVELOPMENT, z, ep, m, fmean(v)) for (w, z, ep, m), v in sorted(acc.items())]
+
+
+@dataclass(frozen=True)
+class V3Plan:
+    """The two-wave screen as far as the rows decide it (`plan_v3`). `jobs` is every (world,
+    roster) scheduled so far, wave 1 then wave 2; `complete` says whether nothing more needs to
+    run; `stop` names a size left with no admitted family (exit 3)."""
+
+    wave1: WaveState
+    wave2: WaveState | None
+    w2: tuple[str, ...] | None
+    headroom1: tuple[Headroom, ...]
+    headroom2: tuple[Headroom, ...]
+    excluded: frozenset[tuple[str, int]]
+    stop: str | None
+    complete: bool
+
+    @property
+    def jobs(self) -> list[tuple[WorldEntry, Roster]]:
+        out = [(e, self.wave1.roster) for e in self.wave1.scheduled]
+        if self.wave2 is not None:
+            out += [(e, self.wave2.roster) for e in self.wave2.scheduled]
+        return out
+
+
+def _headroom(scope: Registry, wave: WaveState, rows: Sequence[EpisodeRow]
+              ) -> tuple[dict[str, WorldEntry], tuple[Headroom, ...]]:
+    final = _apply(scope, wave.plan)  # type: ignore[arg-type]
+    mine = _rows_by(rows, final, set(wave.roster.member_ids))
+    bests = episode_bests(mine, wave.roster)
+    return final, tuple(headroom(bests, {w: e.family for w, e in final.items()},
+                                 scope.saturation_ceiling))
+
+
+def _size_problem(scope: Registry, excluded: Collection[tuple[str, int]],
+                  pending: Collection[tuple[str, int]] = ()) -> str | None:
+    """A size whose every family is excluded (pending families still count as admitted)."""
+    fams: dict[int, set[str]] = {}
+    for e in scope.gate_worlds(DEVELOPMENT):
+        fams.setdefault(e.size, set()).add(e.family)
+    for size, fs in sorted(fams.items()):
+        left = {f for f in fs if (f, size) not in excluded or (f, size) in pending}
+        if not left:
+            return (f"no admitted family at {size} producers: "
+                    f"{', '.join(sorted(f'{f}/{size}' for f in fs))} failed headroom")
+    return None
+
+
+def plan_v3(scope: Registry, roster: Roster, rows: Sequence[EpisodeRow], *,
+            reserves: str = "on-demand", episodes_per_world: int | None = None) -> V3Plan:
+    """D3 waves 1-2 decided from the rows alone, deterministically (a resume replays it):
+    wave 1 = every member on the development gate worlds except `ws_wide`, then its reserve
+    sub-waves; headroom per family x size of wave 1 (a failure is excluded; a size with no
+    admitted family stops here, before wave 2); W2 = the wave-1 argmax members on admitted
+    episodes plus every entity_planner member (`roster.wave2_members`); wave 2 = W2 on `ws_wide`
+    and its reserves; headroom of `ws_wide`; a size with no admitted family stops."""
+    scope1 = _sub_registry(scope, lambda e: e.family != WS_WIDE)
+    scope2 = _sub_registry(scope, lambda e: e.family == WS_WIDE)
+    if scope1 is None:
+        raise ValueError("the two-wave screen needs wave-1 development gate worlds")
+    wave1 = _wave(scope1, roster, rows, reserves, episodes_per_world)
+    assert wave1 is not None
+    if not wave1.complete:
+        return V3Plan(wave1, None, None, (), (), frozenset(), None, False)
+    final1, hr1 = _headroom(scope1, wave1, rows)
+    excluded = {(h.family, h.size) for h in hr1 if not h.passed}
+    pending = ({(WS_WIDE, e.size) for e in scope2.gate_worlds(DEVELOPMENT)}
+               if scope2 is not None else set())
+    stop = _size_problem(scope, excluded, pending)
+    if stop is not None:
+        return V3Plan(wave1, None, None, hr1, (), frozenset(excluded), stop, True)
+    admitted1 = [w for w, e in final1.items() if (e.family, e.size) not in excluded]
+    w2 = wave2_members(roster, _dev_rows(_rows_by(rows, admitted1, set(roster.member_ids))))
+    if scope2 is None:
+        return V3Plan(wave1, None, w2, hr1, (), frozenset(excluded), None, True)
+    w2_roster = Roster(name=f"{roster.name}-w2", replicates=roster.replicates,
+                       members=tuple(m for m in roster.members if m.id in set(w2)))
+    wave2 = _wave(scope2, w2_roster, rows, reserves, episodes_per_world)
+    assert wave2 is not None
+    if not wave2.complete:
+        return V3Plan(wave1, wave2, w2, hr1, (), frozenset(excluded), None, False)
+    _, hr2 = _headroom(scope2, wave2, rows)
+    excluded |= {(h.family, h.size) for h in hr2 if not h.passed}
+    stop = _size_problem(scope, excluded)
+    return V3Plan(wave1, wave2, w2, hr1, hr2, frozenset(excluded), stop, True)
+
+
+def attainability(scope: Registry, worlds: Mapping[str, tuple[WorldEntry, Roster]],
+                  rows: Sequence[EpisodeRow], excluded: Collection[tuple[str, int]]
+                  ) -> dict[str, list[dict[str, object]]]:
+    """Perfect-fill ratios (D3 step 4, gate-harness "Attainable margins are reported"): per final
+    world, 1 / (mean over its episodes of the argmax member's fill); per (size, regime) over the
+    admitted worlds and per (family, size, regime) over all final worlds, the mean against the
+    regime's margin, flagged `unattainable` below it. Reported, never gating."""
+    per_world: dict[str, float | None] = {}
+    for w, (e, ros) in worlds.items():
+        fills = [b.fill for b in episode_bests(_rows_by(rows, {w}, set(ros.member_ids)), ros)]
+        per_world[w] = (None if not fills or any(f is None or f == 0 for f in fills)
+                        else 1.0 / fmean(fills))  # type: ignore[arg-type]
+
+    def cell(ids: list[str], regime: str) -> dict[str, object]:
+        vals = [per_world[w] for w in ids if per_world[w] is not None]
+        mean = fmean(vals) if vals else None  # type: ignore[arg-type]
+        margin = MARGINS[regime]
+        return {"worlds": len(ids), "measured": len(vals), "perfect_fill_ratio": mean,
+                "margin": margin, "unattainable": mean is not None and mean < margin}
+
+    groups: dict[tuple[int, str], list[str]] = {}
+    fam_groups: dict[tuple[str, int, str], list[str]] = {}
+    for w, (e, _) in sorted(worlds.items()):
+        fam_groups.setdefault((e.family, e.size, e.regime), []).append(w)
+        if (e.family, e.size) not in excluded:
+            groups.setdefault((e.size, e.regime), []).append(w)
+    return {
+        "by_size_regime": [{"size": z, "regime": g, **cell(ids, g)}
+                           for (z, g), ids in sorted(groups.items())],
+        "by_family": [{"family": f, "size": z, "regime": g,
+                       "excluded": (f, z) in excluded, **cell(ids, g)}
+                      for (f, z, g), ids in sorted(fam_groups.items())],
+        "by_world": [{"world": w, "perfect_fill_ratio": per_world[w]} for w in sorted(worlds)],
+    }
+
+
+def _member_runs(rows: Sequence[EpisodeRow], member: str) -> dict[int, list[float]]:
+    out: dict[int, list[float]] = {}
+    for r in rows:
+        if r.subject == member:
+            out.setdefault(r.episode, []).append(r.units)
+    return out
+
+
+def routing_world(e: WorldEntry, roster: Roster, rows: Sequence[EpisodeRow]) -> dict[str, object]:
+    """One world's routing reading (D3 step 4, revised rule): `reach_gain_w` = (best input-aware
+    - best blind) / best blind on world means, all with entity_planner; the world counts when the
+    gain is >= 0.05 and the absolute gain is above the world's floor. Floors, pre-registered by
+    world type: shocked, 3·sd(d_e)/√n over per-episode differences of the two sides (replicate
+    means; undefined with one episode, then the world does not count); calm with a stochastic
+    side, 3·√(Σ s²/n) over each stochastic side's episode × replicate runs; calm with both sides
+    deterministic, 0. `router_spread_w` (max - min) / max over the 11 routers is a column only."""
+    import statistics
+
+    ids = {m.id: m for m in roster.members}
+    want = {o: f"{ROUTING_PRODUCER}/{o}" for o in INPUT_AWARE_ROUTERS + BLIND_ROUTERS}
+    out: dict[str, object] = {"world": e.id, "family": e.family, "size": e.size,
+                              "regime": e.regime}
+    if any(mid not in ids for mid in want.values()):
+        return out | {"reading": "insufficient_members", "counts": False}
+    mine = _rows_by(rows, {e.id}, set(want.values()))
+    runs = {o: _member_runs(mine, mid) for o, mid in want.items()}
+    means = {o: fmean(fmean(v) for v in runs[o].values()) for o in want}
+
+    def best(group: Sequence[str]) -> str:
+        top = max(means[o] for o in group)
+        return min(o for o in group if means[o] == top)
+
+    ia, bl = best(INPUT_AWARE_ROUTERS), best(BLIND_ROUTERS)
+    diff = means[ia] - means[bl]
+    gain = diff / means[bl] if means[bl] > 0 else None
+    sides = (ia, bl)
+    if e.regime == SHOCKED_REGIME:
+        d = [fmean(runs[ia][ep]) - fmean(runs[bl][ep]) for ep in sorted(runs[ia])]
+        floor = 3 * statistics.stdev(d) / len(d) ** 0.5 if len(d) >= 2 else None
+        floor_type = "shocked"
+    elif any(ids[want[o]].random for o in sides):
+        terms = []
+        for o in sides:
+            if ids[want[o]].random:
+                vals = [u for v in runs[o].values() for u in v]
+                terms.append(statistics.stdev(vals) ** 2 / len(vals))
+        floor = 3 * sum(terms) ** 0.5
+        floor_type = "calm_stochastic"
+    else:
+        floor, floor_type = 0.0, "calm_deterministic"
+    counts = gain is not None and floor is not None and gain >= ROUTING_GAIN and diff > floor
+    top = max(means.values())
+    return out | {"reading": "computed", "input_aware": ia, "blind": bl,
+                  "input_aware_units": means[ia], "blind_units": means[bl],
+                  "reach_gain": gain, "floor": floor, "floor_type": floor_type,
+                  "counts": counts,
+                  "router_spread": (top - min(means.values())) / top if top > 0 else None}
+
+
+def routing_reading(worlds: Mapping[str, tuple[WorldEntry, Roster]], rows: Sequence[EpisodeRow],
+                    excluded: Collection[tuple[str, int]]) -> dict[str, list[dict[str, object]]]:
+    """Per-world readings and the family rule: `routing_matters` iff the counting worlds are at
+    least a third of the family's admitted worlds, else `routing_flat`. Reported, never gating."""
+    per_world = [routing_world(e, ros, rows) for _, (e, ros) in sorted(worlds.items())]
+    fams: dict[tuple[str, int], list[dict[str, object]]] = {}
+    for r in per_world:
+        fams.setdefault((r["family"], r["size"]), []).append(r)  # type: ignore[index]
+    families = []
+    for (f, z), rs in sorted(fams.items()):
+        n = len(rs)
+        k = sum(1 for r in rs if r["counts"])
+        missing = sum(1 for r in rs if r["reading"] != "computed")
+        families.append({
+            "family": f, "size": z, "admitted_worlds": n, "counting_worlds": k,
+            "insufficient": missing, "excluded": (f, z) in excluded,
+            "reading": ("excluded" if (f, z) in excluded
+                        else "insufficient_members" if missing == n
+                        else "routing_matters" if k / n >= ROUTING_SHARE
+                        else "routing_flat")})
+    return {"worlds": per_world, "families": families}
+
+
+def v2_bars(worlds: Mapping[str, tuple[WorldEntry, Roster]], rows: Sequence[EpisodeRow]
+            ) -> list[dict[str, object]]:
+    """On each final v2 (sparse_wide) world: the hindsight baseline of the frozen v2 roster
+    beside the v3 bar (wave-1 roster). Skipped when a v2 member did not run (a filtered dry run).
+    Reported, never gating."""
+    from .gate import episode_baseline, world_baseline
+
+    v2 = load_roster(ROSTER_V2).member_ids
+    out = []
+    for w, (e, ros) in sorted(worlds.items()):
+        if e.family != SPARSE_WIDE_FAMILY or not set(v2) <= set(ros.member_ids):
+            continue
+        mine = _rows_by(rows, {w})
+        eps = sorted({r.episode for r in mine})
+        val = {(ep, m): fmean(r.units for r in mine if r.episode == ep and r.subject == m)
+               for ep in eps for m in ros.member_ids}
+        bar3 = world_baseline([episode_baseline({m: val[(ep, m)] for m in ros.member_ids})
+                               for ep in eps])
+        bar2 = world_baseline([episode_baseline({m: val[(ep, m)] for m in v2}) for ep in eps])
+        out.append({"world": w, "size": e.size, "regime": e.regime, "bar_v3": bar3,
+                    "bar_v2_roster": bar2, "ratio": bar3 / bar2 if bar2 else None})
+    return out
+
+
+@dataclass(frozen=True)
+class V3Outcome:
+    """Everything the two-wave screen decides (`screen_outcome_v3`)."""
+
+    plan: V3Plan
+    registry: Registry  # screened: replacements, bar deaths, headroom, exclusions
+    passed: bool  # every size kept an admitted family
+    roster: Roster | None
+    calibrations: tuple | None
+    params_json: str | None
+    tables: dict[str, object]
+
+
+def screen_outcome_v3(scope: Registry, roster: Roster, rows: Sequence[EpisodeRow], *, q: float,
+                      tag: int, screened_on: str, dry_run: bool, reserves: str = "on-demand",
+                      episodes_per_world: int | None = None) -> V3Outcome:
+    """The two-wave screen's outcome, a pure function of the rows (D3 steps 3-7): the screened
+    registry (both waves' replacements and bar deaths, headroom of every family x size,
+    exclusions in both splits), and, unless a size lost every family, the two-wave pruned
+    roster and per-family X / Y (D4) over the admitted final worlds. Excluded worlds' rows enter
+    no W2 winner set, no pruning evidence and no X / Y; they are reported."""
+    plan = plan_v3(scope, roster, rows, reserves=reserves, episodes_per_world=episodes_per_world)
+    if not plan.complete:
+        raise ValueError("the two-wave screen's rows are incomplete")
+    waves = [plan.wave1] + ([plan.wave2] if plan.wave2 is not None and plan.wave2.plan else [])
+    replacements = tuple(r for w in waves for r in w.plan.replacements)  # type: ignore[union-attr]
+    means = tuple(sorted(m for w in waves for m in w.means))
+    bar_dead = tuple(sorted(b for w in waves for b in w.bar_dead))
+    updated = {e.id: e for e in scope.entries}
+    for rep_ in replacements:
+        updated[rep_.replaced] = replace(updated[rep_.replaced], status=REPLACED)
+        for sk in rep_.skipped:
+            updated[sk] = replace(updated[sk], status=REPLACED)
+        updated[rep_.by] = replace(updated[rep_.by], status=GATE)
+    record = ScreeningRecord(roster_version=roster.version, baseline_means=means,
+                             replacements=replacements, splits=(DEVELOPMENT,),
+                             bar_deaths=bar_dead)
+    screened = Registry(name=scope.name, seed_ranges=scope.seed_ranges,
+                        entries=tuple(updated.values()), screening=record,
+                        saturation_ceiling=scope.saturation_ceiling,
+                        shock_profiles=scope.shock_profiles)
+    screened = record_headroom(screened, plan.headroom1 + plan.headroom2)
+    screened = record_exclusions(screened)
+    screened = replace(screened, screened_on=screened_on)
+    finals: dict[str, tuple[WorldEntry, Roster]] = {}
+    for w in waves:
+        sub = _sub_registry(scope, (lambda e: e.family != WS_WIDE) if w is plan.wave1
+                            else (lambda e: e.family == WS_WIDE))
+        finals.update({wid: (e, w.roster) for wid, e in _apply(sub, w.plan).items()})  # type: ignore[arg-type]
+    admitted = {w: v for w, v in finals.items() if (v[0].family, v[0].size) not in plan.excluded}
+    tables: dict[str, object] = {
+        "attainability": attainability(scope, finals, rows, plan.excluded),
+        "routing": routing_reading(admitted, rows, plan.excluded),
+        "v2_bars": v2_bars(finals, rows),
+    }
+    if plan.stop is not None:
+        return V3Outcome(plan, screened, False, None, None, None, tables)
+    w1_ids = [w for w, (e, ros) in admitted.items() if ros is plan.wave1.roster]
+    w2_ids = [w for w, (e, ros) in admitted.items() if ros is not plan.wave1.roster]
+    pruned = prune_two_wave(
+        roster, _dev_rows(_rows_by(rows, w1_ids, set(roster.member_ids))),
+        _dev_rows(_rows_by(rows, w2_ids, set(plan.w2 or ()))), plan.w2 or ())
+    suffix = "-dry-run" if dry_run else ""
+    frozen = replace(freeze_roster(pruned), name=f"roster-v{tag}{suffix}",
+                     screened_on=screened_on)
+    kept = set(frozen.member_ids)
+    cal_rows = _rows_by(rows, admitted, kept)
+    cals = calibrate_families(cal_rows, frozen, q, {w: e.family for w, (e, _) in admitted.items()})
+    params = side_effect_params_json_v3(
+        {c.family: c.payload() for c in cals}, q, name=f"side-effect-params-v{tag}{suffix}",
+        rule=CALIBRATION_RULE_V3, method=cals[0].calibration.method,
+        evidence={"roster_version": frozen.version, "registry_version": screened.version,
+                  "excluded": sorted(f"{f}/{z}" for f, z in plan.excluded)},
+        screened_on=screened_on)
+    v2 = load_side_effect_params(PARAMS_V2)
+    tables["xy_compare"] = [{"family": c.family, "x_v3": c.calibration.x,
+                             "y_v3": c.calibration.y, "x_v2": v2.x, "y_v2": v2.y,
+                             "small_sample": c.small_sample} for c in cals]
+    return V3Outcome(plan, screened, True, frozen, cals, params, tables)
+
+
+def _smoke_scope_entry(e: WorldEntry) -> WorldEntry:
+    """The horizon-12 smoke form of a shocked entry (dry runs only): a legacy family names
+    `shocks-i-smoke`; a region entry takes `registry.smoke_variant` (its own record)."""
+    from .shock_profiles import SHOCKS_I_SMOKE
+
+    if e.regime != SHOCKED_REGIME:
+        return e
+    if e.family in REGION_FAMILIES:
+        return smoke_variant(e)
+    g = json.loads(json.dumps(e.generator))
+    g["params"]["shock_profile"] = SHOCKS_I_SMOKE
+    return replace(e, generator=g)
+
+
+def _reuse_v2_rows(out: Path, scope: Registry, roster: Roster, src: Path, *, spec: dict,
+                   workers: int, horizon: int, run_job_fn: Callable[[Job], dict[str, str]],
+                   log: Callable[[str], None]) -> dict[str, object]:
+    """D3 reduction 2: wave 1's v2-world rows of the v2-draft members come from EXP-0047, after
+    a reproduction check: one world-episode per (size, regime), the first gate world by id and
+    its first episode, run here for every v2-draft member and replicate, must equal EXP-0047's
+    rows exactly (every CSV field). Then every other such row is appended from EXP-0047."""
+    from .registry import build_worlds_v2
+    from .roster import build_roster_v2
+
+    sspec = json.loads((src / "spec.json").read_text())
+    spins = sspec.get("pins", {})
+    want = {"registry_version": build_worlds_v2().version,
+            "roster_version": build_roster_v2().version, "horizon": 100, "dry_run": False}
+    bad = {k: spins.get(k) for k, v in want.items() if spins.get(k) != v}
+    if bad:
+        raise ValueError(f"{src}: not a real horizon-100 screen of the registry v2 / roster v2 "
+                         f"drafts (pins {bad}); refusing to reuse its rows")
+    v2_ids = set(build_roster_v2().member_ids)
+    if not v2_ids <= set(roster.member_ids) or roster.replicates != 5:
+        raise ValueError("reuse needs every v2-draft member in the roster at R = 5 (EXP-0047's R)")
+    sub = Roster(name=f"{roster.name}-v2-members", replicates=roster.replicates,
+                 members=tuple(m for m in roster.members if m.id in v2_ids))
+    v2w = sorted((e for e in scope.gate_worlds(DEVELOPMENT) if e.family == SPARSE_WIDE_FAMILY),
+                 key=lambda e: e.id)
+    ids = {e.id for e in v2w}
+    src_rows = {job_key(r.world, r.episode, r.subject, r.replicate): r
+                for r in read_rows(src / "episodes.csv") if r.world in ids and r.subject in v2_ids}
+    repro: dict[tuple[int, str], WorldEntry] = {}
+    for e in v2w:
+        repro.setdefault((e.size, e.regime), e)
+    jobs = [j for e in repro.values() for j in build_jobs([e], sub, None)
+            if j["episode"] == e.episode_seeds[0]]
+    keys = {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs}
+    episodes = out / "episodes.csv"
+    done = read_rows(episodes) if episodes.exists() and episodes.stat().st_size else []
+    _execute(out, spec, done, jobs, keys, workers, (horizon, None, None), run_job_fn, log)
+    _stop_if_failed(out, spec)
+    have = {job_key(r.world, r.episode, r.subject, r.replicate): r for r in read_rows(episodes)}
+    bad = sorted(k for k in keys if k not in src_rows
+                 or row_to_dict(have[k]) != row_to_dict(src_rows[k]))
+    if bad:
+        raise ValueError(f"reuse reproduction check failed on {len(bad)} of {len(keys)} rows, "
+                         f"e.g. {bad[:3]}: EXP-0047's rows are not reused")
+    added = 0
+    for e in v2w:
+        for j in build_jobs([e], sub, None):
+            k = job_key(j["world"], j["episode"], j["subject"], j["replicate"])
+            if k in have:
+                continue
+            if k not in src_rows:
+                raise ValueError(f"{src}: no row for {k}; refusing a partial reuse")
+            _append_row(episodes, row_to_dict(src_rows[k]))
+            added += 1
+    log(f"[gate] reuse: reproduction matched {len(keys)} rows; {added} rows reused from {src}")
+    return {"source": str(src), "episodes_sha256": sha256_file(str(src / "episodes.csv")),
+            "reproduction": sorted(f"{e.id}/{e.episode_seeds[0]}" for e in repro.values()),
+            "reproduced_rows": len(keys), "reused_rows": added, "status": "match"}
+
+
+def _v3_wave_summary(plan: V3Plan) -> list[dict[str, object]]:
+    out = []
+    for n, w in ((1, plan.wave1), (2, plan.wave2)):
+        if w is None:
+            continue
+        gate = [e.id for e in w.scheduled if e.status == GATE]
+        out.append({"wave": n, "members": list(w.roster.member_ids),
+                    "gate_worlds": gate, "reserve_sub_waves": [list(x) for x in w.sub_waves],
+                    "complete": w.complete})
+    return out
+
+
+def run_screen_v3(
+    *, out_dir: str | Path, horizon: int, workers: int, registry: Registry, roster: Roster,
+    q: float = 0.05, reserves: str = "on-demand", sizes: Sequence[int] | None = None,
+    families: Sequence[str] | None = None, regimes: Sequence[str] | None = None,
+    max_worlds: int | None = None, worlds_per_family: int | None = None,
+    episodes_per_world: int | None = None, source_commit: str = "", dry_run: bool = False,
+    region_shocked_episodes: int | None = None, reuse_rows: str | None = None,
+    shock_profile: str | None = None,
+    run_job_fn: Callable[[Job], dict[str, str]] = run_job, log: Callable[[str], None] = print,
+) -> tuple[V3Outcome, int]:
+    """The two-wave v3 screen (`--member-waves v3`, design D3): run the waves `plan_v3` decides
+    from the rows, then `screen_outcome_v3`; write `screening.json` (both waves, exclusions,
+    attainability, routing, v2 / v3 X / Y, v2-roster bars), its tables and, when every size keeps
+    an admitted family, `frozen/{worlds,roster,side_effect_params}_v3.json` with `screened_on` =
+    the draft's hash. Exit 0 or `HEADROOM_FAILED` (a size with no admitted family). The run
+    always prunes (`never-argmax-two-wave-v1`): W2's members alone have rows on wave 2.
+
+    D3's reductions are flags pinned in `spec.json`: `region_shocked_episodes` (shocked region
+    worlds keep their first n episode seeds, in both splits, in the screened registry) and
+    `reuse_rows` (`_reuse_v2_rows`). A dry run may pass `shock_profile="shocks-i-smoke"` (every
+    shocked entry in its smoke form) and `worlds_per_family` (per family the first 2n calm and n
+    shocked gate worlds, so the scope keeps the gate's regime ratio). A resume replays `plan_v3` from the rows; rows outside its plan are refused."""
+    from .shock_profiles import SHOCKS_I_SMOKE
+
+    tag = registry.version_tag
+    if tag < 3:
+        raise ValueError(f"--member-waves v3 screens a v3+ registry, got {registry.name!r}")
+    if reserves == "eager":
+        raise ValueError("the two-wave screen plans reserves on demand per wave; eager is refused")
+    if shock_profile is not None and (not dry_run or shock_profile != SHOCKS_I_SMOKE):
+        raise ValueError(f"--shock-profile takes only {SHOCKS_I_SMOKE!r}, in a dry run")
+    if region_shocked_episodes is not None and not 1 <= region_shocked_episodes < 10:
+        raise ValueError("--region-shocked-episodes must be in 1..9 (D3 reduction 1 uses 5)")
+    screened_on = registry.version
+    reg = registry
+    if region_shocked_episodes is not None:
+        n = region_shocked_episodes
+        reg = replace(registry, entries=tuple(
+            replace(e, episode_seeds=e.episode_seeds[:n])
+            if e.family in REGION_FAMILIES and e.regime == SHOCKED_REGIME else e
+            for e in registry.entries))
+    gate = select_worlds(reg, DEVELOPMENT, sizes=sizes, families=families, regimes=regimes,
+                         max_worlds=max_worlds)
+    if worlds_per_family is not None:  # per family: the first 2N calm and N shocked gate worlds,
+        # the gate's 2 : 1 regime ratio, so the dry-run scope keeps "Regimes" (calm >= 2x shocked)
+        seen: dict[tuple[str, str], int] = {}
+        kept_gate = []
+        for e in gate:
+            cap = worlds_per_family * (2 if e.regime == "calm" else 1)
+            if seen.get((e.family, e.regime), 0) < cap:
+                kept_gate.append(e)
+                seen[(e.family, e.regime)] = seen.get((e.family, e.regime), 0) + 1
+        gate = kept_gate
+    groups = {e.group for e in gate}
+    extra = [e for e in reg.entries
+             if reserves != "none" and e.status == RESERVE and e.group in groups]
+    if not dry_run:
+        smoke = test_only_problem([*gate, *extra])
+        problems = [msg for bad, msg in (
+            (len(source_commit) != 40 or any(c not in "0123456789abcdef" for c in source_commit),
+             "no full 40-hex source commit (--source-commit or --verify-source-commit)"),
+            (any(f is not None for f in (sizes, families, regimes, max_worlds,
+                                         worlds_per_family, episodes_per_world)),
+             "world/episode filters are set"),
+            (reserves == "none", "reserves are skipped"),
+            (bool(reg.coverage_problems()), "; ".join(reg.coverage_problems())),
+            (roster.version_tag != tag,
+             f"registry {registry.name!r} is v{tag} but roster {roster.name!r} is "
+             f"v{roster.version_tag}"),
+            (smoke is not None, smoke or ""),
+        ) if bad]
+        if problems:
+            raise ValueError("not a valid real screen (" + "; ".join(problems)
+                             + "); pass --dry-run for a smoke run")
+    if not gate:
+        raise ValueError("no development gate worlds selected")
+    if dry_run:
+        def cut(e: WorldEntry) -> WorldEntry:
+            e = replace(e, episode_seeds=e.episode_seeds[:episodes_per_world]
+                        if episodes_per_world else e.episode_seeds)
+            return _smoke_scope_entry(e) if shock_profile else e
+
+        scope = Registry(name=f"{reg.name}-dry-run", seed_ranges=reg.seed_ranges,
+                         entries=tuple(cut(e) for e in (*gate, *extra)),
+                         saturation_ceiling=reg.saturation_ceiling,
+                         shock_profiles=reg.shock_profiles)
+        epw = None  # the scope already holds the cut episodes
+    else:
+        scope, epw = reg, None
+    src = Path(reuse_rows) if reuse_rows else None
+    if src is not None and (horizon != 100 or episodes_per_world is not None):
+        raise ValueError("--reuse-rows needs horizon 100 and every episode (EXP-0047's rows)")
+    source = source_fingerprint(source_commit or None)
+    pins = {
+        "mode": "screen", "member_waves": MEMBER_WAVES_V3, "horizon": horizon,
+        "dry_run": dry_run, "q": q, "prune": True, "reserves": reserves,
+        "registry_version": registry.version, "scope_version": scope.version,
+        "roster_version": roster.version,
+        "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
+        "candidate_replicates": 0,
+        "grid": job_grid(list(scope.gate_worlds(DEVELOPMENT)), epw),
+        "region_shocked_episodes": region_shocked_episodes,
+        "reuse_rows": None if src is None else {
+            "path": str(src.resolve()), "episodes_sha256": sha256_file(str(src / "episodes.csv"))},
+        "shock_profile": shock_profile, "worlds_per_family": worlds_per_family,
+    }
+    out = Path(out_dir)
+    spec_path, episodes = out / "spec.json", out / "episodes.csv"
+    old_spec = json.loads(spec_path.read_text()) if spec_path.exists() else None
+    if old_spec is None and episodes.exists() and episodes.stat().st_size:
+        raise ValueError(f"{episodes} exists without spec.json: orphan rows, refusing to resume")
+    if old_spec is not None and old_spec.get("pins") != pins:
+        raise ValueError(f"{out} holds a run with different pins; refusing to resume")
+    spec = _open_spec(out, old_spec, workers, {
+        "experiment": out.name, "driver": DRIVER, "mode": "screen",
+        "kind": "dry-run" if dry_run else "screen", "pins": pins,
+        "roster": roster.payload() | {"content_hash": roster.version}, "source": source,
+        "member_waves": [],
+    })
+    if src is not None and not (spec.get("reuse") or {}).get("status") == "match":
+        spec["reuse"] = _reuse_v2_rows(out, scope, roster, src, spec=spec, workers=workers,
+                                       horizon=horizon, run_job_fn=run_job_fn, log=log)
+        _write_spec(out, spec)
+    while True:
+        rows = read_rows(episodes) if episodes.exists() and episodes.stat().st_size else []
+        plan = plan_v3(scope, roster, rows, reserves=reserves, episodes_per_world=epw)
+        pairs = plan.jobs
+        jobs = [j for e, ros in pairs for j in build_jobs([e], ros, None, episodes_per_world=epw)]
+        expected = {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs}
+        check_rows(rows, job_grid([e for e, _ in pairs], epw), expected, complete=False)
+        spec["member_waves"] = _v3_wave_summary(plan)
+        _write_spec(out, spec)
+        if plan.complete:
+            break
+        _execute(out, spec, rows, jobs, expected, workers, (horizon, None, None), run_job_fn,
+                 log)
+        _stop_if_failed(out, spec)
+    outcome = screen_outcome_v3(scope, roster, rows, q=q, tag=tag, screened_on=screened_on,
+                                dry_run=dry_run, reserves=reserves, episodes_per_world=epw)
+    p = outcome.plan
+    report: dict[str, object] = {
+        "member_waves": MEMBER_WAVES_V3, "acceptance_read": not dry_run,
+        "note": DRY_ONLY_V3 if dry_run else "",
+        "registry_version": outcome.registry.version, "screened_on": screened_on,
+        "waves": _v3_wave_summary(p), "w2": list(p.w2 or ()),
+        "not_carried": [m for m in roster.member_ids if p.w2 is not None and m not in p.w2],
+        "headroom": [h.to_dict() for h in p.headroom1 + p.headroom2],
+        "exclusions": sorted(f"{f}/{z}" for f, z in p.excluded), "stop": p.stop,
+        "replacements": [r.to_dict() for r in outcome.registry.screening.replacements],  # type: ignore[union-attr]
+        "bar_deaths": [{"world": w, "episode": ep, "member": m}
+                       for w, ep, m in outcome.registry.screening.bar_deaths or ()],  # type: ignore[union-attr]
+        "roster_version": None if outcome.roster is None else outcome.roster.version,
+        "pruned": ([] if outcome.roster is None or outcome.roster.pruning is None
+                   else list(outcome.roster.pruning.dropped)),
+        "families": (None if outcome.calibrations is None else
+                     {c.family: c.payload() for c in outcome.calibrations}),
+        "q": q, **outcome.tables,
+    }
+    (out / "screening.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    _write_table(out / "headroom.csv", [h.to_dict() for h in p.headroom1 + p.headroom2])
+    att = outcome.tables["attainability"]
+    _write_table(out / "attainability.csv",
+                 [{"cell": "size_regime", "family": "", "excluded": "", **r}
+                  for r in att["by_size_regime"]]  # type: ignore[index]
+                 + [{"cell": "family", **r} for r in att["by_family"]])  # type: ignore[index]
+    _write_table(out / "routing.csv", outcome.tables["routing"]["worlds"])  # type: ignore[index]
+    if outcome.passed:
+        frozen = out / "frozen"
+        frozen.mkdir(exist_ok=True)
+        names = {k: f"{k}_v{tag}.json" for k in ("worlds", "roster", "side_effect_params")}
+        save_registry(outcome.registry, frozen / names["worlds"])
+        assert outcome.roster is not None and outcome.params_json is not None
+        save_roster(outcome.roster, frozen / names["roster"])
+        (frozen / names["side_effect_params"]).write_text(outcome.params_json)
+        spec["frozen"] = {names["worlds"]: outcome.registry.version,
+                          names["roster"]: outcome.roster.version,
+                          names["side_effect_params"]: json.loads(outcome.params_json)[
+                              "content_hash"]}
+        spec["screened_on"] = screened_on
+    spec["status"] = "complete" if outcome.passed else "headroom-failed"
+    spec["result"] = report
+    _write_spec(out, spec)
+    if not (out / "RESULT.md").exists():
+        (out / "RESULT.md").write_text(SCREEN_SKELETON.format(
+            title=out.name, banner=DRY_BANNER if dry_run else "",
+            status=("HEADROOM PASSED" if outcome.passed
+                    else f"HEADROOM FAILED (no frozen files): {p.stop}"),
+            driver=DRIVER))
+    log(f"[gate] two-wave screen {'(dry run) ' if dry_run else ''}"
+        f"{'passed' if outcome.passed else 'FAILED'}; excluded "
+        f"{sorted(f'{f}/{z}' for f, z in p.excluded) or 'none'}")
     return outcome, (0 if outcome.passed else HEADROOM_FAILED)
 
 
@@ -1506,6 +2276,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--scales", help="probe: capacity scales, e.g. 1.0,0.95,0.9,0.85,0.8")
     ap.add_argument("--members", help="probe or dry run: keep only these roster members "
                                       "(comma list of member ids)")
+    ap.add_argument("--member-waves", choices=(MEMBER_WAVES_V3,),
+                    help="screen: the two-wave v3 screen (design D3); needed for a v3+ registry")
+    ap.add_argument("--worlds-per-family", type=int,
+                    help="two-wave screen dry run: per family the first 2N calm and N shocked "
+                         "gate worlds (the gate's regime ratio)")
+    ap.add_argument("--region-shocked-episodes", type=int,
+                    help="two-wave screen: D3 reduction 1, shocked region worlds at N episodes")
+    ap.add_argument("--reuse-rows", help="two-wave screen: D3 reduction 2, reuse the v2-draft "
+                                         "members' v2-world rows of this EXP-0047 dir")
+    ap.add_argument("--shock-profile", help="two-wave screen dry run: shocks-i-smoke")
     ap.add_argument("--dry-run", action="store_true",
                     help="smoke run: allows filters, an unfrozen roster, an unscreened registry and "
                          "no source commit; marked as not an acceptance read")
@@ -1579,7 +2359,10 @@ def _run_mode(args: argparse.Namespace, roster: Roster, source_commit: str, prob
             families=_csv_strs(args.families), regimes=_csv_strs(args.regimes),
             max_worlds=args.max_worlds,
             episodes_per_world=args.episodes_per_world, source_commit=source_commit,
-            dry_run=args.dry_run)
+            dry_run=args.dry_run, member_waves=args.member_waves,
+            worlds_per_family=args.worlds_per_family,
+            region_shocked_episodes=args.region_shocked_episodes, reuse_rows=args.reuse_rows,
+            shock_profile=args.shock_profile)
         return status
     params_payload = json.loads(Path(args.params).read_text())
     params = load_side_effect_params(args.params)

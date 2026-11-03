@@ -8,3 +8,4 @@
 - **Task 2.2** (from 2.1): shocked region entries write `shock_profile: "shocks-i"` into the generator ref themselves (`WorldPoint` does not carry it); `ws_loaded` builds dense and sparse_f4 samples on one stream, which share seeds and lever rows, so pick by slot and use each index once.
 - **Any later gate-v3 code task** (optional hardening, from the 2.2 review): no test plants an episode-seed collision in `registry` region seed checks; removing that check passes every test. Add one.
 - **Tasks 6.1 / 7.1 Resources** (from 5.2, supervisor): re-size to sizing.md §pilot / §screen (pilot cpu32 13.48 / stop 27.0; screen cpu32 reductions 1+2 18.80 / stop 37.59) and G1 = 75 in the next plan pass, before 6.1.
+- **Next gate-v3 plan pass** (from the 3.1 review): sync the gate-harness spec delta with design D3 on the routing producer (`entity_planner`) and on attainability (design Context "1 / argmax fill" vs spec "ordered units over the hindsight baseline").

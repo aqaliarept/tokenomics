@@ -81,7 +81,7 @@ Coordination with M4: every gate-v3 code commit changes M4's package source hash
 
 ## 3. Screen modes and size-scoped reports (code)
 
-- [ ] 3.1 [code][local] Two-wave v3 screen in `/srv/research/tokenomics/tokenomics/tokenomics/eval/gate_cli.py` and `/srv/research/tokenomics/tokenomics/tokenomics/eval/roster.py` (design D3), selected by `--member-waves v3` and recorded in `spec.json`.
+- [x] 3.1 [code][local] Two-wave v3 screen in `/srv/research/tokenomics/tokenomics/tokenomics/eval/gate_cli.py` and `/srv/research/tokenomics/tokenomics/tokenomics/eval/roster.py` (design D3), selected by `--member-waves v3` and recorded in `spec.json`.
   - **Member plan.** Wave 1 = all members on every development gate world except `ws_wide`. Wave 2 = `ws_wide`, with the wave-1 winners ∪ `entity_planner` × every ordering baseline. Reserves on demand per wave.
   - **Replacement.** Bar-death replacement for region families.
   - **Staged headroom with per-family admission.** Wave-1 families are checked before wave 2. A failing family × size is marked `excluded` in both splits (design D3 step 4). Exit 3 only when a size has no admitted family, before wave 2 if wave 1 decides it.

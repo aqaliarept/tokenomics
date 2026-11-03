@@ -819,3 +819,504 @@ def test_v1_screen_frozen_files_byte_identical_to_c9c7da2(reserve_registry: Regi
     for name in got:
         assert "screened_on" not in json.loads((out / "frozen" / name).read_text()), name
     assert "screened_on" not in json.loads((out / "spec.json").read_text())
+
+
+# --- the two-wave v3 screen (add-gate-v3 task 3.1, design D3 / D4) ---
+
+import functools  # noqa: E402
+
+from tokenomics.eval.gate import row_from_dict  # noqa: E402
+from tokenomics.eval.gate_cli import (  # noqa: E402
+    build_jobs,
+    job_key,
+    plan_v3,
+    routing_reading,
+    routing_world,
+    screen_outcome_v3,
+)
+from tokenomics.eval.registry import EXCLUDED, SEALED, build_worlds_v3  # noqa: E402
+from tokenomics.eval.roster import NEVER_ARGMAX_TWO_WAVE_RULE, is_stochastic  # noqa: E402
+
+EP_RR, EP_MS, EP_MWW = ("entity_planner/round_robin", "entity_planner/makeable_split",
+                        "entity_planner/makeable_weighted_whole")
+AR, SA = "always_restore/even_split", "stock_aware/proportional"
+
+
+def _v3_roster(pairs: tuple[tuple[str, str], ...] = (
+        ("entity_planner", "round_robin"), ("entity_planner", "makeable_split"),
+        ("entity_planner", "makeable_weighted_whole"), ("always_restore", "even_split"),
+        ("stock_aware", "proportional"))) -> Roster:
+    return Roster(name="roster-v3-test", replicates=2, members=tuple(
+        RosterMember(p, o, contract_for(p, o), is_stochastic(p, o)) for p, o in pairs))
+
+
+@functools.cache
+def _draft_v3() -> Registry:
+    return build_worlds_v3()
+
+
+Stub = Callable[[dict], dict]
+
+
+def _stub(units: Callable[[dict], float] | None = None, *, dead: Callable[[dict], bool] = None,
+          fill: Callable[[dict], float] = None) -> Stub:
+    """A roster row per job: units / death / fill from the given functions of the job."""
+    base = {EP_RR: 100.0, EP_MS: 106.0, EP_MWW: 90.0, AR: 50.0, SA: 101.0}
+
+    def run(job: dict) -> dict:
+        u = units(job) if units else base.get(job["subject"], 10.0) + job["replicate"]
+        f = fill(job) if fill else 0.5
+        return row_to_dict(EpisodeRow(
+            world=job["world"], size=job["size"], regime=job["regime"], episode=job["episode"],
+            subject=job["subject"], replicate=job["replicate"], units=float(u),
+            dead=bool(dead(job)) if dead else False, demand_digest=f"d{job['episode']}",
+            r_start=1.0, r_end=0.9, consumer_fill_rate={"c0": 0.7},
+            ordered_units=100.0, fulfilled_units=100.0 * f))
+    return run
+
+
+def _drive(scope: Registry, roster: Roster, stub: Stub) -> list[EpisodeRow]:
+    """Run exactly the jobs `plan_v3` schedules, as the driver does, until it is complete."""
+    rows: list[EpisodeRow] = []
+    while True:
+        plan = plan_v3(scope, roster, rows)
+        have = {job_key(r.world, r.episode, r.subject, r.replicate) for r in rows}
+        for e, ros in plan.jobs:
+            for j in build_jobs([e], ros, None):
+                if job_key(j["world"], j["episode"], j["subject"], j["replicate"]) not in have:
+                    rows.append(row_from_dict(run_job_stub(stub, j)))
+        if plan.complete:
+            return rows
+
+
+def run_job_stub(stub: Stub, job: dict) -> dict:
+    return stub(job)
+
+
+def _outcome(stub: Stub, roster: Roster | None = None, scope: Registry | None = None):
+    scope = scope or _draft_v3()
+    roster = roster or _v3_roster()
+    rows = _drive(scope, roster, stub)
+    return screen_outcome_v3(scope, roster, rows, q=0.05, tag=3, screened_on=scope.version,
+                             dry_run=True), rows
+
+
+def test_v3_wave2_runs_w2_and_carries_a_non_ep_winner() -> None:
+    """gate-harness "Wave-1 winner carried to wave 2": stock_aware wins one wave-1 episode, so it
+    runs on every ws_wide world and is kept; every entity_planner member runs in wave 2 whether
+    or not it won; always_restore never wins and is dropped as not carried."""
+    one = {"done": False}
+
+    def units(job: dict) -> float:
+        if job["subject"] == SA and job["world"] == "dev-sparse_wide-42-calm-00" \
+                and job["episode"] == _draft_v3().entry(job["world"]).episode_seeds[0]:
+            return 500.0
+        return {EP_RR: 100.0, EP_MS: 106.0, EP_MWW: 90.0, AR: 50.0, SA: 40.0}[job["subject"]]
+
+    out, rows = _outcome(_stub(units))
+    assert out.plan.w2 == (EP_MS, EP_MWW, EP_RR, SA)
+    wide = {r.subject for r in rows if r.world.startswith("dev-ws_wide-")}
+    assert wide == set(out.plan.w2) and AR not in wide
+    assert out.roster.member_ids == (EP_MS, SA)  # MS wins elsewhere, SA its one episode
+    rec = out.roster.pruning
+    assert rec.rule == NEVER_ARGMAX_TWO_WAVE_RULE and rec.not_carried == (AR,)
+    assert [w.members for w in rec.waves] == [_v3_roster().member_ids, out.plan.w2]
+    assert all(w.rows_digest for w in rec.waves) and rec.waves[1].episodes
+    assert {e.world for e in rec.waves[1].episodes} <= {
+        e.id for e in out.registry.gate_worlds(DEVELOPMENT) if e.family == "ws_wide"}
+    assert one == {"done": False}
+
+
+def test_v3_bar_death_replaces_region_worlds_in_reserve_order() -> None:
+    """gate-harness "Region worlds whose best baseline dies are replaced": the argmax member dies
+    on a ws_loaded world and on its first reserve, so the second reserve replaces it (the first
+    skipped); the record names world, episode and member. A sparse_wide world whose argmax dies
+    keeps its v2 rule (not replaced)."""
+    scope = _draft_v3()
+    bad = {"dev-ws_loaded-12-calm-00", "dev-ws_loaded-12-calm-r0", "dev-sparse_wide-12-calm-00"}
+
+    def dead(job: dict) -> bool:
+        return job["world"] in bad and job["subject"] == EP_MS  # MS is every world's argmax
+
+    out, _ = _outcome(_stub(dead=dead))
+    reps = {r.replaced: r for r in out.registry.screening.replacements}
+    assert set(reps) == {"dev-ws_loaded-12-calm-00"}
+    r = reps["dev-ws_loaded-12-calm-00"]
+    assert (r.by, r.skipped) == ("dev-ws_loaded-12-calm-r1", ("dev-ws_loaded-12-calm-r0",))
+    first = scope.entry("dev-ws_loaded-12-calm-00").episode_seeds[0]
+    assert ("dev-ws_loaded-12-calm-00", first, EP_MS) in out.registry.screening.bar_deaths
+    assert out.registry.entry("dev-sparse_wide-12-calm-00").status == GATE
+    assert out.plan.wave1.sub_waves == (("dev-ws_loaded-12-calm-r0",),
+                                        ("dev-ws_loaded-12-calm-r1",))
+
+
+def _fill_by_family(fills: dict[tuple[str, int], float]) -> Callable[[dict], float]:
+    scope = _draft_v3()
+    return lambda job: fills.get((scope.entry(job["world"]).family, job["size"]), 0.5)
+
+
+def test_v3_one_family_excluded_both_splits_others_proceed() -> None:
+    """gate-harness "One family fails under v3", "Exclusion covers both splits", "Recorded
+    exclusion passes admission", "Excluded rows do not shape the frozen files"."""
+
+    def units(job: dict) -> float:  # always_restore wins only on the excluded sparse_wide/12
+        if job["subject"] == AR and job["size"] == 12 and job["world"].startswith(
+                "dev-sparse_wide"):
+            return 999.0
+        return {EP_RR: 100.0, EP_MS: 106.0, EP_MWW: 90.0, AR: 50.0, SA: 40.0}[job["subject"]]
+
+    out, rows = _outcome(_stub(units, fill=_fill_by_family({("sparse_wide", 12): 0.96})))
+    assert out.passed and out.plan.excluded == {("sparse_wide", 12)}
+    assert out.plan.wave2 is not None  # wave 2 still runs
+    sw12 = [e for e in out.registry.entries if (e.family, e.size) == ("sparse_wide", 12)]
+    assert {e.split for e in sw12} == {DEVELOPMENT, SEALED}
+    assert all(e.status == EXCLUDED for e in sw12)
+    assert out.registry.admission_problems(DEVELOPMENT) == []
+    assert out.registry.coverage_problems() == []
+    assert AR not in out.plan.w2 and AR not in out.roster.member_ids  # rows of excluded worlds
+    fams = {c.family: c for c in out.calibrations}
+    assert set(fams) == {"sparse_wide", "ws_loaded", "ws_wide"}
+    sw_eps = {(r.world, r.episode) for r in rows if r.world.startswith("dev-sparse_wide-42")}
+    assert fams["sparse_wide"].calibration.episodes == len(sw_eps)  # 42 only, no 12-producer
+    assert json.loads(out.params_json)["evidence"]["excluded"] == ["sparse_wide/12"]
+
+
+def test_v3_size_without_an_admitted_family_stops_before_wave_2() -> None:
+    """gate-harness "A size without an admitted family": both 12-producer families fail wave 1,
+    so the screen stops (exit 3) before wave 2 runs and freezes nothing."""
+    out, rows = _outcome(_stub(fill=_fill_by_family({("sparse_wide", 12): 0.96,
+                                                      ("ws_loaded", 12): 0.97})))
+    assert not out.passed and "12 producers" in out.plan.stop
+    assert out.plan.wave2 is None and not any(r.world.startswith("dev-ws_wide") for r in rows)
+    assert out.roster is None and out.params_json is None
+
+
+def test_v3_attainability_flag_is_reported_only() -> None:
+    """gate-harness "Shocked margin out of reach": a perfect-fill ratio below the margin is
+    flagged unattainable, in the report only."""
+    fill = _fill_by_family({("sparse_wide", 12): 0.94})  # 1 / 0.94 = 1.064: calm ok, shocked not
+    out, _ = _outcome(_stub(fill=fill))
+    cells = {(c["size"], c["regime"]): c for c in out.tables["attainability"]["by_size_regime"]}
+    by_fam = {(c["family"], c["size"], c["regime"]): c
+              for c in out.tables["attainability"]["by_family"]}
+    assert by_fam[("sparse_wide", 12, "shocked")]["unattainable"]
+    assert not by_fam[("sparse_wide", 12, "calm")]["unattainable"]
+    assert by_fam[("ws_loaded", 12, "calm")]["perfect_fill_ratio"] == pytest.approx(2.0)
+    assert not cells[(12, "calm")]["unattainable"]
+    assert out.passed  # the flag changes nothing
+
+
+ROUTERS = ("blend_0.5", "even_split", "obs_price", "proportional", "random", "shock_reactive",
+           "round_robin", "even_split_rotating", "random_whole", "makeable_weighted_whole",
+           "makeable_split")
+EP11 = _v3_roster(tuple(("entity_planner", o) for o in ROUTERS))
+
+
+def _routing_rows(world: str, regime: str, units: dict[str, list[list[float]]]
+                  ) -> list[EpisodeRow]:
+    """units[ordering] = per episode, per replicate units (EP11's R = 2 for stochastic ones)."""
+    rows = []
+    for o in ROUTERS:
+        mid = f"entity_planner/{o}"
+        for ep, reps in enumerate(units.get(o, [[50.0, 50.0]] * 2)):
+            n = 2 if EP11.member(mid).random else 1
+            for r in range(n):
+                rows.append(_row(world, 100 + ep, mid, reps[r % len(reps)], replicate=r,
+                                 regime=regime))
+    return rows
+
+
+def _entry(world: str, regime: str, family: str = "ws_loaded"):
+    from tokenomics.eval.registry import WorldEntry
+
+    return WorldEntry(id=world, split=DEVELOPMENT, family=family, size=12, regime=regime,
+                      world_seed=1, episode_seeds=(100, 101), generator={})
+
+
+def test_routing_deterministic_sides_on_a_calm_world_count() -> None:
+    """gate-harness "Deterministic sides on a calm world": makeable_split beats round_robin by 6%,
+    both deterministic: the floor is 0 and the world counts."""
+    u = {"round_robin": [[100.0]] * 2, "makeable_split": [[106.0]] * 2,
+         "makeable_weighted_whole": [[60.0, 60.0]] * 2, "random_whole": [[60.0, 60.0]] * 2,
+         "random": [[60.0, 60.0]] * 2}
+    r = routing_world(_entry("w", CALM), EP11, _routing_rows("w", CALM, u))
+    assert (r["input_aware"], r["blind"], r["floor"], r["floor_type"]) == (
+        "makeable_split", "round_robin", 0.0, "calm_deterministic")
+    assert r["reach_gain"] == pytest.approx(0.06) and r["counts"]
+
+
+def test_routing_poor_routers_do_not_make_routing_matter() -> None:
+    """gate-harness "Poor routers do not make routing matter": even_split at half of round_robin,
+    the input-aware routers within 0.02 of it: the family reads routing_flat."""
+    worlds = {}
+    rows = []
+    for i in range(3):
+        w = f"w{i}"
+        u = {"round_robin": [[100.0]] * 2, "even_split": [[50.0]] * 2,
+             "makeable_split": [[101.5]] * 2, "makeable_weighted_whole": [[101.0, 101.0]] * 2}
+        rows += _routing_rows(w, CALM, u)
+        worlds[w] = (_entry(w, CALM), EP11)
+    res = routing_reading(worlds, rows, set())
+    assert [f["reading"] for f in res["families"]] == ["routing_flat"]
+    assert all(r["router_spread"] >= 0.49 and not r["counts"] for r in res["worlds"])
+
+
+def test_routing_family_rule_one_third_and_floors() -> None:
+    """gate-harness "Flat region family": 1 counting world of 6 reads routing_flat, 2 of 6
+    routing_matters. A shocked world's floor is 3·sd(d)/√n; a calm world with a stochastic side
+    uses that side's run spread; one shocked episode leaves the floor undefined (no count)."""
+    worlds, rows = {}, []
+    for i in range(6):
+        w = f"w{i}"
+        gain = 110.0 if i < 2 else 100.0
+        rows += _routing_rows(w, CALM, {"round_robin": [[100.0]] * 2,
+                                         "makeable_split": [[gain]] * 2})
+        worlds[w] = (_entry(w, CALM), EP11)
+    fam = routing_reading(worlds, rows, set())["families"][0]
+    assert (fam["counting_worlds"], fam["reading"]) == (2, "routing_matters")
+    one = {k: v for k, v in worlds.items() if k != "w1"}
+    assert routing_reading(one, rows, set())["families"][0]["reading"] == "routing_flat"
+    # shocked floor: d = (10, 30) -> sd 14.14, floor 3 * 14.14 / sqrt(2) = 30 > mean diff 20
+    s = _routing_rows("s", SHOCKED, {"round_robin": [[100.0], [100.0]],
+                                     "makeable_split": [[110.0], [130.0]]})
+    r = routing_world(_entry("s", SHOCKED), EP11, s)
+    assert r["floor_type"] == "shocked" and r["floor"] == pytest.approx(30.0)
+    assert r["reach_gain"] == pytest.approx(0.2) and not r["counts"]
+    # calm, stochastic side: MWW runs 110, 120, 110, 120 -> s 5.77, n 4: floor 3 * 5.77 / 2
+    c = _routing_rows("c", CALM, {"round_robin": [[100.0]] * 2,
+                                  "makeable_weighted_whole": [[110.0, 120.0]] * 2})
+    r = routing_world(_entry("c", CALM), EP11, c)
+    assert r["floor_type"] == "calm_stochastic"
+    assert r["floor"] == pytest.approx(3 * (100 / 3 / 4) ** 0.5) and r["counts"]
+    single = _routing_rows("o", SHOCKED, {"round_robin": [[100.0]],
+                                          "makeable_split": [[150.0]]})
+    single = [x for x in single if x.episode == 100]
+    r = routing_world(_entry("o", SHOCKED), EP11, single)
+    assert r["floor"] is None and not r["counts"]
+
+
+def test_v3_screen_refusals(tmp_path: Path) -> None:
+    from tokenomics.eval.registry import build_worlds_v2
+    from tokenomics.eval.roster import PILOT_V3_NAME, build_pilot_roster_v3
+
+    v3 = _draft_v3()
+
+    def never(job: dict) -> dict:  # a path that is not refused fails fast instead of playing
+        raise AssertionError(f"a refused screen ran a job: {job['world']}")
+
+    with pytest.raises(ValueError, match="pilot roster"):
+        run_screen(out_dir=tmp_path / "a", horizon=12, workers=1, registry=v3,
+                   roster=build_pilot_roster_v3(), member_waves="v3", run_job_fn=never, log=lambda s: None)
+    assert build_pilot_roster_v3().name == PILOT_V3_NAME
+    with pytest.raises(ValueError, match="needs --member-waves v3"):
+        run_screen(out_dir=tmp_path / "b", horizon=12, workers=1, registry=v3,
+                   roster=_v3_roster(), dry_run=True, run_job_fn=never, log=lambda s: None)
+    with pytest.raises(ValueError, match="one wave"):
+        run_screen(out_dir=tmp_path / "c", horizon=12, workers=1, registry=build_worlds_v2(),
+                   roster=_v3_roster(), dry_run=True, member_waves="v3", run_job_fn=never, log=lambda s: None)
+    with pytest.raises(ValueError, match="belong to the two-wave screen"):
+        run_screen(out_dir=tmp_path / "d", horizon=12, workers=1, registry=build_worlds_v2(),
+                   roster=_v3_roster(), dry_run=True, region_shocked_episodes=5,
+                   run_job_fn=never, log=lambda s: None)
+    with pytest.raises(ValueError, match="in a dry run"):
+        run_screen(out_dir=tmp_path / "e", horizon=12, workers=1, registry=v3,
+                   roster=_v3_roster(), member_waves="v3", shock_profile="shocks-i-smoke",
+                   run_job_fn=never, log=lambda s: None)
+    assert not any((tmp_path / x).exists() for x in "abcde")
+
+
+def test_v3_driver_smoke_profile_reductions_and_outputs(tmp_path: Path) -> None:
+    """A dry-run two-wave screen with a stub: shocked entries run in their smoke form, D3
+    reduction 1 cuts shocked region worlds to 5 episodes in the screened registry, the waves,
+    attainability and routing tables are written, and the frozen v3 files carry one
+    screened_on and dry-run names."""
+    seen: list[dict] = []
+    stub = _stub()
+
+    def run(job: dict) -> dict:
+        seen.append(job)
+        return stub(job)
+
+    out = tmp_path / "s"
+    _, status = run_screen(out_dir=out, horizon=12, workers=1, registry=_draft_v3(),
+                           roster=_v3_roster(), dry_run=True, member_waves="v3",
+                           worlds_per_family=1, shock_profile="shocks-i-smoke",
+                           region_shocked_episodes=5, run_job_fn=run, log=lambda s: None)
+    assert status == 0
+    shocked = [j for j in seen if j["regime"] == "shocked"]
+    assert shocked and {j["generator"]["params"]["shock_profile"] for j in shocked} == {
+        "shocks-i-smoke"}
+    assert {(j["world"].split("-")[1], j["regime"]) for j in seen} >= {
+        ("sparse_wide", "shocked"), ("ws_loaded", "shocked"), ("ws_wide", "shocked")}
+    rep = json.loads((out / "screening.json").read_text())
+    assert [w["wave"] for w in rep["waves"]] == [1, 2] and rep["acceptance_read"] is False
+    assert rep["note"] == "not an acceptance read"
+    assert rep["attainability"]["by_size_regime"] and rep["routing"]["families"]
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["pins"]["region_shocked_episodes"] == 5
+    assert spec["pins"]["shock_profile"] == "shocks-i-smoke"
+    frozen = {p.name: json.loads(p.read_text()) for p in (out / "frozen").iterdir()}
+    assert set(frozen) == {"worlds_v3.json", "roster_v3.json", "side_effect_params_v3.json"}
+    assert {d["screened_on"] for d in frozen.values()} == {_draft_v3().version}
+    assert frozen["roster_v3.json"]["name"] == "roster-v3-dry-run"
+    assert frozen["side_effect_params_v3.json"]["name"] == "side-effect-params-v3-dry-run"
+    region_shocked = [e for e in frozen["worlds_v3.json"]["entries"]
+                      if e["family"].startswith("ws_") and e["regime"] == "shocked"]
+    assert region_shocked and all(len(e["episode_seeds"]) == 5 for e in region_shocked)
+    # a rerun on the same out dir resumes from the rows and runs nothing new
+    again: list[dict] = []
+    run_screen(out_dir=out, horizon=12, workers=1, registry=_draft_v3(), roster=_v3_roster(),
+               dry_run=True, member_waves="v3", worlds_per_family=1,
+               shock_profile="shocks-i-smoke", region_shocked_episodes=5,
+               run_job_fn=lambda j: again.append(j) or stub(j), log=lambda s: None)
+    assert again == []
+
+
+def _source_pins(**edits: object) -> dict:
+    """The pins of a real horizon-100 screen of the registry v2 / roster v2 drafts (EXP-0047)."""
+    from tokenomics.eval.registry import build_worlds_v2
+    from tokenomics.eval.roster import build_roster_v2
+
+    return {"registry_version": build_worlds_v2().version,
+            "roster_version": build_roster_v2().version, "horizon": 100, "dry_run": False,
+            **edits}
+
+
+def test_v3_reuse_rows_after_an_exact_reproduction(tmp_path: Path) -> None:
+    """D3 reduction 2: v2-world rows of the v2-draft members come from the EXP-0047 dir after its
+    reproduction check matches; a single differing row refuses the reuse."""
+    from tokenomics.eval.gate_cli import read_rows
+    from tokenomics.eval.registry import build_worlds_v2
+    from tokenomics.eval.roster import build_roster_v2, build_roster_v3
+
+    roster = build_roster_v3()
+    stub = _stub(units=lambda j: 10.0 + len(j["subject"]) % 7 + j["replicate"])
+    v2ws = [_draft_v3().entry(w) for w in ("dev-sparse_wide-12-calm-00",
+                                           "dev-sparse_wide-12-calm-01",
+                                           "dev-sparse_wide-12-shocked-00")]
+    v2w = v2ws[2]
+    src = tmp_path / "exp47"
+    src.mkdir()
+    v2_roster = build_roster_v2()
+    (src / "spec.json").write_text(json.dumps({"pins": _source_pins()}))
+    rows = [stub(j) for j in build_jobs(v2ws, v2_roster, None)]
+    with (src / "episodes.csv").open("w") as fh:
+        from tokenomics.eval.gate import rows_to_csv
+
+        fh.write(rows_to_csv([row_from_dict(r) for r in rows]))
+    seen: list[dict] = []
+    out = tmp_path / "r"
+    _, status = run_screen(out_dir=out, horizon=100, workers=1, registry=_draft_v3(),
+                           roster=roster, dry_run=True, member_waves="v3", worlds_per_family=1,
+                           families=["sparse_wide", "ws_wide"],
+                           reuse_rows=str(src), run_job_fn=lambda j: seen.append(j) or stub(j),
+                           log=lambda s: None)
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["reuse"]["status"] == "match" and spec["reuse"]["reproduced_rows"] == 200
+    v2_ids = set(v2_roster.member_ids)
+    ran = {(j["world"], j["episode"]) for j in seen if j["world"].startswith("dev-sparse_wide")
+           and j["subject"] in v2_ids}
+    # only the reproduction world-episodes ran: one per (size, regime) = calm-00 and shocked-00
+    assert ran == {("dev-sparse_wide-12-calm-00", v2ws[0].episode_seeds[0]),
+                   (v2w.id, v2w.episode_seeds[0])}
+    assert spec["reuse"]["reused_rows"] == len(rows) - 200
+    assert len(read_rows(out / "episodes.csv")) > 0 and status in (0, 3)
+    bad = tmp_path / "exp47b"
+    bad.mkdir()
+    (bad / "spec.json").write_text((src / "spec.json").read_text())
+    rows = [dict(r, units="1234.0") if (r["world"], r["subject"], r["replicate"]) == (
+        "dev-sparse_wide-12-calm-00", "always_both/even_split", "0") and int(r["episode"]) ==
+        v2ws[0].episode_seeds[0] else r for r in rows]
+    with (bad / "episodes.csv").open("w") as fh:
+        fh.write(rows_to_csv([row_from_dict(r) for r in rows]))
+    with pytest.raises(ValueError, match="reproduction check failed"):
+        run_screen(out_dir=tmp_path / "r2", horizon=100, workers=1, registry=_draft_v3(),
+                   roster=roster, dry_run=True, member_waves="v3", worlds_per_family=1,
+                   families=["sparse_wide", "ws_wide"],
+                   reuse_rows=str(bad), run_job_fn=stub, log=lambda s: None)
+
+
+def _reuse_source(tmp_path: Path, name: str, *, pins: dict | None = None,
+                  edit: Callable[[dict], dict] | None = None) -> tuple[Path, Stub]:
+    """A fake EXP-0047 dir: rows of the v2-draft members on the two 12-producer calm worlds and
+    the shocked one `worlds_per_family=1` selects, from a deterministic stub; `edit` changes the
+    reproduction row of always_both/even_split on calm-00's first episode."""
+    from tokenomics.eval.gate import rows_to_csv
+    from tokenomics.eval.roster import build_roster_v2
+
+    stub = _stub(units=lambda j: 10.0 + len(j["subject"]) % 7 + j["replicate"])
+    v2ws = [_draft_v3().entry(w) for w in ("dev-sparse_wide-12-calm-00",
+                                           "dev-sparse_wide-12-calm-01",
+                                           "dev-sparse_wide-12-shocked-00")]
+    rows = [stub(j) for j in build_jobs(v2ws, build_roster_v2(), None)]
+    target = ("dev-sparse_wide-12-calm-00", "always_both/even_split", "0",
+              str(v2ws[0].episode_seeds[0]))
+    if edit is not None:
+        rows = [edit(dict(r)) if (r["world"], r["subject"], r["replicate"], r["episode"]) ==
+                target else r for r in rows]
+    src = tmp_path / name
+    src.mkdir()
+    (src / "spec.json").write_text(json.dumps({"pins": pins or _source_pins()}))
+    (src / "episodes.csv").write_text(rows_to_csv([row_from_dict(r) for r in rows]))
+    return src, stub
+
+
+def _screen_with_reuse(tmp_path: Path, name: str, src: Path, stub: Stub) -> None:
+    from tokenomics.eval.roster import build_roster_v3
+
+    run_screen(out_dir=tmp_path / name, horizon=100, workers=1, registry=_draft_v3(),
+               roster=build_roster_v3(), dry_run=True, member_waves="v3", worlds_per_family=1,
+               families=["sparse_wide", "ws_wide"], reuse_rows=str(src), run_job_fn=stub,
+               log=lambda s: None)
+
+
+@pytest.mark.parametrize("field, value", [
+    ("dead", "true"),                                # a death
+    ("r_end", "0.123"),                              # run-down
+    ("consumer_fill_rate", json.dumps({"c0": 0.1})),  # a consumer's fill rate
+    ("fulfilled_units", "7.0"),                      # the headroom fill
+])
+def test_v3_reuse_refused_on_any_differing_field(tmp_path: Path, field: str, value: str) -> None:
+    """The reproduction compares whole rows: a reproduction row of EXP-0047 that differs only in
+    a non-units field (deaths, run-down, fill rates feed headroom and X / Y) refuses the reuse."""
+    src, stub = _reuse_source(tmp_path, "src", edit=lambda r: {**r, field: value})
+    with pytest.raises(ValueError, match="reproduction check failed on 1 of 200 rows"):
+        _screen_with_reuse(tmp_path, "out", src, stub)
+
+
+@pytest.mark.parametrize("pins, bad", [
+    ({"horizon": 12}, "horizon"), ({"dry_run": True}, "dry_run"),
+    ({"roster_version": "f" * 64}, "roster_version"),
+    ({"registry_version": "e" * 64}, "registry_version"),
+])
+def test_v3_reuse_refused_on_a_source_that_is_not_exp0047s_kind(tmp_path: Path, pins: dict,
+                                                                bad: str) -> None:
+    src, stub = _reuse_source(tmp_path, "src", pins=_source_pins(**pins))
+    with pytest.raises(ValueError, match=rf"not a real horizon-100 screen.*{bad}"):
+        _screen_with_reuse(tmp_path, "out", src, stub)
+
+
+def test_v3_bar_death_in_a_later_replicate_of_a_stochastic_argmax() -> None:
+    """A death has no mean: the stochastic argmax member (makeable_weighted_whole, R = 2) dies in
+    replicate 1 only on a ws_loaded world, and the world is replaced by its first reserve; the
+    record names world, episode and member."""
+    scope = _draft_v3()
+    world = "dev-ws_loaded-12-calm-00"
+
+    def units(job: dict) -> float:
+        if job["subject"] == EP_MWW and job["world"] == world:
+            return 500.0 + job["replicate"]  # the argmax on this world
+        return {EP_RR: 100.0, EP_MS: 106.0, EP_MWW: 90.0, AR: 50.0, SA: 40.0}[job["subject"]]
+
+    first = scope.entry(world).episode_seeds[0]
+
+    def dead(job: dict) -> bool:
+        return (job["world"], job["subject"], job["episode"], job["replicate"]) == (
+            world, EP_MWW, first, 1)
+
+    out, rows = _outcome(_stub(units, dead=dead))
+    assert any(r.dead and r.replicate == 1 for r in rows)
+    assert not any(r.dead and r.replicate == 0 for r in rows)
+    reps = {r.replaced: r for r in out.registry.screening.replacements}
+    assert reps[world].by == "dev-ws_loaded-12-calm-r0"
+    assert (world, first, EP_MWW) in out.registry.screening.bar_deaths
