@@ -1076,3 +1076,58 @@ needed. The agent turns it into a check and promotes it to a numbered entry once
 discriminated a real case.
 
 _(empty)_
+
+## 27. An ES pilot improves on the monitor set but not beyond its floor (`unresolved`)
+
+_Status: partially diagnosed (2026-11-03): under-trained on an underpowered monitor; trading not supported (checks 1–2)._
+
+**Problem (plain English):** after the pilot's 20 ES generations (design D7), the trained
+per-order router beats its starting point A0 on the fixed training-monitor set (16 world-episodes,
+R = 2), but by less than that comparison's noise floor F_tr. So the pilot reads `unresolved`, and
+the main runs are not licensed. The competing explanations call for different responses:
+- **Too few generations.** The gain is real and still growing, and 20 generations are not enough
+  to clear the floor. Response: more generations, which is a budget decision.
+- **An underpowered monitor set.** The floor (the atlas spread at 16 world-episodes × R = 2, or
+  3·SE of the run's own paired differences) is larger than any plausible pilot gain. Response:
+  a more powerful monitor read, which is a pre-registration change and goes to the user.
+- **World-dependent trading.** The ES step trades worlds against each other (heterogeneity,
+  DIAGNOSTICS 25): it raises a few world-episodes and lowers most, so the mean gain rests on a
+  few worlds. Response: a policy or sampling change, not more of the same training.
+
+**Discriminating checks (offline first, from the run's own files):**
+1. **Per-world persistence.** From `monitor.csv`, per monitor world-episode, center − A0 at
+   generations 10 and 20. If the same worlds gain and the same worlds lose, with the losses
+   growing, it is trading. If losses shrink while gains grow, it is under-trained.
+2. **The floor's source.** Compare the atlas-spread floor with the own 3·SE and with the
+   paired-difference spread. If the own spread alone is about the floor, the monitor set is
+   underpowered for this effect size.
+3. **Training-minibatch agreement.** From `member_fitness.csv` / `artifacts/members.csv`: do the
+   center's per-world gains over A0's bar row on the training minibatches show the same 2-world
+   concentration?
+
+**Outcome branches:** under-trained → a budget question (more generations); underpowered → a
+pre-registration change (to the user); trading → a strategy fork (to the user). Each must name
+this entry's diagnosed cause.
+
+**Evidence (EXP-0059, task 6.2):**
+- **Monitor set:** g_tr +12.72 at generation 10 and **+29.78** at generation 20, against F_tr
+  **54.75** (atlas floor 54.75; own 3·SE 45.00 at generation 10, 54.59 at generation 20).
+- **Improvement over generations 11–20:** +17.06.
+- **Per world-episode at generation 20:** 7 / 16 above A0 and 9 below. Two (+241, +284) carry
+  the mean; the median is ≈ −10. At generation 10: 8 / 8.
+- 0 contract failures, 0 non-finite, 0–15 of 24 members disqualified per generation (v2 margin).
+- **Checks 1 and 2 (supervisor, offline, 2026-11-03, from `monitor.csv` / `monitor_summary.csv`):**
+  - Check 1, per-world persistence (center − A0, generation 10 → 20): the summed losses shrink,
+    −483 → −319 (0436 −144.5 → −36.5, 0046 −139.5 → −39.5, 0230 −59 → −4, 0008 −43 → −23.5), while
+    the summed gains grow, +687 → +795 (0352 +75 → +241, 0302 +16.5 → +88). Three worlds move against
+    the trend (0018 +134.5 → −66.5, 0053 −31.5 → −66.5, 0055 +4.5 → −20). Per-world changes of
+    ±50 sit near the noise (A0 replicate SD median 27.8 at R = 2). Trading predicts growing losses,
+    which are not seen.
+  - Check 2, the floor's source: the own 3·SE (54.59) alone equals the atlas floor (54.75). So the
+    16 × R = 2 monitor set needs a gain of about 2.8% to resolve, and the pilot's +1.5% is below it.
+  - Reading: **under-trained (gain still rising, losses shrinking) on an underpowered monitor;
+    trading is not supported.** Check 3 was not run.
+  - Response (supervisor, budget authority): more generations, i.e. task 7.1 (A1 resumed for
+    generations 21–40) as planned. The monitor's power is reported at generation 40 and goes to the
+    user as a pre-registration question only if generation 40 is still below the floor while
+    rising.

@@ -1147,3 +1147,25 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
     recompute offline. ≈ 3.0 vCPU-h billed (tranche A ≈ 15.2 of 100; the 125 extension is now
     available).
   - **Next.** The supervisor decides the pilot (EXP-0059, task 6.2).
+
+### Does the ES pilot clear its floor? (EXP-0059)
+
+- **EXP-0059: ES pilot, A1 seed 0, 20 generations under pre-registration v2. `unresolved`.**
+  - **The question.** After EXP-0069 licensed training (`weak`, `heterogeneity`), does a
+    20-generation pilot beat its zero-residual start A0 on the fixed training-monitor set by more
+    than the floor F_tr?
+  - **The result.** On the monitor set the center rose from 1,949.9 consumer units (A0) to
+    1,962.6 at generation 10 and 1,979.7 at generation 20. g_tr is **+29.8 (≈ 1.5%) against
+    F_tr 54.75 (≈ 2.8%)**, so **`unresolved`**: diagnose, stop.
+  - **Recorded, not deciding.**
+    - The gain was still rising (+17.1 over the last 10 generations).
+    - It is concentrated: 7 of 16 world-episodes are above A0 and 9 below, and two (+241, +284)
+      carry the mean.
+    - Training ran cleanly. The v2 noise margin left most members ranked (0–15 of 24
+      disqualified per generation).
+  - **What it opens.** DIAGNOSTICS 27 has three explanations: under-trained (more
+    generations), an underpowered monitor set (a pre-registration change), or world-dependent
+    trading (a strategy fork). Its offline checks decide among them.
+  - **Cost.** cpu32 and cpu16 were refused for capacity; secure cpu8, ≈ 7.8 vCPU-h billed
+    (tranche A ≈ 23.0 of 125).
+

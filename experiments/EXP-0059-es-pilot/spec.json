@@ -1,0 +1,617 @@
+{
+  "acceptance_read": false,
+  "blas_threads": null,
+  "date": "2026-11-03",
+  "decode_pins": {
+    "ordering_decode": "choice-v1"
+  },
+  "driver": "tokenomics.train.order_es",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "exp0059",
+  "inputs": {
+    "bar_dir": "/workspace/tokenomics/_pod_ckpts/exp0058_bar",
+    "init": null,
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "prereg": "/workspace/tokenomics/tokenomics/train/registry/es_prereg_m4_v2.json",
+    "probe": "/workspace/tokenomics/_pod_ckpts/exp0069_probe.json",
+    "resume_from": null
+  },
+  "kind": "train",
+  "pins": {
+    "generations": 20,
+    "resume_from": null,
+    "training": {
+      "arm": {
+        "n_params": 44,
+        "name": "A1",
+        "rank": 0,
+        "residual": true
+      },
+      "disqualification": {
+        "a0_refs_sha256": "0580eabcf33c04ce17bfd2d3476bdd6db7a00492e06dfe448f39abc499d867f0",
+        "noise_margin": {
+          "rundown": 0.09607384166738028,
+          "starvation": 0.11694956324630984
+        },
+        "prereg_version": 2
+      },
+      "driver": "tokenomics.train.order_es",
+      "dry_run": false,
+      "horizon": 100,
+      "hyper": {
+        "adam": {
+          "beta1": 0.9,
+          "beta2": 0.999,
+          "eps": 1e-08,
+          "lr": 0.02
+        },
+        "h": 0.1,
+        "noise_stream": "m4-es-noise-v1",
+        "sigma": "600b09f07e9d833bf938b9e20ad695613fe7a67a27486e10e4db6c556e8e98a1",
+        "weight_decay": 0.005,
+        "x_rundown": 0.7515841609654592,
+        "y_starvation": 0.7301724137931035
+      },
+      "inputs": {
+        "bar_csv_sha256": "3e078c43c41bcd2be21325dd9cebacd6536b546c261d913a2419605363609d9b",
+        "bar_spec_pins_sha256": "1e0028b01bf968aa1a2bdc6d19bf01a1ea45bc3aab97f47507c363fa08650a69",
+        "init_theta_sha256": "dad523e1c22719b481180d1058e1a4b4c2808dabd0a6d1af62ee4c49e9bdb1b5",
+        "normaliser_fit_rows_sha256": "4b23e026952dde1eb950266424dc946cbb6ef695b13ddfb513a34ee43a0fa9b1",
+        "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+        "orderer_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+        "prereg_sha256": "511e939a41213dd401d390637bc7e5be1c3725f32fb1de3a9e70d7b1385ceeae",
+        "probe_sha256": "a556cb78662258af6a2a8bc66de7f1e83d5ed6bcb01dae5120088a954f7580f7",
+        "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+        "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9"
+      },
+      "minibatch": 24,
+      "mode": "train",
+      "monitor_every": 10,
+      "opt_seed": 0,
+      "ordering_decode": "choice-v1",
+      "pairs": 12,
+      "per_order": {
+        "architecture_version": "orderer-per-order-residual-v2",
+        "arm": "A1",
+        "base_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+        "decoder_version": "per-order-choice-v1",
+        "history_mode": "agent",
+        "normaliser_sha256": "2d574ec8a3dfcac9fe399906a8cc093bbd2551ec9ba6d9495e238dabf3a96065",
+        "theta_sha256": null
+      },
+      "producer": "entity_planner",
+      "source_tree_sha256": "cf58956984049f9d55bca1d5cc329671435d930429bd8ac23584981b88368ea8"
+    },
+    "training_sha256": "ab3719d65b4b8f9451e19fbdb23acfd7e74cc05d9178c12d3c0d4474af092e99"
+  },
+  "pre_registered": {
+    "design": "add-m4-orderer-redesign D6 / D7 (task 5.2)",
+    "sections": {
+      "arms": {
+        "A0": {
+          "n_params": 0,
+          "name": "A0",
+          "rank": 0,
+          "residual": false
+        },
+        "A1": {
+          "n_params": 44,
+          "name": "A1",
+          "rank": 0,
+          "residual": true
+        },
+        "A2": {
+          "n_params": 268,
+          "name": "A2",
+          "rank": 4,
+          "residual": true
+        },
+        "A2-R2": {
+          "n_params": 156,
+          "name": "A2-R2",
+          "rank": 2,
+          "residual": true
+        }
+      },
+      "es": {
+        "adam": {
+          "beta1": 0.9,
+          "beta2": 0.999,
+          "eps": 1e-08,
+          "lr": 0.02
+        },
+        "algorithm": "antithetic OpenAI-ES: members theta +- sigma * eps_i (eps_i ~ N(0, I), i < pairs) plus the center every generation; per-parameter sigma",
+        "center_every_generation": true,
+        "disqualification": {
+          "rule": "a member's world-episode disqualifies when it dies and A0 does not, when r_end < x * r_start and A0's does not, or when a consumer's fill < y and A0 does not starve that consumer (per consumer), A0 on the same world-episode and keys (the bar's A0 row); one disqualifying world-episode -> the member takes the worst rank",
+          "side_effect_params": "e2aee97ac38524d709862bc956c43940413ac0cb44c846304a4b8c3d324c3a99",
+          "x_rundown": 0.7515841609654592,
+          "y_starvation": 0.7301724137931035
+        },
+        "estimate": "g_j = sum_i (r(+i) - r(-i)) * eps_ij / (2 * pairs * sigma_j)",
+        "first_opt_seed": 0,
+        "fitness": {
+          "B_we": "max over RR, MWW (R = 2 mean), TR and the roster v2 deterministic members (bar.csv)",
+          "D_we": "mean scheduled consumer demand per cycle (bar.csv)",
+          "H": "holding_units_per_cycle",
+          "U": "consumer units (consumer_completed_units)",
+          "formula": "f = mean over the minibatch of U / B_we - h * H / D_we",
+          "h": 0.1
+        },
+        "generations": {
+          "main": 40,
+          "pilot": 20
+        },
+        "history_alpha": 0.3,
+        "history_mode": "agent",
+        "horizon": 100,
+        "max_read_size": 42,
+        "minibatch": 12,
+        "monitor": {
+          "arms": [
+            "center",
+            "A0"
+          ],
+          "at_generation_0": true,
+          "every": 10,
+          "replicates": 2,
+          "world_episodes": 16
+        },
+        "noise": "eps of generation g: numpy default_rng(int(sha256('|'.join([noise_stream, 'train', opt_seed, g]))[:16], 16)).standard_normal((pairs, n_params))",
+        "noise_stream": "m4-es-noise-v1",
+        "nonfinite": "a member whose policy raises NonFiniteChoice takes the worst rank and is logged; never a contract failure",
+        "opt_seeds": [
+          0,
+          1
+        ],
+        "pairs": 12,
+        "producer": "entity_planner",
+        "rank_shaping": "centered ranks over the 2 * pairs members (rank / (2 pairs - 1) - 0.5, average ranks on ties); disqualified and non-finite members share the worst rank; the center is not ranked",
+        "schedule_stream": "m4-es-schedule-v1",
+        "static_clip_42_stop": "a real ES run (probe or train) refuses a bar whose normaliser.json flags static_psi_clip_42 (a 42-producer static count pinned at the clip); the run stops and goes to the supervisor",
+        "train_replicate": 0,
+        "training_size": 12,
+        "update": "Adam ascending g - weight_decay * theta (L2 coupled into the gradient, OpenAI-ES l2coeff)",
+        "weak_minibatch": 24,
+        "weight_decay": {
+          "kind": "l2_coupled",
+          "value": 0.005
+        }
+      },
+      "normaliser": {
+        "centre": "median (numpy percentile 50, linear)",
+        "clip": 5.0,
+        "clip_rule": "normalised values clipped to +-clip",
+        "fit_rows": "A0's unnormalised rows (after the input transforms) on the training world-episodes of the bar precompute only (horizon 100, agent-history mode, after the infeasible-world replacement): one phi row per (decision, eligible producer), one psi row per decision",
+        "fitting_code": {
+          "covers": "the normaliser fit and apply, the input transforms, scale floors and clip, fit-row loading, and the code that builds and feeds the rows (PerOrderPolicy, the shared / history / order / product row builders, the agent-local history)",
+          "defs": {
+            "env/agent_history.py": [
+              "FEATURES",
+              "N_FEATURES",
+              "KINDS",
+              "OUTCOME_KINDS",
+              "PRIOR_UNITS",
+              "PRIOR_RATE",
+              "NO_LATENCY",
+              "_PairState",
+              "_EMPTY",
+              "AgentHistory",
+              "stream_producers",
+              "_FoldHook",
+              "_ResetHook",
+              "attach_agent_history",
+              "env_agent_id"
+            ],
+            "train/order_es_worlds.py": [
+              "rows_digest",
+              "load_fit_rows",
+              "fit_normaliser",
+              "fit_rows_sha256"
+            ],
+            "train/orderer_scorer.py": [
+              "_BOUND",
+              "_ORDERER_PRODUCT_FEATURES",
+              "_ORDERER_PRODUCER_ROW_FEATURES",
+              "_product_features",
+              "_producer_row_features"
+            ],
+            "train/per_order_scorer.py": [
+              "CLIP",
+              "HAS_COMPLETED",
+              "OWN_TURN_FEATURES",
+              "ORDER_FEATURES",
+              "PHI_FEATURES",
+              "PSI_FEATURES",
+              "N_PHI",
+              "N_PSI",
+              "LOG1P_PHI",
+              "LOG1P_PSI",
+              "SCALE_FLOORS",
+              "_LOG1P_PHI_COLS",
+              "_LOG1P_PSI_COLS",
+              "_SHARED",
+              "_HIST",
+              "transform_phi",
+              "transform_psi",
+              "input_transforms",
+              "apply_scale_floors",
+              "FeatureNormaliser",
+              "RawRows",
+              "shared_rows",
+              "history_rows",
+              "order_features",
+              "PerOrderPolicy"
+            ]
+          },
+          "not_covered": "the domain / env state the row builders read (product_stream_view, bid outcome kinds): recorded by each run's package tree hash only",
+          "rule": "SHA-256 over, per package-relative file in sorted order, the file name, NUL, the source lines of the listed top-level definitions, decorators included, in list order (each '# name' then its lines), NUL",
+          "sha256": "7dca5e2c7cb7f833e6fcf3ead3a7047b79bc8b28617b4954f3b2128934f19c4c"
+        },
+        "phi_features": [
+          "total_current_capacity",
+          "total_max_capacity",
+          "capacity_headroom",
+          "min_capacity_ratio",
+          "mean_capacity_ratio",
+          "requested_load",
+          "reserved_load",
+          "total_load",
+          "cut_off_price",
+          "outstanding_inbound_units",
+          "active_restoration",
+          "active_upgrade",
+          "active_inventory_expansion",
+          "acceptance_rate",
+          "completion_rate",
+          "rejection_rate",
+          "eligible",
+          "accept_qty_now",
+          "complete_qty_now",
+          "makeable_qty_now",
+          "capacity_bottleneck_ratio",
+          "input_bottleneck_ratio",
+          "bottleneck_ratio",
+          "slot_makeability",
+          "recent_routed_qty",
+          "recent_completed_qty",
+          "recent_rejected_qty",
+          "recent_success_rate",
+          "recent_throughput",
+          "recent_completion_latency",
+          "recent_failure_latency",
+          "routed_ema",
+          "accepted_ema",
+          "completed_ema",
+          "failed_ema",
+          "rejected_ema",
+          "completion_latency",
+          "completion_rate",
+          "log_recency",
+          "never_routed",
+          "has_completed",
+          "assigned_units",
+          "assigned_orders"
+        ],
+        "psi_features": [
+          "open_demand_quantity",
+          "open_demand_tokens",
+          "recent_average_cycle_demand",
+          "recent_rejected_quantity",
+          "product_depth",
+          "recipe_input_count",
+          "recipe_input_units",
+          "recipe_capacity_type_count",
+          "eligible_producer_count",
+          "quantity",
+          "tokens_per_unit",
+          "ttl_remaining",
+          "kind"
+        ],
+        "scale": "IQR (75th - 25th, numpy linear)",
+        "scale_floor_rule": "a floored column's scale = max(the rule's scale, its floor); floor of psi.eligible_producer_count = log1p(4) - log1p(2), the spread of its two 12-producer values",
+        "scale_floors": {
+          "psi.eligible_producer_count": 0.5108256237659907
+        },
+        "transform_rule": "the listed columns are log1p-transformed before the fit and before every apply (policy and fit rows alike); the rest enter raw",
+        "transforms": {
+          "psi.eligible_producer_count": "log1p"
+        },
+        "version": "median-iqr-log1p-v2",
+        "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0 (all-equal values have std 0 exactly)"
+      },
+      "policy": {
+        "architecture_version": "orderer-per-order-residual-v2",
+        "base_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+        "bound": 2.0,
+        "decoder_version": "per-order-choice-v1",
+        "input_transforms": {
+          "psi.eligible_producer_count": "log1p"
+        },
+        "ordering_decode": "choice-v1",
+        "u_init": {
+          "seed": 0,
+          "std": 0.1
+        }
+      },
+      "probe": {
+        "a2_rank2_below": 0.1,
+        "arms": [
+          "A1",
+          "A2"
+        ],
+        "cosine": "cosine between the two minibatches' estimates; an all-zero estimate leaves it undefined, read as no_signal",
+        "estimate": "per minibatch, the training estimate (centered ranks over that minibatch's member fitness); noise from noise_stream with ('probe', arm)",
+        "minibatch": 6,
+        "minibatches": 2,
+        "pairs": 12,
+        "readings": {
+          "signal": 0.3,
+          "weak": 0.1
+        },
+        "theta": "each arm's registered initial theta (A1: 0; A2: w = 0, theta_tau = 0, u ~ N(0, 0.1) seed 0, v = 0), so Delta = 0 for both",
+        "variance_ratio": "var of paired (same minibatch) f(+i) - f(-i) over var of unpaired f_1(+i) - f_2(-i), f_2(+i) - f_1(-i) (ddof 1, raw fitness, non-finite members excluded); reported",
+        "weak_next": {
+          "minibatch": 24
+        }
+      },
+      "sigma": {
+        "theta_tau": 0.05,
+        "u": 0.05,
+        "v": 0.05,
+        "w": 0.05
+      },
+      "worlds": {
+        "arms": [
+          "RR",
+          "MWW",
+          "TR",
+          "blend_0.5",
+          "even_split",
+          "obs_price",
+          "proportional",
+          "shock_reactive",
+          "A0"
+        ],
+        "decode_by_arm": {
+          "A0": "choice-v1",
+          "MWW": "logits-v1",
+          "RR": "logits-v1",
+          "TR": "logits-v1",
+          "blend_0.5": "logits-v1",
+          "even_split": "logits-v1",
+          "obs_price": "logits-v1",
+          "proportional": "logits-v1",
+          "shock_reactive": "logits-v1"
+        },
+        "guards": {
+          "side_effect_params": "e2aee97ac38524d709862bc956c43940413ac0cb44c846304a4b8c3d324c3a99",
+          "x_rundown": 0.7515841609654592,
+          "y_starvation": 0.7301724137931035
+        },
+        "horizon": 100,
+        "normaliser": {
+          "centre": "median (numpy percentile 50, linear)",
+          "clip": 5.0,
+          "clip_rule": "normalised values clipped to +-clip",
+          "fit_rows": "A0's unnormalised rows (after the input transforms) on the training world-episodes of the bar precompute only (horizon 100, agent-history mode, after the infeasible-world replacement): one phi row per (decision, eligible producer), one psi row per decision",
+          "fitting_code": {
+            "covers": "the normaliser fit and apply, the input transforms, scale floors and clip, fit-row loading, and the code that builds and feeds the rows (PerOrderPolicy, the shared / history / order / product row builders, the agent-local history)",
+            "defs": {
+              "env/agent_history.py": [
+                "FEATURES",
+                "N_FEATURES",
+                "KINDS",
+                "OUTCOME_KINDS",
+                "PRIOR_UNITS",
+                "PRIOR_RATE",
+                "NO_LATENCY",
+                "_PairState",
+                "_EMPTY",
+                "AgentHistory",
+                "stream_producers",
+                "_FoldHook",
+                "_ResetHook",
+                "attach_agent_history",
+                "env_agent_id"
+              ],
+              "train/order_es_worlds.py": [
+                "rows_digest",
+                "load_fit_rows",
+                "fit_normaliser",
+                "fit_rows_sha256"
+              ],
+              "train/orderer_scorer.py": [
+                "_BOUND",
+                "_ORDERER_PRODUCT_FEATURES",
+                "_ORDERER_PRODUCER_ROW_FEATURES",
+                "_product_features",
+                "_producer_row_features"
+              ],
+              "train/per_order_scorer.py": [
+                "CLIP",
+                "HAS_COMPLETED",
+                "OWN_TURN_FEATURES",
+                "ORDER_FEATURES",
+                "PHI_FEATURES",
+                "PSI_FEATURES",
+                "N_PHI",
+                "N_PSI",
+                "LOG1P_PHI",
+                "LOG1P_PSI",
+                "SCALE_FLOORS",
+                "_LOG1P_PHI_COLS",
+                "_LOG1P_PSI_COLS",
+                "_SHARED",
+                "_HIST",
+                "transform_phi",
+                "transform_psi",
+                "input_transforms",
+                "apply_scale_floors",
+                "FeatureNormaliser",
+                "RawRows",
+                "shared_rows",
+                "history_rows",
+                "order_features",
+                "PerOrderPolicy"
+              ]
+            },
+            "not_covered": "the domain / env state the row builders read (product_stream_view, bid outcome kinds): recorded by each run's package tree hash only",
+            "rule": "SHA-256 over, per package-relative file in sorted order, the file name, NUL, the source lines of the listed top-level definitions, decorators included, in list order (each '# name' then its lines), NUL",
+            "sha256": "7dca5e2c7cb7f833e6fcf3ead3a7047b79bc8b28617b4954f3b2128934f19c4c"
+          },
+          "phi_features": [
+            "total_current_capacity",
+            "total_max_capacity",
+            "capacity_headroom",
+            "min_capacity_ratio",
+            "mean_capacity_ratio",
+            "requested_load",
+            "reserved_load",
+            "total_load",
+            "cut_off_price",
+            "outstanding_inbound_units",
+            "active_restoration",
+            "active_upgrade",
+            "active_inventory_expansion",
+            "acceptance_rate",
+            "completion_rate",
+            "rejection_rate",
+            "eligible",
+            "accept_qty_now",
+            "complete_qty_now",
+            "makeable_qty_now",
+            "capacity_bottleneck_ratio",
+            "input_bottleneck_ratio",
+            "bottleneck_ratio",
+            "slot_makeability",
+            "recent_routed_qty",
+            "recent_completed_qty",
+            "recent_rejected_qty",
+            "recent_success_rate",
+            "recent_throughput",
+            "recent_completion_latency",
+            "recent_failure_latency",
+            "routed_ema",
+            "accepted_ema",
+            "completed_ema",
+            "failed_ema",
+            "rejected_ema",
+            "completion_latency",
+            "completion_rate",
+            "log_recency",
+            "never_routed",
+            "has_completed",
+            "assigned_units",
+            "assigned_orders"
+          ],
+          "psi_features": [
+            "open_demand_quantity",
+            "open_demand_tokens",
+            "recent_average_cycle_demand",
+            "recent_rejected_quantity",
+            "product_depth",
+            "recipe_input_count",
+            "recipe_input_units",
+            "recipe_capacity_type_count",
+            "eligible_producer_count",
+            "quantity",
+            "tokens_per_unit",
+            "ttl_remaining",
+            "kind"
+          ],
+          "scale": "IQR (75th - 25th, numpy linear)",
+          "scale_floor_rule": "a floored column's scale = max(the rule's scale, its floor); floor of psi.eligible_producer_count = log1p(4) - log1p(2), the spread of its two 12-producer values",
+          "scale_floors": {
+            "psi.eligible_producer_count": 0.5108256237659907
+          },
+          "transform_rule": "the listed columns are log1p-transformed before the fit and before every apply (policy and fit rows alike); the rest enter raw",
+          "transforms": {
+            "psi.eligible_producer_count": "log1p"
+          },
+          "version": "median-iqr-log1p-v2",
+          "zero_spread_rule": "IQR = 0 -> the column's population std; std = 0 -> 1.0 (all-equal values have std 0 exactly)"
+        },
+        "producer": "entity_planner",
+        "replicates": {
+          "A0": 1,
+          "MWW": 2,
+          "RR": 1,
+          "TR": 1,
+          "blend_0.5": 1,
+          "even_split": 1,
+          "obs_price": 1,
+          "proportional": 1,
+          "shock_reactive": 1
+        },
+        "roster_version": "5050508ecb25f0eda0ae0a61b0dde4ba948a6e9b0d901cd14cde28e0db161f38",
+        "schedule": {
+          "generations": 40,
+          "minibatch": 12,
+          "monitor": 16,
+          "monitor_replicates": 2,
+          "opt_seeds": [
+            0,
+            1
+          ],
+          "probe_minibatch": 6,
+          "stream": "m4-es-schedule-v1"
+        },
+        "selection": {
+          "atlas_worlds": 23,
+          "episodes_per_world": 2,
+          "fresh_atlas": "m4-es-train-v1",
+          "fresh_pool": 256,
+          "max_replaced_share": 0.25,
+          "min_feasible": 50,
+          "rho_loaded": 0.28,
+          "saturation_fill": 0.95,
+          "target": 64,
+          "train_stage": "m4-es-train"
+        }
+      }
+    }
+  },
+  "result": {
+    "candidate_sha256": "8ef1095f8d2a1138f6f65c45de559f5f7ef6dafa2c185d1f84f351c6c320eb2e",
+    "contract_failures": 0,
+    "generation": 20,
+    "monitor": [
+      {
+        "a0_units": 1949.90625,
+        "center_units": 1979.6875,
+        "g_tr_raw": 29.78125,
+        "generation": 20,
+        "improvement_10": 17.0625,
+        "nonfinite": 0,
+        "rows": 32
+      }
+    ],
+    "status": "complete",
+    "theta_sha256": "ba35f8d9a6e95b87b7967cea06c37d63b80276782c9522796071baaee07bfeb7"
+  },
+  "resumes": [],
+  "source": {
+    "commit": "7b16e55aa1d1ebbef0ad7d4fda2e53f8c0583a35",
+    "n_files": 77,
+    "tree_sha256": "cf58956984049f9d55bca1d5cc329671435d930429bd8ac23584981b88368ea8"
+  },
+  "started": "2026-11-03T19:30:39.013491+00:00",
+  "status": "complete",
+  "workers": 8
+}
