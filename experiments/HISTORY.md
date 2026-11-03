@@ -1202,4 +1202,8 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
 - **What it licenses.** The registered next step is seed 1 for A1 (7.4) and the final read
   (7.5). A final `plateau` asks the user to release tranche B1, the relational (GNN-gate) check.
   Cost ≈ 3.5 vCPU-h (tranche A ≈ 54.6 of 125).
+- **EXP-0060d: A1 seed 1, 40 generations. The learning repeats.** The gain over A0 on the
+  training-monitor set reached +68.0 at generation 40 (seed 0: +73.2). Unlike seed 0, it
+  flattened over the last 10 generations (+2.3). Cost ≈ 17.9 vCPU-h on cpu16 (tranche A ≈ 72.5
+  of 125). The final read (7.5) combines both seeds.
 

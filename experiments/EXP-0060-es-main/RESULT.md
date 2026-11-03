@@ -6,7 +6,9 @@
 
 - **val-seed0** (task 7.3): the seed-0 validation read reads **`plateau`** and selects A1-s0.
 
-Still to run: the seed-1 run for A1 (7.4, licensed by `plateau`) and the final read (7.5).
+- **EXP-0060d** (task 7.4): A1 seed 1, generations 1–40.
+
+Still to run: the final read (7.5, `--seed-combine --reuse-references val-seed0`).
 
 ## EXP-0060a: A1 seed 0, generations 21–40 (resumed from EXP-0059)
 
@@ -215,6 +217,44 @@ licensed.
   - Staging under `_pod_ckpts/` only, from a worktree at 7b16e55, with the real-run checks
     passed locally first.
 
+## EXP-0060d: A1 seed 1, generations 1–40 (task 7.4)
+
+**Not a read.** This is the seed-1 run of the selected arm, licensed by val-seed0's `plateau`.
+The final reading is 7.5's.
+
+### In plain English
+
+The same A1 training as seed 0, with a different optimizer seed, so different perturbation
+draws and minibatches. It asks whether the learning repeats.
+- **It does, at about the same level.** On the training-monitor set the gain over A0 was +5.7 at
+  generation 10, +13.4 at 20, +65.7 at 30 and **+68.0 at 40**. Seed 0 was at +12.7 / +29.8 /
+  +56.8 / +73.2.
+- **Unlike seed 0, it has flattened.** It gained only +2.3 over generations 31–40.
+- At generation 40, 11 of 16 world-episodes are above A0, with summed losses of −247.
+
+That flattening matters for the final read. D7's seed-1 `plateau` clause needs the seed-1 run's
+own last-10-generation improvement below F_tr (54.75), and `budget_limited` needs it at or above.
+The read itself is 7.5's.
+
+### Details
+
+| generation | center | g_tr | F_tr (atlas / own 3·SE) | improvement over 10 gens | up / down | summed gains / losses |
+|---|---|---|---|---|---|---|
+| 10 | 1955.59 | +5.69 | 54.75 (54.75 / 54.71) | +5.69 | 8 / 8 | +503.0 / −412.0 |
+| 20 | 1963.34 | +13.44 | 54.75 (54.75 / 41.05) | +7.75 | 10 / 6 | +641.0 / −426.0 |
+| 30 | 2015.59 | +65.69 | 54.75 (54.75 / 48.83) | +52.25 | 12 / 4 | +1187.5 / −136.5 |
+| **40** | **2017.94** | **+68.03** | **54.75** (54.75 / 47.53) | **+2.34** | **11 / 5** | **+1335.5 / −247.0** |
+
+- **Verify (as 7.1):**
+  - `contract_failures.csv` is header only, and generations 1–40 are present;
+  - the pins are arm A1, opt seed 1, minibatch 24, prereg v2, the EXP-0058 bar, commit
+    `7b16e55…`, with no resume;
+  - final θ `726a2192a51b…` = `candidate.json` = `checkpoints/gen-0040.json`.
+- **Cost:** pod `ggnnxno5w69shj`, secure 16 vCPU (cpu32 refused for capacity, no pod created),
+  21:44:19 launch → terminated by 22:51:28 (≤ 67.2 min), **≈ 17.9 vCPU-h** billed.
+  - Stop 37. Launch-fit 54.6 + 37 = 91.6 ≤ 125. Tranche A ≈ 72.5.
+- **Files:** `artifacts/a1-s1/`, the run dir as pulled.
+
 ## Conclusions
 
 - **EXP-0060a:** A1 seed 0 at generation 40 has g_tr +73.2 > F_tr 54.75 on the training-monitor
@@ -226,4 +266,6 @@ licensed.
   - Against A0: +68.7 (floor 37.7). Against RR: +26.0 (inside 39.1). Against MWW: −59.0
     (beyond 35.8). Against TR: +614.
   - Labels `history_inert` and `herding`. 0 contract failures; recompute MATCH.
-- **Next:** 7.4, seed 1 for A1, as licensed by `plateau`. The supervisor decides the launch.
+- **EXP-0060d (7.4):** A1 seed 1 at generation 40 has g_tr +68.0 > F_tr 54.75 and is flat over
+  the last 10 generations (+2.3).
+- **Next:** the final read (7.5). The supervisor launches it.
