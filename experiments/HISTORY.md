@@ -1182,4 +1182,10 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - **What it means.** DIAGNOSTICS 27 is diagnosed as under-trained. Whether the gain holds on
     unseen validation worlds is the seed-0 read's question (7.3), after A2 (7.2).
   - **Cost.** cpu32, ≈ 11.0 vCPU-h (tranche A ≈ 34.0 of 125).
+- **EXP-0060b: A2-R2 seed 0, 40 generations from scratch. Also clears the training floor.**
+  - A2 at rank 2, per EXP-0069's rule, gained +13.1 / +11.1 / +55.7 / **+83.7** over A0 on the
+    monitor set at generations 10–40 (F_tr 54.75). That is broader than A1 at generation 40:
+    12 of 16 world-episodes up, losses −94.5, median about +54.
+  - It was still rising (+28.0 over the last 10). Both seed-0 arms now go to the validation read
+    (7.3). Cost ≈ 17.1 vCPU-h (tranche A ≈ 51.1 of 125).
 
