@@ -903,7 +903,11 @@ estimate**.
     large, and against it the same rule reads inconclusive (A1 0.85, A2 0.94).
   - So flat at σ is not excluded (review round 1 of 6.1b).
 - Check 2 (EXP-0068) also shows the relative rule firing on draw noise alone on 5 of the 12
-  world-episodes._
+  world-episodes.
+- **Response tested (2026-11-03, EXP-0069, pre-registration v2):** minibatch 24, the noise
+  margin, and a larger-step arm A1-S2 (2σ). A1 reads `weak` (0.222) and A1-S2 0.440. The
+  registered step table reads **`heterogeneity`**: minibatch 24 suffices, step σ. The caveats
+  are in the evidence below._
 
 **Problem (plain English):** before an ES run, the gradient-signal probe (design D7,
 `order_es --mode probe`) scores the same perturbation pairs on two disjoint minibatches. The two
@@ -1017,6 +1021,23 @@ improved. The competing explanations call for different responses:
     every other world-episode (12-0002 included).
     - The relative rule fires on draw noise on those worlds. This is a separate finding from the
       `no_signal` cause, which check 1 settled.
+
+- **Re-probe under pre-registration v2 (task 6.1e, EXP-0069).** Minibatch 24 from the recorded
+  stream (48 worlds), the noise margin (run-down 0.0961, starvation 0.1169), and A1-S2 = A1 at
+  2σ on the same ε / minibatches / keys. 3,456 jobs; 0 contract failures; the reading recomputes
+  from `probe_fitness.csv`.
+  - **Cosines:** A1 **0.222** (`weak`), A1-S2 **0.440**, A2 −0.407 (→ R = 2). Variance ratios
+    0.014–0.036.
+  - **Step table:** both ≥ 0.1 → **`heterogeneity`**. By the registered rule the 6-world-episode
+    batch size was the issue.
+  - **Reported, never reading-changing:**
+    - With disqualification off, A1 reads 0.058 and A1-S2 0.490. So A1's direction leans on
+      the ranking, and A1-S2's does not.
+    - Even with the margin, 28 / 48 A1 member scores are flagged (A2 28, A1-S2 29), mostly
+      starvation on 12-0055, atlas 12-0361, 12-0014 and 12-0045. The v1 rule would flag all 48
+      in every arm.
+    - A1-S2 at about twice A1's cosine also fits partial flatness at σ. The registered table
+      does not grade it.
 
 ## 26. A pod bills idle while a local step runs between two pod steps
 

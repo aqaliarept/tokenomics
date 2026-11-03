@@ -1,0 +1,316 @@
+{
+ "arms": {
+  "A1": {
+   "cosine": 0.22237108647128176,
+   "disqualified": 28,
+   "estimate_norms": [
+    8.893310484214323,
+    8.955850641739936
+   ],
+   "nonfinite": 0,
+   "variance_ratio": 0.020507800461029492
+  },
+  "A1-S2": {
+   "cosine": 0.43961904601194407,
+   "disqualified": 29,
+   "estimate_norms": [
+    3.9206978817501033,
+    3.3800757818306097
+   ],
+   "nonfinite": 0,
+   "variance_ratio": 0.03616682207297346
+  },
+  "A2": {
+   "cosine": -0.40717686283883714,
+   "disqualified": 28,
+   "estimate_norms": [
+    15.604451829666177,
+    18.311677906037154
+   ],
+   "nonfinite": 0,
+   "variance_ratio": 0.013530120830209148
+  }
+ },
+ "dry_run": false,
+ "minibatches": [
+  [
+   [
+    "ws-m4-es-train-v1-12-0034",
+    941602896
+   ],
+   [
+    "ws-m4-es-train-v1-12-0017",
+    541812697
+   ],
+   [
+    "ws-atlas-v1-12-0230",
+    843506519
+   ],
+   [
+    "ws-m4-es-train-v1-12-0003",
+    192798404
+   ],
+   [
+    "ws-atlas-v1-12-0005",
+    78907865
+   ],
+   [
+    "ws-atlas-v1-12-0094",
+    1184750839
+   ],
+   [
+    "ws-m4-es-train-v1-12-0057",
+    2069676497
+   ],
+   [
+    "ws-m4-es-train-v1-12-0045",
+    66994023
+   ],
+   [
+    "ws-atlas-v1-12-0483",
+    463951027
+   ],
+   [
+    "ws-m4-es-train-v1-12-0055",
+    302755993
+   ],
+   [
+    "ws-m4-es-train-v1-12-0048",
+    1181815137
+   ],
+   [
+    "ws-m4-es-train-v1-12-0022",
+    1360957404
+   ],
+   [
+    "ws-m4-es-train-v1-12-0036",
+    1529919415
+   ],
+   [
+    "ws-atlas-v1-12-0392",
+    1349000731
+   ],
+   [
+    "ws-atlas-v1-12-0176",
+    434046227
+   ],
+   [
+    "ws-m4-es-train-v1-12-0025",
+    2859859
+   ],
+   [
+    "ws-atlas-v1-12-0060",
+    401879355
+   ],
+   [
+    "ws-m4-es-train-v1-12-0002",
+    1600056319
+   ],
+   [
+    "ws-m4-es-train-v1-12-0040",
+    1818130039
+   ],
+   [
+    "ws-m4-es-train-v1-12-0030",
+    13822738
+   ],
+   [
+    "ws-m4-es-train-v1-12-0019",
+    1975693812
+   ],
+   [
+    "ws-m4-es-train-v1-12-0046",
+    1944349881
+   ],
+   [
+    "ws-m4-es-train-v1-12-0021",
+    1658926801
+   ],
+   [
+    "ws-m4-es-train-v1-12-0032",
+    1352823277
+   ]
+  ],
+  [
+   [
+    "ws-m4-es-train-v1-12-0050",
+    572716247
+   ],
+   [
+    "ws-m4-es-train-v1-12-0014",
+    362098158
+   ],
+   [
+    "ws-atlas-v1-12-0361",
+    1871882284
+   ],
+   [
+    "ws-m4-es-train-v1-12-0007",
+    1468423735
+   ],
+   [
+    "ws-atlas-v1-12-0254",
+    1942251076
+   ],
+   [
+    "ws-m4-es-train-v1-12-0013",
+    1124120002
+   ],
+   [
+    "ws-atlas-v1-12-0408",
+    517154806
+   ],
+   [
+    "ws-m4-es-train-v1-12-0005",
+    2141806174
+   ],
+   [
+    "ws-atlas-v1-12-0121",
+    72674252
+   ],
+   [
+    "ws-atlas-v1-12-0365",
+    35744542
+   ],
+   [
+    "ws-m4-es-train-v1-12-0010",
+    583449320
+   ],
+   [
+    "ws-m4-es-train-v1-12-0049",
+    1692962056
+   ],
+   [
+    "ws-m4-es-train-v1-12-0004",
+    47747607
+   ],
+   [
+    "ws-m4-es-train-v1-12-0051",
+    1572602726
+   ],
+   [
+    "ws-m4-es-train-v1-12-0037",
+    1783463990
+   ],
+   [
+    "ws-atlas-v1-12-0155",
+    1281933034
+   ],
+   [
+    "ws-m4-es-train-v1-12-0016",
+    1929968846
+   ],
+   [
+    "ws-m4-es-train-v1-12-0018",
+    1719590143
+   ],
+   [
+    "ws-m4-es-train-v1-12-0000",
+    1901237609
+   ],
+   [
+    "ws-atlas-v1-12-0302",
+    1504978459
+   ],
+   [
+    "ws-m4-es-train-v1-12-0041",
+    1361968267
+   ],
+   [
+    "ws-atlas-v1-12-0321",
+    1658267042
+   ],
+   [
+    "ws-m4-es-train-v1-12-0044",
+    2143077829
+   ],
+   [
+    "ws-atlas-v1-12-0308",
+    1275641963
+   ]
+  ]
+ ],
+ "noise": {
+  "A1": {
+   "purpose": "probe|A1",
+   "stream": "m4-es-noise-v1"
+  },
+  "A1-S2": {
+   "purpose": "probe|A1-S2",
+   "stream": "m4-es-noise-v1"
+  },
+  "A2": {
+   "purpose": "probe|A2",
+   "stream": "m4-es-noise-v1"
+  }
+ },
+ "note": "",
+ "pairs": 12,
+ "pre_registered": {
+  "a2_rank2_below": 0.1,
+  "arms": [
+   "A1",
+   "A2",
+   "A1-S2"
+  ],
+  "cosine": "cosine between the two minibatches' estimates; an all-zero estimate leaves it undefined, read as no_signal",
+  "estimate": "per minibatch, the training estimate (centered ranks over that minibatch's member fitness); noise from noise_stream with ('probe', arm)",
+  "minibatch": 24,
+  "minibatch_source": "the recorded probe stream at size 24 (order_es_worlds.probe_minibatches(training world-episodes, 24): two disjoint minibatches on 48 distinct worlds), not the bar's size-6 schedule.json entry",
+  "minibatches": 2,
+  "pairs": 12,
+  "readings": {
+   "signal": 0.3,
+   "weak": 0.1
+  },
+  "sigma_arms": {
+   "A1-S2": {
+    "base_arm": "A1",
+    "decision": "user, 2026-11-03, 'Add a larger-sigma arm' (notes/user-decisions.md)",
+    "role": "diagnostic only: never a training arm unless the user decides later (not in TRAINABLE_ARMS)",
+    "same_as_A1": "initial theta (0), noise stream and eps_i (purpose probe|A1), the 24 pairs, both minibatch-24 minibatches and every draw key; only sigma differs",
+    "sigma": 0.1,
+    "sigma_scale": 2.0
+   },
+   "reading": {
+    "licence": "training is licensed by A1's reading alone, as registered (D7)",
+    "next": {
+     "flat_at_sigma": "the step size becomes a design question; back to the user",
+     "heterogeneity": "heterogeneity was the issue; minibatch 24 suffices; pilot at sigma",
+     "no_signal": "no_signal again: DIAGNOSTICS entry, back to the user",
+     "sigma_only": "reported; proceed with sigma"
+    },
+    "rules": {
+     "flat_at_sigma": "only A1-S2 reads signal / weak",
+     "heterogeneity": "both do",
+     "no_signal": "neither does",
+     "sigma_only": "only A1 does"
+    },
+    "thresholds": "D7's, unchanged: a cosine >= 0.1 reads signal / weak"
+   }
+  },
+  "signal_next": {
+   "minibatch": 24
+  },
+  "theta": "each arm's registered initial theta (A1: 0; A2: w = 0, theta_tau = 0, u ~ N(0, 0.1) seed 0, v = 0), so Delta = 0 for both",
+  "variance_ratio": "var of paired (same minibatch) f(+i) - f(-i) over var of unpaired f_1(+i) - f_2(-i), f_2(+i) - f_1(-i) (ddof 1, raw fitness, non-finite members excluded); reported",
+  "weak_next": {
+   "minibatch": 24
+  }
+ },
+ "prereg_version": 2,
+ "reading": {
+  "a1_cosine": 0.22237108647128176,
+  "a1s2_cosine": 0.43961904601194407,
+  "a2_arm": "A2-R2",
+  "a2_cosine": -0.40717686283883714,
+  "a2_rank": 2,
+  "minibatch": 24,
+  "next": "minibatch 24; pilot and main runs re-sized and launch-fit-checked",
+  "reading": "weak",
+  "step_next": "heterogeneity was the issue; minibatch 24 suffices; pilot at sigma",
+  "step_reading": "heterogeneity"
+ },
+ "status": "complete",
+ "training_minibatch": 24
+}

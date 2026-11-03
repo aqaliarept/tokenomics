@@ -1120,3 +1120,30 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
       pre-registration v2).
     - The sensitivity above bears on that choice. The minibatch-24 re-probe (EXP-0069) tests
       cross-minibatch agreement directly.
+
+### Does a bigger batch or a bigger step find the direction? (v2 re-probe)
+
+- **EXP-0069: re-probe under pre-registration v2. D7 `weak`; step reading `heterogeneity`.**
+  - **The question.** EXP-0058's 6-world-episode batches found no direction. EXP-0068 left
+    "heterogeneous" vs "flat at σ" open. The user chose bigger batches with a fixed rule
+    (minibatch 24, a noise margin on disqualification) plus a second probe arm at twice the
+    perturbation step (A1-S2), all pre-registered in v2 (task 6.1d).
+  - **The run.** A1, A2 and A1-S2: 12 pairs each, scored on two disjoint sets of 24 training
+    world-episodes from the recorded stream, with the same perturbation directions and draw keys
+    for A1 and A1-S2.
+  - **Reading.**
+    - A1's cosine is **0.22**, so `weak`.
+    - A1-S2's is **0.44**, so both steps find a direction and the registered table reads
+      **`heterogeneity`**: minibatch 24 suffices, and the pilot runs at σ.
+    - A2 is **−0.41**, so it trains at R = 2.
+  - **Caveats (reported, never reading-changing).**
+    - A1's direction leans on the disqualification ranking. With the rule off its cosine is
+      0.058, and even with the margin 28 of 48 member scores are flagged, on a few worlds,
+      mostly for starvation. The v1 rule would flag all 48.
+    - A1-S2 does not lean on it (0.49 with the rule off), and reads about twice as strongly as
+      A1. That is also what partial flatness at σ would look like; the registered table does not
+      grade it.
+  - **Validity and cost.** 0 contract failures; the reading and all 144 member scores
+    recompute offline. ≈ 3.0 vCPU-h billed (tranche A ≈ 15.2 of 100; the 125 extension is now
+    available).
+  - **Next.** The supervisor decides the pilot (EXP-0059, task 6.2).
