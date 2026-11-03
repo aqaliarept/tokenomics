@@ -1169,3 +1169,17 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - **Cost.** cpu32 and cpu16 were refused for capacity; secure cpu8, ≈ 7.8 vCPU-h billed
     (tranche A ≈ 23.0 of 125).
 
+### More generations (EXP-0060a)
+
+- **EXP-0060a: A1 seed 0 resumed to generation 40. The training gain clears its floor.**
+  - **Why.** DIAGNOSTICS 27's offline checks on the pilot found losses shrinking and gains
+    growing (under-trained) on a monitor set that needs about a 2.8% gain to resolve. The
+    supervisor therefore continued the same training (task 7.1).
+  - **Result.** On the training-monitor set the center rose to 2,006.7 at generation 30 and
+    2,023.1 at generation 40, against A0's 1,949.9. g_tr is **+73.2 > F_tr 54.75**.
+  - **The gain broadened:** 10 of 16 world-episodes are above A0, the summed losses fell to
+    −118, and the median moved to about +13. It was still rising (+16.4 over the last 10).
+  - **What it means.** DIAGNOSTICS 27 is diagnosed as under-trained. Whether the gain holds on
+    unseen validation worlds is the seed-0 read's question (7.3), after A2 (7.2).
+  - **Cost.** cpu32, ≈ 11.0 vCPU-h (tranche A ≈ 34.0 of 125).
+

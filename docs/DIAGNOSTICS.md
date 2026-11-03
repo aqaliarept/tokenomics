@@ -1079,7 +1079,7 @@ _(empty)_
 
 ## 27. An ES pilot improves on the monitor set but not beyond its floor (`unresolved`)
 
-_Status: partially diagnosed (2026-11-03): under-trained on an underpowered monitor; trading not supported (checks 1–2)._
+_Status: diagnosed (2026-11-03): under-trained. At generation 40 (EXP-0060a) g_tr +73.2 > F_tr 54.75, with losses shrinking and gains growing through generation 40 (checks 1–2 + EXP-0060a)._
 
 **Problem (plain English):** after the pilot's 20 ES generations (design D7), the trained
 per-order router beats its starting point A0 on the fixed training-monitor set (16 world-episodes,
@@ -1131,3 +1131,36 @@ this entry's diagnosed cause.
     generations 21–40) as planned. The monitor's power is reported at generation 40 and goes to the
     user as a pre-registration question only if generation 40 is still below the floor while
     rising.
+- **Generation 40 (EXP-0060a, task 7.1: A1 resumed for generations 21–40 from EXP-0059's
+  generation-20 checkpoint, same training pins, commit 7b16e55):** g_tr **+73.19 > F_tr 54.75**
+  (atlas floor 54.75; own 3·SE 52.64). The improvement over generations 31–40 was +16.41.
+  - Check 1 continued. Per monitor world-episode, center − A0:
+
+    | world-episode | g10 | g20 | g30 | g40 |
+    |---|---|---|---|---|
+    | atlas 12-0436 | −144.5 | −36.5 | −56.5 | −59.5 |
+    | atlas 12-0230 | −59.0 | −4.0 | −24.5 | −20.0 |
+    | 12-0044 | +32.0 | +51.0 | +104.0 | −19.0 |
+    | 12-0002 | −56.5 | −45.5 | +10.5 | −13.5 |
+    | 12-0053 | −31.5 | −66.5 | +74.0 | −4.5 |
+    | 12-0018 | +134.5 | −66.5 | −178.0 | −1.0 |
+    | atlas 12-0005 | +18.0 | +9.0 | +33.0 | +13.0 |
+    | 12-0029 | −1.5 | −16.5 | −4.0 | +13.5 |
+    | 12-0008 | −43.0 | −23.5 | +107.5 | +31.5 |
+    | 12-0055 | +4.5 | −20.0 | +1.5 | +37.0 |
+    | 12-0057 | −7.5 | +41.5 | +57.0 | +101.5 |
+    | atlas 12-0302 | +16.5 | +88.0 | +17.0 | +116.0 |
+    | atlas 12-0176 | +120.0 | +80.5 | +149.5 | +118.0 |
+    | 12-0046 | −139.5 | −39.5 | +158.0 | +171.0 |
+    | atlas 12-0352 | +75.0 | +241.0 | +112.0 | +172.0 |
+    | atlas 12-0121 | +286.0 | +284.0 | +347.5 | +515.0 |
+    | **up / down** | 8 / 8 | 7 / 9 | 12 / 4 | **10 / 6** |
+    | **summed gains / losses** | +686.5 / −483.0 | +795.0 / −318.5 | +1171.5 / −263.0 | **+1288.5 / −117.5** |
+
+  - The losses keep shrinking (−483 → −319 → −263 → −118) and the gains keep growing
+    (+687 → +795 → +1172 → +1289). The median world-episode is ≈ +13 at generation 40 (≈ −10 at
+    20). atlas 12-0121 is still the largest single gain (+515).
+  - Single worlds swing by ±100–180 between checkpoints (12-0018, 12-0044, 12-0053), on top of
+    A0's re-keyed noise.
+  - The under-training branch holds, and the monitor set resolved the gain once it reached
+    ≈ 3.8% of the bar.
