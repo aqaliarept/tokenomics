@@ -1,0 +1,36 @@
+{
+ "lowo": {
+  "episodes": 512,
+  "flagged": 24,
+  "role": "reported only",
+  "rundown_range": [
+   0.10693867780185135,
+   0.11015641221432575
+  ],
+  "starvation_range": [
+   0.10068166727742196,
+   0.10219901844063742
+  ]
+ },
+ "margin": {
+  "c": 2.0,
+  "df_rundown": 512,
+  "df_starvation": 5400,
+  "rundown": 0.10973298965040919,
+  "sigma_rundown": 0.038796470550838784,
+  "sigma_starvation": 0.035915516265943095,
+  "starvation": 0.10158442040585645
+ },
+ "self_flags": {
+  "episodes": 512,
+  "margin": 24,
+  "v1_rule": 89
+ },
+ "target": {
+  "episodes": 512,
+  "measured": 24,
+  "met": true,
+  "rule": "re-keyed A0 (r1..rK) against its own r0 flags <= 5% of episodes under the margin (in-sample)",
+  "self_flags_max": 25
+ }
+}

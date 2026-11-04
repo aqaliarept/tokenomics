@@ -155,7 +155,7 @@ PREREG_V3_SHA256 = "edd6efc2c325edac003e352c1a2e0a66e8ce72c67afacf86c8e1076ac3ff
 # same under both; a read and its runs must share one file.
 PREREG_V4_PATH = es.PREREG_V4_PATH
 # pre-registration v4 (task 7.8): frozen at 7.9b from EXP-0071's rows; pinned then ("" until)
-PREREG_V4_SHA256 = ""
+PREREG_V4_SHA256 = "3f067e9afd7a8fac19907436786bef89fa7e9d1b445bd5f15b9f4a3d3784d927"
 FROZEN_PREREGS = {PREREG_SHA256: 1, PREREG_V2_SHA256: 2, PREREG_V3_SHA256: 3,
                   **({PREREG_V4_SHA256: 4} if PREREG_V4_SHA256 else {})}
 

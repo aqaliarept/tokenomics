@@ -1210,4 +1210,21 @@ call for different responses:
   12-0045: 68). So under the MWWk reference the rule removes members almost independently of
   fitness, which flattens about half the ranking. That supports the "margin calibrated on the old
   base now ties most members" branch; it does not exclude "MWW is near the ceiling".
+- **Margin re-measured on the MWW base (EXP-0071 (a), task 7.9).**
+  - A0 = MWWk was re-keyed at r0..r4 on all 128 EXP-0070 training world-episodes (r0
+    reproduces the bar 128 / 128).
+  - With the registered formula, the margin is run-down 0.1097 and starvation 0.1016 (v3 /
+    EXP-0068: 0.0961 / 0.1169), about the same size.
+  - Re-keyed A0's own self-flags: 89 / 512 without the margin, 24 / 512 (4.7%) with it.
+  - **Re-scoring EXP-0070's 1,000 member scores offline:**
 
+    | rule | disqualified |
+    |---|---|
+    | v1 (no margin) | 970 |
+    | v3 margin | 497 |
+    | v4 margin | 542 |
+
+  - **The "rule mis-calibrated" branch is not supported.** Members trip the guards about 10
+    times more often than A0's re-keying noise does under the same margin, so the
+    disqualifications reflect real run-down / starvation by the perturbed members against
+    MWWk, not draw noise.

@@ -1,0 +1,599 @@
+{
+  "acceptance_read": false,
+  "blas_threads": null,
+  "date": "2026-11-04",
+  "driver": "tokenomics.train.order_es",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "exp0071-nf",
+  "inputs": {
+    "bar_dir": "/workspace/tokenomics/_pod_ckpts/exp0070_bar",
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    }
+  },
+  "kind": "noise-floor",
+  "pins": {
+    "base_kind": "mww",
+    "driver": "tokenomics.train.order_es",
+    "dry_run": false,
+    "horizon": 100,
+    "inputs": {
+      "bar_csv_sha256": "83449d36193545ebae9bffff254bb83f39b8bd998b059e4b8afc0cb38d6c3260",
+      "bar_spec_pins_sha256": "6d4726ddf67d29d38c27c5242858eca5b8a8241333523239ae831c7d85ee5a0b",
+      "normaliser_fit_rows_sha256": "aa5ead97abed8edb52b05a4bc9117be02bf1cc9502187473bdc8acf05dc0bce2",
+      "normaliser_sha256": "0691beffca1b564a19f1792634812cde85b35e6a62ba6024db49e560506cdedd",
+      "orderer_sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c",
+      "schedule_sha256": "dcf6a31f16e6f02b95395e9420f95071bfefd23338b5ca2f671acad427ad928e",
+      "training_worlds_sha256": "39e18771fc7709afb455cd1e0fc0d4970b8b2b6a94d710fca811182b6209e83e"
+    },
+    "mode": "noise-floor",
+    "ordering_decode": "choice-v1",
+    "producer": "entity_planner",
+    "replicates": 4,
+    "set": "bar",
+    "source_tree_sha256": "181cc795d5068917e5097ac51da52b510010cf2af62cc53d2a9c5e34d14cdc53",
+    "world_episodes": [
+      [
+        "ws-atlas-v1-12-0005",
+        78907865
+      ],
+      [
+        "ws-atlas-v1-12-0005",
+        1360643439
+      ],
+      [
+        "ws-atlas-v1-12-0060",
+        401879355
+      ],
+      [
+        "ws-atlas-v1-12-0060",
+        91735197
+      ],
+      [
+        "ws-atlas-v1-12-0094",
+        1184750839
+      ],
+      [
+        "ws-atlas-v1-12-0094",
+        329380138
+      ],
+      [
+        "ws-atlas-v1-12-0111",
+        1121817825
+      ],
+      [
+        "ws-atlas-v1-12-0111",
+        1889601261
+      ],
+      [
+        "ws-atlas-v1-12-0121",
+        818146579
+      ],
+      [
+        "ws-atlas-v1-12-0121",
+        72674252
+      ],
+      [
+        "ws-atlas-v1-12-0139",
+        1722148477
+      ],
+      [
+        "ws-atlas-v1-12-0139",
+        1946809725
+      ],
+      [
+        "ws-atlas-v1-12-0155",
+        1281933034
+      ],
+      [
+        "ws-atlas-v1-12-0155",
+        474856157
+      ],
+      [
+        "ws-atlas-v1-12-0176",
+        434046227
+      ],
+      [
+        "ws-atlas-v1-12-0176",
+        2054438062
+      ],
+      [
+        "ws-atlas-v1-12-0230",
+        656461431
+      ],
+      [
+        "ws-atlas-v1-12-0230",
+        843506519
+      ],
+      [
+        "ws-atlas-v1-12-0254",
+        1942251076
+      ],
+      [
+        "ws-atlas-v1-12-0254",
+        501535922
+      ],
+      [
+        "ws-atlas-v1-12-0302",
+        1504978459
+      ],
+      [
+        "ws-atlas-v1-12-0302",
+        241064534
+      ],
+      [
+        "ws-atlas-v1-12-0308",
+        1275641963
+      ],
+      [
+        "ws-atlas-v1-12-0308",
+        203183553
+      ],
+      [
+        "ws-atlas-v1-12-0321",
+        575329393
+      ],
+      [
+        "ws-atlas-v1-12-0321",
+        1658267042
+      ],
+      [
+        "ws-atlas-v1-12-0340",
+        1373890141
+      ],
+      [
+        "ws-atlas-v1-12-0340",
+        201539679
+      ],
+      [
+        "ws-atlas-v1-12-0344",
+        200096335
+      ],
+      [
+        "ws-atlas-v1-12-0344",
+        1362234023
+      ],
+      [
+        "ws-atlas-v1-12-0352",
+        403398096
+      ],
+      [
+        "ws-atlas-v1-12-0352",
+        607946767
+      ],
+      [
+        "ws-atlas-v1-12-0361",
+        1871882284
+      ],
+      [
+        "ws-atlas-v1-12-0361",
+        1839507911
+      ],
+      [
+        "ws-atlas-v1-12-0365",
+        35744542
+      ],
+      [
+        "ws-atlas-v1-12-0365",
+        737650482
+      ],
+      [
+        "ws-atlas-v1-12-0391",
+        1645040764
+      ],
+      [
+        "ws-atlas-v1-12-0391",
+        406766145
+      ],
+      [
+        "ws-atlas-v1-12-0392",
+        1170551273
+      ],
+      [
+        "ws-atlas-v1-12-0392",
+        1349000731
+      ],
+      [
+        "ws-atlas-v1-12-0408",
+        788229651
+      ],
+      [
+        "ws-atlas-v1-12-0408",
+        517154806
+      ],
+      [
+        "ws-atlas-v1-12-0436",
+        1177397051
+      ],
+      [
+        "ws-atlas-v1-12-0436",
+        1517642910
+      ],
+      [
+        "ws-atlas-v1-12-0483",
+        1897978398
+      ],
+      [
+        "ws-atlas-v1-12-0483",
+        463951027
+      ],
+      [
+        "ws-m4-es-train-v1-12-0000",
+        867835099
+      ],
+      [
+        "ws-m4-es-train-v1-12-0000",
+        1901237609
+      ],
+      [
+        "ws-m4-es-train-v1-12-0002",
+        2141711971
+      ],
+      [
+        "ws-m4-es-train-v1-12-0002",
+        1600056319
+      ],
+      [
+        "ws-m4-es-train-v1-12-0003",
+        1973389111
+      ],
+      [
+        "ws-m4-es-train-v1-12-0003",
+        192798404
+      ],
+      [
+        "ws-m4-es-train-v1-12-0004",
+        1697262129
+      ],
+      [
+        "ws-m4-es-train-v1-12-0004",
+        47747607
+      ],
+      [
+        "ws-m4-es-train-v1-12-0005",
+        2141806174
+      ],
+      [
+        "ws-m4-es-train-v1-12-0005",
+        200560606
+      ],
+      [
+        "ws-m4-es-train-v1-12-0006",
+        884936205
+      ],
+      [
+        "ws-m4-es-train-v1-12-0006",
+        605551684
+      ],
+      [
+        "ws-m4-es-train-v1-12-0007",
+        1480498576
+      ],
+      [
+        "ws-m4-es-train-v1-12-0007",
+        1468423735
+      ],
+      [
+        "ws-m4-es-train-v1-12-0008",
+        832551913
+      ],
+      [
+        "ws-m4-es-train-v1-12-0008",
+        764830141
+      ],
+      [
+        "ws-m4-es-train-v1-12-0010",
+        876698142
+      ],
+      [
+        "ws-m4-es-train-v1-12-0010",
+        583449320
+      ],
+      [
+        "ws-m4-es-train-v1-12-0011",
+        960545693
+      ],
+      [
+        "ws-m4-es-train-v1-12-0011",
+        1606396417
+      ],
+      [
+        "ws-m4-es-train-v1-12-0013",
+        2081303446
+      ],
+      [
+        "ws-m4-es-train-v1-12-0013",
+        1124120002
+      ],
+      [
+        "ws-m4-es-train-v1-12-0014",
+        362098158
+      ],
+      [
+        "ws-m4-es-train-v1-12-0014",
+        226572137
+      ],
+      [
+        "ws-m4-es-train-v1-12-0016",
+        1929968846
+      ],
+      [
+        "ws-m4-es-train-v1-12-0016",
+        289538502
+      ],
+      [
+        "ws-m4-es-train-v1-12-0017",
+        986813588
+      ],
+      [
+        "ws-m4-es-train-v1-12-0017",
+        541812697
+      ],
+      [
+        "ws-m4-es-train-v1-12-0018",
+        1719590143
+      ],
+      [
+        "ws-m4-es-train-v1-12-0018",
+        222966249
+      ],
+      [
+        "ws-m4-es-train-v1-12-0019",
+        1596548953
+      ],
+      [
+        "ws-m4-es-train-v1-12-0019",
+        1975693812
+      ],
+      [
+        "ws-m4-es-train-v1-12-0021",
+        987311617
+      ],
+      [
+        "ws-m4-es-train-v1-12-0021",
+        1658926801
+      ],
+      [
+        "ws-m4-es-train-v1-12-0023",
+        2093456601
+      ],
+      [
+        "ws-m4-es-train-v1-12-0023",
+        550589643
+      ],
+      [
+        "ws-m4-es-train-v1-12-0024",
+        2125857552
+      ],
+      [
+        "ws-m4-es-train-v1-12-0024",
+        1873501390
+      ],
+      [
+        "ws-m4-es-train-v1-12-0025",
+        2859859
+      ],
+      [
+        "ws-m4-es-train-v1-12-0025",
+        1916808878
+      ],
+      [
+        "ws-m4-es-train-v1-12-0029",
+        407049589
+      ],
+      [
+        "ws-m4-es-train-v1-12-0029",
+        320565123
+      ],
+      [
+        "ws-m4-es-train-v1-12-0030",
+        609567904
+      ],
+      [
+        "ws-m4-es-train-v1-12-0030",
+        13822738
+      ],
+      [
+        "ws-m4-es-train-v1-12-0032",
+        658778403
+      ],
+      [
+        "ws-m4-es-train-v1-12-0032",
+        1352823277
+      ],
+      [
+        "ws-m4-es-train-v1-12-0033",
+        141870395
+      ],
+      [
+        "ws-m4-es-train-v1-12-0033",
+        680765608
+      ],
+      [
+        "ws-m4-es-train-v1-12-0034",
+        105493452
+      ],
+      [
+        "ws-m4-es-train-v1-12-0034",
+        941602896
+      ],
+      [
+        "ws-m4-es-train-v1-12-0036",
+        1970093950
+      ],
+      [
+        "ws-m4-es-train-v1-12-0036",
+        1529919415
+      ],
+      [
+        "ws-m4-es-train-v1-12-0037",
+        1727519464
+      ],
+      [
+        "ws-m4-es-train-v1-12-0037",
+        1783463990
+      ],
+      [
+        "ws-m4-es-train-v1-12-0040",
+        1818130039
+      ],
+      [
+        "ws-m4-es-train-v1-12-0040",
+        1096523584
+      ],
+      [
+        "ws-m4-es-train-v1-12-0041",
+        526415511
+      ],
+      [
+        "ws-m4-es-train-v1-12-0041",
+        1361968267
+      ],
+      [
+        "ws-m4-es-train-v1-12-0044",
+        1092109868
+      ],
+      [
+        "ws-m4-es-train-v1-12-0044",
+        2143077829
+      ],
+      [
+        "ws-m4-es-train-v1-12-0045",
+        66994023
+      ],
+      [
+        "ws-m4-es-train-v1-12-0045",
+        1789244910
+      ],
+      [
+        "ws-m4-es-train-v1-12-0046",
+        1944349881
+      ],
+      [
+        "ws-m4-es-train-v1-12-0046",
+        2051119675
+      ],
+      [
+        "ws-m4-es-train-v1-12-0048",
+        949578799
+      ],
+      [
+        "ws-m4-es-train-v1-12-0048",
+        1181815137
+      ],
+      [
+        "ws-m4-es-train-v1-12-0049",
+        1692962056
+      ],
+      [
+        "ws-m4-es-train-v1-12-0049",
+        700353372
+      ],
+      [
+        "ws-m4-es-train-v1-12-0050",
+        572716247
+      ],
+      [
+        "ws-m4-es-train-v1-12-0050",
+        1415999761
+      ],
+      [
+        "ws-m4-es-train-v1-12-0051",
+        1572602726
+      ],
+      [
+        "ws-m4-es-train-v1-12-0051",
+        1677368537
+      ],
+      [
+        "ws-m4-es-train-v1-12-0053",
+        1117082244
+      ],
+      [
+        "ws-m4-es-train-v1-12-0053",
+        1433987966
+      ],
+      [
+        "ws-m4-es-train-v1-12-0054",
+        58603260
+      ],
+      [
+        "ws-m4-es-train-v1-12-0054",
+        1051846258
+      ],
+      [
+        "ws-m4-es-train-v1-12-0055",
+        302755993
+      ],
+      [
+        "ws-m4-es-train-v1-12-0055",
+        114863101
+      ],
+      [
+        "ws-m4-es-train-v1-12-0057",
+        2069676497
+      ],
+      [
+        "ws-m4-es-train-v1-12-0057",
+        1858620970
+      ],
+      [
+        "ws-m4-es-train-v1-12-0058",
+        1032476281
+      ],
+      [
+        "ws-m4-es-train-v1-12-0058",
+        2105209766
+      ]
+    ]
+  },
+  "pre_registered": {
+    "design": "task 7.8: v3's margin re-measured on the bar's own A0 (the registered formula and target)",
+    "margin_formula": "margin_k = c x sqrt(2) x sigma_k; sigma_k = pooled within-group SD (sqrt(sum ss / sum df), groups of >= 2 values) of A0 across re-keyed replicates r0..r4; run-down: r_end / r_start, one group per world-episode; starvation: a consumer's fill, one group per world-episode x consumer (replicates with a fill only)",
+    "replicates": 4
+  },
+  "result": {
+    "contract_failures": 0,
+    "files": {
+      "margins.json": "d4ce4ab897cae5c6a79918e99593326886dd242975df3e06abfe7844ae182467",
+      "noise_floor.csv": "45172d2ca600736e67272c610a6c1fefb7458e01358974815e9923ca787bf771",
+      "reproduction.csv": "35d3136efa949f600551595e6cc39f68ded8b4af77554be5ce7fd3474bc22e99"
+    },
+    "jobs": 640,
+    "margin": {
+      "rundown": 0.10973298965040919,
+      "starvation": 0.10158442040585645
+    },
+    "r0_reproduced": 128,
+    "status": "complete",
+    "target": {
+      "episodes": 512,
+      "measured": 24,
+      "met": true,
+      "rule": "re-keyed A0 (r1..rK) against its own r0 flags <= 5% of episodes under the margin (in-sample)",
+      "self_flags_max": 25
+    }
+  },
+  "resumes": [],
+  "source": {
+    "commit": "353acc4e0403ec4db08ff8ebad1001841b339f83",
+    "n_files": 77,
+    "tree_sha256": "181cc795d5068917e5097ac51da52b510010cf2af62cc53d2a9c5e34d14cdc53"
+  },
+  "started": "2026-11-04T10:21:46.343422+00:00",
+  "status": "complete",
+  "workers": 8
+}

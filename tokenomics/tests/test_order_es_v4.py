@@ -139,3 +139,23 @@ def test_v4_freezes_from_the_staged_rows(tmp_path: Path, monkeypatch: pytest.Mon
     for ver, path in ((1, v.PREREG_PATH), (2, v.PREREG_V2_PATH), (3, v.PREREG_V3_PATH)):
         assert v.run_freeze(path, log=QUIET, version=ver) == 0
     es._V4_CACHE.clear()
+
+
+def test_packaged_v4_is_frozen_from_exp0071() -> None:
+    """Task 7.9b: the packaged v4 freezes to MATCH, is pinned, and its margin is EXP-0071's
+    (staged rows, SHA recorded), meeting the <= 5% target; v1-v3 MATCH."""
+    for ver, path, sha in ((1, v.PREREG_PATH, v.PREREG_SHA256),
+                           (2, v.PREREG_V2_PATH, v.PREREG_V2_SHA256),
+                           (3, v.PREREG_V3_PATH, v.PREREG_V3_SHA256),
+                           (4, v.PREREG_V4_PATH, v.PREREG_V4_SHA256)):
+        assert v.run_freeze(path, log=QUIET, version=ver) == 0
+        assert sha256_file(str(path)) == sha and v.FROZEN_PREREGS[sha] == ver
+    doc = es.load_prereg(v.PREREG_V4_PATH)
+    m = doc["es"]["disqualification"]["noise_margin"]
+    assert m["source"]["sha256"] == sha256_file(str(es.V4_NOISE_FLOOR_PATH))
+    assert m["target"]["met"] and m["target"]["measured"] <= m["target"]["self_flags_max"]
+    assert es.prereg_file_problems(v.PREREG_V4_PATH) == []
+    assert es.prereg_problems(doc, mode=es.TRAIN, arm="A1", opt_seed=0, generations=40,
+                              minibatch=24) == []
+    assert es.run_rule(doc) == (4, es.NoiseMargin(m["rundown"], m["starvation"]))
+    assert v.prereg_read_problems(doc) == []
