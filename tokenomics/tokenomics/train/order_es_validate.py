@@ -153,7 +153,11 @@ PREREG_V3_SHA256 = "edd6efc2c325edac003e352c1a2e0a66e8ce72c67afacf86c8e1076ac3ff
 # the frozen pre-registrations a read accepts, by file SHA-256 -> version (task 6.1f). Their
 # `readings` sections are identical (v2 changed training only), so what decides a read is the
 # same under both; a read and its runs must share one file.
-FROZEN_PREREGS = {PREREG_SHA256: 1, PREREG_V2_SHA256: 2, PREREG_V3_SHA256: 3}
+PREREG_V4_PATH = es.PREREG_V4_PATH
+# pre-registration v4 (task 7.8): frozen at 7.9b from EXP-0071's rows; pinned then ("" until)
+PREREG_V4_SHA256 = ""
+FROZEN_PREREGS = {PREREG_SHA256: 1, PREREG_V2_SHA256: 2, PREREG_V3_SHA256: 3,
+                  **({PREREG_V4_SHA256: 4} if PREREG_V4_SHA256 else {})}
 
 
 def run_prereg_version(training_pins: Mapping[str, Any]) -> int:
@@ -416,10 +420,39 @@ V3_CHANGES = {
 }
 
 
+V4_CHANGES = {
+    "from": {"file": "es_prereg_m4_v3.json", "sha256": PREREG_V3_SHA256,
+             "note": "v1-v3 are never edited; v4 is a new file"},
+    "why": {"user_decision": "\"Fix margin, retrain once\" (2026-11-04, notes/user-decisions.md)",
+            "evidence": ["EXP-0070 (v3): A1's monitor gain over A0 = MWWk +25.8 <= F_tr 92.3 "
+                         "at generation 40 (unresolved); 497 / 1000 member scores disqualified "
+                         "independent of raw fitness, on knife-edge worlds (DIAGNOSTICS 28)",
+                         "v3's margin is EXP-0068's, measured on the TS-base A0's re-keyed "
+                         "spread, not on MWWk's"]},
+    "changed": ["es.disqualification.noise_margin: the same formula (c = 2, sqrt 2 x pooled "
+                "within-world-episode SD across re-keyed replicates; death unchanged) and the "
+                "same <= 5% self-flag target, computed by code from EXP-0071's rows (A0 = MWWk "
+                "re-keyed at r0..r4 on the EXP-0070 bar's training world-episodes)"],
+    "unchanged": "everything else in v3 (base MWW, A1 only, minibatch 24, no probe, the "
+                 "reported arm, the carried clause (ii)), the readings section and every "
+                 "threshold",
+    "not_tuned": "the margin is the registered formula on A0's own re-keyed rows; no member "
+                 "outcome or validation row is read",
+}
+
+
 def frozen_prereg(version: int = 1) -> dict[str, Any]:
     """The frozen pre-registration: order_es's enforced sections (byte-equal to
     `registered_sections(version)`, its `worlds` section to `bar_registration()`) plus
     `readings`; v2 also records what changed and why (`changes`)."""
+    if version == 4:
+        return {"format": es.PREREG_V4_FORMAT, "status": es.FROZEN,
+                "change": "add-m4-orderer-redesign",
+                "note": "frozen by task 7.9b from EXP-0071's noise-floor rows, before any v4 "
+                        "ES data; enforced sections from order_es.registered_sections(4), "
+                        "`readings` from order_es_validate.readings_registration() (unchanged)",
+                "changes": V4_CHANGES, **es.registered_sections(4),
+                "readings": readings_registration()}
     if version == 3:
         return {"format": es.PREREG_V3_FORMAT, "status": es.FROZEN,
                 "change": "add-m4-orderer-redesign",
@@ -1966,11 +1999,41 @@ def run_power(*, exp0052_episodes: str | Path, atlas_path: str | Path,
     return doc
 
 
+def stage_v4_noise_floor(csv_path: str | Path, log: Callable[[str], None] = _log) -> int:
+    """Task 7.9b: copy EXP-0071's `noise_floor.csv` to `order_es.V4_NOISE_FLOOR_PATH` (never
+    over a different file) and check v4's target on it; 0, or 2 (a different file is already
+    there, or the margin misses the <= 5% target: v4 is not frozen, to the supervisor)."""
+    src, dst = Path(csv_path), es.V4_NOISE_FLOOR_PATH
+    if dst.exists() and dst.read_bytes() != src.read_bytes():
+        log(f"[order_es_validate] {dst} holds other rows; refusing to replace them")
+        return CONTRACT_INVALID
+    if not dst.exists():
+        dst.write_bytes(src.read_bytes())
+    reg = es.v4_margin_registration(dst)
+    if not reg["target"]["met"]:
+        log(f"[order_es_validate] v4 margin misses the target: {reg['target']['measured']} / "
+            f"{reg['target']['episodes']} self-flags > {reg['target']['self_flags_max']}; not "
+            "frozen")
+        return CONTRACT_INVALID
+    log(f"[order_es_validate] v4 noise floor {dst.name} sha256 {sha256_file(str(dst))}: margin "
+        f"{reg['rundown']:.6f} / {reg['starvation']:.6f}, self-flags "
+        f"{reg['target']['measured']} / {reg['target']['episodes']}")
+    return 0
+
+
 def run_freeze(path: str | Path = PREREG_PATH, log: Callable[[str], None] = _log,
-               version: int = 1) -> int:
+               version: int = 1, noise_floor: str | Path | None = None) -> int:
     """Write the frozen pre-registration (`version`) if absent; else compare (MATCH -> 0, else
-    2). Never overwrites."""
+    2). Never overwrites. v4 needs `noise_floor` (EXP-0071's rows, staged into the package
+    first) unless they are already staged."""
     p = Path(path)
+    if version == 4 and noise_floor is not None:
+        rc = stage_v4_noise_floor(noise_floor, log)
+        if rc:
+            return rc
+    if version == 4 and not es.v4_margin_registration()["target"]["met"]:
+        log("[order_es_validate] v4 margin misses the target; not frozen")
+        return CONTRACT_INVALID
     text = prereg_text(frozen_prereg(version))
     if not p.exists():
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -2015,12 +2078,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--out", help="power: output JSON; freeze: the file (default packaged)")
     p.add_argument("--reported-runs", help="v3 validate: NAME=DIR,... reported-only arms "
                                            "(registered names, e.g. 'EXP-0060 A1-s0'=<dir>)")
-    p.add_argument("--prereg-version", type=int, choices=(1, 2, 3), default=1,
+    p.add_argument("--noise-floor", help="freeze v4: EXP-0071's noise_floor.csv (task 7.9b)")
+    p.add_argument("--prereg-version", type=int, choices=(1, 2, 3, 4), default=1,
                    help="freeze: which pre-registration (v2: task 6.1d)")
     a = p.parse_args(argv)
     if a.mode == FREEZE:
-        return run_freeze(a.out or {1: PREREG_PATH, 2: PREREG_V2_PATH,
-                                     3: PREREG_V3_PATH}[a.prereg_version],
+        return run_freeze(a.out or {1: PREREG_PATH, 2: PREREG_V2_PATH, 3: PREREG_V3_PATH,
+                                     4: PREREG_V4_PATH}[a.prereg_version],
+                          noise_floor=a.noise_floor,
                           version=a.prereg_version)
     if a.mode == POWER:
         run_power(exp0052_episodes=a.exp0052_episodes, atlas_path=a.atlas,

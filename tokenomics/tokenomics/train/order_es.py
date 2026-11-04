@@ -123,7 +123,13 @@ PREREG_V2_FORMAT = "m4-es-prereg-v2"
 PREREG_V2_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m4_v2.json"
 PREREG_V3_FORMAT = "m4-es-prereg-v3"
 PREREG_V3_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m4_v3.json"
-PREREG_FORMATS = {PREREG_FORMAT: 1, PREREG_V2_FORMAT: 2, PREREG_V3_FORMAT: 3}
+PREREG_V4_FORMAT = "m4-es-prereg-v4"
+PREREG_V4_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m4_v4.json"
+# task 7.8 / 7.9b: EXP-0071's MWW-base noise-floor rows, copied here by the v4 freeze; v4's margin
+# is computed by code from this file (its SHA-256 is recorded in v4, which is pinned)
+V4_NOISE_FLOOR_PATH = Path(__file__).resolve().parent / "registry" / "es_noise_floor_m4_v4.csv"
+PREREG_FORMATS = {PREREG_FORMAT: 1, PREREG_V2_FORMAT: 2, PREREG_V3_FORMAT: 3,
+                  PREREG_V4_FORMAT: 4}
 V2_MINIBATCH = 24  # probe minibatch and ES minibatch under v2 (the user's "bigger batches")
 # the noise margin (supervisor decisions 2026-11-02): c x sqrt(2) x the pooled within-world-
 # episode SD of A0 across re-keys, from EXP-0068's noise_floor.csv (A0 at r0..r4 on the probe's
@@ -249,7 +255,7 @@ def registered_sections(version: int = 1) -> dict[str, Any]:
     v1 = _registered_v1()
     if version == 1:
         return v1
-    if version not in (2, 3):
+    if version not in (2, 3, 4):
         raise ValueError(f"no pre-registration version {version}")
     v2 = json.loads(json.dumps(v1))
     v2["es"]["minibatch"] = V2_MINIBATCH
@@ -268,7 +274,42 @@ def registered_sections(version: int = 1) -> dict[str, Any]:
     v3["es"]["disqualification"]["noise_margin_v3"] = MARGIN_V3_TEXT
     v3["probe"] = PROBE_V3
     v3["validation"] = VALIDATION_V3
-    return _json_norm(v3)
+    if version == 3:
+        return _json_norm(v3)
+    v4 = v3  # task 7.8: v3 with the margin re-measured on the MWW-base A0 (EXP-0071)
+    del v4["es"]["disqualification"]["noise_margin_v3"]
+    v4["es"]["disqualification"]["noise_margin"] = v4_margin_registration()
+    return _json_norm(v4)
+
+
+_V4_CACHE: dict[tuple, tuple] = {}
+
+
+def v4_margin_registration(path: Path | None = None) -> dict[str, Any]:
+    """v4's noise margin: the registered formula (c = 2, sqrt 2 x pooled within-world-episode SD
+    across re-keyed replicates, death unchanged) computed by code from EXP-0071's rows (copied to
+    `V4_NOISE_FLOOR_PATH` by the v4 freeze), with the same <= 5% self-flag target."""
+    p = V4_NOISE_FLOOR_PATH if path is None else Path(path)
+    if not p.exists():
+        raise ValueError("pre-registration v4 is computed from EXP-0071's noise-floor rows, "
+                         f"absent at {p} (frozen by task 7.9b, after the run)")
+    key = (str(p), p.stat().st_mtime_ns, p.stat().st_size)
+    if key not in _V4_CACHE:  # registered_sections(4) is read by every check: compute once
+        _V4_CACHE.clear()
+        rows = read_csv(p)
+        _V4_CACHE[key] = (len(rows), margins_doc(rows), sha256_file(str(p)))
+    nrows, doc, sha = _V4_CACHE[key]
+    return {**{k: NOISE_MARGIN_REGISTRATION[k] for k in ("formula", "edge_cases", "not_tuned")},
+            "c": doc["margin"]["c"], "rundown": doc["margin"]["rundown"],
+            "starvation": doc["margin"]["starvation"],
+            "sigma": {k: doc["margin"][k] for k in ("sigma_rundown", "df_rundown",
+                                                    "sigma_starvation", "df_starvation")},
+            "source": {"experiment": "EXP-0071", "file": "noise_floor.csv",
+                       "sha256": sha, "rows": nrows,
+                       "what": "A0 = MWWk at replicates r0..r4 on the EXP-0070 bar's training "
+                               "world-episodes"},
+            "target": doc["target"], "leave_one_world_out": doc["lowo"],
+            "self_flags_v1_rule": doc["self_flags"]["v1_rule"]}
 
 
 def bar_base_kind(inp: "Inputs") -> str:
@@ -905,6 +946,53 @@ def self_flags(rows: Sequence[Mapping[str, str]], bar: Mapping[tuple[str, int], 
         n += 1
         hit += bool(disqualifying(d, bar[k], margin, vals[k][0]))
     return hit, n
+
+
+def r0_bar(rows: Sequence[Mapping[str, str]]) -> dict[tuple[str, int], BarRow]:
+    """A0's guards per world-episode from its replicate-0 rows, by the bar's own rule (dead;
+    r_end < X r_start; consumers with fill < Y). Equal to the bar's A0 columns where r0
+    reproduces the bar (the noise-floor run checks it); bar / demand fields are unused here."""
+    out = {}
+    for d in rows:
+        if int(d["replicate"]) != 0:
+            continue
+        rs, re_ = _opt(d["r_start"]), _opt(d["r_end"])
+        fills = json.loads(d["consumer_fill_rate"])
+        out[(d["world"], int(d["episode"]))] = BarRow(
+            d["world"], int(d["episode"]), 1.0, 1.0, float(d["units"]), _bool(d["dead"]),
+            bool(rs is not None and re_ is not None and re_ < ow.X_RUNDOWN * rs),
+            frozenset(c for c, v in fills.items() if v is not None and v < ow.Y_STARVATION),
+            d["demand_digest"], d["shock_digest"])
+    return out
+
+
+TARGET_SHARE = 0.05  # <= 5% re-keyed A0 self-flags (supervisor 2026-11-02, kept for v4)
+
+
+def margins_doc(rows: Sequence[Mapping[str, str]], c: float = NOISE_MARGIN_C) -> dict[str, Any]:
+    """The margin, re-keyed A0's self-flags without / with it (in-sample, against its own r0),
+    the <= 5% target and the leave-one-world-out refit (reported only), from noise-floor rows."""
+    bar = r0_bar(rows)
+    m = noise_margins(rows, c)
+    nm = NoiseMargin(m["rundown"], m["starvation"])
+    v1_hit, n = self_flags(rows, bar, None)
+    hit, _ = self_flags(rows, bar, nm)
+    keys = sorted({(d["world"], int(d["episode"])) for d in rows})
+    loo, rd, st = 0, [], []
+    for k in keys:
+        mm = noise_margins(rows, c, exclude=frozenset({k}))
+        rd.append(mm["rundown"])
+        st.append(mm["starvation"])
+        loo += self_flags(rows, bar, NoiseMargin(mm["rundown"], mm["starvation"]),
+                          only=frozenset({k}))[0]
+    cap = math.floor(TARGET_SHARE * n)
+    return {"margin": m, "self_flags": {"v1_rule": v1_hit, "margin": hit, "episodes": n},
+            "target": {"rule": f"re-keyed A0 (r1..rK) against its own r0 flags <= "
+                               f"{TARGET_SHARE:.0%} of episodes under the margin (in-sample)",
+                       "self_flags_max": cap, "episodes": n, "measured": hit,
+                       "met": hit <= cap},
+            "lowo": {"flagged": loo, "episodes": n, "rundown_range": [min(rd), max(rd)],
+                     "starvation_range": [min(st), max(st)], "role": "reported only"}}
 
 
 def _missing_ref(k: tuple[str, int]) -> A0Ref:
@@ -2247,6 +2335,138 @@ def run_noise_floor(*, bar_dir: str | Path, probe_dir: str | Path, out_dir: str 
     return 0
 
 
+NOISE_FLOOR_BAR_FILES = ("noise_floor.csv", "reproduction.csv", "margins.json")
+
+
+def noise_floor_bar_problems(*, inp: Inputs, source_commit: str, orderer_sha: str,
+                             replicates: int, base_kind: str,
+                             filters: Mapping[str, Any]) -> list[str]:
+    """A real bar-mode noise-floor run (task 7.8): a real bar, its A0 on the v3 base, the
+    registered K, pre-registration v3 (whose margin v4 replaces), no filters."""
+    out = real_run_problems(inp=inp, prereg=load_prereg(PREREG_V3_PATH),
+                            prereg_issues=prereg_file_problems(PREREG_V3_PATH),
+                            source_commit=source_commit, orderer_sha=orderer_sha,
+                            filters=filters)
+    from ..eval.teacher_audit import REGISTERED_ATLAS_HASH
+    atlas = (inp.bar_spec.get("pins") or {}).get("atlas") or {}
+    if atlas.get("content_hash") != REGISTERED_ATLAS_HASH:
+        out.append(f"the bar's atlas {str(atlas.get('content_hash'))[:12]} is not the registered "
+                   f"{REGISTERED_ATLAS_HASH[:12]}")
+    if base_kind != base_kind_for(3):
+        out.append(f"--base {base_kind} is not v3's base {base_kind_for(3)}")
+    if replicates != NOISE_FLOOR_K:
+        out.append(f"--replicates {replicates} is not the registered {NOISE_FLOOR_K}")
+    return out
+
+
+def _margins_text(doc: Mapping[str, Any]) -> str:
+    return json.dumps(_json_norm(doc), indent=1, sort_keys=True) + "\n"
+
+
+def run_noise_floor_bar(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
+                        base_kind: str, replicates: int = NOISE_FLOOR_K, workers: int = 1,
+                        horizon: int | None = None, max_world_episodes: int | None = None,
+                        source_commit: str = "", dry_run: bool = False, recompute: bool = False,
+                        run_job_fn: Callable[[Job], dict[str, str]] | None = None,
+                        log: Callable[[str], None] = _log) -> int:
+    """A0 re-keyed at r0..rK on every training world-episode of a given bar, on that bar's base
+    (task 7.8; `--base mww` = MWWk on the EXP-0070 bar): `noise_floor.csv`, `reproduction.csv`
+    (r0 against the bar's A0 row) and `margins.json` (the registered margin formula, the <= 5%
+    self-flag target, leave-one-world-out), from which pre-registration v4 is frozen. No
+    probe files. Exit 0, or 2 (refused real run, pin mismatch, contract failures, missing rows,
+    an r0 that does not reproduce the bar, a `--recompute` MISMATCH)."""
+    out = Path(out_dir)
+    run_job_fn = run_job_fn or run_es_job
+    inp = load_inputs(bar_dir)
+    if bar_base_kind(inp) != base_kind:
+        raise ValueError(f"--base {base_kind}: the bar's A0 plays the {bar_base_kind(inp)!r} base")
+    inp.base_kind = base_kind
+    if recompute:
+        rows = read_csv(out / "noise_floor.csv")
+        same = _margins_text(margins_doc(rows)) == (out / "margins.json").read_text()
+        log(f"[order_es] noise-floor (bar) recompute: {'MATCH' if same else 'MISMATCH'}")
+        return 0 if same else CONTRACT_INVALID
+    if (out / "noise_floor.csv").exists() and not (out / "spec.json").exists():
+        log(f"[order_es] noise-floor refused: {out} holds noise rows without spec.json")
+        return CONTRACT_INVALID
+    pin = _checked_orderer(out, orderer_ckpt)
+    if not dry_run:
+        problems = noise_floor_bar_problems(
+            inp=inp, source_commit=source_commit, orderer_sha=pin["sha256"],
+            replicates=replicates, base_kind=base_kind,
+            filters={"horizon": horizon, "max_world_episodes": max_world_episodes})
+        if problems:
+            log("[order_es] not a valid noise-floor run (" + "; ".join(problems)
+                + "); pass --dry-run for a smoke run")
+            return CONTRACT_INVALID
+    wes = list(inp.world_episodes)
+    if max_world_episodes is not None:
+        wes = wes[:max_world_episodes]
+    pins = _json_norm({
+        "driver": DRIVER, "mode": NOISE_FLOOR, "set": "bar", "base_kind": base_kind,
+        "replicates": replicates, "world_episodes": [list(we) for we in wes],
+        "horizon": inp.horizon if horizon is None else horizon, "dry_run": dry_run,
+        "inputs": {**inp.hashes, "orderer_sha256": pin["sha256"]},
+        **decode_pins(CHOICE_V1), "producer": PRODUCER,
+        "source_tree_sha256": source_fingerprint()["tree_sha256"]})
+    try:
+        spec, resumed = _open_run(out, pins, {
+            "experiment": out.name, "driver": DRIVER,
+            "kind": "dry-run" if dry_run else NOISE_FLOOR, "acceptance_read": False,
+            "inputs": {"orderer": pin, "bar_dir": str(inp.bar_dir)},
+            "source": source_fingerprint(source_commit or None),
+            "pre_registered": {"design": "task 7.8: v3's margin re-measured on the bar's own "
+                                         "A0 (the registered formula and target)",
+                               "replicates": replicates, "margin_formula":
+                                   NOISE_MARGIN_REGISTRATION["formula"]}}, workers)
+    except ValueError as exc:
+        log(f"[order_es] noise-floor refused: {exc}")
+        return CONTRACT_INVALID
+    log(f"[order_es] {'DRY RUN ' if dry_run else ''}noise-floor (bar, base {base_kind}): A0 at "
+        f"r0..r{replicates} on {len(wes)} world-episodes" + (" (resumed)" if resumed else ""))
+    jobs = noise_jobs(inp, pin, wes, replicates, horizon)
+    try:
+        got, failures = play(out, "noise_floor.csv", jobs, workers, run_job_fn, inp.bar, log)
+    except DigestMismatch as exc:
+        spec["status"], spec["result"] = INVALID, {"status": INVALID, "reason": str(exc)}
+        _write_spec(out, spec)
+        return CONTRACT_INVALID
+    rows = list(got.values())
+    reproduced = horizon is None or int(horizon) == inp.horizon
+    repro, rproblems = reproduction_rows(rows, inp.bar_dir / "bar.csv") if reproduced else ([], [])
+    write_csv(out / "reproduction.csv", REPRODUCTION_COLUMNS, repro)
+    recorded = {f["message"] for f in read_failures(out)}
+    for msg in rproblems:
+        if msg not in recorded:
+            append_failure(out, run_failure(A0_REPRODUCTION, ValueError(msg)))
+    if failures or len(rows) != len(jobs) or read_failures(out):
+        spec["status"] = INVALID
+        spec["result"] = {"status": INVALID, "contract_failures": len(read_failures(out)),
+                          "missing_rows": len(jobs) - len(rows)}
+        _write_spec(out, spec)
+        log("[order_es] noise-floor INVALID (contract failures, missing rows or r0 not "
+            "reproducing the bar)")
+        return CONTRACT_INVALID
+    doc = margins_doc(read_csv(out / "noise_floor.csv"))
+    (out / "margins.json").write_text(_margins_text(doc))
+    spec["status"] = "complete"
+    spec["result"] = {"status": "complete", "jobs": len(jobs), "contract_failures": 0,
+                      "r0_reproduced": None if not reproduced else len(repro),
+                      "margin": {k: doc["margin"][k] for k in ("rundown", "starvation")},
+                      "target": doc["target"],
+                      "files": {f: sha256_file(str(out / f)) for f in NOISE_FLOOR_BAR_FILES}}
+    _write_spec(out, spec)
+    write_result(out, f"noise floor on the bar's A0 (base {base_kind}), r0..r{replicates}: "
+                      f"margin run-down {doc['margin']['rundown']:.4f} / starvation "
+                      f"{doc['margin']['starvation']:.4f}, self-flags {doc['target']['measured']}"
+                      f" / {doc['target']['episodes']}", dry_run)
+    log(f"[order_es] {'DRY RUN ' if dry_run else ''}noise-floor (bar): margin "
+        f"{doc['margin']['rundown']:.4f} / {doc['margin']['starvation']:.4f}; self-flags "
+        f"{doc['self_flags']['v1_rule']} (v1 rule) -> {doc['target']['measured']} / "
+        f"{doc['target']['episodes']} (target <= {doc['target']['self_flags_max']})")
+    return 0
+
+
 SKELETON_END = "Conclusions\n\nTODO.\n"
 
 
@@ -2299,6 +2519,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                    help=f"noise-floor: A0 replicate keys r1..rK (registered {NOISE_FLOOR_K})")
     p.add_argument("--max-world-episodes", type=int, help="noise-floor dry run: the first N")
     p.add_argument("--horizon", type=int, help="noise-floor dry run: another horizon")
+    p.add_argument("--base", choices=(BASE_TS, BASE_MWW),
+                   help="noise-floor on a given bar (no --probe-dir): the bar's A0 base")
     p.add_argument("--recompute", action="store_true",
                    help="noise-floor: rebuild check2 / check3 from the out dir's rows (offline)")
     a = p.parse_args(argv)
@@ -2308,9 +2530,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         p.error("--probe-dir / --probe-episodes / --replicates / --max-world-episodes / "
                 "--horizon / --recompute belong to --mode noise-floor")
     commit = resolve_verified_commit() if a.verify_source_commit else a.source_commit
+    if a.mode == NOISE_FLOOR and not a.probe_dir:  # task 7.8: a given bar, no probe files
+        if not a.base or a.probe_episodes:
+            p.error("--mode noise-floor without --probe-dir needs --base (and no "
+                    "--probe-episodes)")
+        try:
+            return run_noise_floor_bar(bar_dir=a.bar_dir, out_dir=a.out_dir,
+                                       orderer_ckpt=a.orderer_ckpt, base_kind=a.base,
+                                       replicates=a.replicates, workers=a.workers,
+                                       horizon=a.horizon,
+                                       max_world_episodes=a.max_world_episodes,
+                                       source_commit=commit, dry_run=a.dry_run,
+                                       recompute=a.recompute)
+        except (ContractRunError, DigestMismatch):
+            return CONTRACT_INVALID
     if a.mode == NOISE_FLOOR:
-        if not a.probe_dir:
-            p.error("--mode noise-floor needs --probe-dir")
+        if a.base:
+            p.error("--base belongs to the bar mode (no --probe-dir)")
         try:
             return run_noise_floor(bar_dir=a.bar_dir, probe_dir=a.probe_dir, out_dir=a.out_dir,
                                    orderer_ckpt=a.orderer_ckpt, replicates=a.replicates,

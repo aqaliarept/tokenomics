@@ -658,6 +658,20 @@ untouched and still freeze to MATCH.
   + 36 ≈ 114 → read ≈ 96 + 12.4 ≈ 108. All are ≤ 125, at planned estimates.
 - The run order is bar, then training, then read, each re-checked on billed spend before launch.
 
+**v4 (task 7.8, user decision "Fix margin, retrain once").**
+- **Why.** EXP-0070 under v3 read below its floor, with about half the member scores
+  disqualified independent of fitness (DIAGNOSTICS 28). v3's margin was EXP-0068's, measured on
+  the TS-base A0.
+- **The re-measurement.** `order_es --mode noise-floor --base mww` re-keys A0 = MWWk at r0..r4
+  on every training world-episode of the EXP-0070 bar (EXP-0071; no probe files; r0 must
+  reproduce the bar's A0 rows).
+- **What v4 changes.** Only `es.disqualification.noise_margin`. It is the same formula (c = 2,
+  √2 × the pooled within-world-episode SD; death unchanged) and the same ≤ 5% self-flag target,
+  computed by code from those rows (`v4_margin_registration`, the rows' SHA-256 recorded). A
+  missed target is not frozen.
+- **Freezing.** v4 is frozen after the run (`--mode freeze --prereg-version 4 --noise-floor`),
+  then pinned. v1–v3 are untouched.
+
 ### D8. Step 3 — gated GNN
 
 - **Relational check (EXP-0063), built env-side, no archive restore.**
