@@ -1241,3 +1241,40 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
     tiny gain on an underpowered monitor. Its checks decide among them.
   - **Cost** ≈ 14.3 vCPU-h (tranche A ≈ 88.3 of 125).
 
+### Step 2 closes (EXP-0058 → EXP-0071)
+
+- **The margin re-measured on the MWW base (EXP-0071).**
+  - Replaying MWWk at fresh random keys gave a disqualification margin about the size of the
+    old one. It keeps MWWk's own noise flags at 4.7%.
+  - But under it, EXP-0070's perturbed policies are still disqualified 542 times in 1,000
+    (497 under the old margin). The penalties were real run-down / starvation, not noise.
+  - The retrain was not run (user, "Close step 2 now").
+- **M4 step 2, closing paragraph.**
+  - **What was tried.** Step 2 asked whether a learned per-order router can beat the simple
+    routing rules using only each ordering agent's local information. The router was a small
+    correction trained by evolution strategies on whole-episode outcomes, on top of a frozen
+    base choice.
+    - From the trained-orderer base (TS): the gradient probe (EXP-0058, EXP-0068, EXP-0069),
+      then the pilot and main runs (EXP-0059, EXP-0060).
+    - From MWW, the strongest simple rule (EXP-0070, EXP-0071).
+  - **What it found.**
+    - From TS, the correction learns and generalises: +45 to +70 consumer units over its start
+      on unseen validation worlds, on two seeds. But it only reaches round-robin level and stays
+      below MWW (`plateau`).
+    - Herding was flagged but is not the main gap. The weak base was.
+    - Re-based on MWW, the correction finds no measurable improvement (+25.8 against a floor of
+      92.3). Perturbing MWW's choices mostly makes run-down or starvation worse, which the
+      registered guard rule correctly penalises.
+  - **Diagnosed causes.**
+    - DIAGNOSTICS 25: the first probe's failure was batch size (`heterogeneous`) and a
+      noise-firing rule; both were fixed.
+    - DIAGNOSTICS 27: the pilot was under-trained on an underpowered monitor; more generations
+      fixed it.
+    - DIAGNOSTICS 28: on MWW, real guard damage, not a mis-calibrated rule.
+  - **What stays open.**
+    - Whether MWW is near the ceiling for whole-order per-order routing, or whether only this
+      residual class and step size cannot improve it, was not separately tested.
+    - The step-3 relational / GNN checks (tranche B1) were not released.
+    - Held-out confirmation and the per-order cost read (groups 8–9) were not reached.
+  - **Cost.** Tranche A billed ≈ 88.8 of 125 vCPU-h.
+

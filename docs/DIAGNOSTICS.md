@@ -1167,7 +1167,7 @@ this entry's diagnosed cause.
 
 ## 28. A learned correction on top of MWW does not clear its training floor (re-based step 2)
 
-_Status: provisional (2026-11-04, EXP-0070). Not yet discriminated._
+_Status: diagnosed (2026-11-04, EXP-0071): **real guard damage, not a mis-calibrated rule.** The margin re-measured on MWWk is about the old size and keeps A0's own noise flags at 4.7%, but 542 / 1000 EXP-0070 member scores are still disqualified under it (497 under v3). Perturbing MWW's choices genuinely worsens run-down / starvation. M4 step 2 closed (user decision 2026-11-04); the "near ceiling" and "underpowered" branches were not separately tested._
 
 **Problem (plain English):** after EXP-0060, step 2 was re-based so that the per-order residual
 corrects MWW's keyed choice (MWWk), the strongest simple rule, instead of the trained orderer.
