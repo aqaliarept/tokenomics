@@ -1,0 +1,4144 @@
+{
+ "content_hash": "dcf6a31f16e6f02b95395e9420f95071bfefd23338b5ca2f671acad427ad928e",
+ "format": "m4-es-schedule-v1",
+ "generations": 40,
+ "minibatch_size": 12,
+ "minibatches": {
+  "0": [
+   [
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 1361968267,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1362234023,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 1692962056,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    }
+   ],
+   [
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 2141806174,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 1117082244,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1529919415,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 1789244910,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 941602896,
+     "world": "ws-m4-es-train-v1-12-0034"
+    }
+   ],
+   [
+    {
+     "episode": 607946767,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 13822738,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 764830141,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1677368537,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 572716247,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    }
+   ],
+   [
+    {
+     "episode": 66994023,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 1818130039,
+     "world": "ws-m4-es-train-v1-12-0040"
+    },
+    {
+     "episode": 1871882284,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 949578799,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 737650482,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1973389111,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 1124120002,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 13822738,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 1722148477,
+     "world": "ws-atlas-v1-12-0139"
+    }
+   ],
+   [
+    {
+     "episode": 1177397051,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 700353372,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 986813588,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 1944349881,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 526415511,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 1415999761,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    }
+   ],
+   [
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1121817825,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1124120002,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 1572602726,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 986813588,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 680765608,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    }
+   ],
+   [
+    {
+     "episode": 329380138,
+     "world": "ws-atlas-v1-12-0094"
+    },
+    {
+     "episode": 1916808878,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 949578799,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1818130039,
+     "world": "ws-m4-es-train-v1-12-0040"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    }
+   ],
+   [
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 501535922,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 876698142,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 407049589,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1973389111,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 941602896,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1362234023,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    }
+   ],
+   [
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 2141711971,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 201539679,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 1944349881,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 434046227,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 818146579,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 114863101,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 362098158,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 987311617,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    }
+   ],
+   [
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 1897978398,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 114863101,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 501535922,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 818146579,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 2141806174,
+     "world": "ws-m4-es-train-v1-12-0005"
+    }
+   ],
+   [
+    {
+     "episode": 2141806174,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 1517642910,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1901237609,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 572716247,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 737650482,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1839507911,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 474856157,
+     "world": "ws-atlas-v1-12-0155"
+    }
+   ],
+   [
+    {
+     "episode": 737650482,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 680765608,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 1184750839,
+     "world": "ws-atlas-v1-12-0094"
+    },
+    {
+     "episode": 1517642910,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 1480498576,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 949578799,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    }
+   ],
+   [
+    {
+     "episode": 1944349881,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 401879355,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 572716247,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 941602896,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1973389111,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    }
+   ],
+   [
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1897978398,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1677368537,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 818146579,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 302755993,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    }
+   ],
+   [
+    {
+     "episode": 987311617,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 680765608,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 1124120002,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 2069676497,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 867835099,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    }
+   ],
+   [
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 1121817825,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 1092109868,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1916808878,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 114863101,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 607946767,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1970093950,
+     "world": "ws-m4-es-train-v1-12-0036"
+    }
+   ],
+   [
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 884936205,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 737650482,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 541812697,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 2069676497,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 2093456601,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 1719590143,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 78907865,
+     "world": "ws-atlas-v1-12-0005"
+    }
+   ],
+   [
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 1606396417,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1658267042,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 517154806,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 1184750839,
+     "world": "ws-atlas-v1-12-0094"
+    },
+    {
+     "episode": 1727519464,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    }
+   ],
+   [
+    {
+     "episode": 200096335,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 1973389111,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 2081303446,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 401879355,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 1092109868,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 1181815137,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    }
+   ],
+   [
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1645040764,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 1942251076,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 1727519464,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 1722148477,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 607946767,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 1092109868,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 200096335,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 700353372,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    }
+   ],
+   [
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 1970093950,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 1362234023,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 1092109868,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 1942251076,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 1871882284,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    }
+   ],
+   [
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 2141806174,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 1901237609,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1184750839,
+     "world": "ws-atlas-v1-12-0094"
+    },
+    {
+     "episode": 407049589,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1944349881,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 987311617,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1572602726,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    }
+   ],
+   [
+    {
+     "episode": 1719590143,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 329380138,
+     "world": "ws-atlas-v1-12-0094"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 1818130039,
+     "world": "ws-m4-es-train-v1-12-0040"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 607946767,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    }
+   ],
+   [
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 867835099,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 1124120002,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 1480498576,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 1181815137,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 401879355,
+     "world": "ws-atlas-v1-12-0060"
+    }
+   ],
+   [
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 986813588,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 78907865,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 1517642910,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 818146579,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 517154806,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 2051119675,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 737650482,
+     "world": "ws-atlas-v1-12-0365"
+    }
+   ],
+   [
+    {
+     "episode": 1722148477,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 884936205,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1658926801,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 941602896,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 526415511,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 302755993,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 1275641963,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 572716247,
+     "world": "ws-m4-es-train-v1-12-0050"
+    }
+   ],
+   [
+    {
+     "episode": 58603260,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 680765608,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1839507911,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 463951027,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 541812697,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1517642910,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 818146579,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 605551684,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 2081303446,
+     "world": "ws-m4-es-train-v1-12-0013"
+    }
+   ],
+   [
+    {
+     "episode": 949578799,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 2093456601,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 2081303446,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 941602896,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 200560606,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 1970093950,
+     "world": "ws-m4-es-train-v1-12-0036"
+    }
+   ],
+   [
+    {
+     "episode": 607946767,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 1606396417,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1170551273,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 1529919415,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 1117082244,
+     "world": "ws-m4-es-train-v1-12-0053"
+    }
+   ],
+   [
+    {
+     "episode": 1839507911,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 406766145,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 987311617,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 2051119675,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1181815137,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 572716247,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    }
+   ],
+   [
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1121817825,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 575329393,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 58603260,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 700353372,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1973389111,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 1117082244,
+     "world": "ws-m4-es-train-v1-12-0053"
+    }
+   ],
+   [
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1517642910,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 1529919415,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 474856157,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 605551684,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 2093456601,
+     "world": "ws-m4-es-train-v1-12-0023"
+    }
+   ],
+   [
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 818146579,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 289538502,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1789244910,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 876698142,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 501535922,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 1184750839,
+     "world": "ws-atlas-v1-12-0094"
+    }
+   ],
+   [
+    {
+     "episode": 1789244910,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 986813588,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 575329393,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 1897978398,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 200560606,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 867835099,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 434046227,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1517642910,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    }
+   ],
+   [
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 2093456601,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 700353372,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 362098158,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1973389111,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 302755993,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 737650482,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1121817825,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 876698142,
+     "world": "ws-m4-es-train-v1-12-0010"
+    }
+   ],
+   [
+    {
+     "episode": 1897978398,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1901237609,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 302755993,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 517154806,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 1606396417,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 58603260,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 66994023,
+     "world": "ws-m4-es-train-v1-12-0045"
+    }
+   ],
+   [
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 1658926801,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 13822738,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 406766145,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 737650482,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 986813588,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 1480498576,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 1096523584,
+     "world": "ws-m4-es-train-v1-12-0040"
+    }
+   ],
+   [
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1789244910,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 700353372,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1361968267,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 200560606,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 2081303446,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 201539679,
+     "world": "ws-atlas-v1-12-0340"
+    }
+   ],
+   [
+    {
+     "episode": 1916808878,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1727519464,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 1184750839,
+     "world": "ws-atlas-v1-12-0094"
+    },
+    {
+     "episode": 1177397051,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 1692962056,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 13822738,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 867835099,
+     "world": "ws-m4-es-train-v1-12-0000"
+    }
+   ],
+   [
+    {
+     "episode": 1970093950,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 58603260,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 501535922,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 200096335,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1517642910,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 1468423735,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1944349881,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 1722148477,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 949578799,
+     "world": "ws-m4-es-train-v1-12-0048"
+    }
+   ]
+  ],
+  "1": [
+   [
+    {
+     "episode": 987311617,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 1645040764,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 1415999761,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1606396417,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1789244910,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 818146579,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 1177397051,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 1184750839,
+     "world": "ws-atlas-v1-12-0094"
+    }
+   ],
+   [
+    {
+     "episode": 1727519464,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 575329393,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 1480498576,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 463951027,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 200096335,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1096523584,
+     "world": "ws-m4-es-train-v1-12-0040"
+    },
+    {
+     "episode": 1677368537,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 1092109868,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1121817825,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 680765608,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    }
+   ],
+   [
+    {
+     "episode": 1944349881,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 13822738,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 2125857552,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 1719590143,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1658267042,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    }
+   ],
+   [
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 541812697,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 406766145,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 1658267042,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 501535922,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 1170551273,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 1658926801,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 78907865,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 434046227,
+     "world": "ws-atlas-v1-12-0176"
+    }
+   ],
+   [
+    {
+     "episode": 1117082244,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 474856157,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 406766145,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 1468423735,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1897978398,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    }
+   ],
+   [
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 680765608,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1362234023,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 2069676497,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 605551684,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 1839507911,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 1361968267,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 1480498576,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 289538502,
+     "world": "ws-m4-es-train-v1-12-0016"
+    }
+   ],
+   [
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 2054438062,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 1096523584,
+     "world": "ws-m4-es-train-v1-12-0040"
+    },
+    {
+     "episode": 941602896,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1871882284,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 1275641963,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 58603260,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 1727519464,
+     "world": "ws-m4-es-train-v1-12-0037"
+    }
+   ],
+   [
+    {
+     "episode": 1572602726,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 2093456601,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 2141711971,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 575329393,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 517154806,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    }
+   ],
+   [
+    {
+     "episode": 401879355,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 1362234023,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 1468423735,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 114863101,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 2051119675,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 1658267042,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    }
+   ],
+   [
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 1727519464,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 78907865,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 58603260,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 680765608,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1415999761,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 463951027,
+     "world": "ws-atlas-v1-12-0483"
+    }
+   ],
+   [
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 1362234023,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 987311617,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 986813588,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 1722148477,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 1970093950,
+     "world": "ws-m4-es-train-v1-12-0036"
+    }
+   ],
+   [
+    {
+     "episode": 1839507911,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 1349000731,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 1362234023,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 541812697,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1096523584,
+     "world": "ws-m4-es-train-v1-12-0040"
+    }
+   ],
+   [
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 401879355,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 2125857552,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 406766145,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 1117082244,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1121817825,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 200096335,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 1177397051,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 302755993,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 201539679,
+     "world": "ws-atlas-v1-12-0340"
+    }
+   ],
+   [
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 114863101,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 572716247,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 2054438062,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 200560606,
+     "world": "ws-m4-es-train-v1-12-0005"
+    }
+   ],
+   [
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 474856157,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 1727519464,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 362098158,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 58603260,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 406766145,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 1092109868,
+     "world": "ws-m4-es-train-v1-12-0044"
+    }
+   ],
+   [
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1942251076,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1871882284,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1916808878,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 434046227,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 987311617,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 541812697,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 1606396417,
+     "world": "ws-m4-es-train-v1-12-0011"
+    }
+   ],
+   [
+    {
+     "episode": 362098158,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1871882284,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 1529919415,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 434046227,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    }
+   ],
+   [
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1871882284,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 1572602726,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 764830141,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 463951027,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 1789244910,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 362098158,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 986813588,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 700353372,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    }
+   ],
+   [
+    {
+     "episode": 867835099,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1361968267,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 1970093950,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 2125857552,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 658778403,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 1349000731,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 884936205,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 1916808878,
+     "world": "ws-m4-es-train-v1-12-0025"
+    }
+   ],
+   [
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 1415999761,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 1184750839,
+     "world": "ws-atlas-v1-12-0094"
+    },
+    {
+     "episode": 1092109868,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1916808878,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1677368537,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 1096523584,
+     "world": "ws-m4-es-train-v1-12-0040"
+    },
+    {
+     "episode": 680765608,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    }
+   ],
+   [
+    {
+     "episode": 2054438062,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 764830141,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 2093456601,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 941602896,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 1349000731,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 1415999761,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 289538502,
+     "world": "ws-m4-es-train-v1-12-0016"
+    }
+   ],
+   [
+    {
+     "episode": 986813588,
+     "world": "ws-m4-es-train-v1-12-0017"
+    },
+    {
+     "episode": 1658267042,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 66994023,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 1275641963,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 362098158,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 401879355,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 13822738,
+     "world": "ws-m4-es-train-v1-12-0030"
+    }
+   ],
+   [
+    {
+     "episode": 1170551273,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 1722148477,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 1970093950,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 1858620970,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 1645040764,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 1124120002,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    }
+   ],
+   [
+    {
+     "episode": 13822738,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 474856157,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 58603260,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 1901237609,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 1275641963,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1658926801,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 1092109868,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 362098158,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 605551684,
+     "world": "ws-m4-es-train-v1-12-0006"
+    }
+   ],
+   [
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 302755993,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 1789244910,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 1275641963,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1572602726,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 2141806174,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 407049589,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 2081303446,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    }
+   ],
+   [
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 114863101,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 572716247,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 201539679,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 78907865,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 362098158,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 700353372,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 1170551273,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 1606396417,
+     "world": "ws-m4-es-train-v1-12-0011"
+    }
+   ],
+   [
+    {
+     "episode": 1529919415,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 114863101,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 1360643439,
+     "world": "ws-atlas-v1-12-0005"
+    },
+    {
+     "episode": 575329393,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 867835099,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 941602896,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 607946767,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 949578799,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 1349000731,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 289538502,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    }
+   ],
+   [
+    {
+     "episode": 607946767,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 1692962056,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 1170551273,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 1572602726,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 526415511,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 1362234023,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 605551684,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    }
+   ],
+   [
+    {
+     "episode": 1415999761,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 1658267042,
+     "world": "ws-atlas-v1-12-0321"
+    },
+    {
+     "episode": 2054438062,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 1944349881,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 1572602726,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1975693812,
+     "world": "ws-m4-es-train-v1-12-0019"
+    },
+    {
+     "episode": 201539679,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 2125857552,
+     "world": "ws-m4-es-train-v1-12-0024"
+    }
+   ],
+   [
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 35744542,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1658926801,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 463951027,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 1504978459,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 2081303446,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 1433987966,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1275641963,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1916808878,
+     "world": "ws-m4-es-train-v1-12-0025"
+    }
+   ],
+   [
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1373890141,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 1839507911,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 200096335,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 114863101,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 403398096,
+     "world": "ws-atlas-v1-12-0352"
+    },
+    {
+     "episode": 1645040764,
+     "world": "ws-atlas-v1-12-0391"
+    },
+    {
+     "episode": 1692962056,
+     "world": "ws-m4-es-train-v1-12-0049"
+    },
+    {
+     "episode": 517154806,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 1596548953,
+     "world": "ws-m4-es-train-v1-12-0019"
+    }
+   ],
+   [
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 289538502,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 1117082244,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 1944349881,
+     "world": "ws-m4-es-train-v1-12-0046"
+    },
+    {
+     "episode": 788229651,
+     "world": "ws-atlas-v1-12-0408"
+    },
+    {
+     "episode": 1901237609,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 1697262129,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 320565123,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    }
+   ],
+   [
+    {
+     "episode": 1480498576,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 201539679,
+     "world": "ws-atlas-v1-12-0340"
+    },
+    {
+     "episode": 13822738,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 463951027,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 1658926801,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 1529919415,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 1281933034,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 200560606,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 302755993,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 1349000731,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 2141711971,
+     "world": "ws-m4-es-train-v1-12-0002"
+    }
+   ],
+   [
+    {
+     "episode": 737650482,
+     "world": "ws-atlas-v1-12-0365"
+    },
+    {
+     "episode": 1117082244,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1901237609,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 1480498576,
+     "world": "ws-m4-es-train-v1-12-0007"
+    },
+    {
+     "episode": 1916808878,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 474856157,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 1889601261,
+     "world": "ws-atlas-v1-12-0111"
+    },
+    {
+     "episode": 1275641963,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 1124120002,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 141870395,
+     "world": "ws-m4-es-train-v1-12-0033"
+    },
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 960545693,
+     "world": "ws-m4-es-train-v1-12-0011"
+    }
+   ],
+   [
+    {
+     "episode": 526415511,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 1871882284,
+     "world": "ws-atlas-v1-12-0361"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 876698142,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 192798404,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 91735197,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 1032476281,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 1184750839,
+     "world": "ws-atlas-v1-12-0094"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 1529919415,
+     "world": "ws-m4-es-train-v1-12-0036"
+    }
+   ],
+   [
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 1177397051,
+     "world": "ws-atlas-v1-12-0436"
+    },
+    {
+     "episode": 605551684,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 1942251076,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 401879355,
+     "world": "ws-atlas-v1-12-0060"
+    },
+    {
+     "episode": 609567904,
+     "world": "ws-m4-es-train-v1-12-0030"
+    },
+    {
+     "episode": 302755993,
+     "world": "ws-m4-es-train-v1-12-0055"
+    },
+    {
+     "episode": 656461431,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 832551913,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 987311617,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    }
+   ],
+   [
+    {
+     "episode": 764830141,
+     "world": "ws-m4-es-train-v1-12-0008"
+    },
+    {
+     "episode": 1897978398,
+     "world": "ws-atlas-v1-12-0483"
+    },
+    {
+     "episode": 2093456601,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 605551684,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 2105209766,
+     "world": "ws-m4-es-train-v1-12-0058"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 407049589,
+     "world": "ws-m4-es-train-v1-12-0029"
+    },
+    {
+     "episode": 2081303446,
+     "world": "ws-m4-es-train-v1-12-0013"
+    },
+    {
+     "episode": 1415999761,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 2069676497,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 1942251076,
+     "world": "ws-atlas-v1-12-0254"
+    }
+   ],
+   [
+    {
+     "episode": 843506519,
+     "world": "ws-atlas-v1-12-0230"
+    },
+    {
+     "episode": 1352823277,
+     "world": "ws-m4-es-train-v1-12-0032"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 1783463990,
+     "world": "ws-m4-es-train-v1-12-0037"
+    },
+    {
+     "episode": 1970093950,
+     "world": "ws-m4-es-train-v1-12-0036"
+    },
+    {
+     "episode": 949578799,
+     "world": "ws-m4-es-train-v1-12-0048"
+    },
+    {
+     "episode": 1677368537,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 583449320,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 2859859,
+     "world": "ws-m4-es-train-v1-12-0025"
+    },
+    {
+     "episode": 222966249,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 501535922,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 1897978398,
+     "world": "ws-atlas-v1-12-0483"
+    }
+   ],
+   [
+    {
+     "episode": 1818130039,
+     "world": "ws-m4-es-train-v1-12-0040"
+    },
+    {
+     "episode": 2069676497,
+     "world": "ws-m4-es-train-v1-12-0057"
+    },
+    {
+     "episode": 526415511,
+     "world": "ws-m4-es-train-v1-12-0041"
+    },
+    {
+     "episode": 1719590143,
+     "world": "ws-m4-es-train-v1-12-0018"
+    },
+    {
+     "episode": 876698142,
+     "world": "ws-m4-es-train-v1-12-0010"
+    },
+    {
+     "episode": 1572602726,
+     "world": "ws-m4-es-train-v1-12-0051"
+    },
+    {
+     "episode": 1873501390,
+     "world": "ws-m4-es-train-v1-12-0024"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    },
+    {
+     "episode": 434046227,
+     "world": "ws-atlas-v1-12-0176"
+    },
+    {
+     "episode": 1942251076,
+     "world": "ws-atlas-v1-12-0254"
+    },
+    {
+     "episode": 1170551273,
+     "world": "ws-atlas-v1-12-0392"
+    },
+    {
+     "episode": 1480498576,
+     "world": "ws-m4-es-train-v1-12-0007"
+    }
+   ],
+   [
+    {
+     "episode": 884936205,
+     "world": "ws-m4-es-train-v1-12-0006"
+    },
+    {
+     "episode": 72674252,
+     "world": "ws-atlas-v1-12-0121"
+    },
+    {
+     "episode": 200096335,
+     "world": "ws-atlas-v1-12-0344"
+    },
+    {
+     "episode": 2143077829,
+     "world": "ws-m4-es-train-v1-12-0044"
+    },
+    {
+     "episode": 1929968846,
+     "world": "ws-m4-es-train-v1-12-0016"
+    },
+    {
+     "episode": 550589643,
+     "world": "ws-m4-es-train-v1-12-0023"
+    },
+    {
+     "episode": 241064534,
+     "world": "ws-atlas-v1-12-0302"
+    },
+    {
+     "episode": 1658926801,
+     "world": "ws-m4-es-train-v1-12-0021"
+    },
+    {
+     "episode": 1722148477,
+     "world": "ws-atlas-v1-12-0139"
+    },
+    {
+     "episode": 572716247,
+     "world": "ws-m4-es-train-v1-12-0050"
+    },
+    {
+     "episode": 1051846258,
+     "world": "ws-m4-es-train-v1-12-0054"
+    },
+    {
+     "episode": 1124120002,
+     "world": "ws-m4-es-train-v1-12-0013"
+    }
+   ]
+  ]
+ },
+ "monitor": {
+  "replicates": 2,
+  "seed": 10515569551371865272,
+  "world_episodes": [
+   {
+    "episode": 2141711971,
+    "world": "ws-m4-es-train-v1-12-0002"
+   },
+   {
+    "episode": 2054438062,
+    "world": "ws-atlas-v1-12-0176"
+   },
+   {
+    "episode": 607946767,
+    "world": "ws-atlas-v1-12-0352"
+   },
+   {
+    "episode": 843506519,
+    "world": "ws-atlas-v1-12-0230"
+   },
+   {
+    "episode": 832551913,
+    "world": "ws-m4-es-train-v1-12-0008"
+   },
+   {
+    "episode": 241064534,
+    "world": "ws-atlas-v1-12-0302"
+   },
+   {
+    "episode": 2105209766,
+    "world": "ws-m4-es-train-v1-12-0058"
+   },
+   {
+    "episode": 1181815137,
+    "world": "ws-m4-es-train-v1-12-0048"
+   },
+   {
+    "episode": 1517642910,
+    "world": "ws-atlas-v1-12-0436"
+   },
+   {
+    "episode": 1789244910,
+    "world": "ws-m4-es-train-v1-12-0045"
+   },
+   {
+    "episode": 58603260,
+    "world": "ws-m4-es-train-v1-12-0054"
+   },
+   {
+    "episode": 609567904,
+    "world": "ws-m4-es-train-v1-12-0030"
+   },
+   {
+    "episode": 818146579,
+    "world": "ws-atlas-v1-12-0121"
+   },
+   {
+    "episode": 1360643439,
+    "world": "ws-atlas-v1-12-0005"
+   },
+   {
+    "episode": 1858620970,
+    "world": "ws-m4-es-train-v1-12-0057"
+   },
+   {
+    "episode": 222966249,
+    "world": "ws-m4-es-train-v1-12-0018"
+   }
+  ]
+ },
+ "probe": {
+  "minibatches": [
+   [
+    {
+     "episode": 226572137,
+     "world": "ws-m4-es-train-v1-12-0014"
+    },
+    {
+     "episode": 47747607,
+     "world": "ws-m4-es-train-v1-12-0004"
+    },
+    {
+     "episode": 200560606,
+     "world": "ws-m4-es-train-v1-12-0005"
+    },
+    {
+     "episode": 1973389111,
+     "world": "ws-m4-es-train-v1-12-0003"
+    },
+    {
+     "episode": 1117082244,
+     "world": "ws-m4-es-train-v1-12-0053"
+    },
+    {
+     "episode": 1946809725,
+     "world": "ws-atlas-v1-12-0139"
+    }
+   ],
+   [
+    {
+     "episode": 867835099,
+     "world": "ws-m4-es-train-v1-12-0000"
+    },
+    {
+     "episode": 474856157,
+     "world": "ws-atlas-v1-12-0155"
+    },
+    {
+     "episode": 66994023,
+     "world": "ws-m4-es-train-v1-12-0045"
+    },
+    {
+     "episode": 1600056319,
+     "world": "ws-m4-es-train-v1-12-0002"
+    },
+    {
+     "episode": 203183553,
+     "world": "ws-atlas-v1-12-0308"
+    },
+    {
+     "episode": 105493452,
+     "world": "ws-m4-es-train-v1-12-0034"
+    }
+   ]
+  ],
+  "seed": 1838577583383780188,
+  "size": 6
+ },
+ "seed_rule": "int(sha256('|'.join([stream, purpose, ...]))[:16], 16) -> numpy default_rng; k distinct worlds without replacement, then one of the world's training episodes",
+ "stream": "m4-es-schedule-v1",
+ "train_replicate": 0,
+ "training_world_episodes": 128
+}

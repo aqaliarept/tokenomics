@@ -1222,3 +1222,22 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
 - **The registered next step** is the step-3 gate: the relational check (A2+R), tranche B1, which
   the user releases. Tranche A billed ≈ 74.0 of 125.
 
+### Re-based on MWW (EXP-0070)
+
+- **EXP-0070: the learned correction on top of MWW does not clear its floor. Stopped before the
+  read.**
+  - **The question.** After EXP-0060's `plateau`, the user chose to restart the per-order
+    correction from MWW's keyed choice (MWWk), the strongest simple rule, instead of the weak
+    trained-orderer base (pre-registration v3).
+  - **The result.**
+    - A new bar was computed with A0 = MWWk.
+    - A1 seed 0 trained for 40 generations, but beat its MWWk start on the training monitor by
+      only +20.0 / +12.3 / +4.4 / **+25.8** at generations 10–40 (≈ 1.2%), against a floor
+      that grew to **92.3** as the run's own spread rose.
+    - By D7 any read is `unresolved`, so the validation read was not run.
+    - Far more members were disqualified than before (median 11.5 of 24).
+  - **What it opens.** DIAGNOSTICS 28 has three explanations: MWW near what a whole-order
+    residual can reach, the old-base noise margin tying members against MWWk, or a real but
+    tiny gain on an underpowered monitor. Its checks decide among them.
+  - **Cost** ≈ 14.3 vCPU-h (tranche A ≈ 88.3 of 125).
+

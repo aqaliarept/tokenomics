@@ -1164,3 +1164,50 @@ this entry's diagnosed cause.
     A0's re-keyed noise.
   - The under-training branch holds, and the monitor set resolved the gain once it reached
     ≈ 3.8% of the bar.
+
+## 28. A learned correction on top of MWW does not clear its training floor (re-based step 2)
+
+_Status: provisional (2026-11-04, EXP-0070). Not yet discriminated._
+
+**Problem (plain English):** after EXP-0060, step 2 was re-based so that the per-order residual
+corrects MWW's keyed choice (MWWk), the strongest simple rule, instead of the trained orderer.
+After 40 ES generations the trained policy beats its MWWk start on the training-monitor set by
+much less than the floor F_tr, so by D7 any read is `unresolved`. The competing explanations
+call for different responses:
+- **Near the ceiling.** MWW already sits close to what a whole-order per-order residual can
+  reach on these worlds. Response: stop step 2 here, and take the question to the user (step 3,
+  or a different policy class).
+- **The rule ties the members.** The relative disqualification rule and its noise margin were
+  calibrated on the TS-base A0's re-keyed spread (EXP-0068). Against MWWk, which itself runs
+  producers down and starves consumers (0.80 / 0.97 on the training worlds), perturbed members
+  trip the rule more often (median 11.5 of 24 disqualified per generation, against 8–10 in
+  EXP-0060), flattening the ranks. Response: re-measure the margin on the MWW base (an
+  EXP-0068-style run).
+- **Underpowered.** The gain is real but about 1%, while the monitor set's own 3·SE grew to
+  92. Response: a more powerful monitor read, which is a pre-registration change.
+
+**Discriminating checks (offline first, from EXP-0070's files):**
+1. **Rule off:** recompute each generation's ranks from `member_fitness.csv` with
+   disqualification off (as DIAGNOSTICS 25 check 1). Then check whether the estimate's
+   generation-to-generation agreement, or the fitness trend, changes.
+2. **Per-world persistence** (as DIAGNOSTICS 27 check 1), at generations 10–40 from
+   `monitor.csv`: do the same worlds gain and lose?
+3. **A0's re-keyed spread on the MWW base:** a small noise-floor run (pod), to decide whether
+   the margin is mis-calibrated.
+
+**Evidence (EXP-0070):**
+- **Monitor g_tr** +20.0 / +12.3 / +4.4 / **+25.8** at generations 10–40, against F_tr 63.8 /
+  52.8 / 81.0 / **92.3**. The atlas floor is 52.8; the rest of F_tr is the run's own 3·SE.
+- **At generation 40:** 10 / 16 up, gains +844, losses −432.
+- **A0 (MWWk)** monitor center 2,113.1. Bar: mean 2,069.1; A0 run-down / starved shares 0.80 /
+  0.97.
+- 0 contract failures.
+- **Supervisor offline check (2026-11-04, EXP-0070 `artifacts/a1-s0/member_fitness.csv`):** 497 of
+  1,000 member scores are disqualified. Disqualified and kept members have about the same raw
+  fitness (mean 0.685 vs 0.692; median 0.687 vs 0.709), and on average 49% of each generation's
+  top half by raw fitness is disqualified. The flags fall mostly on the same knife-edge
+  world-episodes as before (atlas 12-0005: 168; train 12-0014: 85; 12-0044: 84; atlas 12-0408: 72;
+  12-0045: 68). So under the MWWk reference the rule removes members almost independently of
+  fitness, which flattens about half the ranking. That supports the "margin calibrated on the old
+  base now ties most members" branch; it does not exclude "MWW is near the ceiling".
+
