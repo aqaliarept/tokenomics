@@ -462,14 +462,16 @@ def rows_digest(phi: np.ndarray, psi: np.ndarray) -> str:
 
 def _a0_episode(job: Job) -> tuple[Any, RoutingTracer, float, float, RawRows]:
     from ..eval.runner import run_episode
-    from .per_order_scorer import PerOrderPolicy, per_order_env
+    from .per_order_scorer import make_policy, per_order_env
 
     env = per_order_env(job_config(job), job["horizon"])
     set_draw_key(env, DrawKey(str(job["world"]), int(job["episode"]), int(job["replicate"])))
     tracer = RoutingTracer()
     tracer.attach(env)
     monitor = ContractMonitor(env)
-    policy = PerOrderPolicy(_base_scorer(job), A0)
+    from .per_order_scorer import BASE_TS
+
+    policy = make_policy(_base_scorer(job), A0, base_kind=job.get("base_kind", BASE_TS))
     policy.sink = RawRows()
     t0, c0 = time.perf_counter(), time.process_time()
     run_episode(env, PRODUCING_BASELINES[job["producing"]], policy, seed=job["episode"],
@@ -1077,10 +1079,12 @@ def run_bar(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckpt: str, r
             target: int | None = None, min_feasible: int | None = None,
             pool: int | None = None, episodes_per_world: int | None = None,
             shock_profile: str | None = None, source_commit: str = "", dry_run: bool = False,
+            base_kind: str = "ts",
             run_job_fn: Callable[[Job], dict[str, str]] = run_bar_job,
             log: Callable[[str], None] = print) -> int:
     """Run (or resume) the bar precompute into `out_dir`; return the exit status (0,
-    `CONTRACT_INVALID`, or `NO_FEASIBLE_EXIT` on no_feasible_start)."""
+    `CONTRACT_INVALID`, or `NO_FEASIBLE_EXIT` on no_feasible_start). `base_kind` = the base A0
+    plays (`ts`, EXP-0058; `mww`, the re-based step 2 of task 7.6); pinned in `per_order`."""
     if shock_profile not in (None, SHOCKS_I_SMOKE):
         raise ValueError(f"--shock-profile takes {SHOCKS_I_SMOKE} only (a dry run's window)")
     atlas_path = Path(atlas_path)
@@ -1118,9 +1122,10 @@ def run_bar(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckpt: str, r
     playable = [c for c in order if c.screened is None]
     grid = _grid(playable)
     expected: set[Key] = expected_keys(grid, table, 1)
-    from .per_order_scorer import BaseScorer, PerOrderPolicy, per_order_pins
+    from .per_order_scorer import BaseScorer, make_policy, per_order_pins
 
-    a0_pins = per_order_pins(PerOrderPolicy(BaseScorer.load(pin["path"]), A0))
+    a0_pins = per_order_pins(make_policy(BaseScorer.load(pin["path"]), A0,
+                                            base_kind=base_kind))
     source = source_fingerprint(source_commit or None)
     pins = {
         "driver": DRIVER, "mode": BAR, "horizon": horizon, "dry_run": dry_run,
@@ -1191,6 +1196,8 @@ def run_bar(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckpt: str, r
             j.update({"arm": a["arm"], "decode": a["decode"]})
             if a["arm"] == A0:
                 j["fit_dir"] = str(fit_dir)
+                if base_kind != "ts":
+                    j["base_kind"] = base_kind
         log(f"[order_es_worlds] wave: {len(sel.wave)} world(s) from order "
             f"{sel.wave[0].order}, {len(sel.training)} training so far, {sel.replaced} replaced")
         done_keys = {job_key(d["world"], int(d["episode"]), d["subject"], int(d["replicate"]))
@@ -1363,6 +1370,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--pool", help=f"dry run: fresh draw pool (real {FRESH_POOL})")
     p.add_argument("--episodes-per-world", help=f"dry run: (real {EPISODES_PER_WORLD})")
     p.add_argument("--shock-profile", choices=(SHOCKS_I_SMOKE,))
+    p.add_argument("--base", choices=("ts", "mww"), default="ts",
+                   help="the base A0 plays (mww: the re-based step 2, task 7.6)")
     a = p.parse_args(argv)
     if a.mode == FIT:
         if not a.bar_dir:
@@ -1378,7 +1387,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                        min_feasible=_opt_int(a.min_feasible), pool=_opt_int(a.pool),
                        episodes_per_world=_opt_int(a.episodes_per_world),
                        shock_profile=a.shock_profile, source_commit=commit,
-                       dry_run=a.dry_run)
+                       dry_run=a.dry_run, base_kind=a.base)
     except (ContractRunError, DigestMismatch):  # recorded in contract_failures.csv
         return CONTRACT_INVALID
 

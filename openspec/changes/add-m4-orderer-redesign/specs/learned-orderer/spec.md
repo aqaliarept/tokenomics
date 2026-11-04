@@ -164,6 +164,17 @@ Under pre-registration v2 the gradient-signal probe SHALL also play A1 at twice 
 - **WHEN** both cosines are at least 0.1
 - **THEN** the step reading is `heterogeneity` and training proceeds at the registered step with minibatch 24
 
+### Requirement: Re-based step 2 on MWW
+Under pre-registration v3 the per-order policy's frozen base SHALL be MWW's keyed whole-order choice, with the residual added to its log-weights, and the zero-residual control SHALL draw exactly as MWWk. Only arm A1 SHALL train. The bar SHALL be recomputed for that control, and a run SHALL refuse a bar whose control played another base.
+
+#### Scenario: Zero residual equals MWWk
+- **WHEN** the residual parameters are zero under pre-registration v3
+- **THEN** the policy's sub-orders, episode statistics and draws equal MWWk's for the same keys
+
+#### Scenario: Reported arm stays out of the reading
+- **WHEN** a v3 validation read plays the registered reported arm (EXP-0060's A1-s0)
+- **THEN** its comparisons are reported and it is never selected or used in a reading clause
+
 ### Requirement: Ordered ES readings
 Step-2 readings SHALL use consumer units, with the training gain g_tr (center − control, monitor set) and the validation gain g_val (selected candidate − control, loaded 12-producer validation worlds). They SHALL be assigned by a fixed precedence: `unresolved`, `kill`, `success`, `plateau`, `budget_limited`, `other`. A pre-registered table SHALL combine the two seeds' readings.
 

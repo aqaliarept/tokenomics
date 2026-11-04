@@ -588,6 +588,76 @@ as stated). They are computed at the seed-0 read and again at the final read:
 **Separation.** Validation selects (D6) and also judges `success`, so `success` is only a licence
 to the held-out read, which is the confirmation (D9).
 
+### D7a. Re-based step 2 on MWW (task 7.6, pre-registration v3)
+
+**Why.** EXP-0060 read `plateau` on both seeds. The A1 residual over the TS base (A0) generalises
+(A1 − A0 +68.7 / +45.3 on validation), but it ends level with RR (+26.0 / +2.5, inside the
+floor) and below MWW (−59.0 / −82.5, beyond the floor). A0 itself sits about 128 units below
+MWW. The supervisor showed that herding is not the main gap: the validation pile-up is RR 0.62 <
+MWW 0.73 < A1 0.80 < A0 0.82, yet MWW fills the most units. The weak base is the gap. The user
+chose "Re-base on MWW" over releasing tranche B1 (notes/user-decisions.md, 2026-11-04).
+
+**Base (D5, re-based).**
+- The per-order policy's frozen base is MWW's keyed whole-order choice (MWWk): weights = the
+  makeable units per eligible producer, all ones when none is makeable, drawn by inverse CDF
+  from the keyed uniform. It replaces TS.
+- **Combination: a logit add on MWW's log-weights** (the simplest faithful form of D5's
+  `(b + Δ) / τ` with b = log w):
+  - p ∝ w^(1/τ) · exp((Δ − max Δ) / τ), computed multiplicatively;
+  - at θ = 0, so Δ = 0 and τ = 1, the weights are MWWk's bit for bit, so **A0 = MWWk exactly**
+    (tested: same sub-orders, episode statistics, and byte-identical draw weights and uniforms
+    on a fixture);
+  - a producer MWW gives weight 0 is never drawn while another eligible producer is makeable.
+    The residual re-weights within MWW's support.
+- **Code.** A subclass `MWWBasePolicy` and a factory `make_policy`, so `PerOrderPolicy`'s
+  source stays inside the v1 / v2 normaliser fitting-code hash unchanged (v1 / v2 reproduce).
+  v3 pins the subclass and MWWk helper sources separately (`es.base.code.sha256`).
+- The feature set, history, the bound B, σ and the normaliser rule are unchanged.
+
+**Training (D6, re-based).**
+- **Arm A1 only.** `history_inert` held on both EXP-0060 seeds, and A2-R2 was not better than
+  A1 (−14.1, inside its floor).
+- **One run:** seed 0, 40 generations from scratch, under v2's training rule unchanged (minibatch
+  24, 12 pairs, Adam, the noise margin's constants).
+- **The margin's constants stay EXP-0068's.** They were measured on the TS-base A0's re-keyed
+  spread; re-measuring them on the MWW base would need another noise-floor run, which the user
+  decision does not include. Its references are the new bar's A0 rows.
+- **The bar is recomputed for the new A0** (`order_es_worlds --base mww`). The registered
+  selection and the A0-infeasible replacement rule apply as before, so the training worlds may
+  differ from EXP-0058's.
+- **No probe.** The run is licensed by the user decision, and a v3 training run refuses a
+  probe reading.
+- A run refuses a bar whose A0 played another base.
+
+**Readings (D7, unchanged).**
+- The `readings` section is byte-identical to v1 / v2. References are A0 (now = MWWk), RR, MWW
+  and TR.
+- **Plateau clause (ii) is carried from EXP-0060 val-seed0** (A2-R2 − A1 = −14.1, within its
+  floor 39.8; `reading.json` `6d30a6e1…`), because A2 is not re-run.
+- **One reported-only arm:** EXP-0060's A1-s0 θ on its own TS base (`169f4029…`). It is played on
+  the read's worlds and keys and compared with A0 / RR / MWW / TR and the v3 candidate (in
+  `reading.json` `reported`). It is never selected and never in a clause.
+- **Seed rules are unchanged.** If the v3 seed-0 read gives `success` / `plateau`, D7's
+  registered next is seed 1, which is beyond the user decision's one pilot plus read, so it goes
+  to the supervisor and the user.
+
+**Pre-registration v3.** `es_prereg_m4_v3.json` (SHA-256 `edd6efc2c325…`): v2's sections plus
+`es.base`, `es.trainable_arms` = [A1], `probe.run` = false, and `validation.{reported_arms,
+plateau_ii}`, with `changes` recording why. v1 (`b9d449c1…`) and v2 (`511e939a…`) are
+untouched and still freeze to MATCH.
+
+**Sizing (D10, re-based; world model at a 10-minute setup, measured rates):**
+
+| run | shape | estimate | stop | basis |
+|---|---|---|---|---|
+| EXP-0070 bar (MWW base) | cpu16 | ≈ 4.3 (≈ 1.8 at 1-min setup) | 8.6 | EXP-0058 bar: 1,400 jobs, 0.63 compute vCPU-h |
+| EXP-0070 A1 seed 0, 40 generations | cpu32 (16 / 8 fall-back) | ≈ 18 | 36 | EXP-0060b / d: 17.1 / 17.9 billed for 40 generations |
+| EXP-0070 validation read (v3) | cpu16 | ≈ 6.2 (≈ 3.5 measured at EXP-0060) | 12.4 | val-seed0: 3.5 billed |
+
+- **Launch-fit on billed spend, from tranche A ≈ 74.0:** bar 74.0 + 8.6 = 82.6 → training ≈ 78
+  + 36 ≈ 114 → read ≈ 96 + 12.4 ≈ 108. All are ≤ 125, at planned estimates.
+- The run order is bar, then training, then read, each re-checked on billed spend before launch.
+
 ### D8. Step 3 — gated GNN
 
 - **Relational check (EXP-0063), built env-side, no archive restore.**

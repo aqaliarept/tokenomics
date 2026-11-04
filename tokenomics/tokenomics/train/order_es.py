@@ -76,7 +76,8 @@ from ..eval.routing_trace import RoutingTracer
 from ..eval.teacher_audit import ROLE_CHECKPOINTS
 from ..eval.world_space import point_from_record
 from . import order_es_worlds as ow
-from .per_order_scorer import (AGENT, ARCHITECTURE_VERSION, ARMS, B, DECODER_VERSION,
+from .per_order_scorer import (AGENT, ARCHITECTURE_VERSION, ARMS, B, BASE_MWW, BASE_TS,
+                               DECODER_VERSION,
                                NORMALISER_VERSION, SIGMA, U_INIT_SEED, U_INIT_STD, ArmSpec,
                                FeatureNormaliser, NonFiniteChoice, input_transforms,
                                theta_sha256)
@@ -120,7 +121,9 @@ PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m4_v1.js
 # estimate, and a noise margin on the relative disqualification rule. v1 stays as frozen.
 PREREG_V2_FORMAT = "m4-es-prereg-v2"
 PREREG_V2_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m4_v2.json"
-PREREG_FORMATS = {PREREG_FORMAT: 1, PREREG_V2_FORMAT: 2}
+PREREG_V3_FORMAT = "m4-es-prereg-v3"
+PREREG_V3_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m4_v3.json"
+PREREG_FORMATS = {PREREG_FORMAT: 1, PREREG_V2_FORMAT: 2, PREREG_V3_FORMAT: 3}
 V2_MINIBATCH = 24  # probe minibatch and ES minibatch under v2 (the user's "bigger batches")
 # the noise margin (supervisor decisions 2026-11-02): c x sqrt(2) x the pooled within-world-
 # episode SD of A0 across re-keys, from EXP-0068's noise_floor.csv (A0 at r0..r4 on the probe's
@@ -246,7 +249,7 @@ def registered_sections(version: int = 1) -> dict[str, Any]:
     v1 = _registered_v1()
     if version == 1:
         return v1
-    if version != 2:
+    if version not in (2, 3):
         raise ValueError(f"no pre-registration version {version}")
     v2 = json.loads(json.dumps(v1))
     v2["es"]["minibatch"] = V2_MINIBATCH
@@ -257,7 +260,84 @@ def registered_sections(version: int = 1) -> dict[str, Any]:
     v2["probe"]["signal_next"] = {"minibatch": V2_MINIBATCH}
     v2["probe"]["arms"] = list(V2_PROBE_ARMS)
     v2["probe"]["sigma_arms"] = SIGMA_ARM_REGISTRATION
-    return _json_norm(v2)
+    if version == 2:
+        return _json_norm(v2)
+    v3 = v2  # task 7.6: v2's training rule on the MWW base, A1 only, no probe
+    v3["es"]["base"] = BASE_REGISTRATION_V3
+    v3["es"]["trainable_arms"] = list(V3_TRAINABLE_ARMS)
+    v3["es"]["disqualification"]["noise_margin_v3"] = MARGIN_V3_TEXT
+    v3["probe"] = PROBE_V3
+    v3["validation"] = VALIDATION_V3
+    return _json_norm(v3)
+
+
+def bar_base_kind(inp: "Inputs") -> str:
+    """The base the bar's A0 played (its `per_order` pins; no key = TS, EXP-0058)."""
+    return str(((inp.bar_spec.get("pins") or {}).get("per_order") or {}).get("base_kind",
+                                                                            BASE_TS))
+
+
+def base_kind_for(version: int) -> str:
+    """The frozen base a run of this pre-registration version corrects (v3: MWW, task 7.6)."""
+    return BASE_MWW if version >= 3 else BASE_TS
+
+
+V3_TRAINABLE_ARMS = ("A1",)  # history_inert on both EXP-0060 seeds; A2 not re-run
+MWW_BASE_CODE_DEFS = {"train/per_order_scorer.py": ("MWWBasePolicy", "make_policy"),
+                      "eval/routing_diagnostics.py": ("makeable_weights", "inverse_cdf",
+                                                      "keyed_uniform")}
+
+
+def mww_base_code_sha256() -> str:
+    """SHA-256 over the re-based policy's source (the subclass, the factory and the MWWk weight
+    / draw helpers), file by file, as `ow.normaliser_code_sha256` (v3's own pin: the v1 / v2
+    fitting-code hash stays unchanged)."""
+    root = Path(__file__).resolve().parents[1]
+    h = hashlib.sha256()
+    for rel, names in sorted(MWW_BASE_CODE_DEFS.items()):
+        h.update(rel.encode())
+        h.update(b"\0")
+        h.update(ow.normaliser_code_source((root / rel).read_text(), names).encode())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+BASE_REGISTRATION_V3 = {
+    "kind": BASE_MWW,
+    "code": {"defs": {k: list(v) for k, v in sorted(MWW_BASE_CODE_DEFS.items())},
+             "sha256": mww_base_code_sha256()},
+    "rule": "the frozen base is MWW's keyed whole-order choice (MWWk: weights = makeable units "
+            "per eligible producer, all ones when none is makeable); the residual is a logit "
+            "add on the base's log-weights, p ~ exp((log w + Delta) / tau), computed as w ** "
+            "(1 / tau) * exp((Delta - max Delta) / tau), so theta = 0 draws exactly as MWWk "
+            "(A0 == MWWk) and an unmakeable producer (w = 0) is never drawn while another is "
+            "makeable",
+    "decision": "user, 2026-11-04, 'Re-base on MWW' (notes/user-decisions.md), after EXP-0060 "
+                "plateau (A0 = TS ~ 128 units below MWW)",
+}
+MARGIN_V3_TEXT = ("unchanged from v2 (EXP-0068's constants, measured on the TS-base A0's "
+                  "re-keyed spread); the references are the v3 bar's A0 rows (the MWW base)")
+PROBE_V3 = {"run": False, "readings": {SIGNAL: SIGNAL_COSINE, WEAK: WEAK_COSINE},
+            "licence": "no probe: the re-based pilot is licensed by the user decision "
+                       "2026-11-04 after EXP-0060 (both seeds trained above F_tr); a v3 run "
+                       "takes no probe reading"}
+EXP0060_READ_SHA256 = "6d30a6e1ce16d98e4d54df94170948ca7619b17d3926fa63aa770e2494ced6f3"
+VALIDATION_V3 = {
+    "reported_arms": {"EXP-0060 A1-s0": {
+        "theta_sha256": "169f402915ece660b59411bc7a237d33a5ce5f12037b7faf9f3a6e52a262d68d",
+        "candidate_sha256": "d19332e1a625a3090d8571b444589604a589f26bef3cbc16592ba01147f579a9",
+        "base": BASE_TS,
+        "role": "reported only: played on the read's worlds and keys, compared with A0 / RR / "
+                "MWW / TR and the v3 candidate; never selected, never in a clause"}},
+    "plateau_ii": {
+        "rule": "A2 is not re-run (A2-R2 - A1 within its floor at EXP-0060 val-seed0, task 7.6); "
+                "clause (ii) is carried from that read",
+        "source": {"experiment": "EXP-0060", "file": "val-seed0/reading.json",
+                   "sha256": EXP0060_READ_SHA256},
+        "a2_vs_a1": {"a": "A2-R2-s0", "b": "A1-s0", "diff": -14.125, "worlds": 9,
+                     "atlas_floor": 25.683342929673895, "own3se": 39.83036512651009,
+                     "df": 135, "within": True}},
+}
 
 
 DQ_TEXT_V2 = (DQ_TEXT + "; pre-registration v2: run-down and starvation also need the member "
@@ -411,8 +491,9 @@ def prereg_problems(doc: Any, *, mode: str, arm: str | None = None,
     if pairs != es["pairs"]:
         out.append(f"pairs {pairs} != registered {es['pairs']}")
     if mode == TRAIN:
-        if arm not in TRAINABLE_ARMS:
-            out.append(f"arm {arm!r} is not a registered trainable arm {TRAINABLE_ARMS}")
+        allowed = tuple(es.get("trainable_arms", TRAINABLE_ARMS))
+        if arm not in TRAINABLE_ARMS or arm not in allowed:
+            out.append(f"arm {arm!r} is not a registered trainable arm {allowed}")
         if opt_seed not in es["opt_seeds"]:
             out.append(f"opt seed {opt_seed} not in the registered {es['opt_seeds']}")
         if generations not in es["generations"].values():
@@ -423,6 +504,9 @@ def prereg_problems(doc: Any, *, mode: str, arm: str | None = None,
                        f"{(es['minibatch'], es['weak_minibatch'])}")
         if monitor_every != es["monitor"]["every"]:
             out.append(f"monitor every {monitor_every} != registered {es['monitor']['every']}")
+    elif not reg["probe"].get("run", True):
+        out.append(f"pre-registration v{prereg_version(doc)} registers no probe "
+                   f"({reg['probe']['licence']})")
     else:
         if list(arms) != reg["probe"]["arms"]:
             out.append(f"probe arms {list(arms)} != registered {reg['probe']['arms']}")
@@ -449,24 +533,24 @@ def prereg_file_problems(path: str | Path | None) -> list[str]:
     `prereg_problems`) differs is refused at launch, not only at the validation read."""
     if path is None:
         return []
-    from .order_es_validate import PREREG_SHA256, PREREG_V2_SHA256
+    from .order_es_validate import FROZEN_PREREGS, PREREG_SHA256, PREREG_V2_SHA256
 
     got = sha256_file(str(path))
-    if got not in (PREREG_SHA256, PREREG_V2_SHA256):
+    if got not in FROZEN_PREREGS:
         return [f"pre-registration file {got[:12]} is not the frozen {PREREG_SHA256[:12]} "
-                f"(task 5.3) or v2 {PREREG_V2_SHA256[:12]} (task 6.1d)"]
-    want = 1 if got == PREREG_SHA256 else 2
+                f"(task 5.3) or v2 {PREREG_V2_SHA256[:12]} (task 6.1d) or v3 (task 7.6)"]
+    want = FROZEN_PREREGS[got]
     have = prereg_version(load_prereg(path))
     return [] if have == want else [
         f"pre-registration file {got[:12]} is v{want} by its SHA but says v{have}"]
 
 
-def _v2_pins(inp: Inputs, margin: NoiseMargin | None) -> dict[str, Any]:
-    """Pins a v2 run adds (none under v1, so v1 pins stay byte-identical): the margin and the
-    bar A0 rows it reads."""
+def _v2_pins(inp: Inputs, margin: NoiseMargin | None, version: int = 2) -> dict[str, Any]:
+    """Pins a v2 / v3 run adds (none under v1, so v1 pins stay byte-identical): the version, the
+    margin and the bar A0 rows it reads."""
     if margin is None:
         return {}
-    return {"disqualification": {"prereg_version": 2, "noise_margin": {
+    return {"disqualification": {"prereg_version": version, "noise_margin": {
         "rundown": margin.rundown, "starvation": margin.starvation},
         "a0_refs_sha256": sha256_file(str(inp.bar_dir / "episodes.csv"))}}
 
@@ -476,7 +560,7 @@ def run_rule(prereg: Mapping[str, Any] | None) -> tuple[int, NoiseMargin | None]
     if prereg is None or prereg_version(prereg) < 2:
         return 1, None
     m = prereg["es"]["disqualification"]["noise_margin"]
-    return 2, NoiseMargin(float(m["rundown"]), float(m["starvation"]))
+    return prereg_version(prereg), NoiseMargin(float(m["rundown"]), float(m["starvation"]))
 
 
 def load_prereg(path: str | Path) -> dict[str, Any]:
@@ -871,6 +955,7 @@ class Inputs:
     world_episodes: list[tuple[str, int]]
     hashes: dict[str, str] = field(default_factory=dict)
     a0_refs: dict[tuple[str, int], A0Ref] | None = None  # v2 margin: the bar's A0 rows
+    base_kind: str = BASE_TS  # the per-order policy's frozen base (v3: MWW, task 7.6)
 
     @property
     def horizon(self) -> int:
@@ -1024,6 +1109,7 @@ def make_job(inp: Inputs, ckpt: Mapping[str, str], *, kind: str, arm: str, theta
             "checkpoints": {"orderer": dict(ckpt)},
             "normaliser": inp.normaliser.to_dict(), "normaliser_sha256": inp.normaliser.sha256,
             "cost": inp.costs[world],
+            **({"base_kind": inp.base_kind} if inp.base_kind == BASE_MWW else {}),
             "job_id": job_id(kind, generation, member, world, episode, replicate, arm)}
 
 
@@ -1068,7 +1154,7 @@ def run_es_job(job: Job) -> dict[str, str]:
     contract-failure row."""
     from ..eval.baselines import PRODUCING_BASELINES
     from ..eval.runner import run_episode
-    from .per_order_scorer import PerOrderPolicy, per_order_env
+    from .per_order_scorer import PerOrderPolicy, make_policy, per_order_env
 
     started = time.perf_counter()
     es = {"job_id": job["job_id"], "kind": job["kind"], "arm": job["arm"],
@@ -1082,8 +1168,9 @@ def run_es_job(job: Job) -> dict[str, str]:
         tracer.attach(env)
         monitor = ContractMonitor(env)
         arm = arm_spec(job["arm"])  # a sigma variant plays its base arm's policy
-        policy = PerOrderPolicy(ow._base_scorer(job), arm, np.asarray(job["theta"], np.float64),
-                                _normaliser(job) if arm.residual else None, AGENT)
+        policy = make_policy(ow._base_scorer(job), arm, np.asarray(job["theta"], np.float64),
+                                _normaliser(job) if arm.residual else None, AGENT,
+                                job.get("base_kind", BASE_TS))
         if theta_sha256(policy.theta) != job["theta_sha256"]:
             raise AssertionError("job theta does not match its sha256")
         t0 = time.perf_counter()
@@ -1405,8 +1492,8 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
               run_job_fn: Callable[[Job], dict[str, str]] | None = None,
               log: Callable[[str], None] = _log) -> int:
     """Train (or resume) one arm x opt seed to `generations`; exit 0, or CONTRACT_INVALID."""
-    from .per_order_scorer import (BaseScorer, PerOrderPolicy, composite_dict, per_order_pins,
-                                   save_composite)
+    from .per_order_scorer import (BaseScorer, PerOrderPolicy, composite_dict, make_policy,
+                                   per_order_pins, save_composite)
 
     out = Path(out_dir)
     run_job_fn = run_job_fn or run_es_job
@@ -1425,18 +1512,26 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
     if minibatch is not None:
         size = minibatch
     else:
-        size = V2_MINIBATCH if version == 2 else int(inp.schedule["minibatch_size"])
+        size = V2_MINIBATCH if version >= 2 else int(inp.schedule["minibatch_size"])
     if margin is not None:
         inp.a0_refs = load_a0_refs(inp)
+    inp.base_kind = base_kind = base_kind_for(version)
+    if bar_base_kind(inp) != base_kind:  # the bar's A0 must be the base this run corrects
+        raise ValueError(f"the bar's A0 plays the {bar_base_kind(inp)!r} base, pre-registration "
+                         f"v{version} trains on the {base_kind!r} base (task 7.6)")
     probe_doc = json.loads(Path(probe_path).read_text()) if probe_path else None
     if not dry_run:
         issues = [] if prereg is None else prereg_problems(
             prereg, mode=TRAIN, arm=arm, opt_seed=opt_seed, generations=generations,
             minibatch=size, pairs=n_pairs, monitor_every=every)
         issues += prereg_file_problems(prereg_path)
-        issues += (["no probe reading (--probe-reading, EXP-0058 probe.json)"]
-                   if probe_doc is None
-                   else _probe_doc_problems(probe_doc, arm, size, version))
+        if version >= 3:  # licensed by the user decision, not a probe (PROBE_V3)
+            issues += [] if probe_doc is None else [
+                f"pre-registration v{version} takes no probe reading (--probe-reading is set)"]
+        else:
+            issues += (["no probe reading (--probe-reading, EXP-0058 probe.json)"]
+                       if probe_doc is None
+                       else _probe_doc_problems(probe_doc, arm, size, version))
         problems = real_run_problems(inp=inp, prereg=prereg, prereg_issues=issues,
                                      source_commit=source_commit, orderer_sha=pin["sha256"],
                                      filters=filters)
@@ -1450,7 +1545,7 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
     if init is not None:  # dry runs only: start from a composite's theta
         theta0 = init_theta(init, spec_arm)
     sigma = spec_arm.sigma()
-    policy0 = PerOrderPolicy(base, spec_arm, theta0, inp.normaliser, AGENT)
+    policy0 = make_policy(base, spec_arm, theta0, inp.normaliser, AGENT, base_kind)
     tpins = training_pins(
         inp=inp, arm=spec_arm, opt_seed=opt_seed, pairs=n_pairs, minibatch=size,
         monitor_every=every, orderer_sha=pin["sha256"],
@@ -1458,7 +1553,7 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
         probe_sha=sha256_file(probe_path) if probe_path else None,
         init_sha=theta_sha256(theta0),
         per_order={**per_order_pins(policy0)["per_order"], "theta_sha256": None})
-    tpins = _json_norm({**tpins, **_v2_pins(inp, margin)})
+    tpins = _json_norm({**tpins, **_v2_pins(inp, margin, version)})
     resume_doc = load_checkpoint(resume_from) if resume_from else None
     if resume_doc is not None:
         if resume_doc["training_pins"] != tpins:
@@ -1479,7 +1574,7 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
                                              "resume_from": resume_from, "init": init},
         "source": source, "decode_pins": decode_pins(CHOICE_V1),
         "pre_registered": {"design": "add-m4-orderer-redesign D6 / D7 (task 5.2)",
-                           "sections": registered_sections()}}, workers)
+                           "sections": registered_sections(version)}}, workers)
 
     # state: this dir's latest checkpoint, else the resume source, else generation 0
     own = latest_checkpoint(out)
@@ -1501,7 +1596,7 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
     monitor_we = _fmt_we(inp.schedule["monitor"]["world_episodes"])
 
     def checkpoint() -> None:
-        pol = PerOrderPolicy(base, spec_arm, state.theta, inp.normaliser, AGENT)
+        pol = make_policy(base, spec_arm, state.theta, inp.normaliser, AGENT, base_kind)
         save_checkpoint(checkpoint_path(out, state.generation), {
             "format": CHECKPOINT_FORMAT, "generation": state.generation, "arm": arm,
             "opt_seed": opt_seed, "theta": [float(x) for x in state.theta],
@@ -1625,7 +1720,7 @@ def run_train(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str, ar
             code = run_monitor()
             if code is not None:
                 return code
-    final = PerOrderPolicy(base, spec_arm, state.theta, inp.normaliser, AGENT)
+    final = make_policy(base, spec_arm, state.theta, inp.normaliser, AGENT, base_kind)
     save_composite(final, out / "candidate.json")
     spec["status"] = "complete"
     spec["result"] = {"status": "complete", "generation": state.generation,
@@ -1695,6 +1790,8 @@ def run_probe(*, bar_dir: str | Path, out_dir: str | Path, orderer_ckpt: str,
     n_pairs = PAIRS if pairs is None else pairs
     prereg = load_prereg(prereg_path) if prereg_path else None
     version, margin = run_rule(prereg)
+    if version >= 3:
+        raise ValueError(f"pre-registration v{version} registers no probe ({PROBE_V3['licence']})")
     mb = probe_batches(inp, V2_MINIBATCH if version == 2 else None)
     if margin is not None:
         inp.a0_refs = load_a0_refs(inp)

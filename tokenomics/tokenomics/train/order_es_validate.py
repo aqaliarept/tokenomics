@@ -72,7 +72,8 @@ from ..eval.teacher_audit import (REGISTERED_ATLAS_HASH, ROLE_CHECKPOINTS, check
 from ..eval.world_space import config_from_record, episode_seeds, point_from_record
 from . import order_es as es
 from . import order_es_worlds as ow
-from .per_order_scorer import AGENT, SHARED_ONLY, PerOrderPolicy, theta_sha256
+from .per_order_scorer import (AGENT, BASE_MWW, BASE_TS, SHARED_ONLY, PerOrderPolicy,
+                               base_kind_of, make_policy, theta_sha256)
 
 DRIVER = "tokenomics.train.order_es_validate"
 EXPERIMENT = "EXP-0060"
@@ -146,10 +147,13 @@ PREREG_SHA256 = "b9d449c15db6860950aab8dbc49bc0e3d67635d4d50e6f1c817d1e04fedcbab
 # train run accepts either frozen file and plays the rule its version registers
 PREREG_V2_PATH = es.PREREG_V2_PATH
 PREREG_V2_SHA256 = "511e939a41213dd401d390637bc7e5be1c3725f32fb1de3a9e70d7b1385ceeae"
+PREREG_V3_PATH = es.PREREG_V3_PATH
+# pre-registration v3 (task 7.6, the re-based step 2): frozen by `--mode freeze --prereg-version 3`
+PREREG_V3_SHA256 = "edd6efc2c325edac003e352c1a2e0a66e8ce72c67afacf86c8e1076ac3ffa850"
 # the frozen pre-registrations a read accepts, by file SHA-256 -> version (task 6.1f). Their
 # `readings` sections are identical (v2 changed training only), so what decides a read is the
 # same under both; a read and its runs must share one file.
-FROZEN_PREREGS = {PREREG_SHA256: 1, PREREG_V2_SHA256: 2}
+FROZEN_PREREGS = {PREREG_SHA256: 1, PREREG_V2_SHA256: 2, PREREG_V3_SHA256: 3}
 
 
 def run_prereg_version(training_pins: Mapping[str, Any]) -> int:
@@ -384,10 +388,46 @@ V2_CHANGES = {
 }
 
 
+V3_CHANGES = {
+    "from": {"file": "es_prereg_m4_v2.json", "sha256": PREREG_V2_SHA256,
+             "note": "v1 / v2 are never edited; v3 is a new file"},
+    "why": {"user_decision": "\"Re-base on MWW\" (2026-11-04, notes/user-decisions.md)",
+            "evidence": ["EXP-0060 final reading plateau on both seeds: the A1 residual over "
+                         "the TS base generalises (A1 - A0 +68.7 / +45.3 on validation) but "
+                         "ends level with RR (+26.0 / +2.5, inside the floor) and below MWW "
+                         "(-59.0 / -82.5, beyond the floor); A0 (TS) sits ~128 units below MWW",
+                         "supervisor (2026-11-04): herding is not the main gap (validation "
+                         "pile-up RR 0.62 < MWW 0.73 < A1 0.80 < A0 0.82 while MWW fills the "
+                         "most units); the weak base is"]},
+    "changed": ["es.base: the frozen base is MWW's keyed whole-order choice (MWWk); the "
+                "residual is a logit add on its log-weights; A0 == MWWk at theta = 0",
+                "es.trainable_arms: A1 only (history_inert on both EXP-0060 seeds; A2-R2 - A1 "
+                "within its floor)",
+                "probe: not run (the re-based pilot is licensed by the user decision)",
+                "validation.reported_arms: EXP-0060's A1-s0 theta (TS base), reported only",
+                "validation.plateau_ii: clause (ii) carried from EXP-0060 val-seed0 (A2 not "
+                "re-run)",
+                "the bar is recomputed for the new A0 (order_es_worlds --base mww); the training "
+                "worlds follow the registered selection and A0-infeasible rules"],
+    "unchanged": "v2's training rule (minibatch 24, the noise margin's constants, sigma, Adam, "
+                 "12 pairs, 40 generations), the readings section and every threshold",
+    "not_tuned": "no EXP-0060 member outcome or validation row was read to choose the base's "
+                 "combination rule (the simplest that makes A0 == MWWk exact)",
+}
+
+
 def frozen_prereg(version: int = 1) -> dict[str, Any]:
     """The frozen pre-registration: order_es's enforced sections (byte-equal to
     `registered_sections(version)`, its `worlds` section to `bar_registration()`) plus
     `readings`; v2 also records what changed and why (`changes`)."""
+    if version == 3:
+        return {"format": es.PREREG_V3_FORMAT, "status": es.FROZEN,
+                "change": "add-m4-orderer-redesign",
+                "note": "frozen by task 7.6 after EXP-0060, before any v3 data; enforced "
+                        "sections from order_es.registered_sections(3), `readings` from "
+                        "order_es_validate.readings_registration() (unchanged from v1)",
+                "changes": V3_CHANGES, **es.registered_sections(3),
+                "readings": readings_registration()}
     if version == 2:
         return {"format": es.PREREG_V2_FORMAT, "status": es.FROZEN,
                 "change": "add-m4-orderer-redesign",
@@ -941,7 +981,8 @@ def gating_worlds(cells: Mapping[str, Cell]) -> list[str]:
 
 def analyse(dicts: Sequence[Mapping[str, str]], cells: Mapping[str, Cell],
             runs: Mapping[str, RunStats], *, seed_combine: bool = False,
-            seed0_runs: Mapping[str, RunStats] | None = None) -> dict[str, Any]:
+            seed0_runs: Mapping[str, RunStats] | None = None,
+            carried_ii: "MeanComp | None" = None) -> dict[str, Any]:
     """The whole reading from the rows and the runs' stats. Without `seed_combine`, `runs` are
     the seed-0 runs; with it, `seed0_runs` are the seed-0 runs (from the seed-0 read) and `runs`
     holds the seed-1 run (and may hold the selected seed-0 run, ignored)."""
@@ -961,6 +1002,8 @@ def analyse(dicts: Sequence[Mapping[str, str]], cells: Mapping[str, Cell],
     a2 = next((k for k in sorted(s0) if s0[k].arm in ("A2", "A2-R2")), None)
     a2_vs_a1 = (mean_comp(units, cells, a2, a1, reps, bars, gate)
                 if a1 is not None and a2 is not None else None)
+    if a2_vs_a1 is None and a2 is None and carried_ii is not None:
+        a2_vs_a1 = carried_ii  # v3: A2 not re-run, clause (ii) carried (VALIDATION_V3)
     selected = select({k: reads[k] for k in s0}, a2_vs_a1, s0)
     seed0 = seed0_reading(s0, reads, selected, a2_vs_a1)
     munits_top = metric_units(dicts, TOP_SHARE, TOP_SHARE_N)
@@ -1205,6 +1248,7 @@ class Candidate:
     prereg_sha256: str | None
     kind: str
     prereg_version: int = 1  # the run's training rule (6.1f); no v2 pin = v1
+    base_kind: str = BASE_TS  # its composite's frozen base (task 7.6)
 
 
 def legacy_table() -> list[dict]:
@@ -1227,16 +1271,28 @@ def legacy_table() -> list[dict]:
     return table
 
 
-def per_order_table(cands: Sequence[Candidate]) -> list[dict]:
-    """A0, then each candidate and its shared-only ablation (choice-v1, R = 2)."""
+def _kind(kind: str) -> dict[str, str]:
+    """A job / table field for the MWW base only, so TS (v1 / v2) entries stay byte-identical."""
+    return {"base_kind": kind} if kind == BASE_MWW else {}
+
+
+def per_order_table(cands: Sequence[Candidate], base_kind: str = BASE_TS,
+                    reported: Sequence["Reported"] = ()) -> list[dict]:
+    """A0 (on the read's base), then each candidate and its shared-only ablation, then each
+    reported-only arm (task 7.6, no ablation) (choice-v1, R = 2)."""
     out = [{"arm": A0, "subject": ow.A0_SUBJECT, "po_arm": A0, "theta": [],
-            "history_mode": AGENT, "decode": CHOICE_V1}]
+            "history_mode": AGENT, "decode": CHOICE_V1, **_kind(base_kind)}]
     for c in cands:
         for label, mode in ((c.label, AGENT), (ablation_label(c.label), SHARED_ONLY)):
             out.append({"arm": label, "subject": f"es/{label}", "po_arm": c.arm,
                         "theta": list(c.theta), "theta_sha256": c.theta_sha256,
                         "normaliser": c.normaliser, "normaliser_sha256": c.normaliser_sha256,
-                        "history_mode": mode, "decode": CHOICE_V1})
+                        "history_mode": mode, "decode": CHOICE_V1, **_kind(c.base_kind)})
+    for r in reported:
+        out.append({"arm": r.label, "subject": f"es/{r.label}", "po_arm": r.arm,
+                    "theta": list(r.theta), "theta_sha256": r.theta_sha256,
+                    "normaliser": r.normaliser, "normaliser_sha256": r.normaliser_sha256,
+                    "history_mode": AGENT, "decode": CHOICE_V1, **_kind(r.base_kind)})
     for a in out:
         a.setdefault("theta_sha256", theta_sha256(np.zeros(0)))
     return out
@@ -1265,7 +1321,8 @@ def build_validation_jobs(entries: Sequence[WorldEntry], legacy: Sequence[dict],
                             "arm", "po_arm", "theta", "theta_sha256", "history_mode",
                             "decode")},
                         "normaliser": a.get("normaliser"),
-                        "normaliser_sha256": a.get("normaliser_sha256")})
+                        "normaliser_sha256": a.get("normaliser_sha256"),
+                        **_kind(a.get("base_kind", BASE_TS))})
     return jobs
 
 
@@ -1294,8 +1351,10 @@ def _per_order_episode(job: Job) -> Any:
     tracer.attach(env)
     monitor = ContractMonitor(env)
     arm = ARMS[job["po_arm"]]
-    policy = PerOrderPolicy(ow._base_scorer(job), arm, np.asarray(job["theta"], np.float64),
-                            es._normaliser(job) if arm.residual else None, job["history_mode"])
+    kind = job.get("base_kind", BASE_TS)
+    args = (ow._base_scorer(job), arm, np.asarray(job["theta"], np.float64),
+            es._normaliser(job) if arm.residual else None, job["history_mode"])
+    policy = PerOrderPolicy(*args) if kind == BASE_TS else make_policy(*args, kind)
     if theta_sha256(policy.theta) != job["theta_sha256"]:
         raise AssertionError("job theta does not match its sha256")
     run_episode(env, PRODUCING_BASELINES[job["producing"]], policy, seed=job["episode"],
@@ -1349,7 +1408,8 @@ def load_candidate(run_dir: str | Path, inp: es.Inputs, cells: Mapping[str, Cell
             raise ValueError(f"{rd} was trained on another bar ({k} differs)")
     comp = json.loads((rd / "candidate.json").read_text())
     # the composite's own checks (versions, base hash, theta / normaliser hashes)
-    load_composite(rd / "candidate.json", orderer_path, SimpleNamespace(ordering_decode=CHOICE_V1))
+    loaded = load_composite(rd / "candidate.json", orderer_path,
+                            SimpleNamespace(ordering_decode=CHOICE_V1))
     if comp["theta_sha256"] != spec["result"]["theta_sha256"]:
         raise ValueError(f"{rd}: candidate.json theta differs from the run's final theta")
     if comp["normaliser_sha256"] != inp.normaliser.sha256:
@@ -1372,8 +1432,83 @@ def load_candidate(run_dir: str | Path, inp: es.Inputs, cells: Mapping[str, Cell
                      comp["theta_sha256"], comp["normaliser"], comp["normaliser_sha256"],
                      sha256_file(str(rd / "candidate.json")), str(rd), stats,
                      spec["pins"]["training_sha256"], tp["inputs"].get("prereg_sha256"),
-                     str(spec.get("kind")), run_prereg_version(tp))
+                     str(spec.get("kind")), run_prereg_version(tp), base_kind_of(loaded))
 
+
+
+@dataclass(frozen=True)
+class Reported:
+    """A reported-only arm (task 7.6, pre-registration v3 `validation.reported_arms`): a
+    composite played on the read's worlds and keys, compared, never selected or read."""
+
+    label: str
+    arm: str
+    theta: tuple[float, ...]
+    theta_sha256: str
+    normaliser: dict
+    normaliser_sha256: str
+    candidate_sha256: str
+    base_kind: str
+
+
+def reported_label(name: str) -> str:
+    return "reported:" + name.replace(" ", "-")
+
+
+def load_reported(name: str, run_dir: str | Path, orderer_path: str) -> Reported:
+    """A registered reported arm's composite (its own base and normaliser), by its
+    `candidate.json`; no bar, monitor or training-version checks (it is never read)."""
+    from .per_order_scorer import load_composite
+
+    path = Path(run_dir) / "candidate.json"
+    pol = load_composite(path, orderer_path, SimpleNamespace(ordering_decode=CHOICE_V1))
+    comp = json.loads(path.read_text())
+    return Reported(reported_label(name), pol.arm.name, tuple(float(x) for x in comp["theta"]),
+                    comp["theta_sha256"], comp["normaliser"], comp["normaliser_sha256"],
+                    sha256_file(str(path)), base_kind_of(pol))
+
+
+def reported_problems(reported: Sequence[Reported], version: int) -> list[str]:
+    """A real read's reported arms must be exactly the registered ones (v3 only)."""
+    reg = (es.registered_sections(version).get("validation") or {}).get("reported_arms") or {}
+    want = {reported_label(k): v for k, v in reg.items()}
+    got = {r.label: {"theta_sha256": r.theta_sha256, "candidate_sha256": r.candidate_sha256,
+                     "base": r.base_kind} for r in reported}
+    out = [f"reported arms {sorted(got)} != the registered {sorted(want)}"] \
+        if set(got) != set(want) else []
+    for k in sorted(set(got) & set(want)):
+        for f in ("theta_sha256", "candidate_sha256", "base"):
+            if got[k][f] != want[k][f]:
+                out.append(f"reported arm {k}: {f} {str(got[k][f])[:12]} is not the registered "
+                           f"{str(want[k][f])[:12]}")
+    return out
+
+
+def carried_ii_for(version: int) -> "MeanComp | None":
+    """v3's carried plateau clause (ii) (A2 not re-run): EXP-0060 val-seed0's A2-R2 - A1."""
+    reg = (es.registered_sections(version).get("validation") or {}).get("plateau_ii")
+    if not reg:
+        return None
+    d = reg["a2_vs_a1"]
+    return MeanComp(d["a"], d["b"], float(d["diff"]), int(d["worlds"]), float(d["atlas_floor"]),
+                    float(d["own3se"]), int(d["df"]), ())
+
+
+def reported_comparisons(dicts: Sequence[Mapping[str, str]], cells: Mapping[str, Cell],
+                         labels: Sequence[str], candidates: Sequence[str]) -> dict[str, Any]:
+    """Each reported arm against A0, RR, MWW, TR and every candidate, on the gating worlds with
+    D7's floors (reported only)."""
+    units = arm_units(dicts)
+    gate = gating_worlds(cells)
+    bars = validation_bars(units, list(cells))
+    reps = reps_of([*labels, *candidates])
+    out: dict[str, Any] = {}
+    for lab in labels:
+        out[lab] = {}
+        for ref in (A0, RR, MWW, TR, *candidates):
+            comp = mean_comp(units, cells, lab, ref, reps, bars, gate)
+            out[lab][ref] = None if comp is None else comp.to_dict()
+    return out
 
 
 @dataclass(frozen=True)
@@ -1412,7 +1547,7 @@ def load_seed_zero(path: str | Path) -> SeedZero:
 
 
 ANALYSIS_KEYS = ("runs", "candidates", "label_measures", "gating_worlds", "seed0", "seed1",
-                 "final", "seed_combine")
+                 "final", "seed_combine", "reported")
 
 
 def _analysis_view(doc: Mapping[str, Any]) -> dict[str, Any]:
@@ -1503,11 +1638,12 @@ def run_validate(*, runs: Sequence[str], bar_dir: str | Path, atlas_path: str | 
                  reuse_references: str | Path | None = None, horizon: int = HORIZON,
                  worlds: Sequence[str] | None = None, max_worlds: int | None = None,
                  shock_profile: str | None = None, source_commit: str = "",
-                 dry_run: bool = False,
+                 dry_run: bool = False, reported_runs: Mapping[str, str] | None = None,
                  run_job_fn: Callable[[Job], dict[str, str]] = run_validate_job,
                  log: Callable[[str], None] = _log) -> int:
     """Play (or resume) one validation read into `out_dir`; exit 0, or `CONTRACT_INVALID` on
-    contract failures, missing rows or digest differences."""
+    contract failures, missing rows or digest differences. `reported_runs` (v3: registered name
+    -> run dir) adds reported-only arms (task 7.6)."""
     from .per_order_scorer import BaseScorer, per_order_pins
 
     if shock_profile not in (None, SHOCKS_I_SMOKE):
@@ -1537,9 +1673,20 @@ def run_validate(*, runs: Sequence[str], bar_dir: str | Path, atlas_path: str | 
     prereg_sha = sha256_file(str(prereg_path))
     if es.prereg_schema_problems(prereg):
         raise ValueError("pre-registration: " + "; ".join(es.prereg_schema_problems(prereg)))
-    mix = prereg_mix_problems(cands, read_prereg_version(prereg_sha, prereg))
+    version = read_prereg_version(prereg_sha, prereg)
+    mix = prereg_mix_problems(cands, version)
     if mix:
         raise ValueError("; ".join(mix))
+    base_kind = es.base_kind_for(version)
+    if es.bar_base_kind(inp) != base_kind:
+        raise ValueError(f"the bar's A0 plays the {es.bar_base_kind(inp)!r} base, pre-registration "
+                         f"v{version} reads the {base_kind!r} base (task 7.6)")
+    wrong = [c.label for c in cands if c.base_kind != base_kind]
+    if wrong:
+        raise ValueError(f"runs {wrong} correct another base than the read's {base_kind!r}")
+    reported = [load_reported(k, d, pin["path"]) for k, d in sorted((reported_runs or {}).items())]
+    if reported and version < 3:
+        raise ValueError(f"pre-registration v{version} registers no reported arm")
     source = source_fingerprint(source_commit or None)
     pins: dict[str, Any] = {
         "driver": DRIVER, "mode": VALIDATE, "horizon": horizon, "dry_run": dry_run,
@@ -1585,13 +1732,14 @@ def run_validate(*, runs: Sequence[str], bar_dir: str | Path, atlas_path: str | 
             orderer_sha=pin["sha256"], cells=cells,
             filters={"worlds": worlds, "max_worlds": max_worlds,
                      "shock_profile": shock_profile})
+        problems += reported_problems(reported, version) if version >= 3 else []
         if problems:
             raise ValueError("not a valid validation read (" + "; ".join(problems)
                              + "); pass --dry-run for a smoke run")
     entries = [world_entry(v, episodes, shock_profile) for v in views]
     grid = job_grid(entries, None)
     legacy = legacy_table()
-    po_all = per_order_table(played)
+    po_all = per_order_table(played, base_kind, reported)
     if seed_combine:
         po_all = [a for a in po_all if a["arm"] != A0]  # A0 rows come from the seed-0 read
         legacy = []
@@ -1610,8 +1758,10 @@ def run_validate(*, runs: Sequence[str], bar_dir: str | Path, atlas_path: str | 
         for label, mode in ((c.label, AGENT), (ablation_label(c.label), SHARED_ONLY)):
             from .per_order_scorer import FeatureNormaliser
 
-            pol = PerOrderPolicy(base, c.arm, np.asarray(c.theta, np.float64),
-                                 FeatureNormaliser.from_dict(c.normaliser), mode)
+            args = (base, c.arm, np.asarray(c.theta, np.float64),
+                    FeatureNormaliser.from_dict(c.normaliser), mode)
+            pol = PerOrderPolicy(*args) if c.base_kind == BASE_TS else make_policy(*args,
+                                                                                c.base_kind)
             per_order[label] = per_order_pins(pol)["per_order"]
     pins.update({
         "candidates": {c.label: {"arm": c.arm, "opt_seed": c.opt_seed,
@@ -1622,8 +1772,13 @@ def run_validate(*, runs: Sequence[str], bar_dir: str | Path, atlas_path: str | 
                                  "generation": c.stats.generation} for c in cands},
         **decode_pins(CHOICE_V1),
         "decode_by_arm": {a["arm"]: a["decode"] for a in [*legacy_table(),
-                                                          *per_order_table(played)]},
+                                                          *per_order_table(played, base_kind,
+                                                                           reported)]},
         "per_order": per_order, "grid": grid,
+        **({"reported": {r.label: {"theta_sha256": r.theta_sha256,
+                                   "candidate_sha256": r.candidate_sha256,
+                                   "base": r.base_kind} for r in reported}}
+           if reported else {}),
     })
     pins = es._json_norm(pins)
     old_spec, done = _prepare_resume(out, pins, grid, expected)
@@ -1677,7 +1832,11 @@ def run_validate(*, runs: Sequence[str], bar_dir: str | Path, atlas_path: str | 
         runs_now = {c.label: c.stats for c in cands}
         try:
             got = analyse(dicts, cells, runs_now, seed_combine=seed_combine,
-                          seed0_runs=seed0.runs if seed0 is not None else None)
+                          seed0_runs=seed0.runs if seed0 is not None else None,
+                          carried_ii=carried_ii_for(version))
+            if reported:
+                got["reported"] = reported_comparisons(
+                    dicts, cells, [r.label for r in reported], [c.label for c in played])
         except ValueError as exc:
             if not dry_run:
                 raise
@@ -1757,9 +1916,15 @@ def run_recompute(*, out_dir: str | Path, runs: Sequence[str], bar_dir: str | Pa
     seed0_runs = None
     if pins["seed_combine"]:
         seed0_runs = load_seed_zero(pins["reuse"]["path"]).runs
-    got = analyse(read_episode_dicts(out / "episodes.csv"), cells,
+    dicts = read_episode_dicts(out / "episodes.csv")
+    got = analyse(dicts, cells,
                   {c.label: c.stats for c in cands}, seed_combine=bool(pins["seed_combine"]),
-                  seed0_runs=seed0_runs)
+                  seed0_runs=seed0_runs, carried_ii=None if version is None
+                  else carried_ii_for(version))
+    if pins.get("reported"):
+        got["reported"] = reported_comparisons(dicts, cells, sorted(pins["reported"]),
+                                               [c.label for c in cands if c.opt_seed == (
+                                                   1 if pins["seed_combine"] else 0)])
     got.pop("herding_rows", None)
     match = _analysis_view(got) == _analysis_view(recorded)
     doc = {"status": "MATCH" if match else "MISMATCH",
@@ -1848,11 +2013,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--exp0052-episodes", help="power: EXP-0052's episodes.csv")
     p.add_argument("--atlas-worlds", help="power: EXP-0052 reclassified/worlds.csv (bar)")
     p.add_argument("--out", help="power: output JSON; freeze: the file (default packaged)")
-    p.add_argument("--prereg-version", type=int, choices=(1, 2), default=1,
+    p.add_argument("--reported-runs", help="v3 validate: NAME=DIR,... reported-only arms "
+                                           "(registered names, e.g. 'EXP-0060 A1-s0'=<dir>)")
+    p.add_argument("--prereg-version", type=int, choices=(1, 2, 3), default=1,
                    help="freeze: which pre-registration (v2: task 6.1d)")
     a = p.parse_args(argv)
     if a.mode == FREEZE:
-        return run_freeze(a.out or (PREREG_V2_PATH if a.prereg_version == 2 else PREREG_PATH),
+        return run_freeze(a.out or {1: PREREG_PATH, 2: PREREG_V2_PATH,
+                                     3: PREREG_V3_PATH}[a.prereg_version],
                           version=a.prereg_version)
     if a.mode == POWER:
         run_power(exp0052_episodes=a.exp0052_episodes, atlas_path=a.atlas,
@@ -1868,6 +2036,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             runs=runs, bar_dir=a.bar_dir, atlas_path=a.atlas, orderer_ckpt=a.orderer_ckpt,
             out_dir=a.out_dir, episodes=a.episodes, workers=a.workers, prereg_path=a.prereg,
             seed_combine=a.seed_combine, reuse_references=a.reuse_references,
+            reported_runs=dict(x.split("=", 1) for x in _csv_strs(a.reported_runs) or []),
             horizon=a.horizon, worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds,
             shock_profile=a.shock_profile, source_commit=commit, dry_run=a.dry_run)
     except (ContractRunError, DigestMismatch):  # recorded in contract_failures.csv

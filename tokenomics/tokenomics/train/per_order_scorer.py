@@ -54,7 +54,7 @@ from ..env.agent_history import FEATURES as HISTORY_FEATURES
 from ..env.agent_history import attach_agent_history, env_agent_id
 from ..env.spaces import CHOICE_V1, decode_pins
 from ..eval.routing_diagnostics import (_slots, draw_key, inverse_cdf, keyed_uniform,
-                                        softmax_weights)
+                                        makeable_weights, softmax_weights)
 from .orderer_scorer import (_ORDERER_PRODUCER_ROW_FEATURES, _ORDERER_PRODUCT_FEATURES, _BOUND,
                              _producer_row_features, _product_features)
 
@@ -108,6 +108,13 @@ HAS_COMPLETED_COL = _HIST.stop - 1
 AGENT = "agent"
 SHARED_ONLY = "shared_only"  # D9 ablation: history = mean over the product's agents
 HISTORY_MODES = (AGENT, SHARED_ONLY)
+# The frozen base the residual corrects (task 7.6, user decision "Re-base on MWW"): `ts` = the
+# EXP-0012 trained scores, drawn as TS (D5, pre-registration v1 / v2); `mww` = MWW's keyed
+# whole-order choice (MWWk: weights = makeable units). The residual is a logit add on the
+# base's log-weights, p ~ exp((log w + Delta) / tau) = w ** (1 / tau) * exp(Delta / tau),
+# computed multiplicatively so theta = 0 gives MWWk's weights bit for bit (A0 == MWWk).
+BASE_TS, BASE_MWW = "ts", "mww"
+BASE_KINDS = (BASE_TS, BASE_MWW)
 
 
 # --- arms and theta layout ---
@@ -516,6 +523,107 @@ class PerOrderPolicy:
     __call__ = decide
 
 
+class MWWBasePolicy(PerOrderPolicy):
+    """The re-based policy (task 7.6, user decision "Re-base on MWW"; pre-registration v3): the
+    frozen base is MWW's keyed whole-order choice (MWWk) instead of TS. A subclass, so
+    `PerOrderPolicy`'s source (inside the v1 / v2 normaliser fitting-code hash) is unchanged;
+    v3 pins this class's source on its own (`mww_base_code_sha256`). The residual is a logit
+    add on MWW's log-weights, p ~ w ** (1 / tau) * exp((Delta - max Delta) / tau): at theta = 0
+    the weights are MWWk's bit for bit (A0 == MWWk), and a producer MWW gives weight 0 is never
+    drawn while another eligible producer is makeable."""
+
+    base_kind = BASE_MWW
+
+    def __init__(self, base: BaseScorer, arm: ArmSpec | str, theta: np.ndarray | None = None,
+                 normaliser: FeatureNormaliser | None = None, history_mode: str = AGENT) -> None:
+        super().__init__(base, arm, theta, normaliser, history_mode)
+        self._base_policy = None  # no scorer forward: the base weights are MWW's, per slot
+
+    def decide(self, env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        if getattr(env, "ordering_decode", None) != CHOICE_V1:
+            raise ValueError(f"{DECODER_VERSION} policy needs ordering_decode={CHOICE_V1!r}, "
+                             f"env has {getattr(env, 'ordering_decode', None)!r}")
+        if not hasattr(env, "agent_history"):
+            raise ValueError("per-order policy needs attach_agent_history(env) (D5)")
+        with np.errstate(all="ignore"):
+            tau = float(np.exp(self.theta_tau)) if self.arm.residual else 1.0
+        if not (math.isfinite(tau) and tau > 0):
+            raise NonFiniteChoice(f"temperature exp({self.theta_tau}) = {tau}")
+        sp = env.spec_
+        key = draw_key(env)
+        action = np.zeros((sp.k_stream, sp.num_producers), dtype=np.float32)
+        slots = _slots(env, agent)
+        if not any(elig for *_, elig in slots):
+            return action.flatten()  # nothing to route: no base forward (draws unchanged)
+        cycle = env.system.cycle_counter
+        aid = env_agent_id(env, agent)
+        pids = list(sp.producer_ids)
+        view = env.system.product_stream_view(aid)
+        if sorted(view.producers) != pids:
+            raise ValueError("stream view producers differ from spec.producer_ids")
+        need_inputs = self.arm.residual or self.sink is not None or self.record is not None
+        own = np.zeros((len(pids), 2), dtype=np.float64)
+        if need_inputs:
+            shared = shared_rows(view, pids)
+            hist = self._history(env, aid, pids)
+            product = np.asarray(_product_features(view.product_stats), dtype=np.float64)
+            incoming = env.system.ordering_agents[aid].incoming
+        for k, oid, q, elig in slots:
+            if not elig:
+                continue
+            phi = psi = None
+            delta = np.zeros(len(elig))
+            if need_inputs:
+                raw = transform_phi(np.concatenate([shared, hist, own], axis=1)[elig])
+                psi_raw = transform_psi(np.concatenate([product,
+                                                        order_features(env, oid, incoming[oid])]))
+                if self.sink is not None:
+                    self.sink.add(raw, psi_raw)
+                if self.normaliser is not None:
+                    phi = self.normaliser.apply_phi(raw)
+                    psi = self.normaliser.apply_psi(psi_raw)
+                if self.arm.residual:
+                    assert phi is not None and psi is not None
+                    with np.errstate(all="ignore"):
+                        z = phi @ self.w + (phi @ self.u.T) @ (self.v @ psi)
+                        delta = B * np.tanh(z / B)
+            with np.errstate(all="ignore"):  # MWWk's weights, per slot, as MWWk reads them
+                bw = makeable_weights(env, oid, elig)
+                base_k = np.log(bw)
+                s = (delta - delta.max()) / tau
+                weights = bw ** (1.0 / tau) * np.exp(s)
+            if not (np.all(np.isfinite(s)) and np.all(np.isfinite(weights))
+                    and weights.sum() > 0):
+                raise NonFiniteChoice(f"{agent} cycle {cycle} slot {k}: non-finite score / "
+                                      f"share (theta has non-finite effect)")
+            u = keyed_uniform(key, agent, cycle, k)
+            chosen = elig[inverse_cdf(weights, u)]
+            action[k, chosen] = 1.0  # whole order: one-hot share
+            if self.record is not None:
+                self.record.append(Decision(k, oid, q, list(elig), np.array(base_k), phi, psi,
+                                            own[elig].copy(), delta, u, chosen))
+            own[chosen, 0] += q
+            own[chosen, 1] += 1.0
+        return action.flatten()
+
+    __call__ = decide
+
+
+def make_policy(base: BaseScorer, arm: ArmSpec | str, theta: np.ndarray | None = None,
+                normaliser: FeatureNormaliser | None = None, history_mode: str = AGENT,
+                base_kind: str = BASE_TS) -> PerOrderPolicy:
+    """The per-order policy on its frozen base: `ts` = `PerOrderPolicy` (v1 / v2), `mww` =
+    `MWWBasePolicy` (v3, task 7.6)."""
+    if base_kind not in BASE_KINDS:
+        raise ValueError(f"base_kind {base_kind!r} not in {BASE_KINDS}")
+    cls = MWWBasePolicy if base_kind == BASE_MWW else PerOrderPolicy
+    return cls(base, arm, theta, normaliser, history_mode)
+
+
+def base_kind_of(policy: PerOrderPolicy) -> str:
+    return getattr(policy, "base_kind", BASE_TS)
+
+
 # --- env helper and pins (carry-forward: choice-v1 drivers pass the decode and pin it) ---
 
 
@@ -535,7 +643,8 @@ def per_order_pins(policy: PerOrderPolicy) -> dict[str, Any]:
         "decoder_version": DECODER_VERSION, "architecture_version": ARCHITECTURE_VERSION,
         "arm": policy.arm.name, "theta_sha256": theta_sha256(policy.theta),
         "base_sha256": policy.base.sha256, "history_mode": policy.history_mode,
-        "normaliser_sha256": policy.normaliser.sha256 if policy.normaliser else None}}
+        "normaliser_sha256": policy.normaliser.sha256 if policy.normaliser else None,
+        **({"base_kind": BASE_MWW} if base_kind_of(policy) == BASE_MWW else {})}}
 
 
 # --- composite checkpoint ---
@@ -556,7 +665,8 @@ def composite_dict(policy: PerOrderPolicy) -> dict[str, Any]:
         "theta": [float(x) for x in policy.theta], "theta_sha256": theta_sha256(policy.theta),
         "sigma": [float(x) for x in policy.arm.sigma()],
         "base": {"sha256": policy.base.sha256, "decoder_version": BASE_DECODER_VERSION,
-                 "architecture_version": BASE_ARCHITECTURE_VERSION},
+                 "architecture_version": BASE_ARCHITECTURE_VERSION,
+                 **({"kind": BASE_MWW} if base_kind_of(policy) == BASE_MWW else {})},
         "normaliser": None if nm is None else nm.to_dict(),
         "normaliser_sha256": None if nm is None else nm.sha256,
     }
@@ -608,4 +718,7 @@ def load_composite(path: str | Path, base_path: str | Path, env: "TokenomicsAECE
         nm = FeatureNormaliser.from_dict(ckpt["normaliser"])
         if nm.sha256 != ckpt["normaliser_sha256"]:
             raise ValueError("composite normaliser does not match its normaliser_sha256")
-    return PerOrderPolicy(base, arm, theta, nm, history_mode)
+    kind = ckpt["base"].get("kind", BASE_TS)
+    if kind not in BASE_KINDS:
+        raise ValueError(f"composite base kind {kind!r} not in {BASE_KINDS}")
+    return make_policy(base, arm, theta, nm, history_mode, kind)

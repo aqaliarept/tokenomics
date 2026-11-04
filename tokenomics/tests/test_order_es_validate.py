@@ -971,7 +971,8 @@ def test_both_frozen_files_decide_alike() -> None:
     d1, d2 = es.load_prereg(v.PREREG_PATH), es.load_prereg(v.PREREG_V2_PATH)
     assert d1["readings"] == d2["readings"] == es._json_norm(v.readings_registration())
     assert v.prereg_read_problems(d1) == [] == v.prereg_read_problems(d2)
-    assert v.FROZEN_PREREGS == {v.PREREG_SHA256: 1, v.PREREG_V2_SHA256: 2}
+    assert v.FROZEN_PREREGS == {v.PREREG_SHA256: 1, v.PREREG_V2_SHA256: 2,
+                                v.PREREG_V3_SHA256: 3}  # v3: task 7.6
     swapped = {**d2, "es": d1["es"]}
     assert any("es." in x for x in v.prereg_read_problems(swapped))
     changed = copy.deepcopy(d2)
