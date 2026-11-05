@@ -1320,3 +1320,25 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   The losses chain through the supply network. EXP-0075 (task 7.17) tests whether a longer
   reservation lifetime lets those inputs arrive.
 - **Cost.** ≈ 0.64 vCPU-h; tranche A ≈ 90.8 of 125.
+
+### Does more time let the inputs arrive? (EXP-0075)
+
+- **The question.** EXP-0073 extended the order TTL but left a producer's wait for inputs at 2
+  cycles. Task 7.16 tied that wait to the TTL. The same sweep was re-run, now with the supply
+  observer on.
+- **What it found.**
+  - Consumer units rise 14–24% at TTL 3–4, about three times EXP-0073's gain, with no world worse
+    beyond its floor and no deaths.
+  - Readings at 12 producers: round-robin `timing` at both TTLs. MWWk `mixed`: it gains, but a
+    few more episodes fail the run-down check.
+  - The recovered loss is mostly input orders that used to die upstream when the supplier's own
+    wait expired; that class falls by about half at TTL 4. Inputs that arrive late outright fall
+    only 7–10%.
+  - About a quarter of the input-timing loss is recovered at TTL 4.
+- **What it means.**
+  - EXP-0073's "mostly scarcity" reading is superseded: the loss has a large timing part.
+  - The remaining late-input loss is lead time no feasible wait covers. So buying inputs earlier
+    stays the producer decision to target (EXP-0074).
+  - Changing the TTL is the user's world-design decision.
+- **Cost.** ≈ 6.9 vCPU-h, including 5.4 wasted on two pods that never got SSH; tranche A ≈ 97.7
+  of 125.
