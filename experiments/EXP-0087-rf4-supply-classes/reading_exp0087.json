@@ -1,0 +1,638 @@
+{
+ "sources": {
+  "entity_planner (EXP-0074)": {
+   "file": "EXP-0074-supply-trace/supply_trace.csv",
+   "sha256": "b792c95762597ea525ee9325ccf81d186785e69a36f52b7643d18e5be842ce7d"
+  },
+  "k4 (EXP-0077)": {
+   "file": "EXP-0077-buffer-sweep/entity_planner_buyahead_k4/supply_trace.csv",
+   "sha256": "e84f9450ba0b27379d025bc36bc1e92bab485f0059c28af10439f739761c39f3"
+  },
+  "rf3 (EXP-0079)": {
+   "file": "EXP-0079-expand-early/entity_planner_buyahead_k4_rf3/supply_trace.csv",
+   "sha256": "01850723fbb5a7c19726f41e936be278a6dc7eb2d85748fc090ef95d6c1d60f0"
+  },
+  "rf4 (EXP-0084)": {
+   "file": "EXP-0084-sustainable-upgrade/entity_planner_buyahead_k4_rf4/supply_trace.csv",
+   "sha256": "ac9d5ff3e9418697f6d2f19360e9bb7429716f4a7f271a4f9e582627582b1e44"
+  }
+ },
+ "cells": [
+  {
+   "run": "entity_planner (EXP-0074)",
+   "size": 12,
+   "arm": "MWWk",
+   "episodes": 86,
+   "units_per_episode": 2095.9883720930234,
+   "lost_per_episode": 6211.837209302325,
+   "group_share": {
+    "a_capacity": 0.05221463896761247,
+    "b1_not_ordered": 0.005248793563676252,
+    "b2_not_delivered": 0.7457180402008169,
+    "b3_upstream_unable": 0.0013140702859132415,
+    "b4_contention": 0.10220172289215264,
+    "c_outbid": 0.0878330569168392,
+    "d_outage": 0.005469677172989304,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 324.3488372093023,
+    "b1_not_ordered": 32.604651162790695,
+    "b2_not_delivered": 4632.279069767442,
+    "b3_upstream_unable": 8.162790697674419,
+    "b4_contention": 634.8604651162791,
+    "c_outbid": 545.6046511627907,
+    "d_outage": 33.97674418604651,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 2022.0116279069769,
+    "b2_short": 42.093023255813954,
+    "b2_unfunded": 48.31395348837209,
+    "b2_open": 65.18604651162791,
+    "b2_lost_outage": 10.813953488372093,
+    "b2_lost_no_fit": 194.53488372093022,
+    "b2_lost_displaced": 403.4186046511628,
+    "b2_lost_dropped": 32.25581395348837,
+    "b2_lost_ttl": 1808.4883720930231,
+    "b2_lost_ttl_outage": 5.162790697674419,
+    "a_held": 93.66279069767442,
+    "a_degraded": 159.51162790697674,
+    "a_max": 52.58139534883721,
+    "a_dropped": 18.593023255813954
+   }
+  },
+  {
+   "run": "entity_planner (EXP-0074)",
+   "size": 42,
+   "arm": "MWWk",
+   "episodes": 56,
+   "units_per_episode": 5924.785714285715,
+   "lost_per_episode": 12785.035714285714,
+   "group_share": {
+    "a_capacity": 0.06906791142546671,
+    "b1_not_ordered": 0.01953874646978471,
+    "b2_not_delivered": 0.7951986278601378,
+    "b3_upstream_unable": 0.0004204133738941452,
+    "b4_contention": 0.07010707272173664,
+    "c_outbid": 0.0361094583232071,
+    "d_outage": 0.009557769825772876,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 883.0357142857143,
+    "b1_not_ordered": 249.80357142857142,
+    "b2_not_delivered": 10166.642857142857,
+    "b3_upstream_unable": 5.375,
+    "b4_contention": 896.3214285714286,
+    "c_outbid": 461.6607142857143,
+    "d_outage": 122.19642857142857,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 4046.8214285714284,
+    "b2_short": 155.21428571428572,
+    "b2_unfunded": 283.9642857142857,
+    "b2_open": 140.07142857142858,
+    "b2_lost_outage": 47.589285714285715,
+    "b2_lost_no_fit": 499.7857142857143,
+    "b2_lost_displaced": 995.8035714285714,
+    "b2_lost_dropped": 64.39285714285714,
+    "b2_lost_ttl": 3914.5535714285716,
+    "b2_lost_ttl_outage": 18.446428571428573,
+    "a_held": 190.125,
+    "a_degraded": 333.625,
+    "a_max": 323.2142857142857,
+    "a_dropped": 36.07142857142857
+   }
+  },
+  {
+   "run": "k4 (EXP-0077)",
+   "size": 12,
+   "arm": "MWWk",
+   "episodes": 86,
+   "units_per_episode": 3100.639534883721,
+   "lost_per_episode": 5228.372093023256,
+   "group_share": {
+    "a_capacity": 0.054697091006138246,
+    "b1_not_ordered": 0.006685348278622898,
+    "b2_not_delivered": 0.6889311449159328,
+    "b3_upstream_unable": 0.0008295525309136198,
+    "b4_contention": 0.1503002401921537,
+    "c_outbid": 0.09099946623965839,
+    "d_outage": 0.007557156836580375,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 285.9767441860465,
+    "b1_not_ordered": 34.95348837209303,
+    "b2_not_delivered": 3601.9883720930234,
+    "b3_upstream_unable": 4.337209302325581,
+    "b4_contention": 785.8255813953489,
+    "c_outbid": 475.77906976744185,
+    "d_outage": 39.51162790697674,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 2070.720930232558,
+    "b2_short": 49.2906976744186,
+    "b2_unfunded": 38.46511627906977,
+    "b2_open": 35.604651162790695,
+    "b2_lost_outage": 7.023255813953488,
+    "b2_lost_no_fit": 147.61627906976744,
+    "b2_lost_displaced": 341.2093023255814,
+    "b2_lost_dropped": 17.348837209302324,
+    "b2_lost_ttl": 892.9651162790698,
+    "b2_lost_ttl_outage": 1.744186046511628,
+    "a_held": 87.75581395348837,
+    "a_degraded": 138.56976744186048,
+    "a_max": 47.5,
+    "a_dropped": 12.151162790697674
+   }
+  },
+  {
+   "run": "k4 (EXP-0077)",
+   "size": 12,
+   "arm": "RR",
+   "episodes": 43,
+   "units_per_episode": 3199.906976744186,
+   "lost_per_episode": 5131.511627906977,
+   "group_share": {
+    "a_capacity": 0.0414719811470395,
+    "b1_not_ordered": 0.006394597901701752,
+    "b2_not_delivered": 0.7246425415240987,
+    "b3_upstream_unable": 0.000629942670685006,
+    "b4_contention": 0.15895402324896332,
+    "c_outbid": 0.06480251977068274,
+    "d_outage": 0.0031043937368289863,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 212.8139534883721,
+    "b1_not_ordered": 32.81395348837209,
+    "b2_not_delivered": 3718.5116279069766,
+    "b3_upstream_unable": 3.2325581395348837,
+    "b4_contention": 815.6744186046511,
+    "c_outbid": 332.5348837209302,
+    "d_outage": 15.930232558139535,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 2103.4883720930234,
+    "b2_short": 55.30232558139535,
+    "b2_unfunded": 55.51162790697674,
+    "b2_open": 27.232558139534884,
+    "b2_lost_outage": 6.186046511627907,
+    "b2_lost_no_fit": 191.72093023255815,
+    "b2_lost_displaced": 339.13953488372096,
+    "b2_lost_dropped": 21.74418604651163,
+    "b2_lost_ttl": 914.7441860465116,
+    "b2_lost_ttl_outage": 3.441860465116279,
+    "a_held": 57.72093023255814,
+    "a_degraded": 74.20930232558139,
+    "a_max": 65.32558139534883,
+    "a_dropped": 15.55813953488372
+   }
+  },
+  {
+   "run": "k4 (EXP-0077)",
+   "size": 42,
+   "arm": "MWWk",
+   "episodes": 56,
+   "units_per_episode": 7975.5,
+   "lost_per_episode": 10781.839285714286,
+   "group_share": {
+    "a_capacity": 0.07719992116372935,
+    "b1_not_ordered": 0.02622962223182832,
+    "b2_not_delivered": 0.7508359791514501,
+    "b3_upstream_unable": 0.00034283840386363973,
+    "b4_contention": 0.09466646129486918,
+    "c_outbid": 0.04047811879433505,
+    "d_outage": 0.010247058959924343,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 832.3571428571429,
+    "b1_not_ordered": 282.80357142857144,
+    "b2_not_delivered": 8095.392857142857,
+    "b3_upstream_unable": 3.6964285714285716,
+    "b4_contention": 1020.6785714285714,
+    "c_outbid": 436.42857142857144,
+    "d_outage": 110.48214285714286,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 4033.6071428571427,
+    "b2_short": 192.85714285714286,
+    "b2_unfunded": 269.10714285714283,
+    "b2_open": 85.85714285714286,
+    "b2_lost_outage": 38.75,
+    "b2_lost_no_fit": 397.2857142857143,
+    "b2_lost_displaced": 800.5535714285714,
+    "b2_lost_dropped": 34.714285714285715,
+    "b2_lost_ttl": 2229.5178571428573,
+    "b2_lost_ttl_outage": 13.142857142857142,
+    "a_held": 149.57142857142858,
+    "a_degraded": 318.89285714285717,
+    "a_max": 333.30357142857144,
+    "a_dropped": 30.589285714285715
+   }
+  },
+  {
+   "run": "k4 (EXP-0077)",
+   "size": 42,
+   "arm": "RR",
+   "episodes": 28,
+   "units_per_episode": 7680.25,
+   "lost_per_episode": 11074.142857142857,
+   "group_share": {
+    "a_capacity": 0.0764554496317032,
+    "b1_not_ordered": 0.028089887640449437,
+    "b2_not_delivered": 0.7858363755982404,
+    "b3_upstream_unable": 3.547517382835176e-05,
+    "b4_contention": 0.08140262387285697,
+    "c_outbid": 0.024900347011700356,
+    "d_outage": 0.003279841071221249,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 846.6785714285714,
+    "b1_not_ordered": 311.07142857142856,
+    "b2_not_delivered": 8702.464285714286,
+    "b3_upstream_unable": 0.39285714285714285,
+    "b4_contention": 901.4642857142857,
+    "c_outbid": 275.75,
+    "d_outage": 36.32142857142857,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 4007.3571428571427,
+    "b2_short": 235.85714285714286,
+    "b2_unfunded": 278.60714285714283,
+    "b2_open": 96.17857142857143,
+    "b2_lost_outage": 15.5,
+    "b2_lost_no_fit": 605.7857142857143,
+    "b2_lost_displaced": 941.6428571428571,
+    "b2_lost_dropped": 62.25,
+    "b2_lost_ttl": 2451.5714285714284,
+    "b2_lost_ttl_outage": 7.714285714285714,
+    "a_held": 104.07142857142857,
+    "a_degraded": 267.0357142857143,
+    "a_max": 438.4642857142857,
+    "a_dropped": 37.107142857142854
+   }
+  },
+  {
+   "run": "rf3 (EXP-0079)",
+   "size": 12,
+   "arm": "MWWk",
+   "episodes": 86,
+   "units_per_episode": 3448.5348837209303,
+   "lost_per_episode": 4882.383720930233,
+   "group_share": {
+    "a_capacity": 0.053021660692808746,
+    "b1_not_ordered": 0.0012646319825666552,
+    "b2_not_delivered": 0.6706336258737512,
+    "b3_upstream_unable": 0.0007978375031258559,
+    "b4_contention": 0.1654429188944592,
+    "c_outbid": 0.10219941174369172,
+    "d_outage": 0.0066399133095966754,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 258.8720930232558,
+    "b1_not_ordered": 6.174418604651163,
+    "b2_not_delivered": 3274.2906976744184,
+    "b3_upstream_unable": 3.895348837209302,
+    "b4_contention": 807.7558139534884,
+    "c_outbid": 498.9767441860465,
+    "d_outage": 32.41860465116279,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 1784.8372093023256,
+    "b2_short": 14.732558139534884,
+    "b2_unfunded": 40.72093023255814,
+    "b2_open": 29.91860465116279,
+    "b2_lost_outage": 9.395348837209303,
+    "b2_lost_no_fit": 164.72093023255815,
+    "b2_lost_displaced": 414.1046511627907,
+    "b2_lost_dropped": 8.476744186046512,
+    "b2_lost_ttl": 805.0116279069767,
+    "b2_lost_ttl_outage": 2.372093023255814,
+    "a_held": 63.45348837209303,
+    "a_degraded": 132.37209302325581,
+    "a_max": 50.94186046511628,
+    "a_dropped": 12.104651162790697
+   }
+  },
+  {
+   "run": "rf3 (EXP-0079)",
+   "size": 12,
+   "arm": "RR",
+   "episodes": 43,
+   "units_per_episode": 3565.6976744186045,
+   "lost_per_episode": 4770.906976744186,
+   "group_share": {
+    "a_capacity": 0.04589834705506729,
+    "b1_not_ordered": 0.001257622508518199,
+    "b2_not_delivered": 0.7084021857284217,
+    "b3_upstream_unable": 0.0015110968125606266,
+    "b4_contention": 0.17257213050027054,
+    "c_outbid": 0.06731205124080546,
+    "d_outage": 0.0030465661543561022,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 218.97674418604652,
+    "b1_not_ordered": 6.0,
+    "b2_not_delivered": 3379.720930232558,
+    "b3_upstream_unable": 7.209302325581396,
+    "b4_contention": 823.3255813953489,
+    "c_outbid": 321.13953488372096,
+    "d_outage": 14.534883720930232,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 1850.3488372093022,
+    "b2_short": 16.813953488372093,
+    "b2_unfunded": 51.02325581395349,
+    "b2_open": 27.6046511627907,
+    "b2_lost_outage": 5.441860465116279,
+    "b2_lost_no_fit": 183.2093023255814,
+    "b2_lost_displaced": 390.1162790697674,
+    "b2_lost_dropped": 15.488372093023257,
+    "b2_lost_ttl": 835.7674418604652,
+    "b2_lost_ttl_outage": 3.9069767441860463,
+    "a_held": 66.83720930232558,
+    "a_degraded": 73.13953488372093,
+    "a_max": 65.32558139534883,
+    "a_dropped": 13.674418604651162
+   }
+  },
+  {
+   "run": "rf3 (EXP-0079)",
+   "size": 42,
+   "arm": "MWWk",
+   "episodes": 56,
+   "units_per_episode": 8843.910714285714,
+   "lost_per_episode": 9925.107142857143,
+   "group_share": {
+    "a_capacity": 0.08082136572832967,
+    "b1_not_ordered": 0.016142323040773218,
+    "b2_not_delivered": 0.7465158706455131,
+    "b3_upstream_unable": 0.00041201426396980244,
+    "b4_contention": 0.10016984343457969,
+    "c_outbid": 0.04434460945005991,
+    "d_outage": 0.011593973436774702,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 802.1607142857143,
+    "b1_not_ordered": 160.21428571428572,
+    "b2_not_delivered": 7409.25,
+    "b3_upstream_unable": 4.089285714285714,
+    "b4_contention": 994.1964285714286,
+    "c_outbid": 440.125,
+    "d_outage": 115.07142857142857,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 3277.3035714285716,
+    "b2_short": 62.42857142857143,
+    "b2_unfunded": 327.44642857142856,
+    "b2_open": 89.94642857142857,
+    "b2_lost_outage": 50.464285714285715,
+    "b2_lost_no_fit": 431.39285714285717,
+    "b2_lost_displaced": 970.375,
+    "b2_lost_dropped": 31.785714285714285,
+    "b2_lost_ttl": 2155.464285714286,
+    "b2_lost_ttl_outage": 12.642857142857142,
+    "a_held": 137.39285714285714,
+    "a_degraded": 311.51785714285717,
+    "a_max": 324.89285714285717,
+    "a_dropped": 28.357142857142858
+   }
+  },
+  {
+   "run": "rf3 (EXP-0079)",
+   "size": 42,
+   "arm": "RR",
+   "episodes": 28,
+   "units_per_episode": 8620.535714285714,
+   "lost_per_episode": 10146.392857142857,
+   "group_share": {
+    "a_capacity": 0.08665993192513877,
+    "b1_not_ordered": 0.01723694909168987,
+    "b2_not_delivered": 0.7799217878274827,
+    "b3_upstream_unable": 3.87188972858053e-05,
+    "b4_contention": 0.0833160271595465,
+    "c_outbid": 0.028820939179652165,
+    "d_outage": 0.004005645919204221,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 879.2857142857143,
+    "b1_not_ordered": 174.89285714285714,
+    "b2_not_delivered": 7913.392857142857,
+    "b3_upstream_unable": 0.39285714285714285,
+    "b4_contention": 845.3571428571429,
+    "c_outbid": 292.42857142857144,
+    "d_outage": 40.642857142857146,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 3229.8214285714284,
+    "b2_short": 70.25,
+    "b2_unfunded": 331.0,
+    "b2_open": 94.64285714285714,
+    "b2_lost_outage": 16.5,
+    "b2_lost_no_fit": 676.2142857142857,
+    "b2_lost_displaced": 1054.142857142857,
+    "b2_lost_dropped": 54.107142857142854,
+    "b2_lost_ttl": 2380.1428571428573,
+    "b2_lost_ttl_outage": 6.571428571428571,
+    "a_held": 116.03571428571429,
+    "a_degraded": 266.32142857142856,
+    "a_max": 462.14285714285717,
+    "a_dropped": 34.785714285714285
+   }
+  },
+  {
+   "run": "rf4 (EXP-0084)",
+   "size": 12,
+   "arm": "MWWk",
+   "episodes": 86,
+   "units_per_episode": 3573.0116279069766,
+   "lost_per_episode": 4767.03488372093,
+   "group_share": {
+    "a_capacity": 0.024672837925188734,
+    "b1_not_ordered": 0.0012244947739441171,
+    "b2_not_delivered": 0.6908858073250156,
+    "b3_upstream_unable": 0.0008195821594526362,
+    "b4_contention": 0.1762394350737258,
+    "c_outbid": 0.09889136877538326,
+    "d_outage": 0.00726647396728989,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 117.61627906976744,
+    "b1_not_ordered": 5.837209302325581,
+    "b2_not_delivered": 3293.4767441860463,
+    "b3_upstream_unable": 3.9069767441860463,
+    "b4_contention": 840.1395348837209,
+    "c_outbid": 471.4186046511628,
+    "d_outage": 34.63953488372093,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 1765.406976744186,
+    "b2_short": 12.406976744186046,
+    "b2_unfunded": 34.06976744186046,
+    "b2_open": 35.906976744186046,
+    "b2_lost_outage": 8.872093023255815,
+    "b2_lost_no_fit": 147.27906976744185,
+    "b2_lost_displaced": 437.2325581395349,
+    "b2_lost_dropped": 9.011627906976743,
+    "b2_lost_ttl": 841.6162790697674,
+    "b2_lost_ttl_outage": 1.6744186046511629,
+    "a_held": 49.616279069767444,
+    "a_degraded": 8.883720930232558,
+    "a_max": 50.7093023255814,
+    "a_dropped": 8.406976744186046
+   }
+  },
+  {
+   "run": "rf4 (EXP-0084)",
+   "size": 12,
+   "arm": "RR",
+   "episodes": 43,
+   "units_per_episode": 3687.3255813953488,
+   "lost_per_episode": 4654.930232558139,
+   "group_share": {
+    "a_capacity": 0.027897403103486176,
+    "b1_not_ordered": 0.0011540652071821823,
+    "b2_not_delivered": 0.7354093184520538,
+    "b3_upstream_unable": 0.0015487455161319332,
+    "b4_contention": 0.17297489033882554,
+    "c_outbid": 0.057543389854218085,
+    "d_outage": 0.003472187528102237,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 129.86046511627907,
+    "b1_not_ordered": 5.372093023255814,
+    "b2_not_delivered": 3423.279069767442,
+    "b3_upstream_unable": 7.209302325581396,
+    "b4_contention": 805.1860465116279,
+    "c_outbid": 267.86046511627904,
+    "d_outage": 16.162790697674417,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 1811.7441860465117,
+    "b2_short": 16.25581395348837,
+    "b2_unfunded": 39.372093023255815,
+    "b2_open": 33.86046511627907,
+    "b2_lost_outage": 6.186046511627907,
+    "b2_lost_no_fit": 231.2093023255814,
+    "b2_lost_displaced": 424.1162790697674,
+    "b2_lost_dropped": 16.46511627906977,
+    "b2_lost_ttl": 839.5116279069767,
+    "b2_lost_ttl_outage": 4.558139534883721,
+    "a_held": 51.093023255813954,
+    "a_degraded": 6.6976744186046515,
+    "a_max": 65.32558139534883,
+    "a_dropped": 6.744186046511628
+   }
+  },
+  {
+   "run": "rf4 (EXP-0084)",
+   "size": 42,
+   "arm": "MWWk",
+   "episodes": 56,
+   "units_per_episode": 9169.785714285714,
+   "lost_per_episode": 9627.785714285714,
+   "group_share": {
+    "a_capacity": 0.05914800169153269,
+    "b1_not_ordered": 0.014274161838132193,
+    "b2_not_delivered": 0.762169019727129,
+    "b3_upstream_unable": 0.00033014563502956474,
+    "b4_contention": 0.10273278976771101,
+    "c_outbid": 0.05039172336021486,
+    "d_outage": 0.010954157980250614,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 569.4642857142857,
+    "b1_not_ordered": 137.42857142857142,
+    "b2_not_delivered": 7338.0,
+    "b3_upstream_unable": 3.1785714285714284,
+    "b4_contention": 989.0892857142857,
+    "c_outbid": 485.1607142857143,
+    "d_outage": 105.46428571428571,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 3252.785714285714,
+    "b2_short": 58.42857142857143,
+    "b2_unfunded": 288.0,
+    "b2_open": 94.875,
+    "b2_lost_outage": 52.892857142857146,
+    "b2_lost_no_fit": 392.07142857142856,
+    "b2_lost_displaced": 1018.5357142857143,
+    "b2_lost_dropped": 29.446428571428573,
+    "b2_lost_ttl": 2137.785714285714,
+    "b2_lost_ttl_outage": 13.178571428571429,
+    "a_held": 136.75,
+    "a_degraded": 35.535714285714285,
+    "a_max": 384.92857142857144,
+    "a_dropped": 12.25
+   }
+  },
+  {
+   "run": "rf4 (EXP-0084)",
+   "size": 42,
+   "arm": "RR",
+   "episodes": 28,
+   "units_per_episode": 8987.92857142857,
+   "lost_per_episode": 9799.107142857143,
+   "group_share": {
+    "a_capacity": 0.0701375854214123,
+    "b1_not_ordered": 0.01647744874715262,
+    "b2_not_delivered": 0.7931954441913439,
+    "b3_upstream_unable": 8.018223234624146e-05,
+    "b4_contention": 0.08510250569476081,
+    "c_outbid": 0.03129658314350797,
+    "d_outage": 0.003710250569476082,
+    "never_bid": 0.0
+   },
+   "group_per_episode": {
+    "a_capacity": 687.2857142857143,
+    "b1_not_ordered": 161.46428571428572,
+    "b2_not_delivered": 7772.607142857143,
+    "b3_upstream_unable": 0.7857142857142857,
+    "b4_contention": 833.9285714285714,
+    "c_outbid": 306.67857142857144,
+    "d_outage": 36.357142857142854,
+    "never_bid": 0.0
+   },
+   "sub_per_episode": {
+    "b2_late": 3243.6428571428573,
+    "b2_short": 79.14285714285714,
+    "b2_unfunded": 254.5,
+    "b2_open": 92.60714285714286,
+    "b2_lost_outage": 16.428571428571427,
+    "b2_lost_no_fit": 592.0714285714286,
+    "b2_lost_displaced": 1124.392857142857,
+    "b2_lost_dropped": 57.785714285714285,
+    "b2_lost_ttl": 2306.0714285714284,
+    "b2_lost_ttl_outage": 5.964285714285714,
+    "a_held": 113.71428571428571,
+    "a_degraded": 57.642857142857146,
+    "a_max": 499.32142857142856,
+    "a_dropped": 16.607142857142858
+   }
+  }
+ ]
+}

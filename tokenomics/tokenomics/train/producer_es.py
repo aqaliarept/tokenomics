@@ -117,7 +117,8 @@ PREREG_V4_SHA256 = "4a99c82488f25293c0405ddc0a64a95cad1214fdd4f6e36b07f550ce9581
 # bar / normaliser / margins / flag threshold from the rf4 L1 run (EXP-0085). Frozen after EXP-0085
 # and before any probe data; until then None, so a real probe / train run is refused.
 PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v5.json"
-PREREG_SHA256: str | None = None
+# v5, frozen 2026-11-05 after EXP-0085 (task 4.2i)
+PREREG_SHA256: str | None = "06160cac20c001685077923440161d5d4959f23fb08f20581614f33ef2f219e4"
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
@@ -346,7 +347,7 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
             "from": {"file": PREREG_V4_PATH.name, "sha256": PREREG_V4_SHA256,
                      "note": "v1..v4 are never edited; v5 is a new file"},
             "changed": ["base", "every rule's reference arm: rf3 -> rf4", "guard.threshold",
-                        "guard.calibration", "readings.L1"],
+                        "guard.calibration", "readings.L1 (criterion: the flag-count target)"],
             "why": "user decision 2026-11-05 'Adopt rf4 as base' after EXP-0084 (its `no_gain` "
                    "reading stays recorded; the cap is a safety fix, DIAGNOSTICS 29); the bar, "
                    "normaliser, margins and flag threshold are recomputed by the same code, "
@@ -369,8 +370,13 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
                                "noise_floor/margins.json, bar/bar.csv)", **FLAG_SOURCES_V5}}
         doc["readings"]["L1"]["pass"] = (
             f"r0 reproduces the bar's rf4 rows; rf4 equals EXP-0084 on 2 world-episodes; rf4's "
-            f"self-flag rate under the margin <= {SELF_FLAG_TARGET}; the flag threshold's "
-            f"self-disqualification rate <= {FLAG_TARGET}")
+            f"self-disqualification under the flag-count rule <= {FLAG_TARGET} of its re-keyed "
+            f"minibatches (the calibration's rate)")
+        doc["readings"]["L1"]["superseded"] = (
+            f"the per-episode self-flag rate under the margin (<= {SELF_FLAG_TARGET}) is reported "
+            f"only: since v3 the minibatch flag-count rule decides disqualification (user decision "
+            f"2026-11-05 after EXP-0085: 28 / 512 = 5.47% per episode, 14 / 328 = 4.27% per "
+            f"minibatch)")
     return doc
 
 
@@ -1033,9 +1039,14 @@ FLAG_CALIBRATION: dict[str, Any] = {  # calibrate_flag_threshold's output on tho
     "rate": 9 / 328, "rate_without_threshold": 135 / 328, "max_excess": 8 / 3}
 # v5 (base rf4): the same calibration on the rf4 L1 run (EXP-0085); None until computed by
 # `--mode flag-calibrate` on its files (then v5 is frozen, before any probe data)
-FLAG_THRESHOLD_V5: float | None = None
-FLAG_SOURCES_V5: dict[str, str] | None = None
-FLAG_CALIBRATION_V5: dict[str, Any] | None = None
+FLAG_THRESHOLD_V5: float | None = 5 / 3  # calibrate_flag_threshold on EXP-0085 (2026-11-05)
+FLAG_SOURCES_V5: dict[str, str] | None = {
+    "noise_episodes_sha256": "b159899f26c3fa770d180dcc6dbec881321abace7307dff53e860a5f22cb3a80",
+    "margins_sha256": "8f6bfbbcf2ec15cd990214386c1709b2b94b8fbc0034bde04e0744f992e53b15",
+    "bar_csv_sha256": "3a072a1ebf21f82013407f927bb8308e0c4f9ab2b529da5a93a01c1a7a9ddd2a"}
+FLAG_CALIBRATION_V5: dict[str, Any] | None = {  # EXP-0085 flag_calibration.json
+    "minibatches": 82, "re_keys": 4, "samples": 328, "self_disqualified": 14,
+    "rate": 14 / 328, "rate_without_threshold": 143 / 328, "max_excess": 8 / 3}
 NOISE_ROWS = "noise_episodes.csv"
 
 

@@ -1306,3 +1306,11 @@ how general it is across the training set is untested._
 - **Veto:** no deaths on either world at horizon 100 or 200. rf3's units are 1,886 → 3,500 (12-0016) and
   3,282 → 4,514 (12-0004).
 - Restorations succeed about 0.97 per cycle throughout, and the funding share is unchanged.
+- **The cap's view estimate errs at a tiny max** (producer finalization step 2, notes/producer-finalization.md;
+  2026-11-05). The view's degradation `ceil(d% · max / 100)` hides the rate when max < 100 / d%.
+  - On atlas 12-0391, p1_1 at max 1 shows degradation 1, so the estimate for 1 → 66 is 66 > restore 53, and rf4
+    blocks it. The exact value is 4. p1_1 stays at capacity ≤ 1 all episode (rf3: 391).
+  - With the exact d% the cap gains: 12-0391 4,339 → 4,855 at horizon 100 (rf3 4,795) and 7,538 → 9,717 at 200
+    (rf3 8,821).
+  - Its other blocks there (p2_2 at 693, p2_1 at 846) are real traps.
+
