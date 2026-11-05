@@ -1377,3 +1377,21 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   MWWk's run-down failures sit exactly at the +5 limit there, so the optimum is not established.
 - **Cost.** ≈ 7.2 vCPU-h, of which 5.5 was lost on an unreachable pod and 0.67 on a driver crash
   (fixed); tranche A ≈ 106.2 of 125.
+
+### Does reserving inventory room for waiting orders help? (EXP-0078)
+
+- **The rule.** "Reservations first" changes how a buy-ahead (k = 4) producer spends its inventory
+  room: waiting orders' inputs first, a little room held back from the buffer, and an earlier
+  request for more space.
+- **What it found.**
+  - The rule ties k = 4 (+59 / +55 units per episode against a floor of 146.5: `no_gain`).
+  - Its first two parts alone are harmful (−199 and −519). They only move the loss: late inputs
+    rise when the buffer's room goes to waiting orders, and supplier losses rise when the buffer
+    shrinks.
+  - Only the earlier inventory expansion adds value.
+- **What it means.**
+  - Inventory room is the binding resource. Re-allocating it does not help; adding it might.
+  - The remaining late-input loss is the one-cycle delay between accepting an order and ordering
+    its input, which a producer's replenishment command cannot remove.
+  - Buy-ahead k = 4 stays the strongest producer.
+- **Cost.** ≈ 1.9 vCPU-h; tranche A ≈ 108.1 of 125.

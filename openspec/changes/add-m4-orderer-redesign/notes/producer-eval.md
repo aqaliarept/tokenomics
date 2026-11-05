@@ -71,4 +71,15 @@ Done 2026-11-05: k = 3 / 4 added (k = 2, entity_planner from EXP-0076; digests e
 | input arrived late | 174k | 173k | 177k | 177k | 178k |
 k* sits at the sweep's edge (gains shrinking but beyond the floor for MWWk; run-down at the +5 limit), so the optimum is not established. Late inputs at the final assembler stay flat → step 4 (7.22) targets them on top of k* = 4.
 
+## Step 4 — "reservations first" for the late-input loss (tasks 7.22 / 7.22b, EXP-0078)
+Done 2026-11-05: reading **`no_gain`** (12: rf +59 MWWk / +55 RR vs floor 146.5; 42 `no_gain`); ablations harmful (rf1 −199 / −230, rf12 −519 / −546).
+| 12 MWWk | k4 | rf1 | rf12 | rf |
+|---|---|---|---|---|
+| units / episode | 3,101 | 2,887 | 2,550 | 3,165 |
+| input arrived late | 178k | 197k | 193k | 159k |
+| ... headroom-blocked | — | 31k | 26k | 9k |
+| died upstream | 77k | 82k | 112k | 85k |
+| held stock / cycle | 233 | 215 | 185 | 225 |
+Diagnosis: re-allocating inventory room (parts 1, 2) moves the loss between classes; only expanding room (part 3) adds; the remaining late loss is the one-cycle ordering delay after acceptance, outside the replenishment command's reach. Buy-ahead k = 4 stays the strongest producer. Untested: early expansion alone on k = 4.
+
 ## Step 3 — producer teacher (later, decided by step 2)
