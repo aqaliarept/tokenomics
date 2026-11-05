@@ -40,3 +40,34 @@ A view-only estimate cannot recover d% at max = 1: the view's degradation of 1 f
    exact.
 2. View-only: apply the cap only when the rate is pinned to within 1 point, i.e. `max ≥ 100` (with
    `deg / max` then within 1% of d%), and otherwise allow the upgrade.
+
+## Step 3: rf5 and the buffer re-sweep
+- **PF-3 / PF-4, rf5 (exact cap, EXP-0089):** `no_gain` by the rule.
+  - 12: +135.3 (MWWk) / +155.1 (RR) vs floor 146.5, 0 worlds below, 0 deaths.
+  - +18.5 / +44.4 over rf4.
+  - It holds, so PF-5 ran on rf5.
+- **PF-5, EXP-0088: k* = 5** at 12 (both orderers), +106 / +106 over rf5. k = 6 is best, at the edge of the
+  range; the gains diminish (+145, +106, +55 per step).
+- **What the buffer moves:** the gain comes from fewer input orders dying upstream (MWWk 78k → 61k from k = 3 to
+  6). Late inputs at the assembler stay flat (157k → 153k, −2.6%).
+
+## Step 4: a rule for "input arrived late" (37% of losses)? None proposed
+The trace shows that this class does not respond to the producer's levers:
+- **Buffer size:** late inputs fall only 2.6% from k = 3 to 6 (EXP-0088), while the buffer's whole gain comes
+  through the died-upstream class.
+- **Inventory room:** at 12, only 6% (MWWk) / 7% (RR) of rf5's late units are headroom-blocked (EXP-0089's
+  `st_b2_late_headroom_blocked`). EXP-0078 showed that re-allocating room only moves the loss (rf1 / rf12
+  harmful), and that more room is what helps; rf3 / rf5 already have it.
+- **Timing is structural:** the input for a reservation accepted at cycle t is ordered by the next cycle's
+  command (t + 1). It misses TTL 2 whenever the supplier needs more than that one cycle. The producer's command
+  (replenish / restore / upgrade / expand) cannot order before the acceptance. Declining or deferring such
+  acceptances is the auction's job, in the domain, outside the producer's command.
+
+So I see **no hand-written producer rule with a plausible gain above the floor** on this class. The second
+class (died upstream, 18%) is the one the buffer moves, and k* = 5 already takes what the rule licenses.
+
+**The producer is final:** `entity_planner_buyahead_k5_rf5`, i.e. buy-ahead k = 5, the early inventory
+expansion, and the exact sustainable-upgrade cap.
+- Possible follow-ups (not proposed as producer rules):
+  - an auction-side "accept only if the inputs can arrive within TTL" rule (a domain change);
+  - learning (the M5 re-base, now on k5_rf5).

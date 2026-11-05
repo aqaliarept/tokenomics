@@ -145,7 +145,7 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
     h200 rf3 / rf4 (MWWk, 12, dry run); upgrades blocked; deaths; held stock; run-down.
   - ≈ 1 vCPU-h, stop 6; cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P.
   - Done 2026-11-05 (EXP-0089): **`no_gain`** (12: +135.3 / +155.1 vs floor 146.5, 0 below, 0 deaths); vs rf4 +18.5 / +44.4; horizon 200 +9.1%. Holds, so PF-5 runs on rf5.
-- [ ] PF-5 [experiment][remote:cpu16] EXP-0088: buffer re-sweep on rf5 (it holds: EXP-0089), adding
+- [x] PF-5 [experiment][remote:cpu16] EXP-0088: buffer re-sweep on rf5 (it holds: EXP-0089), adding
   `entity_planner_buyahead_k{3,5,6}_rf5` (registrations only); k = 4 is rf5 (EXP-0089's rows, digests must
   match). × {MWWk R = 2, RR}, TTL 2, EXP-0057's worlds, observer on.
   - **Pre-registered k* rule (2026-11-05, before data; as EXP-0077's, with rf5 = k 4 as the reference):**
@@ -159,6 +159,7 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
     died-upstream / contention classes per k.
   - **Stop rule (supervisor):** if k* = 4, the buffer step's gain is within the floor and the step stops there.
   - ≈ 2 vCPU-h, stop 4; cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P.
+  - Done 2026-11-05 (EXP-0088): **k* = 5** at 12 (both orderers; k5 +106 / +106 over rf5; k6 best, at the edge, gains diminishing); 42 k* = 4; late inputs flat across k. ≈ 1.2 vCPU-h, M5-P ≈ 6.1 / 80.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
 - [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to

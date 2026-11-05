@@ -1,0 +1,388 @@
+{
+ "digests_vs_rf5": {
+  "3": {
+   "rows": 213,
+   "mismatched": 0
+  },
+  "5": {
+   "rows": 213,
+   "mismatched": 0
+  },
+  "6": {
+   "rows": 213,
+   "mismatched": 0
+  }
+ },
+ "cells": [
+  {
+   "size": 12,
+   "orderer": "MWWk",
+   "worlds": 23,
+   "mean_floor": 146.50592278917375,
+   "stats": {
+    "3": {
+     "episodes": 86,
+     "units_mean": 3443.860465116279,
+     "deaths": 0,
+     "rundown_fails": 61,
+     "holding_units_per_cycle_mean": 219.16441860465116,
+     "investment_rejection_rate_mean": 0.08766809540149767,
+     "upgrades_blocked": 2914.0,
+     "input_late": 156957.0,
+     "late_headroom_blocked": 9706.0,
+     "input_died_upstream": 78320.0,
+     "contention": 69346.0,
+     "lost": 420562.0
+    },
+    "4": {
+     "episodes": 86,
+     "units_mean": 3592.813953488372,
+     "deaths": 0,
+     "rundown_fails": 66,
+     "holding_units_per_cycle_mean": 250.09279069767442,
+     "investment_rejection_rate_mean": 0.09799291937156498,
+     "upgrades_blocked": 2725.0,
+     "input_late": 155294.0,
+     "late_headroom_blocked": 9478.0,
+     "input_died_upstream": 70569.0,
+     "contention": 70591.0,
+     "lost": 408291.0
+    },
+    "5": {
+     "episodes": 86,
+     "units_mean": 3703.1627906976746,
+     "deaths": 0,
+     "rundown_fails": 67,
+     "holding_units_per_cycle_mean": 273.5782558139535,
+     "investment_rejection_rate_mean": 0.09964009736488816,
+     "upgrades_blocked": 2781.0,
+     "input_late": 153712.0,
+     "late_headroom_blocked": 8935.0,
+     "input_died_upstream": 63517.0,
+     "contention": 71719.0,
+     "lost": 399176.0
+    },
+    "6": {
+     "episodes": 86,
+     "units_mean": 3761.6511627906975,
+     "deaths": 0,
+     "rundown_fails": 66,
+     "holding_units_per_cycle_mean": 294.55697674418604,
+     "investment_rejection_rate_mean": 0.10543150313529492,
+     "upgrades_blocked": 2768.0,
+     "input_late": 152948.0,
+     "late_headroom_blocked": 9535.0,
+     "input_died_upstream": 60928.0,
+     "contention": 70728.0,
+     "lost": 394287.0
+    }
+   },
+   "vs_rf5": {
+    "3": -144.59782608695653,
+    "5": 106.3695652173913,
+    "6": 161.77173913043478
+   },
+   "eligible": [
+    3,
+    4,
+    5,
+    6
+   ],
+   "best": 6,
+   "best_minus_k": {
+    "3": 306.3695652173913,
+    "4": 161.77173913043478,
+    "5": 55.40217391304348,
+    "6": 0.0
+   },
+   "within_floor_of_best": {
+    "3": false,
+    "4": false,
+    "5": true,
+    "6": true
+   },
+   "k_star": 5
+  },
+  {
+   "size": 12,
+   "orderer": "RR",
+   "worlds": 23,
+   "mean_floor": 146.50592278917375,
+   "stats": {
+    "3": {
+     "episodes": 43,
+     "units_mean": 3575.9767441860463,
+     "deaths": 0,
+     "rundown_fails": 35,
+     "holding_units_per_cycle_mean": 240.49395348837209,
+     "investment_rejection_rate_mean": 0.0941387650455733,
+     "upgrades_blocked": 1231.0,
+     "input_late": 80501.0,
+     "late_headroom_blocked": 5055.0,
+     "input_died_upstream": 39138.0,
+     "contention": 34108.0,
+     "lost": 204745.0
+    },
+    "4": {
+     "episodes": 43,
+     "units_mean": 3731.6511627906975,
+     "deaths": 0,
+     "rundown_fails": 29,
+     "holding_units_per_cycle_mean": 268.16046511627906,
+     "investment_rejection_rate_mean": 0.09905658808534923,
+     "upgrades_blocked": 1227.0,
+     "input_late": 79007.0,
+     "late_headroom_blocked": 5321.0,
+     "input_died_upstream": 35683.0,
+     "contention": 35670.0,
+     "lost": 198288.0
+    },
+    "5": {
+     "episodes": 43,
+     "units_mean": 3841.8837209302324,
+     "deaths": 0,
+     "rundown_fails": 32,
+     "holding_units_per_cycle_mean": 295.53627906976743,
+     "investment_rejection_rate_mean": 0.1069079083705689,
+     "upgrades_blocked": 1178.0,
+     "input_late": 78141.0,
+     "late_headroom_blocked": 4973.0,
+     "input_died_upstream": 31292.0,
+     "contention": 35311.0,
+     "lost": 193514.0
+    },
+    "6": {
+     "episodes": 43,
+     "units_mean": 3896.279069767442,
+     "deaths": 0,
+     "rundown_fails": 32,
+     "holding_units_per_cycle_mean": 320.80651162790696,
+     "investment_rejection_rate_mean": 0.10522433638133462,
+     "upgrades_blocked": 1191.0,
+     "input_late": 79887.0,
+     "late_headroom_blocked": 4991.0,
+     "input_died_upstream": 30090.0,
+     "contention": 34283.0,
+     "lost": 191298.0
+    }
+   },
+   "vs_rf5": {
+    "3": -153.67391304347825,
+    "5": 106.08695652173913,
+    "6": 158.8695652173913
+   },
+   "eligible": [
+    4,
+    5,
+    6
+   ],
+   "best": 6,
+   "best_minus_k": {
+    "4": 158.8695652173913,
+    "5": 52.78260869565217,
+    "6": 0.0
+   },
+   "within_floor_of_best": {
+    "4": false,
+    "5": true,
+    "6": true
+   },
+   "k_star": 5
+  },
+  {
+   "size": 42,
+   "orderer": "MWWk",
+   "worlds": 14,
+   "mean_floor": 362.18672067841555,
+   "stats": {
+    "3": {
+     "episodes": 56,
+     "units_mean": 8823.25,
+     "deaths": 0,
+     "rundown_fails": 51,
+     "holding_units_per_cycle_mean": 1146.580357142857,
+     "investment_rejection_rate_mean": 0.19359229275809003,
+     "upgrades_blocked": 10469.0,
+     "input_late": 194137.0,
+     "late_headroom_blocked": 36886.0,
+     "input_died_upstream": 125748.0,
+     "contention": 55439.0,
+     "lost": 557969.0
+    },
+    "4": {
+     "episodes": 56,
+     "units_mean": 9184.82142857143,
+     "deaths": 0,
+     "rundown_fails": 52,
+     "holding_units_per_cycle_mean": 1251.672142857143,
+     "investment_rejection_rate_mean": 0.20077911183292557,
+     "upgrades_blocked": 10315.0,
+     "input_late": 185097.0,
+     "late_headroom_blocked": 37559.0,
+     "input_died_upstream": 118924.0,
+     "contention": 54722.0,
+     "lost": 538222.0
+    },
+    "5": {
+     "episodes": 56,
+     "units_mean": 9325.392857142857,
+     "deaths": 0,
+     "rundown_fails": 50,
+     "holding_units_per_cycle_mean": 1325.9164285714285,
+     "investment_rejection_rate_mean": 0.20296575923708665,
+     "upgrades_blocked": 10487.0,
+     "input_late": 182255.0,
+     "late_headroom_blocked": 37623.0,
+     "input_died_upstream": 114921.0,
+     "contention": 55570.0,
+     "lost": 530555.0
+    },
+    "6": {
+     "episodes": 56,
+     "units_mean": 9465.05357142857,
+     "deaths": 0,
+     "rundown_fails": 51,
+     "holding_units_per_cycle_mean": 1395.6125,
+     "investment_rejection_rate_mean": 0.20329446748093882,
+     "upgrades_blocked": 10560.0,
+     "input_late": 180409.0,
+     "late_headroom_blocked": 40883.0,
+     "input_died_upstream": 111606.0,
+     "contention": 55052.0,
+     "lost": 522910.0
+    }
+   },
+   "vs_rf5": {
+    "3": -361.57142857142856,
+    "5": 140.57142857142858,
+    "6": 280.23214285714283
+   },
+   "eligible": [
+    3,
+    4,
+    5,
+    6
+   ],
+   "best": 6,
+   "best_minus_k": {
+    "3": 641.8035714285714,
+    "4": 280.23214285714283,
+    "5": 139.66071428571428,
+    "6": 0.0
+   },
+   "within_floor_of_best": {
+    "3": false,
+    "4": true,
+    "5": true,
+    "6": true
+   },
+   "k_star": 4
+  },
+  {
+   "size": 42,
+   "orderer": "RR",
+   "worlds": 14,
+   "mean_floor": 362.18672067841555,
+   "stats": {
+    "3": {
+     "episodes": 28,
+     "units_mean": 8621.964285714286,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "holding_units_per_cycle_mean": 1251.1278571428572,
+     "investment_rejection_rate_mean": 0.20329166509063085,
+     "upgrades_blocked": 5794.0,
+     "input_late": 92569.0,
+     "late_headroom_blocked": 19560.0,
+     "input_died_upstream": 70226.0,
+     "contention": 22849.0,
+     "lost": 284511.0
+    },
+    "4": {
+     "episodes": 28,
+     "units_mean": 9014.42857142857,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "holding_units_per_cycle_mean": 1356.7182142857143,
+     "investment_rejection_rate_mean": 0.20821962820648704,
+     "upgrades_blocked": 5734.0,
+     "input_late": 90110.0,
+     "late_headroom_blocked": 18964.0,
+     "input_died_upstream": 65324.0,
+     "contention": 23415.0,
+     "lost": 273676.0
+    },
+    "5": {
+     "episodes": 28,
+     "units_mean": 9115.17857142857,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "holding_units_per_cycle_mean": 1433.2407142857144,
+     "investment_rejection_rate_mean": 0.21135841704633193,
+     "upgrades_blocked": 5734.0,
+     "input_late": 89661.0,
+     "late_headroom_blocked": 19788.0,
+     "input_died_upstream": 63004.0,
+     "contention": 23846.0,
+     "lost": 270930.0
+    },
+    "6": {
+     "episodes": 28,
+     "units_mean": 9262.32142857143,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "holding_units_per_cycle_mean": 1497.9057142857143,
+     "investment_rejection_rate_mean": 0.21256305691649527,
+     "upgrades_blocked": 5705.0,
+     "input_late": 90326.0,
+     "late_headroom_blocked": 20307.0,
+     "input_died_upstream": 60342.0,
+     "contention": 23624.0,
+     "lost": 267098.0
+    }
+   },
+   "vs_rf5": {
+    "3": -392.4642857142857,
+    "5": 100.75,
+    "6": 247.89285714285714
+   },
+   "eligible": [
+    3,
+    4,
+    5,
+    6
+   ],
+   "best": 6,
+   "best_minus_k": {
+    "3": 640.3571428571429,
+    "4": 247.89285714285714,
+    "5": 147.14285714285714,
+    "6": 0.0
+   },
+   "within_floor_of_best": {
+    "3": false,
+    "4": true,
+    "5": true,
+    "6": true
+   },
+   "k_star": 4
+  }
+ ],
+ "k_star": {
+  "12": {
+   "per_orderer": {
+    "MWWk": 5,
+    "RR": 5
+   },
+   "k_star": 5
+  },
+  "42": {
+   "per_orderer": {
+    "MWWk": 4,
+    "RR": 4
+   },
+   "k_star": 4
+  }
+ },
+ "deciding_k_star": 5
+}

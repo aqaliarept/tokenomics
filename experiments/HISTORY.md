@@ -1411,3 +1411,27 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
 - **What it means.** `entity_planner_buyahead_k4_rf3` is the strongest known producer, and the base
   the M5 learner must beat.
 - **Cost.** ≈ 0.9 vCPU-h; M5-P ≈ 0.9 of 80.
+
+### Finalizing the hand-written producer (EXP-0084, EXP-0087, EXP-0089, EXP-0088)
+
+- **The question.** Before M5 learns a correction on the producer, the hand-written base should
+  be as strong as simple rules make it. M5's probe was held while this ran.
+- **What it found.**
+  - **Upgrade trap.** The planner upgraded past the maximum that one restoration per cycle can
+    sustain, so capacity drained (DIAGNOSTICS 29). Capping upgrades with an estimate of the
+    degradation rate (rf4, EXP-0084) removed the deaths, but the estimate fails at a small max
+    (12-0391).
+  - **Exact cap.** The exact cap (rf5: the producer's own degradation rate, an additive view
+    field) reads `no_gain` against rf3 (EXP-0089). MWWk gains +135 and RR +155 against a floor
+    of 146.5, with no world worse and no deaths. rf5 beats rf4 and adds +9% at horizon 200.
+  - **Buffer.** Re-sweeping the buffer on rf5 (EXP-0088) gives k\* = 5: +106 / +106 over k = 4;
+    k = 6 is within the floor of k = 5; k\* = 4 at 42. Each extra cycle adds less (+145, +106,
+    +55).
+  - **Late inputs at the final assembler** (37% of lost units, EXP-0087) barely move with the
+    buffer (−2.6% from k = 3 to 6), and only 6–7% of them are blocked by room. The rest is the
+    acceptance-to-order delay against a 2-cycle TTL. The producer's command cannot remove it; an
+    auction-side admission rule would be a domain change.
+- **What it means.** The final hand-written producer is `entity_planner_buyahead_k5_rf5`. At 12
+  producers it gives ≈ 3,703 (MWWk) / 3,842 (RR) consumer units, against 2,096 (MWWk) for
+  `entity_planner`. M5 re-bases on it, and it belongs in the next roster draft.
+- **Cost.** ≈ 1.9 vCPU-h for EXP-0089 and EXP-0088 together; M5-P ≈ 6.1 of 80.
