@@ -1,0 +1,196 @@
+"""M5 task 2.2: the producer ES driver. Horizon-12 dry runs of bar -> noise-floor -> probe -> train,
+resume (and its refusal under other pins), CRN (theta = 0 equals the bar's base rows), real-run
+refusals, and the EXP-0079 cross-check through the supply-trace job path."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from tokenomics.train import producer_es as pe
+from tokenomics.train.producer_residual import THETA_DIM
+
+REPO = Path(__file__).resolve().parents[2]
+TRAINING = REPO / "experiments/EXP-0058-es-gradient-probe/bar"
+ATLAS_V2 = REPO / "experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json"
+EXP0079 = (REPO / "experiments/EXP-0079-expand-early/entity_planner_buyahead_k4_rf3/artifacts"
+           / "episodes.csv")
+
+
+def _lfs(p: Path) -> bool:
+    return p.exists() and not p.read_bytes()[:40].startswith(b"version https://git-lfs")
+
+
+needs_training = pytest.mark.skipif(not (TRAINING / "training_worlds.json").exists(),
+                                    reason="EXP-0058 training set absent")
+LOG = lambda s: None  # noqa: E731
+
+
+@pytest.fixture(scope="module")
+def runs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
+    if not (TRAINING / "training_worlds.json").exists():
+        pytest.skip("EXP-0058 training set absent")
+    root = tmp_path_factory.mktemp("pes")
+    out = {"bar": root / "bar", "noise": root / "noise", "probe": root / "probe",
+           "train": root / "train"}
+    kw = dict(training_dir=TRAINING, horizon=12, dry_run=True, log=LOG)
+    assert pe.run_bar(out_dir=out["bar"], max_world_episodes=12, **kw) == 0
+    assert pe.run_noise_floor(bar_dir=out["bar"], out_dir=out["noise"], replicates=(1, 2),
+                              **kw) == 0
+    margins = out["noise"] / "margins.json"
+    assert pe.run_probe(bar_dir=out["bar"], margins=margins, out_dir=out["probe"], size=3,
+                        pairs=2, **kw) == 0
+    assert pe.run_train(bar_dir=out["bar"], margins=margins, out_dir=out["train"],
+                        generations=2, size=3, pairs=2, monitor_every=2, **kw) == 0
+    return out
+
+
+@needs_training
+def test_bar_and_noise_floor(runs: dict[str, Path]) -> None:
+    import csv
+
+    bar = list(csv.DictReader((runs["bar"] / "bar.csv").open()))
+    assert len(bar) == 12 and all(float(r["bar"]) > 0 for r in bar)
+    repro = list(csv.DictReader((runs["noise"] / "reproduction.csv").open()))
+    assert len(repro) == 12 and all(r["equal"] == "True" for r in repro)  # r0 == the bar
+    m = json.loads((runs["noise"] / "margins.json").read_text())
+    assert m["format"] == "m5-noise-margin-v1" and m["rundown"] > 0 and m["episodes"] == 24
+    for d in ("bar", "noise", "probe", "train"):
+        assert (runs[d] / "contract_failures.csv").read_text().count("\n") == 1, d
+        assert json.loads((runs[d] / "spec.json").read_text())["status"] == "complete", d
+
+
+@needs_training
+def test_probe_reads_a_cosine(runs: dict[str, Path]) -> None:
+    doc = json.loads((runs["probe"] / "probe.json").read_text())
+    assert doc["cosine"] is not None and -1 <= doc["cosine"] <= 1
+    assert doc["reading"] in ("signal", "weak", "no_signal")
+    assert len(doc["batches"]) == 2
+
+
+@needs_training
+def test_train_resumes_and_refuses_other_pins(runs: dict[str, Path]) -> None:
+    import csv
+
+    t = runs["train"]
+    kw = dict(training_dir=TRAINING, bar_dir=runs["bar"], margins=runs["noise"] / "margins.json",
+              out_dir=t, horizon=12, dry_run=True, size=3, pairs=2, monitor_every=2, log=LOG)
+    g2 = pe.load_checkpoint(pe.checkpoint_path(t, 2))
+    assert pe.run_train(generations=3, **kw) == 0  # resume: one more generation
+    gens = list(csv.DictReader((t / "generations.csv").open()))
+    assert [g["generation"] for g in gens] == ["1", "2", "3"]
+    assert gens[1]["theta_sha256"] == g2["theta_sha256"]
+    assert pe.load_checkpoint(pe.checkpoint_path(t, 3))["generation"] == 3
+    with pytest.raises(ValueError, match="different pins"):
+        pe.run_train(generations=3, **{**kw, "size": 2})
+    with pytest.raises(ValueError, match="different pins"):
+        pe.run_train(generations=3, sigma=0.2, **kw)
+
+
+@needs_training
+def test_theta_zero_member_equals_the_bar_base(runs: dict[str, Path]) -> None:
+    import csv
+
+    ts = pe.load_training(TRAINING)
+    base = {(d["world"], d["episode"]): d for d in csv.DictReader(
+        (runs["bar"] / "base_rows.csv").open())}
+    w, e = sorted(base)[0]
+    job = pe.make_job(ts, kind=pe.TRAIN, producing=pe.RESIDUAL, theta=np.zeros(THETA_DIM),
+                      generation=1, member="+00", world=w, episode=int(e), replicate=0,
+                      horizon=12)
+    row = pe.run_producer_job(job)
+    for c in ("units", "dead", "r_end", "demand_digest", "shock_digest", "fulfilled_units",
+              "holding_units_per_cycle", "consumer_fill_rate"):
+        assert row[c] == base[(w, e)][c], c
+
+
+@needs_training
+def test_real_runs_are_refused_without_pins(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="not a valid bar run"):
+        pe.run_bar(training_dir=TRAINING, out_dir=tmp_path / "b", source_commit="0" * 40,
+                   log=LOG)  # no cross-check inputs
+    with pytest.raises(ValueError, match="not a valid bar run"):
+        pe.run_bar(training_dir=TRAINING, out_dir=tmp_path / "b2", max_world_episodes=3,
+                   log=LOG)
+
+
+@needs_training
+def test_minibatches_follow_the_recorded_stream() -> None:
+    ts = pe.load_training(TRAINING)
+    size = int(ts.schedule["minibatch_size"])
+    for g in (1, 2):
+        assert pe.minibatch(ts, 0, g, size) == pe._fmt_we(ts.schedule["minibatches"]["0"][g - 1])
+    assert len(pe.minibatch(ts, 0, 1, pe.MINIBATCH)) == pe.MINIBATCH
+    assert len(pe.monitor_set(ts)) == 16 and len(ts.world_episodes) == 128
+
+
+@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(EXP0079)), reason="EXP-0052 / EXP-0079 absent")
+def test_crosscheck_reproduces_exp0079(tmp_path: Path) -> None:
+    res = pe.crosscheck_exp0079(ATLAS_V2, EXP0079, tmp_path, LOG)
+    assert res["rows"] == pe.CROSSCHECK_N and res["equal"], res
+
+
+def _train_kw(runs: dict[str, Path], out: Path) -> dict:
+    return dict(training_dir=TRAINING, bar_dir=runs["bar"], margins=runs["noise"] / "margins.json",
+                out_dir=out, horizon=12, dry_run=True, size=3, pairs=2, monitor_every=2, log=LOG)
+
+
+@needs_training
+def test_a_monitor_lost_in_a_crash_runs_on_resume(runs: dict[str, Path], tmp_path: Path) -> None:
+    """Review m5-2-2: the run dies inside generation 2's monitor (after its checkpoint); the resume
+    runs that monitor before going on, and the run cannot end complete without it."""
+    import csv
+
+    out = tmp_path / "t"
+
+    def dies_in_monitor(job):
+        if job["kind"] == "monitor":
+            raise KeyboardInterrupt("pod lost")
+        return pe.run_producer_job(job)
+
+    with pytest.raises(KeyboardInterrupt):
+        pe.run_train(generations=2, run_job_fn=dies_in_monitor, **_train_kw(runs, out))
+    assert pe.checkpoint_path(out, 2).exists() and not (out / "monitor.csv").exists()
+    assert pe.run_train(generations=3, **_train_kw(runs, out)) == 0
+    mon = list(csv.DictReader((out / "monitor.csv").open()))
+    assert [m["generation"] for m in mon] == ["2"]
+    assert mon[0]["theta_sha256"] == pe.load_checkpoint(pe.checkpoint_path(out, 2))["theta_sha256"]
+
+
+@needs_training
+def test_a_generation_row_without_its_checkpoint_is_not_duplicated(
+        runs: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import csv
+
+    out = tmp_path / "t"
+    real = pe.save_checkpoint
+
+    def dies_at_2(path, doc):
+        if doc["generation"] == 2:
+            raise KeyboardInterrupt("pod lost")
+        real(path, doc)
+
+    monkeypatch.setattr(pe, "save_checkpoint", dies_at_2)
+    with pytest.raises(KeyboardInterrupt):
+        pe.run_train(generations=2, **_train_kw(runs, out))
+    monkeypatch.setattr(pe, "save_checkpoint", real)
+    assert [g["generation"] for g in csv.DictReader((out / "generations.csv").open())] == ["1", "2"]
+    assert pe.run_train(generations=2, **_train_kw(runs, out)) == 0
+    assert [g["generation"] for g in csv.DictReader((out / "generations.csv").open())] == ["1", "2"]
+
+
+@needs_training
+def test_real_probe_and_train_need_the_pinned_preregistration(runs: dict[str, Path],
+                                                              tmp_path: Path) -> None:
+    kw = dict(training_dir=TRAINING, bar_dir=runs["bar"], margins=runs["noise"] / "margins.json",
+              source_commit="0" * 40, log=LOG)
+    assert pe.PREREG_SHA256 is None  # until task 2.3
+    with pytest.raises(ValueError, match="pre-registration"):
+        pe.run_probe(out_dir=tmp_path / "p", **kw)
+    with pytest.raises(ValueError, match="pre-registration"):
+        pe.run_train(out_dir=tmp_path / "t", generations=20, **kw)
+    with pytest.raises(ValueError, match="--monitor-every is set"):
+        pe.run_train(out_dir=tmp_path / "t2", generations=20, monitor_every=7, **kw)

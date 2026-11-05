@@ -53,12 +53,13 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   - an ADR-0058 check: features read only the producer's own view and history;
   - goldens.
   - Done 2026-11-05 (notes/2.1.md): θ 23 values (θ_k 9, θ_b 9, θ_e 5) on rf3; buffer k_g = 4·exp(clip(θ_k·φ_g, ±2)), extra units on top of the target, expansion when θ_e·ψ > 0; `plan_reservations_first(plan_view=)` added (None = unchanged); θ = 0 == rf3 at 12 and 42; tests 6.
-- [ ] 2.2 [code][local] `train/producer_es.py`: ES on 2.1 reusing `order_es`:
+- [x] 2.2 [code][local] `train/producer_es.py`: ES on 2.1 reusing `order_es`:
   - bar precompute on the base, keyed draws, antithetic pairs, rank fitness, Adam, minibatch 24;
   - modes `probe` / `train` / `noise-floor`;
   - checkpoints and resume with pins.
   Verify: a horizon-12 dry run; resume refuses other pins; noise-floor mode reproduces the bar's
   base rows.
+  - Done 2026-11-05 (notes/2.2.md): modes bar / noise-floor / probe / train on M4's pinned training set; units-only fitness, rf3-relative guard with the v4 margin formula; holding / investment-rejection diagnostics; EXP-0079 cross-check in the bar; tests 7 (dry chain, resume, pin refusal, CRN, cross-check); constants pending 2.3.
 - [ ] 2.3 [code][local] Pre-registration `train/registry/es_prereg_m5_v1.json`: the D6 readings,
   thresholds, the D5 margin formula, the monitor set, σ, learning rate. Frozen by `--mode
   freeze`, pinned by SHA-256; real runs refuse a mismatch. Verify: freeze gives MATCH; a changed
@@ -76,7 +77,9 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 ## 4. Base and probe (experiment). Gated: tranche M5-P approved by the user
 
 - [ ] 4.1 [experiment][remote:cpu16] EXP-0080: L1 bar + noise floor on the base (rf3, design D5).
-  Verify: r0 reproduces EXP-0079's rf3 rows on shared world-episodes; self-flags ≤ 5%
+  On M4's pinned training set (EXP-0058 `bar/`, 128 world-episodes; design D7). Verify: r0
+  reproduces the bar's rf3 rows; rf3 replayed on 2 EXP-0057 world-episodes equals EXP-0079's rows;
+  self-flags ≤ 5%
   with the margin; 0 contract failures. ≈ 3, stop 6.
 - [ ] 4.2 [experiment][remote:cpu16] EXP-0081: L2 gradient probe. Reading `signal` / `weak` /
   `no_signal` (cosine 0.3 / 0.1); `no_signal` → DIAGNOSTICS entry, stop. ≈ 4, stop 8.

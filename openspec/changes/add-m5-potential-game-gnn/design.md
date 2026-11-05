@@ -138,8 +138,18 @@
   - else `not_confirmed` (DIAGNOSTICS, user).
 
 ### D7. Data, splits and pairing
-- **Worlds:** the atlas v2 train split for training, validation for L5, held-out for L6.
-- **Pairing:** MWWk at EXP-0057's draw keys, the observer off in training (speed) and on in the
+- **Training (supervisor decision 2026-11-05, notes/2.2.md):** M4's pinned ES training set and
+  schedule (EXP-0058 `bar/`). That is 64 worlds at 12 producers (the 23 loaded atlas v2 train
+  worlds plus 41 fresh world-space draws), 128 world-episodes with fresh episode seeds, the
+  16-world-episode monitor set, the per-seed minibatches and the probe's two minibatches.
+- **Why:**
+  - the pool size minibatch 24 and a 16-episode monitor need (DIAGNOSTICS 25 / 27);
+  - the validation / held-out splits are disjoint by construction;
+  - none of the EXP-0057 world-episodes that selected rf3 (EXP-0079) are reused.
+- **L1** builds a new rf3 + MWWk bar on those world-episodes.
+- **L5 / L6:** the atlas v2 validation split for L5, held-out for L6, at 12 and 42.
+- **Pairing:** MWWk at DrawKey(world, episode, replicate) (replicate 0 for training members;
+  re-keyed replicates for the noise floor). The observer is off in training (speed) and on in the
   L5 / L6 reads (loss classes reported).
 - **TTL 2 throughout.**
 
