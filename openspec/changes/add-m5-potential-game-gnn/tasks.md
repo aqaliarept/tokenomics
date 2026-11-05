@@ -72,35 +72,37 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 
 ## 3. Sizing (code)
 
-- [ ] 3.1 [code][local] Timing probe: horizon-12 episodes of 2.1 at θ ≠ 0 at 12 and 42 against
+- [x] 3.1 [code][local] Timing probe: horizon-12 episodes of 2.1 at θ ≠ 0 at 12 and 42 against
   buy-ahead k4. Re-size design D9 and the stops. Verify: sizing.md lists the measured seconds,
   the estimates, the stops and a launch-fit table against M5-P.
+  - Done 2026-11-05 (sizing.md): 12-producer episode 1.65 s, 42-producer 28.7 s at horizon 100 (local; pods ≈ 2× faster); success path ≈ 38 vCPU-h (D9's 60 re-sized); stops L1 3, L2 4, L3 14, L4 14 / 27, L5 7, L6 7; launch-fit ≤ 42.4 of 80.
 
 ## 4. Base and probe (experiment). Gated: tranche M5-P approved by the user
 
-- [ ] 4.1 [experiment][remote:cpu16] EXP-0080: L1 bar + noise floor on the base (rf3, design D5).
+- [x] 4.1 [experiment][remote:cpu16] EXP-0080: L1 bar + noise floor on the base (rf3, design D5).
   On M4's pinned training set (EXP-0058 `bar/`, 128 world-episodes; design D7). Verify: r0
   reproduces the bar's rf3 rows; rf3 replayed on 2 EXP-0057 world-episodes equals EXP-0079's rows;
   self-flags ≤ 5%
-  with the margin; 0 contract failures. ≈ 3, stop 6.
+  with the margin; 0 contract failures. ≈ 1.5, stop 3 (sizing.md).
+  - Done 2026-11-05 (EXP-0080): r0 128 / 128 equal; EXP-0079 cross-check 2 / 2; self-flags 24 / 512 = 4.69% (margins run-down 0.0966, starvation 0.1180); 0 contract failures; bar mean 3,196.5 units; ≈ 0.7 vCPU-h, M5-P ≈ 1.6 / 80.
 - [ ] 4.2 [experiment][remote:cpu16] EXP-0081: L2 gradient probe. Reading `signal` / `weak` /
-  `no_signal` (cosine 0.3 / 0.1); `no_signal` → DIAGNOSTICS entry, stop. ≈ 4, stop 8.
+  `no_signal` (cosine 0.3 / 0.1); `no_signal` → DIAGNOSTICS entry, stop. ≈ 2, stop 4 (sizing.md).
 
 ## 5. Pilot and main (experiment). Gated: EXP-0081 `signal` or `weak`
 
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
-  g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 10, stop 20.
+  g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
 - [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to
-  40 generations (≈ 10 + 20, stops 20 / 40). Verify: g_tr recomputes; checkpoints and pins
+  40 generations (≈ 7 + 13.5, stops 14 / 27; sizing.md). Verify: g_tr recomputes; checkpoints and pins
   recorded.
 - [ ] 5.3 [experiment][remote:cpu16] EXP-0083: L5 validation at 12 and 42 (`success` / `plateau` /
-  `kill` / `transfer_failure`). Stop branches → DIAGNOSTICS + user. ≈ 6, stop 12.
+  `kill` / `transfer_failure`). Stop branches → DIAGNOSTICS + user. ≈ 3.5, stop 7 (sizing.md).
 
 ## 6. Held-out confirmation (experiment). Gated: EXP-0083 `success`
 
 - [ ] 6.1 [experiment][remote:cpu16] EXP-0084: L6 held-out read (ledger pending entry committed
   before launch, closed after). `confirmed` → the user decides the roster and phase 2;
-  `not_confirmed` → DIAGNOSTICS, user. ≈ 6, stop 12.
+  `not_confirmed` → DIAGNOSTICS, user. ≈ 3.5, stop 7 (sizing.md).
 
 ## 7. Records (code)
 

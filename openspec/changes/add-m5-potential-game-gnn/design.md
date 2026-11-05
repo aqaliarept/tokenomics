@@ -174,6 +174,8 @@
   base instead of k4. D2's residual then sits on it, and its θ = 0 equivalence is to it.
 
 ### D9. Budget: tranche M5-P, ≈ 80 vCPU-h requested
+
+**Re-sized by task 3.1 (sizing.md, measured):** ≈ 38 vCPU-h on the success path; stops L1 3, L2 4, L3 14, L4 14 / 27, L5 7, L6 7.
 - **Priced from M4's measured runs:** EXP-0059 pilot 7.8, EXP-0060 main ≈ 11–17 per seed to 40
   generations, EXP-0069 probe 3.0. Producer episodes run ≈ 1.3× an `entity_planner` episode
   (EXP-0076–0078).

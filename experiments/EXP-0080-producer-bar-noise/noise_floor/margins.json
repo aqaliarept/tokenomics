@@ -1,0 +1,18 @@
+{
+ "base": "entity_planner_buyahead_k4_rf3",
+ "c": 2.0,
+ "df_rundown": 512,
+ "df_starvation": 5368,
+ "episodes": 512,
+ "format": "m5-noise-margin-v1",
+ "rows_sha256": "a4e6aec8400ac976611da540ea492ad6c9633e0726b4893202df0e35d82a15c9",
+ "rundown": 0.09655802048313557,
+ "self_flag_rate": 0.046875,
+ "self_flags": 24,
+ "self_flags_without_margin": 96,
+ "sigma_rundown": 0.03413841553078736,
+ "sigma_starvation": 0.04172951620079297,
+ "starvation": 0.11802889552485842,
+ "target_met": true,
+ "target_rate": 0.05
+}
