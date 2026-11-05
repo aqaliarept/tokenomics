@@ -121,7 +121,8 @@ PREREG_V5_SHA256 = "06160cac20c001685077923440161d5d4959f23fb08f20581614f33ef2f2
 # v6 (supervisor decision 2026-11-05: the producer is final, k5_rf5, EXP-0088): v5's rules on base
 # `entity_planner_buyahead_k5_rf5`, its L1 constants from the k5_rf5 L1 run; None until frozen.
 PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v6.json"
-PREREG_SHA256: str | None = None  # v6, frozen by `--mode freeze` after its L1 run
+# v6, frozen 2026-11-05 after EXP-0090 (R-2)
+PREREG_SHA256: str | None = "5cd0e302b233746e707059e49156e4f906d0ac9588e593d744b9c463b81143c1"
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
@@ -586,6 +587,16 @@ def job_id(kind: str, generation: object, member: str, world: str, episode: int,
     return f"{kind}|{generation}|{member}|{world}|{episode}|{replicate}"
 
 
+def check_residual_base(jobs: Sequence[Job]) -> None:
+    """Probe / train jobs play the pinned version's base (v6: k5_rf5), never another (supervisor,
+    R-1 review: `producer_residual_policy(base=None)` is rf3)."""
+    bad = [j["job_id"] for j in jobs
+           if j["producing"] == RESIDUAL and j.get("residual_base") != BASE_PRODUCER]
+    if bad:
+        raise ValueError(f"{len(bad)} residual jobs do not play the base {BASE_PRODUCER} "
+                         f"(first: {bad[0]})")
+
+
 def make_job(ts: TrainingSet, *, kind: str, producing: str, theta: np.ndarray | None,
              generation: object, member: str, world: str, episode: int, replicate: int,
              horizon: int, sign: int = 0, pair: int = -1, batch: int = -1,
@@ -614,6 +625,10 @@ def run_producer_job(job: Job) -> dict[str, str]:
 
     started = time.perf_counter()
     try:
+        if job["producing"] == RESIDUAL and job.get("residual_base") not in BASES:
+            # never a silent rf3 fallback (R-1 review)
+            raise ValueError(f"residual job {job['job_id']} names no base "
+                             f"({job.get('residual_base')!r})")
         env = joint_stack_env(job_config(job), job["horizon"])
         set_draw_key(env, DrawKey(str(job["world"]), int(job["episode"]), int(job["replicate"])))
         tracer = observer = None
@@ -639,8 +654,7 @@ def run_producer_job(job: Job) -> dict[str, str]:
                     recorded["phi"].extend(phi.values())
                     recorded["psi"].append(psi)
             prod = producer_residual_policy(
-                np.asarray(job["theta"], np.float64), nm, recorder,
-                base=job.get("residual_base", BASE_PRODUCER))
+                np.asarray(job["theta"], np.float64), nm, recorder, base=job["residual_base"])
             if theta_sha256(prod.theta) != job["theta_sha256"]:
                 raise AssertionError("job theta does not match its sha256")
         else:
@@ -1096,9 +1110,14 @@ FLAG_CALIBRATION_V5: dict[str, Any] | None = {  # EXP-0085 flag_calibration.json
     "rate": 14 / 328, "rate_without_threshold": 143 / 328, "max_excess": 8 / 3}
 # v6 (base k5_rf5): the same calibration on its L1 run; None until computed and frozen
 L1_RUN_V6 = "EXP-0090"
-FLAG_THRESHOLD_V6: float | None = None
-FLAG_SOURCES_V6: dict[str, str] | None = None
-FLAG_CALIBRATION_V6: dict[str, Any] | None = None
+FLAG_THRESHOLD_V6: float | None = 5 / 3  # calibrate_flag_threshold on EXP-0090 (2026-11-05)
+FLAG_SOURCES_V6: dict[str, str] | None = {
+    "noise_episodes_sha256": "a7d598882d7010ce9e5e18994cc9616730071369bbe22f1e849c3efa42bc2280",
+    "margins_sha256": "79c2ddaef4ba37a5be9e315bd36887b51395007abdd95b8ab8f907b10119eb00",
+    "bar_csv_sha256": "de67a546c0cb2904b268bb77ba77637ae7262702468074f99f763b3f3ebd5227"}
+FLAG_CALIBRATION_V6: dict[str, Any] | None = {  # EXP-0090 flag_calibration.json
+    "minibatches": 82, "re_keys": 4, "samples": 328, "self_disqualified": 11,
+    "rate": 11 / 328, "rate_without_threshold": 138 / 328, "max_excess": 3.0}
 NOISE_ROWS = "noise_episodes.csv"
 
 
@@ -1319,6 +1338,7 @@ def run_probe(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
         arms[arm] = sig
         for bi, batch in enumerate((a, b)):
             jobs += _member_jobs(ts, PROBE, thetas, batch, 0, horizon, bi, normaliser=nm)
+    check_residual_base(jobs)
     rows, _ = play(out, ROW_FILES[PROBE], jobs, workers, run_job_fn, bar, log)
     refs = {k: v[0] for k, v in a0_values(base_rows).items()}
     per_arm = {}
@@ -1486,6 +1506,7 @@ def run_train(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
         eps = noise(opt_seed, g, pairs, THETA_DIM, NOISE_STREAM_PURPOSE["train"])
         thetas = {k: v for k, v in member_thetas(theta, eps, sig).items() if k != CENTER}
         jobs = _member_jobs(ts, TRAIN, thetas, mb, g, horizon, normaliser=nm)
+        check_residual_base(jobs)
         rows, _ = play(out, ROW_FILES[TRAIN], jobs, workers, run_job_fn, bar, log)
         expected += len(jobs)
         rows_seen += sum(j["job_id"] in rows for j in jobs)

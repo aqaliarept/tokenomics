@@ -1,0 +1,59 @@
+{
+ "clip": 5.0,
+ "fit_rows": {
+  "input_rows": 336000,
+  "producer_rows": 153600,
+  "sha256": "f4b8c2cc5c40c880ac6ef043d2cecbc94c595122dfa9138c024da0c4580fb0ec"
+ },
+ "format": "m5-normaliser-v1",
+ "input_features": [
+  "stock_cover",
+  "inbound_cover",
+  "blocked_cover",
+  "log_use",
+  "headroom_frac",
+  "shortfall_ema_cover",
+  "latency",
+  "depth"
+ ],
+ "input_median": [
+  3.0,
+  0.0,
+  0.0,
+  0.8652876015932752,
+  0.37254901960784315,
+  0.0027307077517303704,
+  0.07117063910431212,
+  0.5
+ ],
+ "input_scale": [
+  4.272870467178276,
+  0.9694231115824162,
+  0.38143301612641844,
+  1.4925595662195614,
+  0.2741876597298284,
+  0.20385959836830372,
+  0.24247978044559543,
+  0.3333333333333333
+ ],
+ "producer_features": [
+  "headroom_frac",
+  "shortfall_cover",
+  "shortfall_ema_cover",
+  "fill_frac"
+ ],
+ "producer_median": [
+  0.25333333333333335,
+  0.0,
+  0.002216133845930515,
+  0.29156197654941374
+ ],
+ "producer_scale": [
+  0.4594594594594595,
+  1.9297699159725574,
+  0.27698850485108417,
+  0.55
+ ],
+ "rule": "M4's: per non-bias feature, (x - median) / scale clipped to +-5; scale = IQR, else the population std, else 1.0; fitted on rf3's (theta = 0's) raw rows of every producer-cycle of the bar run's training world-episodes",
+ "sha256": "387a152bad2677b63aae34e3b6888aa3b21f67289ccb6d084d8003c3ccafd9a4"
+}

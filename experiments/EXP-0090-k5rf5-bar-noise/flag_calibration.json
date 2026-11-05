@@ -1,0 +1,11 @@
+{
+ "max_excess": 3.0,
+ "minibatches": 82,
+ "rate": 0.03353658536585366,
+ "rate_without_threshold": 0.42073170731707316,
+ "re_keys": 4,
+ "samples": 328,
+ "self_disqualified": 11,
+ "target": 0.05,
+ "threshold": 1.6666666666666667
+}

@@ -263,6 +263,8 @@ def read_jobs(entries: Sequence[Any], arms: Mapping[str, dict], horizon: int, ki
                         "theta": spec.get("theta"), "theta_sha256": spec.get("theta_sha256", ""),
                         "normaliser": spec.get("normaliser"),
                         "normaliser_sha256": spec.get("normaliser_sha256"),
+                        **({"residual_base": spec["residual_base"]}
+                           if "residual_base" in spec else {}),
                         "generation": "", "member": arm, "sign": 0, "pair": -1, "batch": -1,
                         "world": e.id, "size": e.size, "regime": e.regime,
                         "world_seed": e.world_seed, "generator": e.generator, "episode": int(ep),
@@ -299,7 +301,7 @@ def load_candidate(run_dir: str | Path, bar_dir: str | Path, *, real: bool) -> d
     return {"producing": pe.RESIDUAL, "theta": [float(x) for x in ck["theta"]],
             "theta_sha256": ck["theta_sha256"], "generation": ck["generation"],
             "opt_seed": spec["pins"].get("opt_seed"), "normaliser": nm.to_dict(),
-            "normaliser_sha256": nm.sha256, "run": str(run)}
+            "normaliser_sha256": nm.sha256, "run": str(run), "residual_base": BASE_PRODUCER}
 
 
 def _digest_problems(dicts: Sequence[Mapping[str, str]]) -> list[str]:

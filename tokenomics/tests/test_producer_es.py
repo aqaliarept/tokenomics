@@ -355,3 +355,18 @@ def test_real_runs_are_refused_until_the_pinned_version_is_calibrated() -> None:
             "no registered flag calibration for this pre-registration (v6)"]
     else:
         assert pe.flag_source_problems(dict(pe.FLAG_SOURCES_V6)) == []
+
+
+def test_probe_and_train_jobs_refuse_another_base() -> None:
+    """R-1 review: a residual job missing `residual_base` (or naming rf3 / rf4) never runs as v6's
+    probe / train job, and `run_producer_job` never falls back to rf3."""
+    ok = {"producing": pe.RESIDUAL, "residual_base": pe.BASE_PRODUCER, "job_id": "a"}
+    pe.check_residual_base([ok, {"producing": pe.BASE_PRODUCER, "job_id": "base"}])
+    for bad in ({**ok, "residual_base": pe.RF3_PRODUCER}, {"producing": pe.RESIDUAL, "job_id": "b"}):
+        with pytest.raises(ValueError, match="do not play the base"):
+            pe.check_residual_base([ok, bad])
+    row = pe.run_producer_job({"producing": pe.RESIDUAL, "job_id": "x", "world": "w", "episode": 1,
+                               "replicate": 0, "horizon": 1, "theta": [0.0] * THETA_DIM,
+                               "subject": "probe/x", "size": 12, "regime": "calm"})
+    assert pe.is_failure(row) and "names no base" in json.dumps(row)
+

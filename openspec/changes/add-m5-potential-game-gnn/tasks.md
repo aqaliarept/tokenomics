@@ -163,13 +163,14 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 
 ### M5 on the final producer (supervisor 2026-11-05: `entity_planner_buyahead_k5_rf5`)
 
-- [ ] R-1 [code][local] Re-base M5 on k5_rf5. θ = 0 == k5_rf5 (buffer k = 5, so θ_k's offsets are around 5;
+- [x] R-1 [code][local] Re-base M5 on k5_rf5. θ = 0 == k5_rf5 (buffer k = 5, so θ_k's offsets are around 5;
   the exact cap); the rf3 / rf4 paths are kept (v1..v5 rebuild unchanged); the reads compare against k5_rf5.
   Pre-registration v6 skeleton = v5's rules on k5_rf5, refused until its L1 constants are filled.
-- [ ] R-2 [experiment][remote:cpu16] EXP-0090: L1 on k5_rf5, as EXP-0085: bar + noise floor; r0 reproduces the
+- [x] R-2 [experiment][remote:cpu16] EXP-0090: L1 on k5_rf5, as EXP-0085: bar + noise floor; r0 reproduces the
   bar; k5_rf5 on 2 EXP-0057 world-episodes equals EXP-0088's rows; training-set deaths; per-episode self-flags
   (reported); flag-count calibration (L1's criterion: ≤ 5% of re-keyed minibatches). ≈ 1.5, stop 3. Then,
   locally with no pod up, fill and freeze v6.
+  - Done 2026-11-05 (EXP-0090): L1 passes (128 / 128, 2 / 2, 0 deaths, T = 5/3 at 3.35%); v6 frozen `5cd0e302…`; residual-base guard added (R-1 review). ≈ 0.9 vCPU-h, M5-P ≈ 7.0 / 80.
 - [ ] R-3 [experiment][remote:cpu16] EXP-0086: the L2 probe on k5_rf5 under v6 (fresh rows). `signal` /
   `weak` → the L3 pilot (stop 14); else stop. ≈ 2, stop 4.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
