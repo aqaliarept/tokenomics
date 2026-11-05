@@ -269,23 +269,39 @@ def test_prereg_v4_untouched_changes_only_the_death() -> None:
     assert v4["readings"] == v3["readings"]
 
 
-def test_prereg_v5_is_v4_rebased_on_rf4_and_frozen_only_after_l1(monkeypatch) -> None:
-    """Task 4.2h: v5 = v4's rules with the base rf4 and the rf4 L1 run's calibration; before that
-    run is calibrated, v5 cannot be built and no real run is licensed."""
-    assert pe.PREREG_PATH.name == "es_prereg_m5_v5.json" and pe.BASE_PRODUCER == pe.RF4_PRODUCER
-    if pe.FLAG_THRESHOLD_V5 is None:
-        assert pe.PREREG_SHA256 is None and "no pinned" in pe.prereg_problems()[0]
-        with pytest.raises(ValueError, match="needs the rf4 L1 run"):
-            pe.registered_prereg(5)
-        monkeypatch.setattr(pe, "FLAG_THRESHOLD_V5", 1.0)
-        monkeypatch.setattr(pe, "FLAG_SOURCES_V5", {"noise_episodes_sha256": "x"})
-        monkeypatch.setattr(pe, "FLAG_CALIBRATION_V5", {"rate": 0.0})
-    v5, v4 = pe.registered_prereg(5), json.loads(pe.PREREG_V4_PATH.read_text())
+def test_prereg_v5_untouched_on_rf4() -> None:
+    """Task 4.2h / 4.2i: v5 = v4's rules on rf4 with EXP-0085's calibration; never edited."""
+    from tokenomics.eval.provenance import sha256_file
+
+    assert sha256_file(str(pe.PREREG_V5_PATH)) == pe.PREREG_V5_SHA256
+    v5 = json.loads(pe.PREREG_V5_PATH.read_text())
+    assert v5 == pe.registered_prereg(5)
     assert v5["base"]["producer"] == pe.RF4_PRODUCER and v5["version"] == 5
     assert v5["changes"]["from"]["sha256"] == pe.PREREG_V4_SHA256
-    assert v5["guard"]["threshold"] == pe.FLAG_THRESHOLD_V5
-    assert v5["es"] == v4["es"] and v5["fitness"]["death"]["rule"] == v4["fitness"]["death"]["rule"]
-    text = json.dumps({k: v for k, v in v5.items() if k != "changes"})
-    assert "rf4's units" in text and "candidate - rf4" in text
     assert "rf3" not in json.dumps({k: v5["readings"][k] for k in ("L3", "L5", "L6")})
 
+
+def test_prereg_v6_is_v5_rebased_on_k5_rf5_and_frozen_only_after_l1(monkeypatch) -> None:
+    """Producer finalization: v6 = v5's rules with the final producer k5_rf5 as the base (buffer
+    k = 5) and its own L1 calibration; before that run is calibrated, v6 cannot be built and no
+    real run is licensed."""
+    assert pe.PREREG_PATH.name == "es_prereg_m5_v6.json"
+    assert pe.BASE_PRODUCER == pe.K5_RF5_PRODUCER and rd.BASE == "k5_rf5"
+    if pe.FLAG_THRESHOLD_V6 is None:
+        assert pe.PREREG_SHA256 is None and "no pinned" in pe.prereg_problems()[0]
+        with pytest.raises(ValueError, match="needs the k5_rf5 L1 run"):
+            pe.registered_prereg(6)
+        monkeypatch.setattr(pe, "FLAG_THRESHOLD_V6", 1.0)
+        monkeypatch.setattr(pe, "FLAG_SOURCES_V6", {"noise_episodes_sha256": "x"})
+        monkeypatch.setattr(pe, "FLAG_CALIBRATION_V6", {"rate": 0.0})
+    v6, v5 = pe.registered_prereg(6), json.loads(pe.PREREG_V5_PATH.read_text())
+    assert v6["base"]["producer"] == pe.K5_RF5_PRODUCER and v6["version"] == 6
+    assert v6["changes"]["from"]["sha256"] == pe.PREREG_V5_SHA256
+    assert v6["guard"]["threshold"] == pe.FLAG_THRESHOLD_V6
+    assert v6["policy"]["buffer"].startswith("k_g = 5 exp(") and v5["policy"]["buffer"].startswith(
+        "k_g = 4 exp(")
+    assert v6["es"] == v5["es"] and v6["fitness"]["death"]["rule"] == v5["fitness"]["death"]["rule"]
+    text = json.dumps({k: v for k, v in v6.items() if k != "changes"})
+    assert "k5_rf5's units" in text and "candidate - k5_rf5" in text
+    assert "rf4" not in json.dumps({k: v6["readings"][k] for k in ("L3", "L5", "L6")})
+    assert "k4_k5_rf5" not in text  # the full producer name was replaced first

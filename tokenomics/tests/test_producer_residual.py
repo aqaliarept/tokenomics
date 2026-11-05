@@ -99,11 +99,20 @@ def test_theta_zero_is_rf3_action_for_action(world: str, horizon: int) -> None:
 def test_theta_zero_with_the_cap_is_rf4_action_for_action(world: str, horizon: int) -> None:
     """Task 4.2h (base rf4): theta = 0 with `upgrade_cap` equals rf4, also on an episode where
     the cap fires (atlas 12-0121 at horizon 40, test_buyahead)."""
-    assert pr.BASE_PRODUCER == pr.RF4_PRODUCER
-    assert _episode(pr.producer_residual_policy(np.zeros(pr.THETA_DIM), upgrade_cap=True),
+    assert _episode(pr.producer_residual_policy(np.zeros(pr.THETA_DIM), base=pr.RF4_PRODUCER),
                     world, horizon) == \
         _episode(b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False,
                                                         upgrade_cap=True), world, horizon)
+
+
+@needs_atlas
+@pytest.mark.parametrize("world,horizon", [("ws-atlas-v1-12-0391", 40), (W42, 15)])
+def test_theta_zero_on_the_final_base_is_k5_rf5_action_for_action(world: str, horizon: int) -> None:
+    """Producer finalization: the residual's base is k5_rf5 (buffer k = 5, the exact cap);
+    theta = 0 equals it action for action (12-0391: the exact cap fires there)."""
+    assert pr.BASE_PRODUCER == pr.K5_RF5_PRODUCER and pr.BASES[pr.BASE_PRODUCER] == (5.0, "exact")
+    assert _episode(pr.producer_residual_policy(np.zeros(pr.THETA_DIM), base=pr.BASE_PRODUCER),
+                    world, horizon) == _episode(b.EXTRA_PRODUCING[pr.K5_RF5_PRODUCER], world, horizon)
 
 
 @needs_atlas

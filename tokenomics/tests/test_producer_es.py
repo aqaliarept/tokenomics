@@ -133,15 +133,15 @@ def test_minibatches_follow_the_recorded_stream() -> None:
     assert len(pe.monitor_set(ts)) == 16 and len(ts.world_episodes) == 128
 
 
-EXP0084 = (REPO / "experiments/EXP-0084-sustainable-upgrade/entity_planner_buyahead_k4_rf4"
-           / "artifacts" / "episodes.csv")
+EXP0088_K5 = (REPO / "experiments/EXP-0088-buffer-resweep-rf5/entity_planner_buyahead_k5_rf5"
+              / "artifacts" / "episodes.csv")
 
 
-@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(EXP0084)), reason="EXP-0052 / EXP-0084 absent")
-def test_crosscheck_reproduces_the_base_reference_exp0084(tmp_path: Path) -> None:
-    """The bar's cross-check replays the base (rf4 from v5) and equals EXP-0084's rf4 rows."""
-    assert pe.BASE_PRODUCER == pe.RF4_PRODUCER
-    res = pe.crosscheck_reference(ATLAS_V2, EXP0084, tmp_path, LOG)
+@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(EXP0088_K5)), reason="EXP-0052 / EXP-0088 absent")
+def test_crosscheck_reproduces_the_base_reference_exp0088(tmp_path: Path) -> None:
+    """The bar's cross-check replays the base (k5_rf5 from v6) and equals EXP-0088's k5_rf5 rows."""
+    assert pe.BASE_PRODUCER == pe.K5_RF5_PRODUCER
+    res = pe.crosscheck_reference(ATLAS_V2, EXP0088_K5, tmp_path, LOG)
     assert res["rows"] == pe.CROSSCHECK_N and res["equal"], res
 
 
@@ -349,10 +349,9 @@ def test_a_death_scores_units_minus_the_penalty_and_is_not_auto_worst() -> None:
                               bar, margin, refs, fref).disqualified
 
 
-def test_v5_real_runs_are_refused_until_the_rf4_calibration_exists() -> None:
-    if pe.FLAG_SOURCES_V5 is None:
-        assert pe.flag_source_problems(dict(pe.FLAG_SOURCES)) == [
-            "no registered flag calibration for this pre-registration (v5: EXP-0085)"]
+def test_real_runs_are_refused_until_the_pinned_version_is_calibrated() -> None:
+    if pe.FLAG_SOURCES_V6 is None:
+        assert pe.flag_source_problems(dict(pe.FLAG_SOURCES_V5)) == [
+            "no registered flag calibration for this pre-registration (v6)"]
     else:
-        assert pe.flag_source_problems(dict(pe.FLAG_SOURCES_V5)) == []
-
+        assert pe.flag_source_problems(dict(pe.FLAG_SOURCES_V6)) == []

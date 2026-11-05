@@ -2,7 +2,8 @@
 
 The base is `entity_planner_buyahead_k4_rf3` (EXP-0079, design D8): buy-ahead k = 4 plus the early
 inventory expansion; with `upgrade_cap` it is `entity_planner_buyahead_k4_rf4` (rf3 + the
-sustainable-upgrade cap, task 4.2f; the base from pre-registration v5). A parameter vector theta, shared by every producer and every input row, corrects
+sustainable-upgrade cap, task 4.2f; the base of pre-registration v5); with `base=K5_RF5_PRODUCER`
+it is the final producer `entity_planner_buyahead_k5_rf5` (k = 5 + the exact cap; v6). A parameter vector theta, shared by every producer and every input row, corrects
 three of its decisions from features of the producer's own view and its own past cycles:
 
 - buffer per input: k_g = 4 * exp(clip(theta_k . phi_g, -K_CLIP, K_CLIP)) cycles of recent use;
@@ -39,6 +40,7 @@ from ..eval.baselines import (
     _action_from_producing_command,
     blocked_shortfall,
     over_sustainable_max,
+    over_sustainable_max_exact,
     plan_reservations_first,
     recent_input_use,
 )
@@ -52,8 +54,13 @@ RF3_PRODUCER = "entity_planner_buyahead_k4_rf3"  # the base of pre-registrations
 RF4_PRODUCER = "entity_planner_buyahead_k4_rf4"  # rf3 + the sustainable-upgrade cap (task 4.2f)
 # The base (user decision 2026-11-05 "Adopt rf4 as base", after EXP-0084): theta = 0 is rf4 with
 # `upgrade_cap=True`, rf3 with False (the v1..v4 path).
-BASE_PRODUCER = RF4_PRODUCER
-BASE_K = 4.0
+K5_RF5_PRODUCER = "entity_planner_buyahead_k5_rf5"  # the final hand-written producer (EXP-0088)
+# Each base as (buffer k, upgrade cap): rf3 (v1..v4), rf4 (v5), k5_rf5 (v6; supervisor decision
+# 2026-11-05: the producer is final, M5 re-bases on it). theta_k's offsets apply around the base k.
+BASES: dict[str, tuple[float, bool | str]] = {RF3_PRODUCER: (4.0, False), RF4_PRODUCER: (4.0, True),
+                                              K5_RF5_PRODUCER: (5.0, "exact")}
+BASE_PRODUCER = K5_RF5_PRODUCER
+BASE_K = 4.0  # rf3 / rf4's k (the default of the plain residual)
 K_CLIP = 2.0  # k_g in [4 e^-2, 4 e^2] ~ [0.54, 29.6] cycles
 HISTORY_ALPHA = 0.3  # the telemetry's EMA weight
 INPUT_FEATURES = ("bias", "stock_cover", "inbound_cover", "blocked_cover", "log_use",
@@ -183,19 +190,19 @@ def producer_features(view: ProducerEntityView, shortfall_ema: dict) -> np.ndarr
 
 
 def residual_view(view: ProducerEntityView, theta_k: np.ndarray, theta_b: np.ndarray,
-                  phi: dict) -> ProducerEntityView:
+                  phi: dict, base_k: float = BASE_K) -> ProducerEntityView:
     """The view the base plans its replenishment from. The planner's target per input is
     max(DEFAULT_INPUT_STOCK_TARGET, pressure + blocked) and it buys target - (stock + inbound),
     clamped at 0. Each row's pressure is raised so that the target becomes
     max(T, have) + extra_g with T = max(floor, pressure + blocked + ceil(k_g x recent use)) and
     have = stock + inbound: the buffer at k_g, then extra_g units on top of the planner's want
     (design D2), never absorbed by the floor or by stock already above T (review m5-2-1). At
-    theta = 0 this is `buyahead_view(view, 4)` exactly."""
+    theta = 0 this is `buyahead_view(view, base_k)` exactly."""
     use = recent_input_use(view)
     rows = []
     for r in view.input_rows:
         f = phi[r.input_product]
-        k = BASE_K * math.exp(max(-K_CLIP, min(K_CLIP, float(theta_k @ f))))
+        k = base_k * math.exp(max(-K_CLIP, min(K_CLIP, float(theta_k @ f))))
         extra = int(math.floor(max(0.0, float(theta_b @ f)) + 0.5))
         pressure = r.downstream_demand_pressure + math.ceil(k * use.get(r.input_product, 0.0))
         if extra:  # extra_g on top of the planner's want, also when stock exceeds the target
@@ -211,7 +218,8 @@ def plan_residual(view: ProducerEntityView, theta: np.ndarray, shortfall_ema: di
                   inventory_expansion_increases: int, inventory_expansion_cost,
                   normaliser: "Normaliser | None" = None,
                   recorder: Callable | None = None,
-                  upgrade_cap: bool = False) -> ProducingAgentCommand:
+                  upgrade_cap: bool | str = False,
+                  base_k: float = BASE_K) -> ProducingAgentCommand:
     """The base's command with theta's corrections (module docstring). `normaliser` standardises
     phi / psi before theta (task 2.3); `recorder(phi_raw, psi_raw)` receives the raw features of
     every decision (the bar run fits the normaliser on rf3's, i.e. theta = 0's, rows)."""
@@ -224,16 +232,17 @@ def plan_residual(view: ProducerEntityView, theta: np.ndarray, shortfall_ema: di
         recorder(phi_raw, producer_features(view, shortfall_ema))
     phi = phi_raw if normaliser is None or phi_raw is None else {
         g: normaliser.input(f) for g, f in phi_raw.items()}
-    plan_view = None if zero else residual_view(view, theta_k, theta_b, phi)
+    plan_view = None if zero else residual_view(view, theta_k, theta_b, phi, base_k)
     # the base (rf3): buy-ahead k = 4 (or theta's targets), its early expansion; input priority
     # scored from the unmodified view
     cmd = plan_reservations_first(
-        view, ahead_cycles=BASE_K, max_replenish=max_replenish,
+        view, ahead_cycles=base_k, max_replenish=max_replenish,
         replenish_cost_per_unit=replenish_cost_per_unit, funding_budget=funding_budget,
         kept_room=0, inventory_expansion_increases=inventory_expansion_increases,
         inventory_expansion_cost=inventory_expansion_cost, blocked_first=False, keep_room=False,
         expand_early=True, plan_view=plan_view)
-    if upgrade_cap and cmd.do_upgrade and over_sustainable_max(view):  # rf4 (task 4.2f)
+    if upgrade_cap and cmd.do_upgrade and (  # rf4 (task 4.2f) / rf5's exact cap ("exact")
+            over_sustainable_max_exact(view) if upgrade_cap == "exact" else over_sustainable_max(view)):
         cmd = replace(cmd, do_upgrade=False)
     if cmd.do_inventory_expansion or not theta_e.any():
         return cmd
@@ -265,11 +274,16 @@ def _affordable(view: ProducerEntityView, cmd: ProducingAgentCommand, funding_bu
 
 def producer_residual_policy(theta: np.ndarray, normaliser: "Normaliser | None" = None,
                              recorder: Callable | None = None,
-                             upgrade_cap: bool = False) -> Policy:
+                             upgrade_cap: bool | str = False,
+                             base: str | None = None) -> Policy:
     """A producing policy playing the residual with `theta` (THETA_DIM values, shared by every
     producer). Episode state (each producer's per-input shortfall EMA) is weak-keyed by the system
     and read before the current cycle enters it."""
     theta = np.asarray(theta, dtype=np.float64).copy()
+    if base is not None:  # a named base (BASES) sets the buffer k and the cap
+        base_k, upgrade_cap = BASES[base]
+    else:
+        base_k = BASE_K
     split_theta(theta)  # shape check
     state: "weakref.WeakKeyDictionary[object, dict]" = weakref.WeakKeyDictionary()
 
@@ -288,7 +302,7 @@ def producer_residual_policy(theta: np.ndarray, normaliser: "Normaliser | None" 
                             funding_budget=system.investment_fund,
                             inventory_expansion_increases=mechanics.inventory_expansion_increases,
                             inventory_expansion_cost=mechanics.inventory_expansion_cost,
-                            normaliser=normaliser, upgrade_cap=upgrade_cap,
+                            normaliser=normaliser, upgrade_cap=upgrade_cap, base_k=base_k,
                             recorder=None if recorder is None else
                             (lambda phi, psi: recorder(pid, cycle, phi, psi)))
         if cycle != last_cycle:
@@ -301,5 +315,6 @@ def producer_residual_policy(theta: np.ndarray, normaliser: "Normaliser | None" 
     policy.theta = theta  # type: ignore[attr-defined]
     policy.normaliser = normaliser  # type: ignore[attr-defined]
     policy.upgrade_cap = upgrade_cap  # type: ignore[attr-defined]
+    policy.base_k = base_k  # type: ignore[attr-defined]
     policy.state = state  # type: ignore[attr-defined]
     return policy

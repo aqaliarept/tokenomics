@@ -65,8 +65,8 @@ from ..eval.contract import (ContractMonitor, append_failure, ensure_failures_fi
 from ..eval.gate import CSV_COLUMNS, row_from_stats, row_to_dict
 from ..eval.gate_cli import CONTRACT_INVALID, Job
 from ..eval.provenance import resolve_verified_commit, sha256_file, source_fingerprint
-from .producer_residual import (BASE_PRODUCER, N_IN, N_P, RF3_PRODUCER, RF4_PRODUCER, THETA_DIM,
-                                Normaliser,
+from .producer_residual import (BASE_PRODUCER, BASES, K5_RF5_PRODUCER, N_IN, N_P, RF3_PRODUCER,
+                                RF4_PRODUCER, THETA_DIM, Normaliser,
                                 producer_residual_policy)
 
 DRIVER = "tokenomics.train.producer_es"
@@ -116,13 +116,16 @@ PREREG_V4_SHA256 = "4a99c82488f25293c0405ddc0a64a95cad1214fdd4f6e36b07f550ce9581
 # v5 (user decision 2026-11-05 "Adopt rf4 as base", after EXP-0084): v4's rules on base rf4, its
 # bar / normaliser / margins / flag threshold from the rf4 L1 run (EXP-0085). Frozen after EXP-0085
 # and before any probe data; until then None, so a real probe / train run is refused.
-PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v5.json"
-# v5, frozen 2026-11-05 after EXP-0085 (task 4.2i)
-PREREG_SHA256: str | None = "06160cac20c001685077923440161d5d4959f23fb08f20581614f33ef2f219e4"
+PREREG_V5_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v5.json"
+PREREG_V5_SHA256 = "06160cac20c001685077923440161d5d4959f23fb08f20581614f33ef2f219e4"
+# v6 (supervisor decision 2026-11-05: the producer is final, k5_rf5, EXP-0088): v5's rules on base
+# `entity_planner_buyahead_k5_rf5`, its L1 constants from the k5_rf5 L1 run; None until frozen.
+PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v6.json"
+PREREG_SHA256: str | None = None  # v6, frozen by `--mode freeze` after its L1 run
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
-PREREG_VERSION = 5
+PREREG_VERSION = 6
 TRAINING_PINS = {  # M4's pinned ES training set (EXP-0058 bar/), design D7
     "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
     "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38"}
@@ -377,21 +380,65 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
             f"only: since v3 the minibatch flag-count rule decides disqualification (user decision "
             f"2026-11-05 after EXP-0085: 28 / 512 = 5.47% per episode, 14 / 328 = 4.27% per "
             f"minibatch)")
+    if version >= 6:
+        if FLAG_THRESHOLD_V6 is None or FLAG_SOURCES_V6 is None or FLAG_CALIBRATION_V6 is None:
+            raise ValueError("pre-registration v6 needs the k5_rf5 L1 run's flag calibration "
+                             "(freeze after L1, before any probe data)")
+        changes = {
+            "from": {"file": PREREG_V5_PATH.name, "sha256": PREREG_V5_SHA256,
+                     "note": "v1..v5 are never edited; v6 is a new file"},
+            "changed": ["base", "every rule's reference arm: rf4 -> k5_rf5", "policy.buffer",
+                        "guard.threshold", "guard.calibration", "readings.L1"],
+            "why": "supervisor decision 2026-11-05 (producer finalization, under the user's "
+                   "delegation): the hand-written producer is final, entity_planner_buyahead_k5_rf5 "
+                   "(EXP-0089 exact cap, EXP-0088 k* = 5); M5 re-bases on it. The bar, normaliser, "
+                   "margins and flag threshold are recomputed by the same code, formulas and "
+                   "targets from its L1 run, before any probe data",
+            "unchanged": "every rule of v5 (flag-count rule and its target as L1's criterion, "
+                         "penalised death P = B_we, sigma, minibatch, monitor, readings L2..L6) "
+                         "with the base read as k5_rf5"}
+        doc = _rebased(doc, (("entity_planner_buyahead_k4_rf4", K5_RF5_PRODUCER),
+                             ("rf4", "k5_rf5")))
+        doc["version"] = 6
+        doc["changes"] = changes
+        doc["base"] = {"producer": K5_RF5_PRODUCER, "orderer": ORDERING,
+                       "source": "supervisor decision 2026-11-05: the final producer (EXP-0089, "
+                                 "EXP-0088); theta = 0 equals k5_rf5 action for action "
+                                 "(tests/test_producer_residual.py)"}
+        doc["policy"]["buffer"] = (f"k_g = {BASES[K5_RF5_PRODUCER][0]:g} exp(clip(theta_k . phi_g, "
+                                   f"+-{doc['policy']['buffer'].split('+-')[1]}")
+        doc["guard"]["threshold"] = FLAG_THRESHOLD_V6
+        doc["guard"]["calibration"] = {
+            **{k: v for k, v in doc["guard"]["calibration"].items()
+               if k in ("rule", "minibatches", "target")},
+            **FLAG_CALIBRATION_V6,
+            "sources": {"run": f"{L1_RUN_V6} (noise_floor/noise_episodes.csv, "
+                               "noise_floor/margins.json, bar/bar.csv)", **FLAG_SOURCES_V6}}
+        doc["readings"]["L1"]["pass"] = (
+            f"r0 reproduces the bar's k5_rf5 rows; k5_rf5 equals EXP-0088 on 2 world-episodes; "
+            f"k5_rf5's self-disqualification under the flag-count rule <= {FLAG_TARGET} of its "
+            f"re-keyed minibatches (the calibration's rate)")
+        doc["readings"]["L1"]["superseded"] = (
+            f"the per-episode self-flag rate under the margin (<= {SELF_FLAG_TARGET}) is reported "
+            f"only (v5's user decision, kept)")
     return doc
 
 
-def _rebased(obj: Any) -> Any:
-    """v5: v4's rule text with the base read as rf4 (every 'rf3' in a rule string), leaving the
-    provenance strings (`source`, `why`, `changes`, `flags`) as recorded."""
+def _rebased(obj: Any, pairs: tuple[tuple[str, str], ...] = (("rf3", "rf4"),)) -> Any:
+    """v5: v4's rule text with the base read as rf4 (every 'rf3' in a rule string); v6 the same
+    from rf4 to k5_rf5 (`pairs`, applied in order). Provenance strings (`source`, `why`,
+    `changes`, `flags`) stay as recorded."""
     keep = {"source", "sources", "why", "changes", "flags", "decisions", "minibatch_source",
             "sigma_source", "adam_carried", "pairs_minibatch_source", "generations_source",
             "episodes_source"}
     if isinstance(obj, dict):
-        return {k: (v if k in keep else _rebased(v)) for k, v in obj.items()}
+        return {k: (v if k in keep else _rebased(v, pairs)) for k, v in obj.items()}
     if isinstance(obj, list):
-        return [_rebased(v) for v in obj]
+        return [_rebased(v, pairs) for v in obj]
     if isinstance(obj, str):
-        return obj.replace("rf3", "rf4")
+        for old, new in pairs:
+            obj = obj.replace(old, new)
+        return obj
     return obj
 
 
@@ -593,7 +640,7 @@ def run_producer_job(job: Job) -> dict[str, str]:
                     recorded["psi"].append(psi)
             prod = producer_residual_policy(
                 np.asarray(job["theta"], np.float64), nm, recorder,
-                upgrade_cap=job.get("residual_base", BASE_PRODUCER) == RF4_PRODUCER)
+                base=job.get("residual_base", BASE_PRODUCER))
             if theta_sha256(prod.theta) != job["theta_sha256"]:
                 raise AssertionError("job theta does not match its sha256")
         else:
@@ -1047,6 +1094,11 @@ FLAG_SOURCES_V5: dict[str, str] | None = {
 FLAG_CALIBRATION_V5: dict[str, Any] | None = {  # EXP-0085 flag_calibration.json
     "minibatches": 82, "re_keys": 4, "samples": 328, "self_disqualified": 14,
     "rate": 14 / 328, "rate_without_threshold": 143 / 328, "max_excess": 8 / 3}
+# v6 (base k5_rf5): the same calibration on its L1 run; None until computed and frozen
+L1_RUN_V6 = "EXP-0090"
+FLAG_THRESHOLD_V6: float | None = None
+FLAG_SOURCES_V6: dict[str, str] | None = None
+FLAG_CALIBRATION_V6: dict[str, Any] | None = None
 NOISE_ROWS = "noise_episodes.csv"
 
 
@@ -1054,6 +1106,10 @@ def active_flag() -> tuple[float, dict[str, str] | None]:
     """The flag threshold and its registered sources for the pinned version: v5's once
     calibrated; before that (dry runs only: a real run is refused by `flag_source_problems`) the
     v3 / v4 value."""
+    if PREREG_VERSION >= 6:
+        if FLAG_THRESHOLD_V6 is None:
+            return FLAG_THRESHOLD, None
+        return FLAG_THRESHOLD_V6, FLAG_SOURCES_V6
     if PREREG_VERSION >= 5:
         if FLAG_THRESHOLD_V5 is None:
             return FLAG_THRESHOLD, None
@@ -1115,7 +1171,7 @@ def flag_source_problems(pins: Mapping[str, Any],
     for v5; `sources` overrides the pinned version's)."""
     sources = active_flag()[1] if sources is None else sources
     if sources is None:
-        return ["no registered flag calibration for this pre-registration (v5: EXP-0085)"]
+        return [f"no registered flag calibration for this pre-registration (v{PREREG_VERSION})"]
     return [f"{k} {str(pins.get(k))[:12]} is not the registered {v[:12]}"
             for k, v in sources.items() if pins.get(k) != v]
 

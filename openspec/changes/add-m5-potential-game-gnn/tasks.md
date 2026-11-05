@@ -160,6 +160,18 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   - **Stop rule (supervisor):** if k* = 4, the buffer step's gain is within the floor and the step stops there.
   - ≈ 2 vCPU-h, stop 4; cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P.
   - Done 2026-11-05 (EXP-0088): **k* = 5** at 12 (both orderers; k5 +106 / +106 over rf5; k6 best, at the edge, gains diminishing); 42 k* = 4; late inputs flat across k. ≈ 1.2 vCPU-h, M5-P ≈ 6.1 / 80.
+
+### M5 on the final producer (supervisor 2026-11-05: `entity_planner_buyahead_k5_rf5`)
+
+- [ ] R-1 [code][local] Re-base M5 on k5_rf5. θ = 0 == k5_rf5 (buffer k = 5, so θ_k's offsets are around 5;
+  the exact cap); the rf3 / rf4 paths are kept (v1..v5 rebuild unchanged); the reads compare against k5_rf5.
+  Pre-registration v6 skeleton = v5's rules on k5_rf5, refused until its L1 constants are filled.
+- [ ] R-2 [experiment][remote:cpu16] EXP-0090: L1 on k5_rf5, as EXP-0085: bar + noise floor; r0 reproduces the
+  bar; k5_rf5 on 2 EXP-0057 world-episodes equals EXP-0088's rows; training-set deaths; per-episode self-flags
+  (reported); flag-count calibration (L1's criterion: ≤ 5% of re-keyed minibatches). ≈ 1.5, stop 3. Then,
+  locally with no pod up, fill and freeze v6.
+- [ ] R-3 [experiment][remote:cpu16] EXP-0086: the L2 probe on k5_rf5 under v6 (fresh rows). `signal` /
+  `weak` → the L3 pilot (stop 14); else stop. ≈ 2, stop 4.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
 - [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to

@@ -50,7 +50,7 @@ import numpy as np
 from ..eval.gate_cli import CONTRACT_INVALID, Job
 from ..eval.provenance import resolve_verified_commit, sha256_file, source_fingerprint
 from . import producer_es as pe
-from .producer_residual import BASE_PRODUCER, RF4_PRODUCER, Normaliser
+from .producer_residual import BASE_PRODUCER, K5_RF5_PRODUCER, RF4_PRODUCER, Normaliser
 
 DRIVER = "tokenomics.train.producer_read"
 PILOT, VALIDATE, HELDOUT, RECOMPUTE = "pilot", "validate", "heldout", "recompute"
@@ -61,7 +61,7 @@ RHO_LOADED = 0.28
 STOCK_HEAVY = 1.5
 # the base arm (rf4 from pre-registration v5, user decision 2026-11-05; rf3 before) and the
 # reported references
-BASE = "rf4" if BASE_PRODUCER == RF4_PRODUCER else "rf3"
+BASE = {K5_RF5_PRODUCER: "k5_rf5", RF4_PRODUCER: "rf4"}.get(BASE_PRODUCER, "rf3")
 REFS = {BASE: BASE_PRODUCER, "k4": "entity_planner_buyahead_k4", "ep": "entity_planner"}
 SEEDS = ("cand-s0", "cand-s1")
 CAND = "cand"
