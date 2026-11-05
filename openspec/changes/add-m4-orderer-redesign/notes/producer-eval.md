@@ -46,4 +46,17 @@ Reading (12 decides): RR `timing` / `timing`, MWWk `mixed` / `mixed` (units beyo
 | outbid | 46,922 (13,569) | 53,328 (20,088) | 63,182 (24,211) |
 More time recovers 16% / 27% of late + died-upstream (mostly died-upstream, −46%); directly late inputs fall only 7–10% → the residual is input lead time: buy earlier (step 3 target unchanged). A TTL change is the user's world-design call.
 
+## Step 2c — buy inputs ahead at TTL 2 (task 7.19, EXP-0076)
+Done 2026-11-05: `entity_planner_buyahead` (input stock target + ceil(k x own recent input use)) vs `entity_planner`, × {MWWk, RR}, TTL 2, EXP-0057's worlds; control rows equal EXP-0057 / EXP-0073 / EXP-0075 (213 / 213).
+Reading **`buyahead_helps`** (12, k = 1: MWWk +217, RR +224 vs floor 146.5; 0 deaths; run-down +4 / −1). k = 2: +547 / +574 (+27–28%); 42: helps for both k.
+| lost units, 12 MWWk (EP / k1 / k2) | |
+|---|---|
+| input died upstream | 155,974 / 134,226 / 104,938 |
+| input arrived late | 173,893 / 173,476 / 177,243 |
+| contention | 54,598 / 58,357 / 63,544 |
+| capacity | 27,894 / 27,035 / 25,756 |
+| outbid | 46,922 / 46,968 / 44,125 |
+Held stock +18% / +37%; investment rejection rate 0.058 → 0.064 → 0.067.
+Reading for step 3: buying ahead works through intermediate suppliers (died-upstream), not the final assembler (late unchanged); not saturated at k = 2. Open: roster inclusion (human gate); a larger k or a per-level rule.
+
 ## Step 3 — producer teacher (later, decided by step 2)

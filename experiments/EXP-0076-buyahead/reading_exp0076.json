@@ -1,0 +1,376 @@
+{
+ "control_vs_exp0075": {
+  "rows": 213,
+  "missing": 0,
+  "differing_columns": {},
+  "equal": true
+ },
+ "driver": {
+  "entity_planner": {
+   "status": "valid",
+   "neutral_rows": 213,
+   "compared_rows": 213,
+   "neutral_rows_exp0073": 213,
+   "compared_rows_exp0073": 213
+  },
+  "entity_planner_buyahead": {
+   "status": "valid",
+   "neutral_rows": 0,
+   "compared_rows": 0,
+   "neutral_rows_exp0073": 0,
+   "compared_rows_exp0073": 0
+  },
+  "entity_planner_buyahead_k2": {
+   "status": "valid",
+   "neutral_rows": 0,
+   "compared_rows": 0,
+   "neutral_rows_exp0073": 0,
+   "compared_rows_exp0073": 0
+  }
+ },
+ "cells": [
+  {
+   "size": 12,
+   "orderer": "MWWk",
+   "worlds": 23,
+   "per": {
+    "entity_planner": {
+     "episodes": 86,
+     "units_mean": 2095.9883720930234,
+     "deaths": 0,
+     "rundown_fails": 66,
+     "r_ratio_mean": 0.6641357263622143,
+     "holding_units_per_cycle_mean": 131.72302325581396,
+     "investment_rejection_rate_mean": 0.058477582767588535,
+     "lost": 534218.0,
+     "input_late": 173893.0,
+     "input_died_upstream": 155974.0,
+     "input_outbid_or_no_fit_upstream": 51424.0,
+     "input_not_ordered": 2804.0,
+     "contention": 54598.0,
+     "capacity": 27894.0,
+     "outbid": 46922.0
+    },
+    "entity_planner_buyahead": {
+     "episodes": 86,
+     "units_mean": 2322.8837209302324,
+     "deaths": 0,
+     "rundown_fails": 70,
+     "r_ratio_mean": 0.6638830956460319,
+     "holding_units_per_cycle_mean": 155.77302325581394,
+     "investment_rejection_rate_mean": 0.06431188448079823,
+     "lost": 515013.0,
+     "input_late": 173476.0,
+     "input_died_upstream": 134226.0,
+     "input_outbid_or_no_fit_upstream": 51288.0,
+     "input_not_ordered": 3056.0,
+     "contention": 58357.0,
+     "capacity": 27035.0,
+     "outbid": 46968.0
+    },
+    "entity_planner_buyahead_k2": {
+     "episodes": 86,
+     "units_mean": 2668.813953488372,
+     "deaths": 0,
+     "rundown_fails": 70,
+     "r_ratio_mean": 0.6598802448060699,
+     "holding_units_per_cycle_mean": 179.86406976744186,
+     "investment_rejection_rate_mean": 0.06740060396286841,
+     "lost": 486042.0,
+     "input_late": 177243.0,
+     "input_died_upstream": 104938.0,
+     "input_outbid_or_no_fit_upstream": 48862.0,
+     "input_not_ordered": 2567.0,
+     "contention": 63544.0,
+     "capacity": 25756.0,
+     "outbid": 44125.0
+    }
+   },
+   "vs": {
+    "entity_planner_buyahead": {
+     "mean_diff": 217.2173913043478,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 12,
+     "worlds_below": 0,
+     "exceeds": true,
+     "within": false,
+     "below": false,
+     "extra_deaths": false,
+     "guard": true,
+     "rundown_fails_delta": 4
+    },
+    "entity_planner_buyahead_k2": {
+     "mean_diff": 546.804347826087,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 18,
+     "worlds_below": 0,
+     "exceeds": true,
+     "within": false,
+     "below": false,
+     "extra_deaths": false,
+     "guard": true,
+     "rundown_fails_delta": 4
+    }
+   }
+  },
+  {
+   "size": 12,
+   "orderer": "RR",
+   "worlds": 23,
+   "per": {
+    "entity_planner": {
+     "episodes": 43,
+     "units_mean": 2163.3255813953488,
+     "deaths": 0,
+     "rundown_fails": 34,
+     "r_ratio_mean": 0.6849882814284267,
+     "holding_units_per_cycle_mean": 145.5439534883721,
+     "investment_rejection_rate_mean": 0.06538313181175409,
+     "lost": 264154.0,
+     "input_late": 88283.0,
+     "input_died_upstream": 86254.0,
+     "input_outbid_or_no_fit_upstream": 29331.0,
+     "input_not_ordered": 1018.0,
+     "contention": 25417.0,
+     "capacity": 9935.0,
+     "outbid": 13569.0
+    },
+    "entity_planner_buyahead": {
+     "episodes": 43,
+     "units_mean": 2397.6279069767443,
+     "deaths": 0,
+     "rundown_fails": 33,
+     "r_ratio_mean": 0.6851322186829263,
+     "holding_units_per_cycle_mean": 172.42627906976745,
+     "investment_rejection_rate_mean": 0.0687778982970435,
+     "lost": 254205.0,
+     "input_late": 87741.0,
+     "input_died_upstream": 73037.0,
+     "input_outbid_or_no_fit_upstream": 30395.0,
+     "input_not_ordered": 1303.0,
+     "contention": 27658.0,
+     "capacity": 9965.0,
+     "outbid": 13482.0
+    },
+    "entity_planner_buyahead_k2": {
+     "episodes": 43,
+     "units_mean": 2761.2093023255816,
+     "deaths": 0,
+     "rundown_fails": 34,
+     "r_ratio_mean": 0.6821692210554107,
+     "holding_units_per_cycle_mean": 197.32651162790697,
+     "investment_rejection_rate_mean": 0.07310375391653516,
+     "lost": 239074.0,
+     "input_late": 93767.0,
+     "input_died_upstream": 54290.0,
+     "input_outbid_or_no_fit_upstream": 25396.0,
+     "input_not_ordered": 1394.0,
+     "contention": 31478.0,
+     "capacity": 9532.0,
+     "outbid": 14151.0
+    }
+   },
+   "vs": {
+    "entity_planner_buyahead": {
+     "mean_diff": 224.0,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 11,
+     "worlds_below": 0,
+     "exceeds": true,
+     "within": false,
+     "below": false,
+     "extra_deaths": false,
+     "guard": true,
+     "rundown_fails_delta": -1
+    },
+    "entity_planner_buyahead_k2": {
+     "mean_diff": 573.6304347826087,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 18,
+     "worlds_below": 0,
+     "exceeds": true,
+     "within": false,
+     "below": false,
+     "extra_deaths": false,
+     "guard": true,
+     "rundown_fails_delta": 0
+    }
+   }
+  },
+  {
+   "size": 42,
+   "orderer": "MWWk",
+   "worlds": 14,
+   "per": {
+    "entity_planner": {
+     "episodes": 56,
+     "units_mean": 5924.785714285715,
+     "deaths": 0,
+     "rundown_fails": 50,
+     "r_ratio_mean": 0.6376741918453566,
+     "holding_units_per_cycle_mean": 813.5166071428572,
+     "investment_rejection_rate_mean": 0.16249866890854683,
+     "lost": 715962.0,
+     "input_late": 226622.0,
+     "input_died_upstream": 220248.0,
+     "input_outbid_or_no_fit_upstream": 83753.0,
+     "input_not_ordered": 13989.0,
+     "contention": 50194.0,
+     "capacity": 49450.0,
+     "outbid": 25853.0
+    },
+    "entity_planner_buyahead": {
+     "episodes": 56,
+     "units_mean": 6386.910714285715,
+     "deaths": 0,
+     "rundown_fails": 51,
+     "r_ratio_mean": 0.635960383848572,
+     "holding_units_per_cycle_mean": 898.57375,
+     "investment_rejection_rate_mean": 0.16949577332826254,
+     "lost": 690948.0,
+     "input_late": 232937.0,
+     "input_died_upstream": 191113.0,
+     "input_outbid_or_no_fit_upstream": 76925.0,
+     "input_not_ordered": 15233.0,
+     "contention": 53224.0,
+     "capacity": 49172.0,
+     "outbid": 25386.0
+    },
+    "entity_planner_buyahead_k2": {
+     "episodes": 56,
+     "units_mean": 7108.464285714285,
+     "deaths": 0,
+     "rundown_fails": 50,
+     "r_ratio_mean": 0.6376135000672015,
+     "holding_units_per_cycle_mean": 982.4053571428572,
+     "investment_rejection_rate_mean": 0.16561994201665603,
+     "lost": 651251.0,
+     "input_late": 233036.0,
+     "input_died_upstream": 159486.0,
+     "input_outbid_or_no_fit_upstream": 75014.0,
+     "input_not_ordered": 13810.0,
+     "contention": 55776.0,
+     "capacity": 47701.0,
+     "outbid": 24119.0
+    }
+   },
+   "vs": {
+    "entity_planner_buyahead": {
+     "mean_diff": 462.125,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 5,
+     "worlds_below": 0,
+     "exceeds": true,
+     "within": false,
+     "below": false,
+     "extra_deaths": false,
+     "guard": true,
+     "rundown_fails_delta": 1
+    },
+    "entity_planner_buyahead_k2": {
+     "mean_diff": 1183.6785714285713,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 7,
+     "worlds_below": 0,
+     "exceeds": true,
+     "within": false,
+     "below": false,
+     "extra_deaths": false,
+     "guard": true,
+     "rundown_fails_delta": 0
+    }
+   }
+  },
+  {
+   "size": 42,
+   "orderer": "RR",
+   "worlds": 14,
+   "per": {
+    "entity_planner": {
+     "episodes": 28,
+     "units_mean": 5606.214285714285,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "r_ratio_mean": 0.6344660745573799,
+     "holding_units_per_cycle_mean": 934.9060714285714,
+     "investment_rejection_rate_mean": 0.1659813421815355,
+     "lost": 366888.0,
+     "input_late": 108308.0,
+     "input_died_upstream": 118903.0,
+     "input_outbid_or_no_fit_upstream": 52268.0,
+     "input_not_ordered": 9444.0,
+     "contention": 20286.0,
+     "capacity": 25748.0,
+     "outbid": 8712.0
+    },
+    "entity_planner_buyahead": {
+     "episodes": 28,
+     "units_mean": 6024.25,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "r_ratio_mean": 0.6269546030089492,
+     "holding_units_per_cycle_mean": 1014.3007142857143,
+     "investment_rejection_rate_mean": 0.16999392295658755,
+     "lost": 355386.0,
+     "input_late": 111831.0,
+     "input_died_upstream": 103715.0,
+     "input_outbid_or_no_fit_upstream": 52957.0,
+     "input_not_ordered": 9119.0,
+     "contention": 21383.0,
+     "capacity": 26104.0,
+     "outbid": 7852.0
+    },
+    "entity_planner_buyahead_k2": {
+     "episodes": 28,
+     "units_mean": 6782.25,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "r_ratio_mean": 0.6259010185022285,
+     "holding_units_per_cycle_mean": 1087.2317857142857,
+     "investment_rejection_rate_mean": 0.16579284091488256,
+     "lost": 334676.0,
+     "input_late": 111759.0,
+     "input_died_upstream": 87763.0,
+     "input_outbid_or_no_fit_upstream": 47908.0,
+     "input_not_ordered": 9782.0,
+     "contention": 22908.0,
+     "capacity": 25024.0,
+     "outbid": 7920.0
+    }
+   },
+   "vs": {
+    "entity_planner_buyahead": {
+     "mean_diff": 418.0357142857143,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 4,
+     "worlds_below": 0,
+     "exceeds": true,
+     "within": false,
+     "below": false,
+     "extra_deaths": false,
+     "guard": true,
+     "rundown_fails_delta": 0
+    },
+    "entity_planner_buyahead_k2": {
+     "mean_diff": 1176.0357142857142,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 6,
+     "worlds_below": 0,
+     "exceeds": true,
+     "within": false,
+     "below": false,
+     "extra_deaths": false,
+     "guard": true,
+     "rundown_fails_delta": 0
+    }
+   }
+  }
+ ],
+ "readings": {
+  "12/entity_planner_buyahead": "buyahead_helps",
+  "12/entity_planner_buyahead_k2": "buyahead_helps",
+  "42/entity_planner_buyahead": "buyahead_helps",
+  "42/entity_planner_buyahead_k2": "buyahead_helps"
+ },
+ "deciding": "buyahead_helps"
+}

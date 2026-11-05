@@ -1342,3 +1342,24 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - Changing the TTL is the user's world-design decision.
 - **Cost.** ≈ 6.9 vCPU-h, including 5.4 wasted on two pods that never got SSH; tranche A ≈ 97.7
   of 125.
+
+### Can producers buy their inputs ahead? (EXP-0076)
+
+- **The question.** Can a producer avoid late inputs at today's TTL by keeping k extra cycles of
+  its own recent input use in stock? `entity_planner_buyahead` is `entity_planner` with only
+  that change.
+- **What it found.**
+  - At 12 producers, k = 1 adds +217 (MWWk) / +224 (round-robin) consumer units per episode over
+    `entity_planner`, beyond the noise floor (146.5) with both orderers. There are no deaths and
+    no meaningful extra run-down: the registered reading is `buyahead_helps`.
+  - k = 2 adds +27–28%, more than EXP-0075's longer TTL did. The same holds at 42 producers.
+  - The gain comes from input orders that used to die upstream (−14% / −33%): intermediate
+    suppliers now hold their inputs.
+  - Late inputs at the final assembler are unchanged.
+  - The cost is +18% / +37% held stock and slightly more investment rejections.
+- **What it means.**
+  - Input timing is the producer-side lever. A simple buy-ahead rule moves it, and it had not
+    saturated at k = 2.
+  - The buy-ahead producer is now the strongest known producer, and belongs in the next roster
+    draft (a human gate).
+- **Cost.** ≈ 1.25 vCPU-h; tranche A ≈ 99.0 of 125.
