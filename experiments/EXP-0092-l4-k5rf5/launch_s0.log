@@ -1,0 +1,49 @@
+[run_pod] verified clean source commit 2e6ec618397298a96a966121d5f2eb5013c88a21 (synced tree + launcher); injected into --train
+[run_pod] creating pod: POST /v1/pods {"name": "exp0092a-x", "imageName": "runpod/base:0.7.0-ubuntu2004", "computeType": "CPU", "containerDiskInGb": 30, "volumeMountPath": "/workspace", "cloudType": "SECURE", "ports": ["22/tcp"], "vcpuCount": 8, "cpuFlavorIds": ["cpu5c"], "dataCenterIds": ["EUR-IS-1"]}
+[run_pod] created pod t3rz3girkclaih
+[run_pod] pod t3rz3girkclaih status: RUNNING
+[run_pod] pod already running
+[run_pod] waiting for pod to become reachable (timeout 600s)...
+[run_pod] SSH up at 157.157.221.30:27075
+[run_pod] pod image runpod/base:0.7.0-ubuntu2004; exported as EXP0039_POD_IMAGE into the run
+[run_pod] syncing /srv/research/wt-exp0092a/tokenomics -> 157.157.221.30:/workspace/tokenomics
+
+sent 4,399,703 bytes  received 5,088 bytes  978,842.44 bytes/sec
+total size is 16,936,763  speedup is 3.85
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.15.0+cpu cuda False
+[run_pod] launching detached: -u -m tokenomics.train.producer_es --mode train --training-dir /workspace/tokenomics/_pod_ckpts/exp0092/training --bar-dir /workspace/tokenomics/_pod_ckpts/exp0092/bar --margins /workspace/tokenomics/_pod_ckpts/exp0092/noise_floor/margins.json --generations 40 --source-commit 2e6ec618397298a96a966121d5f2eb5013c88a21 --opt-seed 0 --workers 8 --out-dir /workspace/tokenomics/_pod_ckpts/exp0092/s0
+[run_pod] launch ssh did not return within 60s; the job is detached (own session) — proceeding to monitor via pid/exit files
+[run_pod] launched (survives disconnect). Reattach any time: python run_pod_training.py --pod-id t3rz3girkclaih --attach --remote-log /workspace/train.log --cpu
+[run_pod] mirroring remote log -> train.live.log (tail -f); status -> train.status
+[producer_es] resuming /workspace/tokenomics/_pod_ckpts/exp0092/s0 (train)
+[producer_es] generation 21: fitness 1.0913, disqualified 0, |grad| 8.1253
+[producer_es] generation 22: fitness 1.1110, disqualified 0, |grad| 8.0132
+[producer_es] generation 23: fitness 1.1034, disqualified 0, |grad| 8.1420
+[producer_es] generation 24: fitness 1.1083, disqualified 0, |grad| 5.3861
+[producer_es] generation 25: fitness 1.0970, disqualified 0, |grad| 6.0631
+[producer_es] generation 26: fitness 1.0932, disqualified 0, |grad| 5.2475
+[producer_es] generation 27: fitness 1.1084, disqualified 0, |grad| 5.7385
+[producer_es] generation 28: fitness 1.0682, disqualified 0, |grad| 6.2217
+[producer_es] generation 29: fitness 1.0977, disqualified 0, |grad| 7.7309
+[producer_es] generation 30: fitness 1.1239, disqualified 0, |grad| 6.7564
+[producer_es] generation 31: fitness 1.0971, disqualified 0, |grad| 7.9168
+[producer_es] generation 32: fitness 1.0930, disqualified 0, |grad| 8.6768
+[producer_es] generation 33: fitness 1.0905, disqualified 0, |grad| 4.5417
+[producer_es] generation 34: fitness 1.1314, disqualified 0, |grad| 5.2516
+[producer_es] generation 35: fitness 1.0722, disqualified 0, |grad| 5.4594
+[producer_es] generation 36: fitness 1.1192, disqualified 0, |grad| 5.8650
+[producer_es] generation 37: fitness 1.1044, disqualified 0, |grad| 6.3330
+[producer_es] generation 38: fitness 1.0930, disqualified 0, |grad| 7.3175
+[producer_es] generation 39: fitness 1.0582, disqualified 1, |grad| 8.5053
+[producer_es] generation 40: fitness 1.1035, disqualified 1, |grad| 6.9008
+[producer_es] train complete
+[run_pod] detached run finished (exit 0); pulling results
+[run_pod] pulling /workspace/tokenomics/_pod_ckpts/exp0092/s0/ -> ./experiments/EXP-0092-l4-k5rf5/s0-pod/
+[run_pod] stopping pod t3rz3girkclaih...
+[run_pod] pod stopped
+[run_pod] terminating pod t3rz3girkclaih (removing)...
+[run_pod] pod terminated

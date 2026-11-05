@@ -1,0 +1,19 @@
+{
+ "F_tr": 139.32499102817124,
+ "comparison": {
+  "a": "center",
+  "atlas_floor": 54.753057179718525,
+  "b": "k5_rf5",
+  "df": 16,
+  "diff": 443.25,
+  "floor": 139.32499102817124,
+  "own3se": 139.32499102817124,
+  "worlds": 16
+ },
+ "g_tr": 443.25,
+ "generation": 20,
+ "monitor_csv_g_tr": 443.25,
+ "reading": "feasible",
+ "run": "../experiments/EXP-0092-l4-k5rf5/s1",
+ "world_episodes": 16
+}

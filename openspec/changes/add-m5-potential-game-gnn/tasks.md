@@ -177,11 +177,13 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 - [x] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
   - Done 2026-11-05 (EXP-0091, on k5_rf5 under v6): **`feasible`** (g_tr +467.5 vs F_tr 125.6); held stock 1.77× (stock_heavy), investment rejection 0.10 → 0.33; centre − k6_rf5 +402 (reported). ≈ 5.0 vCPU-h, M5-P ≈ 13.3 / 80.
-- [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to
+- [x] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to
   40 generations (≈ 7 + 13.5, stops 14 / 27; sizing.md). Verify: g_tr recomputes; checkpoints and pins
   recorded.
+  - Done 2026-11-05 (EXP-0092, k5_rf5, v6): both seeds to 40; g_tr +569.2 / +573.7 vs F_tr ≈ 223; 0 monitor deaths; stock ≈ 1.8×, rejection ≈ 3×. ≈ 14.0 vCPU-h, M5-P ≈ 27.3 / 80.
 - [ ] 5.3 [experiment][remote:cpu16] EXP-0083: L5 validation at 12 and 42 (`success` / `plateau` /
   `kill` / `transfer_failure`). Stop branches → DIAGNOSTICS + user. ≈ 3.5, stop 7 (sizing.md).
+  - Ran 2026-11-05 (EXP-0093, k5_rf5, v6): **`kill`** (1 extra death: cand-s0 on 12-0109); gains +413 / +383 at 12, +579 / +557 at 42; stock_heavy 1.58×. DIAGNOSTICS 30 (expansion orders dilute the fund; sole maker's restoration unfunded). Stop branch, to the supervisor / user. ≈ 1.5 vCPU-h, M5-P ≈ 28.8 / 80.
 
 ## 6. Held-out confirmation (experiment). Gated: EXP-0083 `success`
 

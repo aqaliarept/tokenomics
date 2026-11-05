@@ -1319,3 +1319,38 @@ how general it is across the training set is untested._
     (rf3 8,821).
   - Its other blocks there (p2_2 at 693, p2_1 at 846) are real traps.
 
+## 30. A learned producer's extra investment orders starve another producer's restoration (fund dilution)
+
+_Status: diagnosed (2026-11-05, EXP-0093, one death); how general it is is untested._
+
+**Problem (plain English):**
+- Each cycle's investment fund is split across the producers that have funding orders, in proportion to their
+  cut-off prices (`distribute_investment_fund`). Each producer then spends its share survival-first:
+  restoration before replenishment, upgrade and expansion.
+- When a policy makes many producers place extra investment orders (inventory expansions, upgrades), more
+  producers share the fund. A low-capacity producer's share can fall to 0.
+- Its restoration then expires unfunded. If that producer is the only working maker of a product, the
+  product's capacity drains and the system dies.
+- The survival-first order within a producer's budget does not protect it, because the dilution happens
+  across producers.
+- Signs: a death with restorations `rejected` (unfunded) while capacity is far below the sustainable ceiling
+  (entry 29 excluded); the investment rejection rate up.
+
+**Discriminating checks (local, one episode):**
+1. Trace the dying maker's funds and restoration fates per cycle against the base
+   (`probes/l5_death_0109.py --why`).
+2. **Counterfactual:** the same policy with its expansion trigger off (θ_e = 0). Does the death disappear?
+   (EXP-0093: yes, 0 deaths on 12-0109's 16 episodes; the killing episode alive at 3,187 units.)
+
+**Outcome branches:**
+- **Fund dilution** (funds 0 and restorations unfunded while others expand): constrain or drop the expansion
+  correction. That is a pre-registration change, to the user.
+- **Otherwise:** auction rejection of the restoration, or entry 29; trace the restoration orders' auctions.
+
+**Evidence (EXP-0093, atlas 12-0109, episode 1213081781, replicate 1):**
+- cand-s0 places 2–5 expansions per cycle (the base: 0).
+- p0_0, product 1's only working maker (p0_1 has max 1), gets funds 0 from cycle 40. Its restorations are
+  rejected at cycles 41 and 44, and it drains 103 → 0 by cycle 46: death.
+- k5_rf5 lives on that episode.
+- Investment rejection on the episode is 0.22 (base 0.10).
+
