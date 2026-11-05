@@ -22,9 +22,9 @@ Modes:
   world-episodes each, M4's recorded probe stream) with one common noise draw; their cosine reads
   `signal` (>= 0.3) / `weak` (>= 0.1) / `no_signal` -> `probe.json`.
 - `train` (L3 / L4): antithetic ES (PAIRS pairs, sigma per parameter), centered ranks over the 2n
-  members, a disqualified member ranks worst (pre-registration v3's flag-count rule: a death where
-  rf3 dies at no key, or more flagged episodes than rf3's re-keys on the same minibatch by more
-  than FLAG_THRESHOLD; `score_member_v3`), Adam ascent. The minibatch
+  members, a disqualified member ranks worst (pre-registration v3's flag-count rule: more flagged
+  episodes than rf3's re-keys on the same minibatch by more than FLAG_THRESHOLD); v4 scores a
+  death where rf3 dies at no key as units / B_we - 1 (`score_member_v4`), Adam ascent. The minibatch
   per generation comes from M4's recorded stream for the optimiser seed. One checkpoint per
   generation; resume needs every pin to match. The monitor (the centre and the bar on the
   16-world-episode monitor set) every MONITOR_EVERY generations.
@@ -99,19 +99,23 @@ CHECKPOINT_FORMAT = "m5-es-checkpoint-v1"
 # The frozen pre-registration (task 2.3) every real probe / train run needs; None until 2.3 pins it,
 # so a real L2 / L3 run is refused (review m5-2-2).
 # v1 (task 2.3) is never edited; v2 (task 2.4, before any data) adds L6's candidate selection and
-# its gating worlds; v3 (after EXP-0081) replaces the guard. The code is pinned to v3.
+# its gating worlds; v3 (after EXP-0081) replaces the guard; v4 (after EXP-0082) scores a death by
+# a penalty instead of disqualifying. The code is pinned to v4.
 PREREG_V1_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v1.json"
 PREREG_V1_SHA256 = "67721b3828931c7904616368465f03b8febad7362d7e039bf8e5124478c18623"
 PREREG_V2_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v2.json"
 PREREG_V2_SHA256 = "5887b2b272ed5829fa1374166cbdf13fbb533aad9766386a331796e71942dbf0"
 # v3 (2026-11-05, after EXP-0081, before EXP-0082): the flag-count guard (user decision).
-PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v3.json"
-# v3, frozen 2026-11-05 (task 4.2b)
-PREREG_SHA256: str | None = "97c3332c3584ce6fd2d84fe40cac5c9e03eb4f8e59fdd76d1d036defef7b9d04"
+PREREG_V3_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v3.json"
+PREREG_V3_SHA256 = "97c3332c3584ce6fd2d84fe40cac5c9e03eb4f8e59fdd76d1d036defef7b9d04"
+# v4 (2026-11-05, after EXP-0082, before EXP-0083): the penalised death (user decision).
+PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v4.json"
+# v4, frozen 2026-11-05 (task 4.2c)
+PREREG_SHA256: str | None = "4a99c82488f25293c0405ddc0a64a95cad1214fdd4f6e36b07f550ce95811c8e"
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
-PREREG_VERSION = 3
+PREREG_VERSION = 4
 TRAINING_PINS = {  # M4's pinned ES training set (EXP-0058 bar/), design D7
     "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
     "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38"}
@@ -304,6 +308,30 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
             "applies_to": "probe and train member scores; the monitor and the L5 / L6 reads "
                           "are unchanged",
             "source": "user decision 2026-11-05 after EXP-0081 (DIAGNOSTICS 25)"}
+    if version >= 4:
+        doc["version"] = 4
+        doc["changes"] = {
+            "from": {"file": PREREG_V3_PATH.name, "sha256": PREREG_V3_SHA256,
+                     "note": "v1, v2 and v3 are never edited; v4 is a new file"},
+            "changed": ["guard.rule", "guard.death", "fitness.death"],
+            "why": "EXP-0082 (DIAGNOSTICS 25, death-driven): under v3 the absolute death clause "
+                   "alone reverses probe minibatch B (cosine -0.670 / -0.799 deaths only; flags "
+                   "only 0.840 / 0.836): 24 / 48 members die on train 12-0016, where rf3 lives at "
+                   "every key, at about -5% units; user decision 2026-11-05 'Penalised death' "
+                   "(notes/user-decisions.md), before EXP-0083's data",
+            "unchanged": "every other section of v3: the flag-count rule and its threshold, the "
+                         "monitor, the L5 / L6 reads (no extra deaths there)"}
+        doc["guard"]["rule"] = FLAG_RULE + " + " + DEATH_RULE
+        doc["guard"]["death"] = ("no disqualification: a member episode that dies where rf3 dies "
+                                 "at no key (r0..r4) scores (units - P) / B_we in the fitness "
+                                 "(fitness.death); a death where rf3 dies at some key scores its "
+                                 "units, as before")
+        doc["fitness"]["death"] = {
+            "rule": DEATH_RULE, "penalty": "P = B_we, rf3's units on the world-episode at r0 "
+                                           "(the bar row): the episode scores units / B_we - 1",
+            "why": "a death is as bad as delivering nothing extra over rf3 on that episode "
+                   "(supervisor default, 2026-11-05)",
+            "applies_to": "probe and train member scores; ranks by fitness, never auto-worst"}
     return doc
 
 
@@ -1045,10 +1073,32 @@ def score_member_v3(rows: Sequence[Mapping[str, str]], bar: Mapping, margin: Any
     return MemberScore(fmean(fs), bool(reasons), tuple(reasons), False)
 
 
+DEATH_RULE = "death-penalty-v1"
+
+
+def score_member_v4(rows: Sequence[Mapping[str, str]], bar: Mapping, margin: Any, refs: Mapping,
+                    fref: FlagReference, threshold: float = FLAG_THRESHOLD) -> Any:
+    """Pre-registration v4: v3's flag-count rule, with a death where rf3 dies at no key scored as
+    (units - P) / B_we, P = B_we (rf3's r0 units), instead of disqualifying the member."""
+    from .order_es import MemberScore, _bool, we_fitness
+
+    if any(_bool(r["nonfinite"]) for r in rows):
+        return MemberScore(None, False, ("nonfinite",), True)
+    wes = [(r["world"], int(r["episode"])) for r in rows]
+    penalised = [_bool(r["dead"]) and k not in fref.dead for r, k in zip(rows, wes)]
+    fs = [we_fitness(r, bar[k], 0.0) - (1.0 if pen else 0.0)
+          for r, k, pen in zip(rows, wes, penalised)]
+    flags = sum(row_flagged(r, bar[k], margin, refs[k]) for r, k in zip(rows, wes))
+    excess = flags - fref.expected(wes)
+    reasons = [f"flags:{flags}-{excess:+.2f}"] if excess > threshold + 1e-9 else []
+    notes = tuple(f"{k[0]}:{k[1]}:death-penalised" for k, pen in zip(wes, penalised) if pen)
+    return MemberScore(fmean(fs), bool(reasons), tuple(reasons) + notes, False)
+
+
 def _scores(rows_by_member: Mapping[str, Sequence[Mapping[str, str]]], bar: Mapping,
             margin: Any, refs: Mapping, fref: FlagReference) -> dict:
-    """Units-only fitness; disqualification by the v3 flag-count rule against rf3's re-keys."""
-    return {lab: score_member_v3(rs, bar, margin, refs, fref)
+    """Units-only fitness with v4's death penalty; disqualification by v3's flag-count rule."""
+    return {lab: score_member_v4(rs, bar, margin, refs, fref)
             for lab, rs in rows_by_member.items()}
 
 

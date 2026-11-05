@@ -238,14 +238,30 @@ def test_heldout_reading_as_registered() -> None:
     assert "<= rf3's (L5's clause)" in doc["readings"]["L6"]["confirmed"]
 
 
-def test_prereg_v3_pinned_changes_only_the_guard() -> None:
-    """Task 4.2b: v3 is the pinned file; it differs from v2 in the guard (and version / changes)."""
-    assert pe.PREREG_PATH.name == "es_prereg_m5_v3.json" and pe.prereg_problems() == []
-    v3, v2 = json.loads(pe.PREREG_PATH.read_text()), json.loads(pe.PREREG_V2_PATH.read_text())
+def test_prereg_v3_untouched_changes_only_the_guard() -> None:
+    """Task 4.2b: v3 differs from v2 in the guard (and version / changes); never edited."""
+    from tokenomics.eval.provenance import sha256_file
+
+    assert sha256_file(str(pe.PREREG_V3_PATH)) == pe.PREREG_V3_SHA256
+    assert json.loads(pe.PREREG_V3_PATH.read_text()) == pe.registered_prereg(3)
+    v3, v2 = json.loads(pe.PREREG_V3_PATH.read_text()), json.loads(pe.PREREG_V2_PATH.read_text())
     assert v3["version"] == 3 and v3["changes"]["from"]["sha256"] == pe.PREREG_V2_SHA256
     assert sorted(k for k in set(v3) | set(v2) if v3.get(k) != v2.get(k)) == [
         "changes", "guard", "version"]
     assert v3["guard"]["threshold"] == pe.FLAG_THRESHOLD
     assert v3["guard"]["calibration"]["sources"]["noise_episodes_sha256"] == pe.FLAG_SOURCES[
         "noise_episodes_sha256"]
+
+
+def test_prereg_v4_pinned_changes_only_the_death() -> None:
+    """Task 4.2c: v4 is the pinned file; vs v3 only the guard's rule / death text and the
+    fitness's death penalty change."""
+    assert pe.PREREG_PATH.name == "es_prereg_m5_v4.json" and pe.prereg_problems() == []
+    v4, v3 = json.loads(pe.PREREG_PATH.read_text()), json.loads(pe.PREREG_V3_PATH.read_text())
+    assert v4["version"] == 4 and v4["changes"]["from"]["sha256"] == pe.PREREG_V3_SHA256
+    assert sorted(k for k in set(v4) | set(v3) if v4.get(k) != v3.get(k)) == [
+        "changes", "fitness", "guard", "version"]
+    assert {k for k in v4["guard"] if v4["guard"][k] != v3["guard"].get(k)} == {"rule", "death"}
+    assert {k for k in v4["fitness"] if v4["fitness"][k] != v3["fitness"].get(k)} == {"death"}
+    assert v4["readings"] == v3["readings"]
 

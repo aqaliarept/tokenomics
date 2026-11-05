@@ -309,3 +309,31 @@ def test_real_probe_refuses_other_flag_sources() -> None:
     assert pe.flag_source_problems({**pe.FLAG_SOURCES, "margins_sha256": "0" * 64}) == [
         f"margins_sha256 000000000000 is not the registered {want}"]
 
+
+@needs_exp0080
+def test_a_death_scores_units_minus_the_penalty_and_is_not_auto_worst() -> None:
+    """Task 4.2c (v4): a death where rf3 lives at every key scores units / B_we - 1 in the fitness
+    and never disqualifies; a death where rf3 dies at some key is not penalised."""
+    bar, base, margin, refs, fref, _ = _v3_inputs()
+    rows = {(d["world"], int(d["episode"])): d for d in base}
+    mb = pe.flag_minibatches(pe.load_training(TRAINING))[1]
+    clean = pe.score_member_v4([rows[k] for k in mb], bar, margin, refs, fref)
+    live = next(k for k in mb if k not in fref.dead)
+    died = pe.score_member_v4([{**rows[k], "dead": "true"} if k == live else rows[k] for k in mb],
+                              bar, margin, refs, fref)
+    assert not died.disqualified and died.reasons == (f"{live[0]}:{live[1]}:death-penalised",)
+    assert died.fitness == pytest.approx(clean.fitness - 1.0 / len(mb))
+    # ranked by fitness: a dying member above a worse living one keeps its rank
+    from tokenomics.train.order_es import centered_ranks
+
+    worse = clean.fitness - 2.0 / len(mb)
+    r = centered_ranks([died.fitness, worse, clean.fitness], [False, False, False])
+    assert list(np.argsort(r)) == [1, 0, 2]
+    (dead_we,) = sorted(fref.dead)
+    one = pe.score_member_v4([{**rows[dead_we], "dead": "true"}], bar, margin, refs, fref)
+    assert not one.disqualified and one.fitness == pytest.approx(
+        float(rows[dead_we]["units"]) / bar[dead_we].bar)
+    # v3 still disqualifies the same death (the recorded rule, unchanged)
+    assert pe.score_member_v3([{**rows[k], "dead": "true"} if k == live else rows[k] for k in mb],
+                              bar, margin, refs, fref).disqualified
+
