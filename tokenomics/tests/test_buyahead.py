@@ -247,7 +247,11 @@ def test_rf_registered_entries() -> None:
     assert parts == {"entity_planner_buyahead_k4_rf": (4, (True, True, True)),
                      "entity_planner_buyahead_k4_rf1": (4, (True, False, False)),
                      "entity_planner_buyahead_k4_rf12": (4, (True, True, False)),
-                     "entity_planner_buyahead_k4_rf3": (4, (False, False, True))}
+                     "entity_planner_buyahead_k4_rf3": (4, (False, False, True)),
+                     "entity_planner_buyahead_k4_rf4": (4, (False, False, True))}
+    assert hasattr(b.EXTRA_PRODUCING["entity_planner_buyahead_k4_rf4"], "upgrades_blocked")
+    assert not any(hasattr(b.EXTRA_PRODUCING[n], "upgrades_blocked")
+                   for n in ("entity_planner_buyahead_k4_rf3", "entity_planner_buyahead_k4"))
 
 
 def _actions(policy, world: str, episode_index: int, horizon: int = 40) -> list[bytes]:
@@ -346,3 +350,64 @@ def test_rf3_buys_as_k4_and_only_expands_earlier() -> None:
         early = view.globals.inventory_headroom < short
         assert rf3.do_inventory_expansion == (k4.do_inventory_expansion or early), limit
     assert b.EXTRA_PRODUCING["entity_planner_buyahead_k4_rf3"].rf_parts == (False, False, True)
+
+
+# --- M5 task 4.2f: rf4 = rf3 + the sustainable-upgrade cap (DIAGNOSTICS 29) ---
+
+def _cap_view(degradation: int, mx: int, upgrade: int, restore: int):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(capacity_rows=[SimpleNamespace(
+        degradation=degradation, max=mx, upgrade_effect=upgrade, restore_effect=restore)])
+
+
+def test_the_cap_blocks_an_over_ceiling_upgrade_and_allows_an_under_ceiling_one() -> None:
+    # 12-0016's p0_0 (6%, restore 16, upgrade 8): at max 263 the view shows ceil(15.78) = 16, and
+    # 271 would degrade ceil(16.26) = 17 > 16 -> blocked; at max 200 (12 -> 13) allowed
+    assert b.over_sustainable_max(_cap_view(16, 263, 8, 16))
+    assert not b.over_sustainable_max(_cap_view(12, 200, 8, 16))
+    assert not b.over_sustainable_max(_cap_view(16, 266, 0, 16))  # no upgrade on the type
+    # a type the restoration does not target gets no cap (supervisor decision, notes/4.2f.md)
+    assert not b.over_sustainable_max(_cap_view(40, 300, 8, 0))
+
+
+@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(ORDERER)), reason="records absent")
+def test_rf4_equals_rf3_where_no_over_ceiling_upgrade_happens(monkeypatch) -> None:
+    calls = []
+    real = b.over_sustainable_max
+    monkeypatch.setattr(b, "over_sustainable_max", lambda v: calls.append(real(v)) or calls[-1])
+    rf3 = b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False)
+    rf4 = b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False,
+                                                 upgrade_cap=True)
+    a4 = _actions(rf4, "ws-atlas-v1-12-0111", 0)
+    assert not any(calls)  # no over-ceiling upgrade wanted on this episode
+    assert a4 == _actions(rf3, "ws-atlas-v1-12-0111", 0)
+
+
+@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(ORDERER)), reason="records absent")
+def test_rf4_first_departs_from_rf3_at_its_first_blocked_upgrade(monkeypatch) -> None:
+    """On an episode with over-ceiling upgrades (atlas 12-0121, horizon 40) rf4's actions equal
+    rf3's up to the first decision it blocks, and that decision differs."""
+    real = b.over_sustainable_max
+    rf4 = b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False,
+                                                 upgrade_cap=True)
+    seen = {"n": 0, "first": None}
+
+    def counting(e, agent):
+        seen["n"] += 1
+        return rf4(e, agent)
+
+    def over(v):
+        hit = real(v)
+        if hit and seen["first"] is None:
+            seen["first"] = seen["n"] - 1
+        return hit
+
+    monkeypatch.setattr(b, "over_sustainable_max", over)
+    a4 = _actions(counting, "ws-atlas-v1-12-0121", 0)
+    a3 = _actions(b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False),
+                  "ws-atlas-v1-12-0121", 0)
+    first = seen["first"]
+    assert first is not None
+    assert a4[:first] == a3[:first] and a4[first] != a3[first]
+

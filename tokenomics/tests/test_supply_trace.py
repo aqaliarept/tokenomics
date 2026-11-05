@@ -356,7 +356,8 @@ def test_task_722_cells_are_added_and_existing_cells_unchanged(tmp_path: Path) -
     for r in rows:
         old = ref[(r["world"], r["episode"], r["subject"], r["replicate"])]
         assert {c: r[c] for c in old} == old
-        assert set(r) - set(old) == {st.LATE_HB, st.PCX_CELL}
+        assert set(r) - set(old) == {st.LATE_HB, st.PCX_CELL, st.UPGRADES_BLOCKED}
+        assert r[st.UPGRADES_BLOCKED] == ""  # M5 4.2f: k4 has no cap
         assert 0 <= float(r[st.LATE_HB]) <= float(r["st_b2_late"])
         x = json.loads(r[st.PCX_CELL])
         assert [q[:2] for q in x] == [q[:2] for q in json.loads(r[st.PC_CELL])]

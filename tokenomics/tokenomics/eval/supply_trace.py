@@ -201,7 +201,10 @@ PCX_CELL = "st_producer_cycles_x"
 ST_COLUMNS = (*(f"st_{k}" for k in CLASSES), *(f"st_reason_{r}" for r in LOSS_REASONS),
               "st_lost_consumer_total", *(f"st_{k}" for k in CHECK_COUNTERS + INFO_COUNTERS),
               PC_CELL, LATE_HB, PCX_CELL)
-COLUMNS = EPISODE_COLUMNS + ("arm",) + ST_COLUMNS
+# M5 task 4.2f: upgrades a capped producer (rf4) blocked in the episode; "" for producers without
+# a cap (every earlier arm)
+UPGRADES_BLOCKED = "upgrades_blocked"
+COLUMNS = EPISODE_COLUMNS + ("arm",) + ST_COLUMNS + (UPGRADES_BLOCKED,)
 _INV_KIND = {InvestmentType.RESTORATION: "restoration", InvestmentType.UPGRADE: "upgrade",
              InvestmentType.INVENTORY_EXPANSION: "expansion"}
 
@@ -496,6 +499,8 @@ def run_supply_job(job: Job) -> dict[str, str]:
         row.update(trace_cells(tracer))
         row["arm"] = job["arm"]
         row.update(observer.cells())
+        counts = getattr(prod, "upgrades_blocked", None)
+        row[UPGRADES_BLOCKED] = "" if counts is None else str(counts.get(env.system, 0))
         return row
     except Exception as exc:  # noqa: BLE001 - recorded as the job's failure, never fatal
         return job_failure(job, exc).to_dict()

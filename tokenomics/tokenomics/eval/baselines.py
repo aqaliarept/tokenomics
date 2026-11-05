@@ -413,17 +413,37 @@ def plan_reservations_first(view: ProducerEntityView, *, ahead_cycles: float, ma
                                  do_inventory_expansion=expand, replenishments=order)
 
 
+def over_sustainable_max(view: ProducerEntityView) -> bool:
+    """M5 task 4.2f (DIAGNOSTICS 29, the upgrade trap): the upgraded type's degradation after the
+    upgrade would exceed what one restoration returns. Degradation is a percentage of max; the view
+    holds this cycle's ceil(d% x max / 100), so the post-upgrade degradation is estimated as
+    ceil(degradation x (max + upgrade_effect) / max), never below the exact value (supervisor
+    decision: view only). A type the restoration does not target (restore_effect 0) gets no cap
+    (supervisor decision: degradation stays proportional to max, so an upgrade barely changes its
+    time to zero). Both in notes/4.2f.md."""
+    for r in view.capacity_rows:
+        if r.upgrade_effect > 0 and r.restore_effect > 0 and r.max > 0:
+            if math.ceil(r.degradation * (r.max + r.upgrade_effect) / r.max) > r.restore_effect:
+                return True
+    return False
+
+
 def producing_entity_planner_buyahead_rf(ahead_cycles: float = 4, *, blocked_first: bool = True,
                                          keep_room: bool = True,
-                                         expand_early: bool = True) -> Policy:
+                                         expand_early: bool = True,
+                                         upgrade_cap: bool = False) -> Policy:
     """`entity_planner_buyahead` at k plus "reservations first" (task 7.22). The kept room R is
     the ceiling of an EMA (alpha `RF_ALPHA`) of this producer's past cycles' total blocked
     shortfall, kept per (system, producer) in the policy and read before the current cycle's value
     enters it (agent-local, past cycles only; ADR-0058). The state is keyed by the `System` object
     itself (weakly), never by its address: a new episode always starts at R = 0, whatever ran
     earlier in the process (review m4-orderer-7-22); a cycle counter below the stored one (the
-    same system replayed) also restarts it."""
+    same system replayed) also restarts it. `upgrade_cap` (M5 task 4.2f, rf4): an upgrade the plan
+    chose is dropped when `over_sustainable_max(view)`; the rest of the command is unchanged (the
+    budget is not re-spent, as the EXP-0083 diagnostic's veto). Blocked upgrades are counted per
+    system in `policy.upgrades_blocked`."""
     state: "weakref.WeakKeyDictionary[object, dict]" = weakref.WeakKeyDictionary()
+    blocked: "weakref.WeakKeyDictionary[object, int]" = weakref.WeakKeyDictionary()
 
     def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
         _, pid = env._role[agent]
@@ -441,6 +461,9 @@ def producing_entity_planner_buyahead_rf(ahead_cycles: float = 4, *, blocked_fir
             inventory_expansion_increases=mechanics.inventory_expansion_increases,
             inventory_expansion_cost=mechanics.inventory_expansion_cost,
             blocked_first=blocked_first, keep_room=keep_room, expand_early=expand_early)
+        if upgrade_cap and cmd.do_upgrade and over_sustainable_max(view):
+            cmd = replace(cmd, do_upgrade=False)
+            blocked[env.system] = blocked.get(env.system, 0) + 1
         if cycle != last_cycle:
             per_system[pid] = (cycle, RF_ALPHA * sum(blocked_shortfall(view).values())
                                + (1.0 - RF_ALPHA) * ema)
@@ -449,6 +472,8 @@ def producing_entity_planner_buyahead_rf(ahead_cycles: float = 4, *, blocked_fir
     policy.ahead_cycles = ahead_cycles  # type: ignore[attr-defined]
     policy.rf_parts = (blocked_first, keep_room, expand_early)  # type: ignore[attr-defined]
     policy.rf_state = state  # type: ignore[attr-defined]  (for tests)
+    if upgrade_cap:
+        policy.upgrades_blocked = blocked  # type: ignore[attr-defined]
     return policy
 
 
@@ -630,6 +655,9 @@ EXTRA_PRODUCING: dict[str, Policy] = {
     # is k = 4's exactly
     "entity_planner_buyahead_k4_rf3": producing_entity_planner_buyahead_rf(
         4, blocked_first=False, keep_room=False),
+    # M5 task 4.2f: rf3 + never upgrade past the sustainable max (DIAGNOSTICS 29)
+    "entity_planner_buyahead_k4_rf4": producing_entity_planner_buyahead_rf(
+        4, blocked_first=False, keep_room=False, upgrade_cap=True),
 }
 
 
