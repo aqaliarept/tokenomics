@@ -1080,6 +1080,11 @@ train 12-0016 / 12-0004 are entry 29's **upgrade trap**, not draw noise and not 
 - So the probe's death clause was measuring the base's flaw. The response is a base rule (entry 29), the
   user's decision; the scoring is unchanged.
 
+**Resolution (EXP-0086, v6 on the final producer k5_rf5, 2026-11-05):** a fresh probe reads **`signal`**, cosine
+0.967 (σ) / 0.947 (2σ), with 0 member deaths and ≤ 2 / 24 disqualified per minibatch. The `no_signal` readings
+of EXP-0081..0083 were caused by the base's upgrade trap (entry 29, fixed in rf4 / rf5) and the any-episode
+rule (fixed by v3's flag-count rule), not by the landscape.
+
 ## 26. A pod bills idle while a local step runs between two pod steps
 
 **Problem (plain English):** a run split into two steps on one pod (e.g. bar, then probe) puts a

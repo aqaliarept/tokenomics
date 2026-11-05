@@ -11,3 +11,4 @@
 | 2026-11-05 | EXP-0089 (PF-4, rf5 vs rf3 + horizon 200) | `ue32ajv4vbi8fn` (pip network error, removed) + `wzd7ompcmzwnnv`, secure 8 vCPU, EUR-IS-1, 21:21–21:27 UTC | 6 | ≈ 0.7 | ≈ 4.9 / 80 |
 | 2026-11-05 | EXP-0088 (PF-5, buffer re-sweep on rf5) | `zddpeuez441r8d`, secure 8 vCPU, EUR-IS-1, 21:31–21:40 UTC | 4 | ≈ 1.2 | ≈ 6.1 / 80 |
 | 2026-11-05 | EXP-0090 (R-2, L1 on k5_rf5) | `4krsd6lgs828tu`, secure 16 vCPU, EUR-IS-1, 21:49–21:52 UTC | 3 | ≈ 0.9 | ≈ 7.0 / 80 |
+| 2026-11-05 | EXP-0086 (R-3, L2 probe on k5_rf5, v6) | `50fps99ilp6z46`, secure 16 vCPU, EUR-IS-1, 21:59–22:04 UTC | 4 | ≈ 1.3 | ≈ 8.3 / 80 |

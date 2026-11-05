@@ -171,8 +171,9 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   (reported); flag-count calibration (L1's criterion: ≤ 5% of re-keyed minibatches). ≈ 1.5, stop 3. Then,
   locally with no pod up, fill and freeze v6.
   - Done 2026-11-05 (EXP-0090): L1 passes (128 / 128, 2 / 2, 0 deaths, T = 5/3 at 3.35%); v6 frozen `5cd0e302…`; residual-base guard added (R-1 review). ≈ 0.9 vCPU-h, M5-P ≈ 7.0 / 80.
-- [ ] R-3 [experiment][remote:cpu16] EXP-0086: the L2 probe on k5_rf5 under v6 (fresh rows). `signal` /
+- [x] R-3 [experiment][remote:cpu16] EXP-0086: the L2 probe on k5_rf5 under v6 (fresh rows). `signal` /
   `weak` → the L3 pilot (stop 14); else stop. ≈ 2, stop 4.
+  - Done 2026-11-05 (EXP-0086): **`signal`** (0.967 / 0.947), step `heterogeneity` (pilot at σ); 0 member deaths. Pilot (5.1) licensed. ≈ 1.3 vCPU-h, M5-P ≈ 8.3 / 80.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
 - [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to
