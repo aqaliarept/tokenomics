@@ -192,9 +192,15 @@ PC_FIELDS = ("cycle", "producer", "capacity_ratio", "input_stock_units", "inboun
              "replenishment_units_placed", "replenishment_units_delivered",
              "replenishment_units_rejected")
 PC_CELL = "st_producer_cycles"
+# task 7.22: added cells only (every earlier cell stays byte-identical): the late units whose
+# missing input's shortfall left after its first command following the acceptance exceeded
+# the inventory headroom, and a second per-producer-cycle cell (headroom, inventory expansions).
+LATE_HB = "st_b2_late_headroom_blocked"
+PCX_FIELDS = ("headroom", "expansion_placed", "expansion_completed", "expansion_rejected")
+PCX_CELL = "st_producer_cycles_x"
 ST_COLUMNS = (*(f"st_{k}" for k in CLASSES), *(f"st_reason_{r}" for r in LOSS_REASONS),
               "st_lost_consumer_total", *(f"st_{k}" for k in CHECK_COUNTERS + INFO_COUNTERS),
-              PC_CELL)
+              PC_CELL, LATE_HB, PCX_CELL)
 COLUMNS = EPISODE_COLUMNS + ("arm",) + ST_COLUMNS
 _INV_KIND = {InvestmentType.RESTORATION: "restoration", InvestmentType.UPGRADE: "upgrade",
              InvestmentType.INVENTORY_EXPANSION: "expansion"}
@@ -216,6 +222,8 @@ class SupplyObserver:
         self.last: dict[object, tuple[str, str, int, int]] = {}  # reason, pid, cycle, qty
         self.accepted_at: dict[object, dict[str, int]] = defaultdict(dict)  # oid -> pid -> cycle
         self.pending: dict[object, int] = defaultdict(int)  # replenishment oid -> b2 units
+        self.pending_hb: dict[object, int] = defaultdict(int)  # ... of them headroom-blocked
+        self.pcx: dict[tuple[int, str], dict[str, float]] = {}
         self.pc: dict[tuple[int, str], dict[str, float]] = {}
         self.decl: dict[object, list[str]] = defaultdict(list)
         self.system: object | None = None
@@ -259,7 +267,9 @@ class SupplyObserver:
             free = {t: max(0, v - reserved.get(t, 0)) for t, v in p.capacities.items()}
             state[pid] = {"caps": dict(p.capacities), "max": dict(p.max_capacities),
                           "free": free, "inv": dict(p.inventory), "outage": pid in outages,
-                          "make": {x: makeable_qty_now(p, x) for x in p.produces}}
+                          "make": {x: makeable_qty_now(p, x) for x in p.produces},
+                          "headroom": p.headroom(), "inbound": dict(p.outstanding_inbound)}
+            self._pcx(c, pid)["headroom"] = float(p.headroom())
             cap, mx = sum(p.capacities.values()), sum(p.max_capacities.values())
             self._pc(c, pid).update({
                 "capacity_ratio": cap / mx if mx else 0.0,
@@ -282,8 +292,16 @@ class SupplyObserver:
                     self._pc(c, pid)["replenishment_units_placed"] += order.quantity
                 elif itype in ("restoration", "upgrade"):
                     self._pc(c, pid)[f"{itype}_placed"] += 1
+                elif itype == "expansion":
+                    self._pcx(c, pid)["expansion_placed"] += 1
             if pid is not None and order.funded and order.cycle_counter == 0:
                 self._pc(c, pid)["fund_granted"] += float(order.tokens)  # as the tracer reads it
+
+    def _pcx(self, c: int, pid: str) -> dict[str, float]:
+        row = self.pcx.get((c, pid))
+        if row is None:
+            row = self.pcx[(c, pid)] = defaultdict(float)
+        return row
 
     def _pc(self, c: int, pid: str) -> dict[str, float]:
         row = self.pc.get((c, pid))
@@ -320,11 +338,18 @@ class SupplyObserver:
                 key = "delivered" if r.completed else "rejected"
                 self._pc(c, info["pid"])[f"replenishment_units_{key}"] += r.quantity
                 units = self.pending.pop(r.order_id, 0)
+                flagged = self.pending_hb.pop(r.order_id, 0)
                 if units:
-                    self.units[self._b2_fate(info)] += units
+                    fate = self._b2_fate(info)
+                    self.units[fate] += units
+                    if fate == "b2_late":
+                        self.units[LATE_HB] += flagged
             elif r.order_kind == "investment" and info["itype"] in ("restoration", "upgrade"):
                 key = "completed" if r.completed else "rejected"
                 self._pc(c, info["pid"])[f"{info['itype']}_{key}"] += 1
+            elif r.order_kind == "investment" and info["itype"] == "expansion":
+                key = "completed" if r.completed else "rejected"
+                self._pcx(c, info["pid"])[f"expansion_{key}"] += 1
             elif r.order_kind == "consumer" and not r.completed:
                 lost = r.quantity - r.completed_qty
                 if lost <= 0:
@@ -404,11 +429,22 @@ class SupplyObserver:
             return B1
         repl_oid = per[0][1]
         r = self.orders[repl_oid]
+        # task 7.22: headroom-blocked = at its first command after accepting the bid (cycle
+        # start + 1; the snapshot follows that cycle's commands), part of the missing input's
+        # shortfall was still not ordered and exceeded the headroom left
+        g0 = next(g for g, (k, _) in zip(missing, per) if k == "b2")
+        s0 = self.hist.get(min(start + 1, at), {}).get(pid)
+        blocked = s0 is not None and (
+            0 < need[g0] - s0["inv"].get(g0, 0) - s0["inbound"].get(g0, 0) > s0["headroom"])
         if r["resolved"] is None:  # still in flight: its fate decides the sub-cause
             self.pending[repl_oid] += lost
+            self.pending_hb[repl_oid] += lost if blocked else 0
             return None
         if r["completed"]:
-            return "b2_late" if r["resolved"] >= at else "b2_short"
+            late = r["resolved"] >= at
+            if late and blocked:
+                self.units[LATE_HB] += lost
+            return "b2_late" if late else "b2_short"
         return self._b2_fate(r)
 
     def cells(self) -> dict[str, str]:
@@ -422,6 +458,11 @@ class SupplyObserver:
         rows = [[c, pid, *(round(float(self.pc[(c, pid)].get(f, 0.0)), 6) for f in PC_FIELDS[2:])]
                 for c, pid in sorted(self.pc, key=lambda k: (k[0], str(k[1])))]
         out[PC_CELL] = json.dumps(rows, separators=(",", ":"))
+        out[LATE_HB] = repr(float(self.units.get(LATE_HB, 0)))
+        rows_x = [[c, pid, *(round(float(self.pcx.get((c, pid), {}).get(f, 0.0)), 6)
+                             for f in PCX_FIELDS)]
+                  for c, pid in sorted(self.pc, key=lambda k: (k[0], str(k[1])))]
+        out[PCX_CELL] = json.dumps(rows_x, separators=(",", ":"))
         return out
 
 
@@ -525,9 +566,12 @@ def supply_reading(dicts: Sequence[Mapping[str, str]], sizes: Sequence[int]) -> 
 def producer_cycle_rows(dicts: Sequence[Mapping[str, str]]) -> list[dict]:
     out = []
     for d in dicts:
+        extra = {(r[0], r[1]): r[2:] for r in json.loads(d.get(PCX_CELL) or "[]")}
         for rec in json.loads(d[PC_CELL]):
+            x = extra.get((rec[0], rec[1]))
             out.append({"world": d["world"], "episode": d["episode"], "arm": d.get("arm"),
-                        "replicate": d["replicate"], **dict(zip(PC_FIELDS, rec))})
+                        "replicate": d["replicate"], **dict(zip(PC_FIELDS, rec)),
+                        **(dict(zip(PCX_FIELDS, x)) if x is not None else {})})
     return out
 
 
@@ -768,7 +812,8 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     else:
         reading.update({"status": "valid", "readings_withheld": False})
     write_csv(out / "supply_trace.csv", EPISODE_TABLE_COLUMNS, episode_rows(dicts))
-    write_csv(out / "producer_cycles.csv", ("world", "episode", "arm", "replicate", *PC_FIELDS),
+    write_csv(out / "producer_cycles.csv", ("world", "episode", "arm", "replicate", *PC_FIELDS,
+                                            *PCX_FIELDS),
               producer_cycle_rows(dicts))
     (out / "reading.json").write_text(json.dumps(reading, indent=2, sort_keys=True,
                                                  default=str) + "\n")

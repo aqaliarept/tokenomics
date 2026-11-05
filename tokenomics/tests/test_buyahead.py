@@ -146,8 +146,183 @@ def test_supply_observer_runs_with_buyahead(tmp_path: Path) -> None:
                             exp0057_episodes="e.csv", dry_run=True)
 
 
-def test_registered_k_values() -> None:
+def test_registered_k_values() -> None:  # buy-ahead entries without the rf parts
     """Task 7.20: the registered buy-ahead producers and their k."""
-    assert {n: p.ahead_cycles for n, p in b.EXTRA_PRODUCING.items()} == {
+    assert {n: p.ahead_cycles for n, p in b.EXTRA_PRODUCING.items()
+            if not hasattr(p, "rf_parts")} == {
         "entity_planner_buyahead": 1, "entity_planner_buyahead_k2": 2,
         "entity_planner_buyahead_k3": 3, "entity_planner_buyahead_k4": 4}
+
+
+# --- task 7.22: "reservations first" on top of k = 4 ---
+
+GADGET = ProcessSheet("gadget", {"a": 1}, {"rare": 1})
+RARE = ProcessSheet("rare", {"u": 1})
+
+
+def _rf_view(limit: int, reserved_gadgets: int, good_per_cycle: int = 8):
+    """P makes `good` (2 raw) and `gadget` (1 rare); it recently completed `good_per_cycle`
+    goods a cycle (raw use 2x that) and holds a reservation for `reserved_gadgets` gadgets that
+    still lacks its rare inputs (blocked shortfall = reserved_gadgets)."""
+    from tokenomics.domain.producing_agent import Bid, _Reservation
+
+    cfg = ProducingAgentConfig(id="P", capacities={"a": 50}, degradation=0,
+                               restoration=Restoration("raw", 1, "a"),
+                               upgrade=Upgrade("raw", 1, "a"),
+                               produces=frozenset({"good", "gadget"}), inventory_limit=limit)
+    p = ProducingAgent(cfg, {"good": GOOD, "gadget": GADGET})
+    if reserved_gadgets:
+        p.reservations = [_Reservation(Bid(capacities={"a": reserved_gadgets}, tokens=10,
+                                           order_id=1, product="gadget",
+                                           inputs={"rare": reserved_gadgets},
+                                           quantity=reserved_gadgets))]
+    tel = EconomyTelemetry()
+    for c in range(40):
+        tel.record_completed("P", "good", good_per_cycle, c, c)
+        tel.end_cycle()
+    sheets = {"good": GOOD, "gadget": GADGET, "raw": RAW, "rare": RARE}
+    return build_producer_entity_view(p, tel, sheets, {})
+
+
+def _rf(view, **kw) -> object:
+    args = dict(ahead_cycles=4, max_replenish=100, replenish_cost_per_unit=None,
+                funding_budget=None, kept_room=0, inventory_expansion_increases=0,
+                inventory_expansion_cost=0)
+    args.update(kw)
+    return b.plan_reservations_first(view, **args)
+
+
+def test_rf_blocked_shortfall_gets_headroom_first() -> None:
+    view = _rf_view(limit=6, reserved_gadgets=4)
+    assert b.blocked_shortfall(view) == {"raw": 0, "rare": 4}
+    cmd = _rf(view)
+    assert cmd.replenishments.get("rare") == 4  # the reservation's input first
+    assert sum(cmd.replenishments.values()) <= 6  # within headroom
+    off = _rf(view, blocked_first=False, keep_room=False, expand_early=False)
+    k4 = plan_producer_command(b.buyahead_view(view, 4), max_replenish=100,
+                               scores=b.score_producer_entity_view(view))
+    assert off == k4  # all parts off: buy-ahead k = 4 exactly
+
+
+def test_rf_keeps_room_from_the_k_term_only() -> None:
+    view = _rf_view(limit=10, reserved_gadgets=0)  # base target 3 each; raw's k-term far above
+    assert _rf(view, kept_room=0).replenishments == {"raw": 7, "rare": 3}  # 6 base + 4 k-term
+    assert _rf(view, kept_room=3).replenishments == {"raw": 4, "rare": 3}  # k-term 10 - 6 - 3
+    assert _rf(view, kept_room=9).replenishments == {"raw": 3, "rare": 3}  # base kept in full
+
+
+def test_rf_expands_when_headroom_is_below_the_blocked_shortfall() -> None:
+    view = _rf_view(limit=2, reserved_gadgets=4)  # headroom 2 < shortfall 4, headroom > 0
+    assert view.globals.inventory_headroom == 2
+    kw = dict(inventory_expansion_increases=10, inventory_expansion_cost=0)
+    assert _rf(view, **kw).do_inventory_expansion
+    assert not _rf(view, expand_early=False, **kw).do_inventory_expansion  # planner: only at 0
+    assert not _rf(view, inventory_expansion_increases=0).do_inventory_expansion
+
+
+def test_rf_all_parts_off_is_k4_on_an_episode() -> None:
+    env_a = TokenomicsAECEnv(config=load_config(COMPOSITE), horizon=15)
+    env_b = TokenomicsAECEnv(config=load_config(COMPOSITE), horizon=15)
+    k4 = b.EXTRA_PRODUCING["entity_planner_buyahead_k4"]
+    off = b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False,
+                                                 expand_early=False)
+    for env in (env_a, env_b):
+        env.reset(seed=0)
+    for agent in env_a.agent_iter():
+        _, _, term, trunc, _ = env_a.last()
+        if term or trunc:
+            act_a = act_b = None
+        elif env_a._role[agent][0] == "producing":
+            act_a, act_b = k4(env_a, agent), off(env_b, agent)
+            assert np.array_equal(act_a, act_b)
+        else:
+            act_a = act_b = b.ordering_even_split(env_a, agent)
+        env_a.step(act_a)
+        env_b.step(act_b)
+
+
+def test_rf_registered_entries() -> None:
+    parts = {n: (p.ahead_cycles, p.rf_parts) for n, p in b.EXTRA_PRODUCING.items()
+             if hasattr(p, "rf_parts")}
+    assert parts == {"entity_planner_buyahead_k4_rf": (4, (True, True, True)),
+                     "entity_planner_buyahead_k4_rf1": (4, (True, False, False)),
+                     "entity_planner_buyahead_k4_rf12": (4, (True, True, False))}
+
+
+def _actions(policy, world: str, episode_index: int, horizon: int = 40) -> list[bytes]:
+    """The policy's producing actions over one EXP-0057-path episode (MWWk r0) of `world`."""
+    from tokenomics.eval.decoder_check import (MWWK, decoder_arm, decoder_policies,
+                                               job_draw_key, select_views, world_entry)
+    from tokenomics.eval.joint_stack import joint_stack_env
+    from tokenomics.eval.roster import DEFAULT_ROSTER, load_roster
+    from tokenomics.eval.routing_audit import build_jobs, job_config
+    from tokenomics.eval.routing_diagnostics import set_draw_key
+    from tokenomics.eval.runner import run_episode
+    from tokenomics.eval.teacher_audit import load_atlas
+
+    view = select_views(load_atlas(ATLAS_V2), [world])[0]
+    arm = decoder_arm(MWWK, load_roster(DEFAULT_ROSTER))
+    job = [j for j in build_jobs([world_entry(view)], [arm], 1, horizon, None, {})
+           if j["replicate"] == 0][episode_index]
+    env = joint_stack_env(job_config(job), horizon)
+    set_draw_key(env, job_draw_key(job))
+    seen: list[bytes] = []
+
+    def recording(e, agent):
+        a = policy(e, agent)
+        seen.append(np.asarray(a).tobytes())
+        return a
+
+    run_episode(env, recording, decoder_policies(job)[1], seed=job["episode"],
+                action_seed=job["action_seed"])
+    return seen
+
+
+@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(ORDERER)), reason="records absent")
+def test_rf_state_does_not_carry_across_episodes() -> None:
+    """Review m4-orderer-7-22: two episodes run back to back through one rf policy object give the
+    same actions as each run through a fresh one, and a finished episode leaves no state."""
+    import gc
+
+    shared = b.producing_entity_planner_buyahead_rf(4)
+    first = _actions(shared, "ws-atlas-v1-12-0111", 0)
+    second = _actions(shared, "ws-atlas-v1-12-0254", 0)
+    third = _actions(shared, "ws-atlas-v1-12-0111", 0)  # the first world again, after two others
+    assert first == _actions(b.producing_entity_planner_buyahead_rf(4), "ws-atlas-v1-12-0111", 0)
+    assert second == _actions(b.producing_entity_planner_buyahead_rf(4), "ws-atlas-v1-12-0254", 0)
+    assert third == first
+    gc.collect()
+    assert len(shared.rf_state) == 0  # weak keys: no system outlives its episode
+
+
+def test_rf_state_restarts_when_the_cycle_counter_goes_back() -> None:
+    from types import SimpleNamespace
+
+    policy = b.producing_entity_planner_buyahead_rf(4)
+    view = _rf_view(limit=2, reserved_gadgets=4)  # blocked shortfall 4 every cycle
+    class FakeSystem:  # weak-referenceable, like System
+        cycle_counter = 0
+        investment_fund = 0
+
+        def producer_entity_view(self, pid: str) -> object:
+            return view
+
+    system = FakeSystem()
+    mech = SimpleNamespace(replenish_cost_per_unit=None, inventory_expansion_increases=0,
+                           inventory_expansion_cost=0)
+    env = SimpleNamespace(_role={"a": ("producing", "P")}, system=system,
+                          spec_=SimpleNamespace(producer_mechanics={"P": mech},
+                                                max_replenish={"P": 100}))
+    import tokenomics.eval.baselines as bl
+    orig = bl._action_from_producing_command
+    bl._action_from_producing_command = lambda spec, pid, cmd: np.zeros(1)
+    try:
+        for c in range(1, 6):
+            system.cycle_counter = c
+            policy(env, "a")
+        assert policy.rf_state[system]["P"][1] > 0
+        system.cycle_counter = 1  # replayed from the start
+        policy(env, "a")
+        assert policy.rf_state[system]["P"] == (1, b.RF_ALPHA * 4)
+    finally:
+        bl._action_from_producing_command = orig

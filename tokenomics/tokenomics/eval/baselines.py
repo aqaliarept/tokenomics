@@ -20,6 +20,7 @@ import numpy as np
 
 from ..domain.common import is_nan
 import math
+import weakref
 from dataclasses import replace
 
 from ..domain.producer_planner import (
@@ -320,6 +321,129 @@ def producing_entity_planner_buyahead(ahead_cycles: float = BUYAHEAD_K) -> Polic
     return policy
 
 
+RF_ALPHA = 0.3  # task 7.22: EMA weight of the kept-room estimate (the telemetry's alpha)
+
+
+def _with_inbound(view: ProducerEntityView, extra: dict, headroom: int) -> ProducerEntityView:
+    """`view` with `extra` units counted as already inbound and `headroom` left (so a planner
+    pass plans on top of what earlier passes ordered). A new view; the domain's may be cached."""
+    rows = [replace(r, outstanding_inbound=r.outstanding_inbound + extra.get(r.input_product, 0))
+            for r in view.input_rows]
+    return replace(view, input_rows=rows,
+                   globals=replace(view.globals, inventory_headroom=max(0, headroom)))
+
+
+def blocked_shortfall(view: ProducerEntityView) -> dict:
+    """Per input: units its live reservations still need beyond stock and inbound."""
+    return {r.input_product: max(0, r.blocked_reservation_qty - r.inventory - r.outstanding_inbound)
+            for r in view.input_rows}
+
+
+def plan_reservations_first(view: ProducerEntityView, *, ahead_cycles: float, max_replenish: int,
+                            replenish_cost_per_unit, funding_budget, kept_room: int,
+                            inventory_expansion_increases: int, inventory_expansion_cost,
+                            blocked_first: bool = True, keep_room: bool = True,
+                            expand_early: bool = True) -> ProducingAgentCommand:
+    """"Reservations first" (add-m4-orderer-redesign task 7.22, notes/7.22.md) on top of buy-ahead:
+    (1) the cycle's headroom and per-input ceiling go first to inputs live reservations still lack
+    (`blocked_shortfall`, by input value); (2) the buy-ahead k-term may not use the last
+    `kept_room` units of headroom; (3) an inventory expansion is also requested when headroom is
+    below the total blocked shortfall. Restoration, upgrade and the input priority are the
+    buy-ahead planner's. With (1)-(3) off this is `producing_entity_planner_buyahead` exactly."""
+    scores = score_producer_entity_view(view, input_stock_target=DEFAULT_INPUT_STOCK_TARGET)
+    kw = dict(max_replenish=max_replenish, replenish_cost_per_unit=replenish_cost_per_unit,
+              funding_budget=funding_budget, scores=scores,
+              inventory_expansion_increases=inventory_expansion_increases,
+              inventory_expansion_cost=inventory_expansion_cost)
+    base = plan_producer_command(buyahead_view(view, ahead_cycles), **kw)
+    if not (blocked_first or keep_room or expand_early):
+        return base
+    # the buy-ahead planner's own replenishment budget: headroom, capped by the fund after the
+    # restoration it chose (its own order of spending)
+    restore_cost = next((int(r.restore_cost) for r in view.capacity_rows if r.restore_cost > 0), 0)
+    budget = None if funding_budget is None else float(max(0, funding_budget))
+    if budget is not None and base.do_restoration:
+        budget -= max(0, restore_cost)
+    room = max(0, view.globals.inventory_headroom)
+    if budget is not None and replenish_cost_per_unit:
+        room = min(room, int(budget // float(replenish_cost_per_unit)))
+    short = blocked_shortfall(view)
+    order: dict = {}
+    if blocked_first:  # (1)
+        for g in sorted((g for g, q in short.items() if q > 0),
+                        key=lambda g: (-scores.input_value.get(g, 0.0), str(g))):
+            q = min(short[g], max_replenish, room)
+            if q > 0:
+                order[g] = q
+                room -= q
+    plain = dict(kw, scores=scores, funding_budget=None, replenish_cost_per_unit=None)
+    # entity_planner's own target on top of (1), then the k-term on top of both, minus kept room
+    step2 = plan_producer_command(_with_inbound(view, order, room), **plain).replenishments
+    for g, q in step2.items():
+        order[g] = order.get(g, 0) + q
+    room -= sum(step2.values())
+    reserve = kept_room if keep_room else 0
+    step3 = plan_producer_command(
+        buyahead_view(_with_inbound(view, order, room - reserve), ahead_cycles),
+        **plain).replenishments
+    for g, q in step3.items():
+        order[g] = order.get(g, 0) + q
+    order = {g: min(q, max_replenish) for g, q in order.items() if q > 0}
+    # upgrade and expansion as the planner spends: after restoration and replenishment
+    if budget is not None and replenish_cost_per_unit:
+        budget -= sum(order.values()) * float(replenish_cost_per_unit)
+    upgrade_cost = next((int(r.upgrade_cost) for r in view.capacity_rows if r.upgrade_cost > 0), 0)
+    upgrade = base.do_upgrade and (budget is None or upgrade_cost <= 0 or budget >= upgrade_cost)
+    if upgrade and budget is not None:
+        budget -= max(0, upgrade_cost)
+    expand = base.do_inventory_expansion
+    if (expand_early and not expand and view.globals.active_investments[2] == 0.0
+            and inventory_expansion_increases > 0
+            and view.globals.inventory_headroom < sum(short.values())):  # (3)
+        expand = budget is None or inventory_expansion_cost <= 0 or budget >= inventory_expansion_cost
+    return ProducingAgentCommand(do_restoration=base.do_restoration, do_upgrade=upgrade,
+                                 do_inventory_expansion=expand, replenishments=order)
+
+
+def producing_entity_planner_buyahead_rf(ahead_cycles: float = 4, *, blocked_first: bool = True,
+                                         keep_room: bool = True,
+                                         expand_early: bool = True) -> Policy:
+    """`entity_planner_buyahead` at k plus "reservations first" (task 7.22). The kept room R is
+    the ceiling of an EMA (alpha `RF_ALPHA`) of this producer's past cycles' total blocked
+    shortfall, kept per (system, producer) in the policy and read before the current cycle's value
+    enters it (agent-local, past cycles only; ADR-0058). The state is keyed by the `System` object
+    itself (weakly), never by its address: a new episode always starts at R = 0, whatever ran
+    earlier in the process (review m4-orderer-7-22); a cycle counter below the stored one (the
+    same system replayed) also restarts it."""
+    state: "weakref.WeakKeyDictionary[object, dict]" = weakref.WeakKeyDictionary()
+
+    def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        _, pid = env._role[agent]
+        mechanics = env.spec_.producer_mechanics[pid]
+        view = env.system.producer_entity_view(pid)
+        per_system = state.setdefault(env.system, {})
+        cycle = env.system.cycle_counter
+        last_cycle, ema = per_system.get(pid, (None, 0.0))
+        if last_cycle is not None and cycle < last_cycle:
+            last_cycle, ema = None, 0.0
+        cmd = plan_reservations_first(
+            view, ahead_cycles=ahead_cycles, max_replenish=env.spec_.max_replenish[pid],
+            replenish_cost_per_unit=mechanics.replenish_cost_per_unit,
+            funding_budget=env.system.investment_fund, kept_room=math.ceil(ema),
+            inventory_expansion_increases=mechanics.inventory_expansion_increases,
+            inventory_expansion_cost=mechanics.inventory_expansion_cost,
+            blocked_first=blocked_first, keep_room=keep_room, expand_early=expand_early)
+        if cycle != last_cycle:
+            per_system[pid] = (cycle, RF_ALPHA * sum(blocked_shortfall(view).values())
+                               + (1.0 - RF_ALPHA) * ema)
+        return _action_from_producing_command(env.spec_, pid, cmd)
+
+    policy.ahead_cycles = ahead_cycles  # type: ignore[attr-defined]
+    policy.rf_parts = (blocked_first, keep_room, expand_early)  # type: ignore[attr-defined]
+    policy.rf_state = state  # type: ignore[attr-defined]  (for tests)
+    return policy
+
+
 def producing_entity_planner_from_scorer(scorer, *, replenish_tie_rel_tol: float = 0.0) -> Policy:
     """Build an EXP-0010C producer policy from a local scorer closure.
 
@@ -488,6 +612,12 @@ EXTRA_PRODUCING: dict[str, Policy] = {
     "entity_planner_buyahead_k2": producing_entity_planner_buyahead(2),  # k = 2 reported
     "entity_planner_buyahead_k3": producing_entity_planner_buyahead(3),  # task 7.20: buffer sweep
     "entity_planner_buyahead_k4": producing_entity_planner_buyahead(4),
+    # task 7.22: "reservations first" on top of k = 4 (the registered rule), and its reported
+    # ablations: (1) alone, (1) + (2)
+    "entity_planner_buyahead_k4_rf": producing_entity_planner_buyahead_rf(4),
+    "entity_planner_buyahead_k4_rf1": producing_entity_planner_buyahead_rf(
+        4, keep_room=False, expand_early=False),
+    "entity_planner_buyahead_k4_rf12": producing_entity_planner_buyahead_rf(4, expand_early=False),
 }
 
 

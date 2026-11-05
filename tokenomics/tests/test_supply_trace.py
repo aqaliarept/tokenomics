@@ -333,3 +333,40 @@ def test_large_producer_cycle_cells_read_without_a_reference(tmp_path: Path,
         st.run_supply_trace(atlas_path=ATLAS_V2, out_dir=tmp_path / "o", orderer_ckpt="x",
                             shock_profile="bogus")
     assert calls == [1]
+
+
+EXP0077_K4 = REPO / "experiments/EXP-0077-buffer-sweep/entity_planner_buyahead_k4/artifacts/episodes.csv"
+
+
+@pytest.mark.skipif(not all(_lfs(p) for p in (ATLAS_V2, ORDERER, EXP0077_K4)),
+                    reason="EXP-0052 / EXP-0012 / EXP-0077 records absent")
+def test_task_722_cells_are_added_and_existing_cells_unchanged(tmp_path: Path) -> None:
+    """Task 7.22: buy-ahead k = 4 on one world at horizon 100 (6 rows): every cell EXP-0077 wrote
+    is equal; the new cells exist, the headroom-blocked late units are a part of `b2_late`, and
+    the second producer-cycle cell lines up with the first."""
+    import csv as _csv
+
+    _csv.field_size_limit(1 << 30)
+    out = tmp_path / "k4"
+    assert st.main(_args(out, "--order-ttl", "2", "--producer", "entity_planner_buyahead_k4")) == 0
+    ref = {(r["world"], r["episode"], r["subject"], r["replicate"]): r
+           for r in _csv.DictReader(EXP0077_K4.open()) if r["world"] == WORLD}
+    rows = list(_csv.DictReader((out / "episodes.csv").open()))
+    assert len(rows) == len(ref) == 6
+    for r in rows:
+        old = ref[(r["world"], r["episode"], r["subject"], r["replicate"])]
+        assert {c: r[c] for c in old} == old
+        assert set(r) - set(old) == {st.LATE_HB, st.PCX_CELL}
+        assert 0 <= float(r[st.LATE_HB]) <= float(r["st_b2_late"])
+        x = json.loads(r[st.PCX_CELL])
+        assert [q[:2] for q in x] == [q[:2] for q in json.loads(r[st.PC_CELL])]
+    pc = list(_csv.DictReader((out / "producer_cycles.csv").open()))
+    assert set(st.PCX_FIELDS) <= set(pc[0])
+
+
+@pytest.mark.skipif(not all(_lfs(p) for p in (ATLAS_V2, ORDERER)), reason="records absent")
+def test_rf_producer_runs_through_the_observer(tmp_path: Path) -> None:
+    out = tmp_path / "rf"
+    assert st.main(_args(out, "--order-ttl", "2", "--producer", "entity_planner_buyahead_k4_rf",
+                         "--horizon", "12")) == 0
+    assert (out / "contract_failures.csv").read_text().count("\n") == 1
