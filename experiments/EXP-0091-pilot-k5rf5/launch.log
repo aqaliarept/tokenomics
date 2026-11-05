@@ -1,0 +1,1057 @@
+[run_pod] verified clean source commit 2e6ec618397298a96a966121d5f2eb5013c88a21 (synced tree + launcher); injected into --train
+[run_pod] creating pod: POST /v1/pods {"name": "exp0091-x", "imageName": "runpod/base:0.7.0-ubuntu2004", "computeType": "CPU", "containerDiskInGb": 30, "volumeMountPath": "/workspace", "cloudType": "SECURE", "ports": ["22/tcp"], "vcpuCount": 16, "cpuFlavorIds": ["cpu5c"], "dataCenterIds": ["EUR-IS-1"]}
+[run_pod] created pod j67gg4q7nhwko6
+[run_pod] pod j67gg4q7nhwko6 status: RUNNING
+[run_pod] pod already running
+[run_pod] waiting for pod to become reachable (timeout 600s)...
+[run_pod] SSH up at 157.157.221.30:37982
+[run_pod] pod image runpod/base:0.7.0-ubuntu2004; exported as EXP0039_POD_IMAGE into the run
+[run_pod] syncing /srv/research/wt-exp0091/tokenomics -> 157.157.221.30:/workspace/tokenomics
+
+sent 2,330,811 bytes  received 4,574 bytes  1,556,923.33 bytes/sec
+total size is 7,392,781  speedup is 3.17
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.15.0+cpu cuda False
+[run_pod] launching detached: -u -c "import sys, runpy; from tokenomics.train.producer_es import main; P='/workspace/tokenomics/_pod_ckpts/exp0091/'; O='/workspace/tokenomics/runs/exp0091/'; r=main(['--mode','train','--training-dir',P+'training','--bar-dir',P+'bar','--margins',P+'noise_floor/margins.json','--generations','20','--opt-seed','0','--workers','16','--source-commit','2e6ec618397298a96a966121d5f2eb5013c88a21','--out-dir',O+'pilot-s0']); sys.argv=['k6_monitor.py',O+'k6_monitor','16']; runpy.run_path(P+'k6_monitor.py', run_name='__main__'); sys.exit(r)"
+[run_pod] launch ssh did not return within 60s; the job is detached (own session) — proceeding to monitor via pid/exit files
+[run_pod] launched (survives disconnect). Reattach any time: python run_pod_training.py --pod-id j67gg4q7nhwko6 --attach --remote-log /workspace/train.log --cpu
+[run_pod] mirroring remote log -> train.live.log (tail -f); status -> train.status
+[producer_es] generation 1: fitness 1.0032, disqualified 0, |grad| 9.8967
+[producer_es] generation 2: fitness 1.0260, disqualified 0, |grad| 8.7130
+[producer_es] generation 3: fitness 1.0376, disqualified 0, |grad| 8.2061
+[producer_es] generation 4: fitness 1.0538, disqualified 0, |grad| 9.2359
+[producer_es] generation 5: fitness 1.0566, disqualified 0, |grad| 8.8875
+[producer_es] generation 6: fitness 1.0149, disqualified 0, |grad| 6.6506
+[producer_es] generation 7: fitness 1.0594, disqualified 0, |grad| 7.3353
+[producer_es] generation 8: fitness 1.0783, disqualified 1, |grad| 6.3725
+[producer_es] generation 9: fitness 1.0797, disqualified 1, |grad| 7.9730
+[producer_es] generation 10: fitness 1.0867, disqualified 0, |grad| 6.7125
+[producer_es] generation 11: fitness 1.0681, disqualified 3, |grad| 9.1719
+[producer_es] generation 12: fitness 1.0865, disqualified 0, |grad| 5.8125
+[producer_es] generation 13: fitness 1.1053, disqualified 0, |grad| 5.9585
+[producer_es] generation 14: fitness 1.1316, disqualified 0, |grad| 7.8482
+[producer_es] generation 15: fitness 1.0702, disqualified 0, |grad| 3.5092
+[producer_es] generation 16: fitness 1.0841, disqualified 0, |grad| 10.4885
+[producer_es] generation 17: fitness 1.1113, disqualified 0, |grad| 7.6901
+[producer_es] generation 18: fitness 1.1033, disqualified 0, |grad| 2.9709
+[producer_es] generation 19: fitness 1.1203, disqualified 0, |grad| 5.7013
+[producer_es] generation 20: fitness 1.1058, disqualified 0, |grad| 6.3530
+[producer_es] train complete
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    self._spawn_process()
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+    prepare(preparation_data)
+    p.start()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    self._spawn_process()
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    p.start()
+    self._launch(process_obj)
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+    prep_data = spawn.get_preparation_data(process_obj._name)
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    return Popen(process_obj)
+    self._adjust_process_count()
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    raise RuntimeError('''
+    self._launch(process_obj)
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+    prepare(preparation_data)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    self._spawn_process()
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    self._adjust_process_count()
+    return Popen(process_obj)
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._spawn_process()
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+    raise RuntimeError('''
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+    prepare(preparation_data)
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 775, in play
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+    futures = [pool.submit(run_job_fn, j) for j in todo]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 822, in submit
+    self._adjust_process_count()
+    self._adjust_process_count()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 781, in _adjust_process_count
+    self._spawn_process()
+    self._spawn_process()
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+  File "/usr/lib/python3.12/concurrent/futures/process.py", line 799, in _spawn_process
+    p.start()
+    p.start()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+                  ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+  File "/usr/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+    super().__init__(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+  File "/usr/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+    self._launch(process_obj)
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+  File "/usr/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+    _check_not_importing_main()
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+  File "/usr/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/tokenomics/_pod_ckpts/exp0091/k6_monitor.py", line 19, in <module>
+    rows, failures = pe.play(out, "k6_monitor_episodes.csv", jobs, int(sys.argv[2]), pe.run_producer_job,
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/tokenomics/tokenomics/train/producer_es.py", line 778, in play
+    finish(fut.result())
+           ^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+concurrent.futures.process.BrokenProcessPool: A process in the process pool was terminated abruptly while the future was running or pending.
+[run_pod] detached run finished (exit 1); pulling results
+[run_pod] pulling /workspace/tokenomics/runs/exp0091/ -> ./experiments/EXP-0091-pilot-k5rf5/
+[run_pod] stopping pod j67gg4q7nhwko6...
+[run_pod] pod stopped
+[run_pod] terminating pod j67gg4q7nhwko6 (removing)...
+[run_pod] pod terminated
