@@ -1,0 +1,87 @@
+{
+  "compared_rows": 0,
+  "compared_rows_exp0073": 0,
+  "dry_run": true,
+  "experiment": "EXP-0075",
+  "neutral_rows": 0,
+  "neutral_rows_exp0073": 0,
+  "neutrality_checked": false,
+  "note": "the 7.15 rule is reported per arm; EXP-0075 reads across the TTL runs",
+  "order_ttl": 2,
+  "per_arm": {
+    "MWWk": {
+      "deciding_size": 12,
+      "decision": "input buying lead time and the upstream / fund path (its sub-causes)",
+      "decisions": {
+        "a_capacity": "capacity: restoration / upgrade (a_degraded, a_dropped), what to reserve (a_held), order size vs capacity (a_max)",
+        "b1_not_ordered": "input buying: which inputs, how many, when",
+        "b2_not_delivered": "input buying lead time and the upstream / fund path (its sub-causes)",
+        "b3_upstream_unable": "upstream producers' capacity and inputs (structural)",
+        "b4_contention": "production choice: which reservation gets the stock",
+        "c_outbid": "price / routing (not a producer decision)",
+        "d_outage": "shocks (not a decision)",
+        "never_bid": "none (never routed)"
+      },
+      "per_size": {
+        "12": {
+          "classes_units": {
+            "a_degraded": 2784.0,
+            "a_dropped": 743.0,
+            "a_held": 6615.0,
+            "a_max": 5097.0,
+            "b1_not_ordered": 490.0,
+            "b2_late": 295624.0,
+            "b2_lost_displaced": 63384.0,
+            "b2_lost_dropped": 1225.0,
+            "b2_lost_no_fit": 18700.0,
+            "b2_lost_outage": 709.0,
+            "b2_lost_ttl": 142375.0,
+            "b2_lost_ttl_outage": 140.0,
+            "b2_open": 2640.0,
+            "b2_short": 1421.0,
+            "b2_unfunded": 5930.0,
+            "b3_upstream_unable": 2760.0,
+            "b4_contention": 154061.0,
+            "c_displaced": 64274.0,
+            "d_outage": 1864.0,
+            "d_ttl_outage": 1035.0,
+            "never_bid": 0.0
+          },
+          "filled_units": 665779.0,
+          "groups_units": {
+            "a_capacity": 15239.0,
+            "b1_not_ordered": 490.0,
+            "b2_not_delivered": 532148.0,
+            "b3_upstream_unable": 2760.0,
+            "b4_contention": 154061.0,
+            "c_outbid": 64274.0,
+            "d_outage": 2899.0,
+            "never_bid": 0.0
+          },
+          "largest": "b2_not_delivered",
+          "lost_units": 771871.0,
+          "reading": "b2_not_delivered",
+          "rows": 86,
+          "shares": {
+            "a_capacity": 0.019742936319669998,
+            "b1_not_ordered": 0.0006348211035263664,
+            "b2_not_delivered": 0.689426082855814,
+            "b3_upstream_unable": 0.0035757270321076966,
+            "b4_contention": 0.19959423271505214,
+            "c_outbid": 0.08327039103684424,
+            "d_outage": 0.0037558089369855844,
+            "never_bid": 0.0
+          },
+          "within_5_points": []
+        }
+      },
+      "reading": "b2_not_delivered",
+      "tie_with": []
+    }
+  },
+  "profile": "ttl_sweep",
+  "reading": null,
+  "readings_withheld": false,
+  "rule": "MWWk, entity_planner: per size, the pooled share of lost consumer units per top-level class (a capacity, b1 not ordered, b2 not delivered, b3 upstream unable, b4 contention, c outbid, d outage, never_bid); the largest at 12 producers names the producer decision to target in step 3; a runner-up within 5 points is a tie and goes to the user; 42 reported",
+  "status": "valid"
+}

@@ -1,0 +1,278 @@
+{
+ "digests_vs_exp0079_rf3": {
+  "rf4": {
+   "rows": 213,
+   "mismatched": 0
+  }
+ },
+ "cells": [
+  {
+   "size": 12,
+   "orderer": "MWWk",
+   "worlds": 23,
+   "stats": {
+    "k4": {
+     "episodes": 86,
+     "units_mean": 3448.5348837209303,
+     "deaths": 0,
+     "rundown_fails": 71,
+     "holding_units_per_cycle_mean": 257.56197674418604,
+     "investment_rejection_rate_mean": 0.09861630487040789,
+     "input_late": 153496.0,
+     "late_headroom_blocked": null,
+     "input_died_upstream": 69435.0,
+     "contention": 69467.0,
+     "capacity": 22263.0,
+     "lost": 419885.0,
+     "upgrades_blocked": null,
+     "restoration_placed": 37538.0,
+     "restoration_completed": 37343.0,
+     "restoration_rejected": 195.0,
+     "upgrade_placed": 13646.0,
+     "upgrade_completed": 8968.0,
+     "upgrade_rejected": 4678.0
+    },
+    "rf4": {
+     "episodes": 86,
+     "units_mean": 3573.0116279069766,
+     "deaths": 0,
+     "rundown_fails": 66,
+     "holding_units_per_cycle_mean": 248.6932558139535,
+     "investment_rejection_rate_mean": 0.097301765437788,
+     "input_late": 151825.0,
+     "late_headroom_blocked": 9462.0,
+     "input_died_upstream": 72523.0,
+     "contention": 72252.0,
+     "capacity": 10115.0,
+     "lost": 409965.0,
+     "upgrades_blocked": 2863.0,
+     "restoration_placed": 37469.0,
+     "restoration_completed": 37277.0,
+     "restoration_rejected": 192.0,
+     "upgrade_placed": 11843.0,
+     "upgrade_completed": 7420.0,
+     "upgrade_rejected": 4423.0
+    }
+   },
+   "vs_rf3": {
+    "rf4": {
+     "mean_diff": 116.79347826086956,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 3,
+     "worlds_below": 1,
+     "exceeds": false,
+     "below": false,
+     "extra_deaths": false,
+     "rundown_delta": -5,
+     "guard": true
+    }
+   }
+  },
+  {
+   "size": 12,
+   "orderer": "RR",
+   "worlds": 23,
+   "stats": {
+    "k4": {
+     "episodes": 43,
+     "units_mean": 3565.6976744186045,
+     "deaths": 0,
+     "rundown_fails": 32,
+     "holding_units_per_cycle_mean": 275.6406976744186,
+     "investment_rejection_rate_mean": 0.10119748674326218,
+     "input_late": 79565.0,
+     "late_headroom_blocked": null,
+     "input_died_upstream": 36106.0,
+     "contention": 35403.0,
+     "capacity": 9416.0,
+     "lost": 205149.0,
+     "upgrades_blocked": null,
+     "restoration_placed": 18155.0,
+     "restoration_completed": 18063.0,
+     "restoration_rejected": 92.0,
+     "upgrade_placed": 6635.0,
+     "upgrade_completed": 4393.0,
+     "upgrade_rejected": 2242.0
+    },
+    "rf4": {
+     "episodes": 43,
+     "units_mean": 3687.3255813953488,
+     "deaths": 0,
+     "rundown_fails": 29,
+     "holding_units_per_cycle_mean": 267.1304651162791,
+     "investment_rejection_rate_mean": 0.09809212896839498,
+     "input_late": 77905.0,
+     "late_headroom_blocked": 5293.0,
+     "input_died_upstream": 36295.0,
+     "contention": 34623.0,
+     "capacity": 5584.0,
+     "lost": 200162.0,
+     "upgrades_blocked": 1566.0,
+     "restoration_placed": 18147.0,
+     "restoration_completed": 18050.0,
+     "restoration_rejected": 91.0,
+     "upgrade_placed": 5788.0,
+     "upgrade_completed": 3692.0,
+     "upgrade_rejected": 2096.0
+    }
+   },
+   "vs_rf3": {
+    "rf4": {
+     "mean_diff": 113.69565217391305,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 2,
+     "worlds_below": 1,
+     "exceeds": false,
+     "below": false,
+     "extra_deaths": false,
+     "rundown_delta": -3,
+     "guard": true
+    }
+   }
+  },
+  {
+   "size": 42,
+   "orderer": "MWWk",
+   "worlds": 14,
+   "stats": {
+    "k4": {
+     "episodes": 56,
+     "units_mean": 8843.910714285714,
+     "deaths": 0,
+     "rundown_fails": 53,
+     "holding_units_per_cycle_mean": 1256.443392857143,
+     "investment_rejection_rate_mean": 0.20236620927680438,
+     "input_late": 183529.0,
+     "late_headroom_blocked": null,
+     "input_died_upstream": 121414.0,
+     "contention": 55675.0,
+     "capacity": 44921.0,
+     "lost": 555806.0,
+     "upgrades_blocked": null,
+     "restoration_placed": 94361.0,
+     "restoration_completed": 89436.0,
+     "restoration_rejected": 4925.0,
+     "upgrade_placed": 49887.0,
+     "upgrade_completed": 25249.0,
+     "upgrade_rejected": 24638.0
+    },
+    "rf4": {
+     "episodes": 56,
+     "units_mean": 9169.785714285714,
+     "deaths": 0,
+     "rundown_fails": 53,
+     "holding_units_per_cycle_mean": 1244.4389285714285,
+     "investment_rejection_rate_mean": 0.2049154637264102,
+     "input_late": 182156.0,
+     "late_headroom_blocked": 36537.0,
+     "input_died_upstream": 120454.0,
+     "contention": 55389.0,
+     "capacity": 31890.0,
+     "lost": 539156.0,
+     "upgrades_blocked": 11501.0,
+     "restoration_placed": 94261.0,
+     "restoration_completed": 89742.0,
+     "restoration_rejected": 4519.0,
+     "upgrade_placed": 42100.0,
+     "upgrade_completed": 19127.0,
+     "upgrade_rejected": 22973.0
+    }
+   },
+   "vs_rf3": {
+    "rf4": {
+     "mean_diff": 325.875,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 3,
+     "worlds_below": 0,
+     "exceeds": false,
+     "below": false,
+     "extra_deaths": false,
+     "rundown_delta": 0,
+     "guard": true
+    }
+   }
+  },
+  {
+   "size": 42,
+   "orderer": "RR",
+   "worlds": 14,
+   "stats": {
+    "k4": {
+     "episodes": 28,
+     "units_mean": 8620.535714285714,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "holding_units_per_cycle_mean": 1365.8192857142858,
+     "investment_rejection_rate_mean": 0.20308320414247957,
+     "input_late": 90435.0,
+     "late_headroom_blocked": null,
+     "input_died_upstream": 66828.0,
+     "contention": 23670.0,
+     "capacity": 24620.0,
+     "lost": 284099.0,
+     "upgrades_blocked": null,
+     "restoration_placed": 45397.0,
+     "restoration_completed": 43261.0,
+     "restoration_rejected": 2136.0,
+     "upgrade_placed": 25782.0,
+     "upgrade_completed": 13780.0,
+     "upgrade_rejected": 12002.0
+    },
+    "rf4": {
+     "episodes": 28,
+     "units_mean": 8987.92857142857,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "holding_units_per_cycle_mean": 1360.5939285714285,
+     "investment_rejection_rate_mean": 0.2074565158689876,
+     "input_late": 90822.0,
+     "late_headroom_blocked": 19339.0,
+     "input_died_upstream": 64737.0,
+     "contention": 23350.0,
+     "capacity": 19244.0,
+     "lost": 274375.0,
+     "upgrades_blocked": 7060.0,
+     "restoration_placed": 45453.0,
+     "restoration_completed": 43558.0,
+     "restoration_rejected": 1890.0,
+     "upgrade_placed": 21342.0,
+     "upgrade_completed": 10180.0,
+     "upgrade_rejected": 11162.0
+    }
+   },
+   "vs_rf3": {
+    "rf4": {
+     "mean_diff": 367.39285714285717,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 3,
+     "worlds_below": 0,
+     "exceeds": true,
+     "below": false,
+     "extra_deaths": false,
+     "rundown_delta": 0,
+     "guard": true
+    }
+   }
+  }
+ ],
+ "readings": {
+  "12/rf4": "no_gain",
+  "42/rf4": "no_gain"
+ },
+ "deciding": "no_gain",
+ "horizon200": {
+  "rf3": {
+   "episodes": 86,
+   "units_mean": 7145.406976744186,
+   "deaths": 0,
+   "death_worlds": []
+  },
+  "rf4": {
+   "episodes": 86,
+   "units_mean": 7741.616279069767,
+   "deaths": 0,
+   "death_worlds": []
+  },
+  "rf4_minus_rf3_units_mean": 596.2093023255811
+ }
+}

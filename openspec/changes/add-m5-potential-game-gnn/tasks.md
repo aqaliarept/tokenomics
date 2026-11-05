@@ -93,11 +93,11 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 
 ## 5. Pilot and main (experiment). Gated: EXP-0081 `signal` or `weak`
 
-- [ ] 4.2f [code][local] `entity_planner_buyahead_k4_rf4` = rf3 + never upgrade past the sustainable
+- [x] 4.2f [code][local] `entity_planner_buyahead_k4_rf4` = rf3 + never upgrade past the sustainable
   max (DIAGNOSTICS 29; supervisor decisions in notes/4.2f.md: view-only estimate, no cap when
   restore_effect = 0). Verify: the cap blocks over-ceiling / allows under-ceiling upgrades; rf4 ==
   rf3 where no over-ceiling upgrade happens; rf3 / k4 / entity_planner unchanged; goldens.
-- [ ] 4.2g [experiment][remote:cpu16] EXP-0084: rf4 vs rf3 (EXP-0079 rows; digests must match),
+- [x] 4.2g [experiment][remote:cpu16] EXP-0084: rf4 vs rf3 (EXP-0079 rows; digests must match),
   × {MWWk R = 2, RR}, TTL 2, EXP-0057's worlds, observer on. **Pre-registered reading (2026-11-05,
   before data; as EXP-0079's; 12 producers decide, 42 reported):** per orderer, diff_w = mean
   paired (episode, replicate) units(rf4) − units(rf3) per world, floor_w = atlas v2 `noise_floor`;
@@ -106,8 +106,11 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   mean_w(diff_w) < −mean_w(floor_w) or extra deaths for EITHER orderer; `no_gain` otherwise.
   Report deaths, units at horizon 100, upgrades blocked, held stock, run-down, upgrades placed /
   completed. Whether rf4 becomes the base (and the L1 / probe redo) follows from the reading and
-  goes to the supervisor / user. ≈ 0.9 vCPU-h (EXP-0079), stop 3; cpu16 pinned EUR-IS-1 (fallback
-  8, pinned), charged to M5-P. After 4.2f.
+  goes to the supervisor / user. **Reported only, never deciding (supervisor decision 2026-11-05,
+  before launch):** rf4 and rf3 also at horizon 200 on the same 23 12-producer worlds and keys,
+  MWWk only (a `--dry-run` supply-trace run, horizon ≠ 100): deaths and units. ≈ 1.2 vCPU-h, stop 6;
+  cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P. After 4.2f.
+  - Done 2026-11-05 (EXP-0084): **`no_gain`** (12: +116.8 / +113.7 vs floor 146.5; 0 deaths; run-down down 5 / 3); 42 +326 / +367 vs 362; horizon 200 (reported) +8.3%, 0 deaths both; rf4 == rf3 where no block. The base decision goes to the supervisor / user. ≈ 0.9 vCPU-h, M5-P ≈ 3.6 / 80.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
 - [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to
