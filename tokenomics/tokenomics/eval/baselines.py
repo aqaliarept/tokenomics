@@ -19,7 +19,15 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 
 from ..domain.common import is_nan
-from ..domain.producer_planner import plan_producer_command
+import math
+from dataclasses import replace
+
+from ..domain.producer_planner import (
+    DEFAULT_INPUT_STOCK_TARGET,
+    plan_producer_command,
+    score_producer_entity_view,
+)
+from ..domain.producer_view import ProducerEntityView
 from ..domain.producing_agent import ProducingAgentCommand
 from ..env.spaces import ACTION_LOGIT_BOUND, OBS_CLIP, EnvSpec
 from .rotation_routers import (
@@ -254,6 +262,63 @@ def producing_entity_planner(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
     return _action_from_producing_command(env.spec_, pid, cmd)
 
 
+BUYAHEAD_K = 1  # task 7.18: registered stock of k cycles of recent input use (k = 2 reported)
+
+
+def recent_input_use(view: ProducerEntityView) -> dict:
+    """Units of each input this producer consumed per cycle, recently: sum over its products x
+    of the telemetry EMA of its own completed units of x (past cycles only, folded at cycle
+    end) times the recipe's input per unit I[x, g]. Every completion (an immediate composite
+    or an assembled reservation) consumes its inputs, so this is the EMA of its own input use.
+    Agent-local, no same-cycle visibility (ADR-0058)."""
+    use: dict = {}
+    for (xi, gi), n in view.relations.product_input_required.items():
+        g = view.input_rows[gi].input_product
+        use[g] = use.get(g, 0.0) + view.product_rows[xi].recent_completed_qty * n
+    return use
+
+
+def buyahead_view(view: ProducerEntityView, ahead_cycles: float) -> ProducerEntityView:
+    """The view the buy-ahead planner plans its replenishment from: each input row's demand
+    pressure raised by ceil(k x recent input use), so `entity_planner`'s target
+    max(3, pressure + blocked) becomes max(3, pressure + blocked + ceil(k x use)): stock for k
+    more cycles of its own recent use. A new view (the domain's may be cached); k <= 0 returns
+    the view itself."""
+    if ahead_cycles <= 0:
+        return view
+    use = recent_input_use(view)
+    rows = [replace(r, downstream_demand_pressure=r.downstream_demand_pressure
+                    + math.ceil(ahead_cycles * use.get(r.input_product, 0.0)))
+            for r in view.input_rows]
+    return replace(view, input_rows=rows)
+
+
+def producing_entity_planner_buyahead(ahead_cycles: float = BUYAHEAD_K) -> Policy:
+    """`entity_planner` that buys inputs ahead of demand (add-m4-orderer-redesign task 7.18;
+    EXP-0074 / EXP-0075: most lost consumer units are inputs that arrive too late). Restoration,
+    upgrade, inventory expansion and the input priority (scores) are `entity_planner`'s, from
+    the unmodified view. Only the replenishment target adds k cycles of its own recent input
+    use (`buyahead_view`); inventory headroom, the per-cycle replenish ceiling and the fund gate
+    stay the planner's. k = 0 is `entity_planner` exactly."""
+
+    def policy(env: "TokenomicsAECEnv", agent: str) -> np.ndarray:
+        _, pid = env._role[agent]
+        mechanics = env.spec_.producer_mechanics[pid]
+        view = env.system.producer_entity_view(pid)
+        cmd = plan_producer_command(
+            buyahead_view(view, ahead_cycles),
+            max_replenish=env.spec_.max_replenish[pid],
+            replenish_cost_per_unit=mechanics.replenish_cost_per_unit,
+            funding_budget=env.system.investment_fund,
+            scores=score_producer_entity_view(view, input_stock_target=DEFAULT_INPUT_STOCK_TARGET),
+            inventory_expansion_increases=mechanics.inventory_expansion_increases,
+            inventory_expansion_cost=mechanics.inventory_expansion_cost,
+        )
+        return _action_from_producing_command(env.spec_, pid, cmd)
+
+    return policy
+
+
 def producing_entity_planner_from_scorer(scorer, *, replenish_tie_rel_tol: float = 0.0) -> Policy:
     """Build an EXP-0010C producer policy from a local scorer closure.
 
@@ -413,6 +478,22 @@ PRODUCING_BASELINES: dict[str, Policy] = {
     "obs_stock_aware": producing_obs_stock_aware(0.6),
     "random": random_action,
 }
+
+# Producers outside PRODUCING_BASELINES (task 7.18): the roster drafts v1-v3 cross every entry
+# there (`roster._cross`), so a new entry would change those drafts and the frozen gate sets
+# screened on them, a human gate. Drivers resolve a producer through `producing_policy`.
+EXTRA_PRODUCING: dict[str, Policy] = {
+    "entity_planner_buyahead": producing_entity_planner_buyahead(BUYAHEAD_K),  # k = 1 registered
+    "entity_planner_buyahead_k2": producing_entity_planner_buyahead(2),  # k = 2 reported
+}
+
+
+def producing_policy(name: str) -> Policy:
+    """A producing policy by name: PRODUCING_BASELINES first, then EXTRA_PRODUCING."""
+    if name in PRODUCING_BASELINES:
+        return PRODUCING_BASELINES[name]
+    return EXTRA_PRODUCING[name]
+
 
 ORDERING_BASELINES: dict[str, Policy] = {
     "even_split": ordering_even_split,

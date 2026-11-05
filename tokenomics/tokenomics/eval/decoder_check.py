@@ -64,7 +64,7 @@ from .atlas import (
     space_entry,
     space_info,
 )
-from .baselines import PRODUCING_BASELINES, Policy
+from .baselines import Policy, producing_policy
 from .contract import (
     DIGEST,
     ContractMonitor,
@@ -327,7 +327,7 @@ def longest_first(jobs: Sequence[Job]) -> list[Job]:
 def decoder_policies(job: Job) -> tuple[Policy, Policy, ScoreFidelity | None]:
     """entity_planner and the arm's orderer; a trained arm's scorer is wrapped by ScoreFidelity
     (inside TS's / TW's wrapper, so the scores it sees are the ones decoded)."""
-    prod = PRODUCING_BASELINES[job["producing"]]
+    prod = producing_policy(job["producing"])  # task 7.18: EXTRA_PRODUCING too
     ordering = job["ordering"]
     if ordering == TRAINED_ORDERER:
         fid = ScoreFidelity(trained_policy(job, "orderer"))

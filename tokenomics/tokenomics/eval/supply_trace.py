@@ -97,7 +97,6 @@ from .decoder_check import (
     MWWK,
     RR,
     SIZES,
-    SUBJECT,
     TTL_SWEEP_ARMS,
     decoder_arm,
     decoder_policies,
@@ -122,8 +121,9 @@ from .gate_cli import (
     job_key,
     read_rows,
 )
+from .baselines import EXTRA_PRODUCING
 from .provenance import resolve_verified_commit, sha256_file, source_fingerprint
-from .roster import DEFAULT_ROSTER, JOINT_STACK, load_roster
+from .roster import DEFAULT_ROSTER, JOINT_STACK, load_roster, member_id
 from .routing_audit import (
     EPISODE_COLUMNS,
     PRODUCER,
@@ -588,7 +588,7 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
                      max_worlds: int | None = None, shock_profile: str | None = None,
                      source_commit: str = "", dry_run: bool = False,
                      order_ttl: int | None = None, arms: Sequence[str] | None = None,
-                     exp0073_episodes: str | Path | None = None,
+                     exp0073_episodes: str | Path | None = None, producer: str = PRODUCER,
                      run_job_fn: Callable[[Job], dict[str, str]] = run_supply_job,
                      log: Callable[[str], None] = print) -> int:
     """Run (or resume) the supply trace into `out_dir`; return 0, or `CONTRACT_INVALID` on
@@ -597,8 +597,17 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     that TTL, arms within `SWEEP_ARMS` (default both), the TTL pinned in spec.json and passed to
     every job; at TTL 2 the rows are checked against EXP-0057 and EXP-0073 ttl2 (a real run
     needs both); at TTL 3 / 4 no reference applies (task 7.16 changed those rows) and none is
-    taken. The 7.15 reading is reported per arm; EXP-0075 reads across the TTL runs."""
+    taken. The 7.15 reading is reported per arm; EXP-0075 reads across the TTL runs.
+    `producer` (task 7.18, sweep only) replaces `entity_planner` in every arm (subjects
+    `<producer>/<router>`); references apply to `entity_planner` rows only."""
     sweep = order_ttl is not None
+    if producer != PRODUCER:
+        if not sweep:
+            raise ValueError("--producer belongs to the TTL sweep (--order-ttl)")
+        if producer not in EXTRA_PRODUCING:
+            raise ValueError(f"--producer takes {PRODUCER} or one of {sorted(EXTRA_PRODUCING)}")
+        if exp0057_episodes or exp0073_episodes:
+            raise ValueError(f"references are {PRODUCER} rows; {producer} takes none")
     if sweep:
         chosen_arms = tuple(arms) if arms is not None else SWEEP_ARMS
         if not chosen_arms or set(chosen_arms) - set(SWEEP_ARMS):
@@ -621,7 +630,7 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     out = Path(out_dir)
     pin = checked_orderer(out, orderer_ckpt, log)
     if not dry_run:
-        refs_apply = not sweep or int(order_ttl) == 2
+        refs_apply = not sweep or (int(order_ttl) == 2 and producer == PRODUCER)
         problems = real_run_problems(
             atlas=atlas, horizon=horizon, source_commit=source_commit, orderer_sha=pin["sha256"],
             reference_sha=ref_sha if refs_apply else EXP0057_EPISODES_SHA,
@@ -640,6 +649,9 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     roster = load_roster(DEFAULT_ROSTER)
     entries = [world_entry(v, shock_profile) for v in views]
     table = [decoder_arm(a, roster) for a in chosen_arms]
+    if producer != PRODUCER:  # task 7.18: the same arms with another producer
+        table = [{**a, "producing": producer, "subject": member_id(producer, a["ordering"])}
+                 for a in table]
     grid = job_grid(entries, None)
     expected: set[Key] = expected_keys(grid, table, 1)
     source = source_fingerprint(source_commit or None)
@@ -650,8 +662,8 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
         "checkpoints": {"orderer": pin["sha256"]},
         "reference": ({"exp0057_episodes": {"path": str(ref_path), "sha256": ref_sha}}
                       if ref_path is not None else None),
-        "producer": PRODUCER, "arms": list(chosen_arms),
-        "subjects": {a: SUBJECT[a] for a in chosen_arms},
+        "producer": producer, "arms": list(chosen_arms),
+        "subjects": {a["arm"]: a["subject"] for a in table},
         "arm_table": table, "shock_profile": shock_profile,
         "sample": [{"world": v["world"], "size": v["size"], "class": v["class"],
                     "rho": v["rho"], "choice": v["choice"], "pattern": v["pattern"],
@@ -810,6 +822,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                    help="the TTL-sweep profile (task 7.17a): every world at this order TTL, arms "
                         f"within {','.join(SWEEP_ARMS)}")
     p.add_argument("--arms", help=f"sweep dry run: arms out of {','.join(SWEEP_ARMS)}")
+    p.add_argument("--producer", default=PRODUCER, choices=(PRODUCER, *EXTRA_PRODUCING),
+                   help="sweep: the producer of every arm (task 7.18)")
     p.add_argument("--exp0073-episodes",
                    help="sweep at TTL 2: EXP-0073's ttl2 episodes.csv (neutrality, both arms)")
     a = p.parse_args(argv)
@@ -820,7 +834,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             exp0057_episodes=a.exp0057_episodes, workers=a.workers, horizon=a.horizon,
             worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds, shock_profile=a.shock_profile,
             source_commit=commit, dry_run=a.dry_run, order_ttl=a.order_ttl,
-            arms=_csv_strs(a.arms), exp0073_episodes=a.exp0073_episodes)
+            arms=_csv_strs(a.arms), exp0073_episodes=a.exp0073_episodes, producer=a.producer)
     except (ContractRunError, DigestMismatch):  # recorded in contract_failures.csv
         return CONTRACT_INVALID
 
