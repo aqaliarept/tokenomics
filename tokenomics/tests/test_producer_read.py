@@ -183,12 +183,14 @@ def test_ledger_pending_close_and_refusals(tmp_path: Path) -> None:
         rd.ledger_close(led, "invalid", "EXP-0084")
 
 
-def test_prereg_v2_pinned_and_v1_untouched() -> None:
+def test_prereg_v2_untouched_and_v1_untouched() -> None:
     from tokenomics.eval.provenance import sha256_file
 
     assert sha256_file(str(pe.PREREG_V1_PATH)) == pe.PREREG_V1_SHA256
-    assert pe.PREREG_PATH.name == "es_prereg_m5_v2.json" and pe.prereg_problems() == []
-    doc = json.loads(pe.PREREG_PATH.read_text())
+    assert sha256_file(str(pe.PREREG_V2_PATH)) == pe.PREREG_V2_SHA256
+    assert json.loads(pe.PREREG_V2_PATH.read_text()) == pe.registered_prereg(2)
+    assert json.loads(pe.PREREG_V1_PATH.read_text()) == pe.registered_prereg(1)
+    doc = json.loads(pe.PREREG_V2_PATH.read_text())
     assert doc["version"] == 2 and doc["changes"]["from"]["sha256"] == pe.PREREG_V1_SHA256
     assert "seed 0 on a tie" in doc["readings"]["L6"]["selection"]
     v1 = json.loads(pe.PREREG_V1_PATH.read_text())
@@ -231,6 +233,19 @@ def test_heldout_reading_as_registered() -> None:
     rows, cells = _table({"cand-s0": 500}, {"cand-s0": -3000})
     held = [{**r, "arm": "cand"} if r["arm"] == "cand-s0" else r for r in rows]
     assert rd.heldout_reading(held, cells)["reading"] == "not_confirmed"  # below at 42
-    doc = json.loads(pe.PREREG_PATH.read_text())
+    doc = json.loads(pe.PREREG_V2_PATH.read_text())
     assert {"readings.L6.confirmed", "readings.L5.arms"} <= set(doc["changes"]["changed"])
     assert "<= rf3's (L5's clause)" in doc["readings"]["L6"]["confirmed"]
+
+
+def test_prereg_v3_pinned_changes_only_the_guard() -> None:
+    """Task 4.2b: v3 is the pinned file; it differs from v2 in the guard (and version / changes)."""
+    assert pe.PREREG_PATH.name == "es_prereg_m5_v3.json" and pe.prereg_problems() == []
+    v3, v2 = json.loads(pe.PREREG_PATH.read_text()), json.loads(pe.PREREG_V2_PATH.read_text())
+    assert v3["version"] == 3 and v3["changes"]["from"]["sha256"] == pe.PREREG_V2_SHA256
+    assert sorted(k for k in set(v3) | set(v2) if v3.get(k) != v2.get(k)) == [
+        "changes", "guard", "version"]
+    assert v3["guard"]["threshold"] == pe.FLAG_THRESHOLD
+    assert v3["guard"]["calibration"]["sources"]["noise_episodes_sha256"] == pe.FLAG_SOURCES[
+        "noise_episodes_sha256"]
+

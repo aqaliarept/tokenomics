@@ -22,8 +22,9 @@ Modes:
   world-episodes each, M4's recorded probe stream) with one common noise draw; their cosine reads
   `signal` (>= 0.3) / `weak` (>= 0.1) / `no_signal` -> `probe.json`.
 - `train` (L3 / L4): antithetic ES (PAIRS pairs, sigma per parameter), centered ranks over the 2n
-  members, a disqualified member (death, or run-down / starvation beyond the margin where the
-  base has none: order_es's relative rule against rf3) ranks worst, Adam ascent. The minibatch
+  members, a disqualified member ranks worst (pre-registration v3's flag-count rule: a death where
+  rf3 dies at no key, or more flagged episodes than rf3's re-keys on the same minibatch by more
+  than FLAG_THRESHOLD; `score_member_v3`), Adam ascent. The minibatch
   per generation comes from M4's recorded stream for the optimiser seed. One checkpoint per
   generation; resume needs every pin to match. The monitor (the centre and the bar on the
   16-world-episode monitor set) every MONITOR_EVERY generations.
@@ -98,15 +99,19 @@ CHECKPOINT_FORMAT = "m5-es-checkpoint-v1"
 # The frozen pre-registration (task 2.3) every real probe / train run needs; None until 2.3 pins it,
 # so a real L2 / L3 run is refused (review m5-2-2).
 # v1 (task 2.3) is never edited; v2 (task 2.4, before any data) adds L6's candidate selection and
-# its gating worlds. The code is pinned to v2.
+# its gating worlds; v3 (after EXP-0081) replaces the guard. The code is pinned to v3.
 PREREG_V1_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v1.json"
 PREREG_V1_SHA256 = "67721b3828931c7904616368465f03b8febad7362d7e039bf8e5124478c18623"
-PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v2.json"
-PREREG_SHA256: str | None = "5887b2b272ed5829fa1374166cbdf13fbb533aad9766386a331796e71942dbf0"  # v2, frozen 2026-11-05 (task 2.4, re-frozen after review m5-2-4)
+PREREG_V2_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v2.json"
+PREREG_V2_SHA256 = "5887b2b272ed5829fa1374166cbdf13fbb533aad9766386a331796e71942dbf0"
+# v3 (2026-11-05, after EXP-0081, before EXP-0082): the flag-count guard (user decision).
+PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v3.json"
+# v3, frozen 2026-11-05 (task 4.2b)
+PREREG_SHA256: str | None = "97c3332c3584ce6fd2d84fe40cac5c9e03eb4f8e59fdd76d1d036defef7b9d04"
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
-PREREG_VERSION = 2
+PREREG_VERSION = 3
 TRAINING_PINS = {  # M4's pinned ES training set (EXP-0058 bar/), design D7
     "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
     "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38"}
@@ -263,6 +268,42 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
         doc["readings"]["L5"]["arms"] = ("both seeds' candidates, rf3, entity_planner_buyahead_k4, "
                                          "entity_planner, all with MWWk; episode seeds from M4's "
                                          "validation stage (m4-es-validate); loaded worlds played")
+    if version >= 3:
+        doc["version"] = 3
+        doc["changes"] = {
+            "from": {"file": PREREG_V2_PATH.name, "sha256": PREREG_V2_SHA256,
+                     "note": "v1 and v2 are never edited; v3 is a new file"},
+            "changed": ["guard"],
+            "why": "EXP-0081 (DIAGNOSTICS 25, disqualification-driven): under v2's any-episode "
+                   "rule rf3's own re-keys are disqualified on probe minibatch B 4 / 4 (cosine "
+                   "with the rule off 0.840 / 0.902); user decision 2026-11-05 'Compare flag "
+                   "rates' (notes/user-decisions.md), before EXP-0082's data",
+            "unchanged": "every other section of v2 (L5 / L6 reads included)"}
+        doc["guard"] = {
+            "rule": FLAG_RULE,
+            "death": "a member episode that dies where rf3 dies at no key (r0 and the "
+                     "noise floor's r1..r4) disqualifies the member (absolute)",
+            "flag": "an episode is flagged when order_es.disqualifying's non-death clauses fire "
+                    "against rf3's r0 (run-down r_end < x r_start or a consumer fill < y where "
+                    "rf3 has none, beyond the margin below rf3's own value)",
+            "count_rule": "disqualified if flags(member, minibatch) - mean over rf3's re-keys "
+                          "r1..r4 of flags(re-key, same world-episodes) > threshold",
+            "threshold": FLAG_THRESHOLD,
+            "calibration": {
+                "rule": "leave-one-out on rf3's re-keys: flags(r_k, M) - mean over the other "
+                        "re-keys of flags(r_j, M); threshold = the smallest t among 0 and the "
+                        "observed excesses with share(excess > t) <= target",
+                "minibatches": "the two probe minibatches and opt seeds 0 / 1 generations "
+                               "1..40 at size 24 (M4's recorded stream)",
+                "target": FLAG_TARGET, **FLAG_CALIBRATION,
+                "sources": {"run": "EXP-0080 (noise_floor/noise_episodes.csv, "
+                                   "noise_floor/margins.json, bar/bar.csv)", **FLAG_SOURCES}},
+            "x_rundown": doc["guard"]["x_rundown"], "y_starvation": doc["guard"]["y_starvation"],
+            "side_effect_params": doc["guard"]["side_effect_params"],
+            "margin": doc["guard"]["margin"],
+            "applies_to": "probe and train member scores; the monitor and the L5 / L6 reads "
+                          "are unchanged",
+            "source": "user decision 2026-11-05 after EXP-0081 (DIAGNOSTICS 25)"}
     return doc
 
 
@@ -881,12 +922,134 @@ def load_margin(margins_path: str | Path) -> tuple[Any, dict]:
         "margins_sha256": sha256_file(str(margins_path))}
 
 
-def _scores(rows_by_member: Mapping[str, Sequence[Mapping[str, str]]], bar: Mapping,
-            margin: Any, refs: Mapping) -> dict:
-    """order_es.score_member with h = 0: units-only fitness, the relative rule against the base."""
-    from .order_es import score_member
+# --- the flag-count rule (pre-registration v3; user decision 2026-11-05 after EXP-0081) ---
+# A member is disqualified if it dies where rf3 dies at no key (r0..r4), or if its count of
+# flagged episodes (run-down / starvation under the margin, order_es.disqualifying's non-death
+# clauses) on its minibatch exceeds rf3's expected count there (the mean over rf3's re-keys
+# r1..r4 of their flagged episodes on the same world-episodes) by more than FLAG_THRESHOLD.
+# FLAG_THRESHOLD is calibrated on EXP-0080's re-keys only (`calibrate_flag_threshold`): rf3 itself
+# is disqualified on <= FLAG_TARGET of its re-keyed minibatches (each re-key against the mean of
+# the other three; the minibatches the probe and both seeds' 40 generations draw at size 24).
+FLAG_RULE = "flag-count-v1"
+FLAG_TARGET = 0.05
+FLAG_THRESHOLD = 5 / 3  # calibrate_flag_threshold on EXP-0080 (2026-11-05, before EXP-0082)
+FLAG_SOURCES = {  # EXP-0080's files the threshold and the reference counts come from
+    "noise_episodes_sha256": "cc6ef40557672ef9390b7827ae6c287ff0930f523f506673c71237be2f642a63",
+    "margins_sha256": "561c94e2afacf7daf53ce6f07fbdef9b3f567b6d9f29114b157129e00686f09b",
+    "bar_csv_sha256": "c42b9ecc2bdcd9c4d39454facd79144ba6cb0497c8b167a4a1d358abcd1265bf"}
+FLAG_CALIBRATION: dict[str, Any] = {  # calibrate_flag_threshold's output on those files
+    "minibatches": 82, "re_keys": 4, "samples": 328, "self_disqualified": 9,
+    "rate": 9 / 328, "rate_without_threshold": 135 / 328, "max_excess": 8 / 3}
+NOISE_ROWS = "noise_episodes.csv"
 
-    return {lab: score_member(rs, bar, 0.0, margin, refs) for lab, rs in rows_by_member.items()}
+
+@dataclass(frozen=True)
+class FlagReference:
+    """rf3's re-keyed non-death flags per world-episode (replicates >= 1) and the world-episodes
+    where rf3 dies at any key (r0 included)."""
+
+    flags: dict[tuple[str, int], tuple[bool, ...]]
+    dead: frozenset[tuple[str, int]]
+
+    def expected(self, wes: Sequence[tuple[str, int]]) -> float:
+        missing = [k for k in wes if not self.flags.get(k)]
+        if missing:
+            raise ValueError(f"no re-keyed rf3 rows for {missing[:3]}")
+        return float(sum(fmean(self.flags[k]) for k in wes))
+
+
+def row_flagged(row: Mapping[str, str], b: Any, margin: Any, ref: Any) -> bool:
+    """The episode trips a non-death guard (run-down / starvation beyond the margin)."""
+    from .order_es import disqualifying
+
+    return any(x != "death" for x in disqualifying(row, b, margin, ref))
+
+
+def flag_reference(noise_rows: Sequence[Mapping[str, str]], bar: Mapping, base_rows,
+                   margin: Any) -> FlagReference:
+    from .order_es import a0_values, _bool
+
+    refs = {k: v[0] for k, v in a0_values(base_rows).items()}
+    flags: dict[tuple[str, int], list[bool]] = {}
+    dead = {k for k, b in bar.items() if b.a0_dead}
+    for d in sorted(noise_rows, key=lambda d: (d["world"], int(d["episode"]), int(d["replicate"]))):
+        k = (d["world"], int(d["episode"]))
+        if int(d["replicate"]) == 0 or k not in bar:
+            continue
+        flags.setdefault(k, []).append(row_flagged(d, bar[k], margin, refs[k]))
+        if _bool(d["dead"]):
+            dead.add(k)
+    return FlagReference({k: tuple(v) for k, v in flags.items()}, frozenset(dead))
+
+
+def load_flag_reference(margins: str | Path, bar: Mapping, base_rows, margin: Any
+                        ) -> tuple[FlagReference, dict]:
+    """The noise-floor run's re-keyed rows (next to its margins.json)."""
+    path = Path(margins).parent / NOISE_ROWS
+    return flag_reference(read_csv(path), bar, base_rows, margin), {
+        "flag_rule": FLAG_RULE, "flag_threshold": FLAG_THRESHOLD,
+        "noise_episodes_sha256": sha256_file(str(path))}
+
+
+def flag_source_problems(pins: Mapping[str, Any]) -> list[str]:
+    """A real probe / train run reads the registered EXP-0080 files."""
+    return [f"{k} {str(pins.get(k))[:12]} is not the registered {v[:12]}"
+            for k, v in FLAG_SOURCES.items() if pins.get(k) != v]
+
+
+def flag_minibatches(ts: TrainingSet, size: int = MINIBATCH) -> list[list[tuple[str, int]]]:
+    """Every minibatch the registered probe and runs draw: the two probe minibatches and both
+    optimiser seeds' generations 1..GENERATIONS['main']."""
+    a, b = probe_batches(ts, size)
+    return [a, b] + [minibatch(ts, s, g, size) for s in (0, 1)
+                     for g in range(1, GENERATIONS["main"] + 1)]
+
+
+def calibrate_flag_threshold(ts: TrainingSet, ref: FlagReference, target: float = FLAG_TARGET
+                             ) -> dict[str, Any]:
+    """Leave-one-out on rf3's re-keys: re-key k's flag count on a minibatch minus the mean of the
+    other re-keys' counts there. The threshold is the smallest value t among 0 and the observed
+    excesses with share(excess > t) <= target."""
+    mbs = flag_minibatches(ts)
+    n_keys = {len(v) for v in ref.flags.values()}
+    if len(n_keys) != 1 or min(n_keys) < 2:
+        raise ValueError(f"the calibration needs the same >= 2 re-keys everywhere, got {n_keys}")
+    nk = n_keys.pop()
+    ex = []
+    for mb in mbs:
+        counts = [sum(ref.flags[w][k] for w in mb) for k in range(nk)]
+        ex += [counts[k] - (sum(counts) - counts[k]) / (nk - 1) for k in range(nk)]
+    t = next(c for c in sorted({0.0, *ex}) if sum(e > c + 1e-9 for e in ex) <= target * len(ex))
+    hit = sum(e > t + 1e-9 for e in ex)
+    return {"threshold": float(t), "target": target, "minibatches": len(mbs), "re_keys": nk,
+            "samples": len(ex), "self_disqualified": hit, "rate": hit / len(ex),
+            "rate_without_threshold": sum(e > 1e-9 for e in ex) / len(ex),
+            "max_excess": max(ex)}
+
+
+def score_member_v3(rows: Sequence[Mapping[str, str]], bar: Mapping, margin: Any, refs: Mapping,
+                    fref: FlagReference, threshold: float = FLAG_THRESHOLD) -> Any:
+    """Units-only fitness (h = 0) and the flag-count rule against rf3's re-keys."""
+    from .order_es import MemberScore, _bool, we_fitness
+
+    if any(_bool(r["nonfinite"]) for r in rows):
+        return MemberScore(None, False, ("nonfinite",), True)
+    wes = [(r["world"], int(r["episode"])) for r in rows]
+    fs = [we_fitness(r, bar[k], 0.0) for r, k in zip(rows, wes)]
+    reasons = [f"{k[0]}:{k[1]}:death" for r, k in zip(rows, wes)
+               if _bool(r["dead"]) and k not in fref.dead]
+    flags = sum(row_flagged(r, bar[k], margin, refs[k]) for r, k in zip(rows, wes))
+    excess = flags - fref.expected(wes)
+    if excess > threshold + 1e-9:
+        reasons.append(f"flags:{flags}-{excess:+.2f}")
+    return MemberScore(fmean(fs), bool(reasons), tuple(reasons), False)
+
+
+def _scores(rows_by_member: Mapping[str, Sequence[Mapping[str, str]]], bar: Mapping,
+            margin: Any, refs: Mapping, fref: FlagReference) -> dict:
+    """Units-only fitness; disqualification by the v3 flag-count rule against rf3's re-keys."""
+    return {lab: score_member_v3(rs, bar, margin, refs, fref)
+            for lab, rs in rows_by_member.items()}
 
 
 def _member_jobs(ts: TrainingSet, kind: str, thetas: Mapping[str, np.ndarray], world_eps,
@@ -927,12 +1090,14 @@ def run_probe(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
     bar, base_rows, bar_pins = load_bar(bar_dir)
     nm, n_pins = load_normaliser(bar_dir)
     margin, m_pins = load_margin(margins)
+    fref, f_pins = load_flag_reference(margins, bar, base_rows, margin)
     out = Path(out_dir)
     if not dry_run:
         p = real_run_problems(horizon=horizon, source_commit=source_commit, filters={
             "size": None if size == MINIBATCH else size,
             "pairs": None if pairs == PAIRS else pairs,
-            "sigma": None if sigma == SIGMA else sigma}) + prereg_problems()
+            "sigma": None if sigma == SIGMA else sigma}) + prereg_problems() + \
+            flag_source_problems({**bar_pins, **m_pins, **f_pins})
         if p:
             raise ValueError("not a valid probe run (" + "; ".join(p) + "); pass --dry-run")
     ts = matched_to_bar(ts, bar, dry_run)  # after the real-run refusals
@@ -940,7 +1105,7 @@ def run_probe(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
     eps = noise(0, 0, pairs, THETA_DIM, NOISE_STREAM_PURPOSE["probe"])
     pins = {"driver": DRIVER, "mode": PROBE, "horizon": horizon, "dry_run": dry_run,
             "size": size, "pairs": pairs, "sigma": sigma, "sigma_arms": SIGMA_ARMS,
-            "theta_dim": THETA_DIM, **ts.pins, **bar_pins, **n_pins, **m_pins,
+            "theta_dim": THETA_DIM, **ts.pins, **bar_pins, **n_pins, **m_pins, **f_pins,
             "batches": [a, b], "eps_sha256": _sha(eps.tolist()), "prereg": PREREG_SHA256,
             "source": source_fingerprint(source_commit or None)}
     spec = _open_run(out, PROBE, pins, workers, log)
@@ -960,7 +1125,7 @@ def run_probe(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
         for bi in (0, 1):
             bj = [j for j in jobs if j["batch"] == bi and j["member"].startswith(arm + ":")]
             sc = {k.split(":", 1)[1]: v for k, v in _scores(_by_member(rows, bj), bar, margin,
-                                                            refs).items()}
+                                                            refs, fref).items()}
             if len(sc) < 2 * pairs:
                 est.append(None)
                 continue
@@ -1037,6 +1202,7 @@ def run_train(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
     bar, base_rows, bar_pins = load_bar(bar_dir)
     nm, n_pins = load_normaliser(bar_dir)
     margin, m_pins = load_margin(margins)
+    fref, f_pins = load_flag_reference(margins, bar, base_rows, margin)
     out = Path(out_dir)
     if not dry_run:
         p = real_run_problems(horizon=horizon, source_commit=source_commit, filters={
@@ -1044,14 +1210,14 @@ def run_train(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
             "pairs": None if pairs == PAIRS else pairs,
             "sigma": None if sigma == SIGMA else sigma, "lr": None if lr == ADAM_LR else lr,
             "monitor_every": None if monitor_every == MONITOR_EVERY else monitor_every}
-        ) + prereg_problems()
+        ) + prereg_problems() + flag_source_problems({**bar_pins, **m_pins, **f_pins})
         if p:
             raise ValueError("not a valid train run (" + "; ".join(p) + "); pass --dry-run")
     ts = matched_to_bar(ts, bar, dry_run)  # after the real-run refusals
     pins = {"driver": DRIVER, "mode": TRAIN, "horizon": horizon, "dry_run": dry_run,
             "opt_seed": opt_seed, "size": size, "pairs": pairs, "sigma": sigma, "lr": lr,
             "monitor_every": monitor_every, "monitor_replicates": list(MONITOR_REPLICATES),
-            "theta_dim": THETA_DIM, **ts.pins, **bar_pins, **n_pins, **m_pins,
+            "theta_dim": THETA_DIM, **ts.pins, **bar_pins, **n_pins, **m_pins, **f_pins,
             "prereg": PREREG_SHA256, "source": source_fingerprint(source_commit or None)}
     spec = _open_run(out, TRAIN, pins, workers, log)
     refs = {k: v[0] for k, v in a0_values(base_rows).items()}
@@ -1121,7 +1287,7 @@ def run_train(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
         rows, _ = play(out, ROW_FILES[TRAIN], jobs, workers, run_job_fn, bar, log)
         expected += len(jobs)
         rows_seen += sum(j["job_id"] in rows for j in jobs)
-        sc = _scores(_by_member(rows, jobs), bar, margin, refs)
+        sc = _scores(_by_member(rows, jobs), bar, margin, refs, fref)
         if len(sc) < 2 * pairs or any(len(v) != len(mb) for v in _by_member(rows, jobs).values()):
             log(f"[producer_es] generation {g}: missing member rows; stopping")
             break
@@ -1159,7 +1325,7 @@ def run_train(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
 
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--mode", required=True, choices=(*MODES, "freeze"))
+    p.add_argument("--mode", required=True, choices=(*MODES, "freeze", "flag-calibrate"))
     p.add_argument("--training-dir", help="EXP-0058 bar/ (training set, schedule)")
     p.add_argument("--bar-dir", help="noise-floor / probe / train: this driver's bar run")
     p.add_argument("--margins", help="probe / train: the noise-floor run's margins.json")
@@ -1182,6 +1348,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--lr", type=float, default=ADAM_LR)
     p.add_argument("--monitor-every", type=int, default=MONITOR_EVERY)
     a = p.parse_args(argv)
+    if a.mode == "flag-calibrate":
+        bar, base_rows, _ = load_bar(a.bar_dir)
+        margin, _ = load_margin(a.margins)
+        fref, _ = load_flag_reference(a.margins, bar, base_rows, margin)
+        print(json.dumps(calibrate_flag_threshold(load_training(a.training_dir), fref),
+                         indent=1, sort_keys=True))
+        return 0
     if a.mode == "freeze":
         status, sha = freeze_prereg(Path(a.prereg))
         print(f"[producer_es] pre-registration {status} {sha}")

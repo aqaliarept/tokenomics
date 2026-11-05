@@ -247,3 +247,65 @@ def test_monitor_runs_at_generation_0_at_two_replicates(runs: dict[str, Path]) -
     assert {e["kind"] for e in eps} == {"monitor", "monitor_base"}
     g0 = [m for m in mon if m["generation"] == "0"][0]
     assert g0["g_tr"] in ("", "0.0")  # theta 0 equals rf3 at both keys (or no monitor episode)
+
+
+# --- task 4.2b: the v3 flag-count rule ---
+
+EXP0080 = REPO / "experiments/EXP-0080-producer-bar-noise"
+MARGINS = EXP0080 / "noise_floor/margins.json"
+needs_exp0080 = pytest.mark.skipif(not (EXP0080 / "noise_floor/noise_episodes.csv").exists()
+                                   or not (TRAINING / "training_worlds.json").exists(),
+                                   reason="EXP-0080 / EXP-0058 rows absent")
+
+
+def _v3_inputs() -> tuple:
+    bar, base, bar_pins = pe.load_bar(EXP0080 / "bar")
+    margin, m_pins = pe.load_margin(MARGINS)
+    fref, f_pins = pe.load_flag_reference(MARGINS, bar, base, margin)
+    from tokenomics.train.order_es import a0_values
+
+    refs = {k: v[0] for k, v in a0_values(base).items()}
+    return bar, base, margin, refs, fref, {**bar_pins, **m_pins, **f_pins}
+
+
+@needs_exp0080
+def test_rf3_rekeys_pass_the_flag_rule_at_the_registered_rate() -> None:
+    """The registered threshold is calibrate_flag_threshold on EXP-0080's files, and rf3's own
+    re-keys are disqualified on <= 5% of the re-keyed minibatches (the registered rate)."""
+    bar, base, margin, refs, fref, pins = _v3_inputs()
+    assert pe.flag_source_problems(pins) == []
+    cal = pe.calibrate_flag_threshold(pe.load_training(TRAINING), fref)
+    assert cal["threshold"] == pytest.approx(pe.FLAG_THRESHOLD)
+    assert {k: cal[k] for k in pe.FLAG_CALIBRATION} == pytest.approx(pe.FLAG_CALIBRATION)
+    assert cal["rate"] <= pe.FLAG_TARGET
+    # rf3 at r0 scored as a member on every registered minibatch: never disqualified
+    rows = {(d["world"], int(d["episode"])): d for d in base}
+    for mb in pe.flag_minibatches(pe.load_training(TRAINING)):
+        sc = pe.score_member_v3([rows[k] for k in mb], bar, margin, refs, fref)
+        assert not sc.disqualified, sc.reasons
+
+
+@needs_exp0080
+def test_an_always_flagged_member_fails_and_deaths_stay_absolute() -> None:
+    bar, base, margin, refs, fref, _ = _v3_inputs()
+    rows = {(d["world"], int(d["episode"])): d for d in base}
+    mb = pe.flag_minibatches(pe.load_training(TRAINING))[1]  # EXP-0081's minibatch B
+    starved = [{**rows[k], "consumer_fill_rate": json.dumps(
+        {c: 0.0 for c in json.loads(rows[k]["consumer_fill_rate"])})} for k in mb]
+    sc = pe.score_member_v3(starved, bar, margin, refs, fref)
+    assert sc.disqualified and any(r.startswith("flags:") for r in sc.reasons)
+    # one death where rf3 lives at every key disqualifies; where rf3 dies at some key it does not
+    live = next(k for k in mb if k not in fref.dead)
+    died = [{**rows[k], "dead": "true"} if k == live else rows[k] for k in mb]
+    sc = pe.score_member_v3(died, bar, margin, refs, fref)
+    assert sc.disqualified and sc.reasons == (f"{live[0]}:{live[1]}:death",)
+    (dead_we,) = sorted(fref.dead)
+    sc = pe.score_member_v3([{**rows[dead_we], "dead": "true"}], bar, margin, refs, fref)
+    assert not sc.disqualified
+
+
+def test_real_probe_refuses_other_flag_sources() -> None:
+    want = pe.FLAG_SOURCES["margins_sha256"][:12]
+    assert pe.flag_source_problems({**pe.FLAG_SOURCES, "margins_sha256": "0" * 64}) == [
+        f"margins_sha256 000000000000 is not the registered {want}"]
+
