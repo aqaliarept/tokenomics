@@ -65,7 +65,8 @@ from ..eval.contract import (ContractMonitor, append_failure, ensure_failures_fi
 from ..eval.gate import CSV_COLUMNS, row_from_stats, row_to_dict
 from ..eval.gate_cli import CONTRACT_INVALID, Job
 from ..eval.provenance import resolve_verified_commit, sha256_file, source_fingerprint
-from .producer_residual import (BASE_PRODUCER, N_IN, N_P, THETA_DIM, Normaliser,
+from .producer_residual import (BASE_PRODUCER, N_IN, N_P, RF3_PRODUCER, RF4_PRODUCER, THETA_DIM,
+                                Normaliser,
                                 producer_residual_policy)
 
 DRIVER = "tokenomics.train.producer_es"
@@ -100,7 +101,8 @@ CHECKPOINT_FORMAT = "m5-es-checkpoint-v1"
 # so a real L2 / L3 run is refused (review m5-2-2).
 # v1 (task 2.3) is never edited; v2 (task 2.4, before any data) adds L6's candidate selection and
 # its gating worlds; v3 (after EXP-0081) replaces the guard; v4 (after EXP-0082) scores a death by
-# a penalty instead of disqualifying. The code is pinned to v4.
+# a penalty instead of disqualifying; v5 (after EXP-0084) re-bases v4 on rf4. The code is pinned to
+# v5.
 PREREG_V1_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v1.json"
 PREREG_V1_SHA256 = "67721b3828931c7904616368465f03b8febad7362d7e039bf8e5124478c18623"
 PREREG_V2_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v2.json"
@@ -109,13 +111,17 @@ PREREG_V2_SHA256 = "5887b2b272ed5829fa1374166cbdf13fbb533aad9766386a331796e71942
 PREREG_V3_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v3.json"
 PREREG_V3_SHA256 = "97c3332c3584ce6fd2d84fe40cac5c9e03eb4f8e59fdd76d1d036defef7b9d04"
 # v4 (2026-11-05, after EXP-0082, before EXP-0083): the penalised death (user decision).
-PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v4.json"
-# v4, frozen 2026-11-05 (task 4.2c)
-PREREG_SHA256: str | None = "4a99c82488f25293c0405ddc0a64a95cad1214fdd4f6e36b07f550ce95811c8e"
+PREREG_V4_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v4.json"
+PREREG_V4_SHA256 = "4a99c82488f25293c0405ddc0a64a95cad1214fdd4f6e36b07f550ce95811c8e"
+# v5 (user decision 2026-11-05 "Adopt rf4 as base", after EXP-0084): v4's rules on base rf4, its
+# bar / normaliser / margins / flag threshold from the rf4 L1 run (EXP-0085). Frozen after EXP-0085
+# and before any probe data; until then None, so a real probe / train run is refused.
+PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v5.json"
+PREREG_SHA256: str | None = None
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
-PREREG_VERSION = 4
+PREREG_VERSION = 5
 TRAINING_PINS = {  # M4's pinned ES training set (EXP-0058 bar/), design D7
     "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
     "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38"}
@@ -133,7 +139,7 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
         "change": "add-m5-potential-game-gnn",
         "status": "frozen before L2 (design D6); a real probe / train run refuses any other file",
         "decisions": "notes/user-decisions.md (2026-11-05) and notes/2.1-2.3.md (supervisor)",
-        "base": {"producer": BASE_PRODUCER, "orderer": ORDERING,
+        "base": {"producer": RF3_PRODUCER, "orderer": ORDERING,
                  "source": "EXP-0079 rf_helps (design D8); theta = 0 equals it action for action "
                            "(tests/test_producer_residual.py)"},
         "policy": {
@@ -332,13 +338,61 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
             "why": "a death is as bad as delivering nothing extra over rf3 on that episode "
                    "(supervisor default, 2026-11-05)",
             "applies_to": "probe and train member scores; ranks by fitness, never auto-worst"}
+    if version >= 5:
+        if FLAG_THRESHOLD_V5 is None or FLAG_SOURCES_V5 is None or FLAG_CALIBRATION_V5 is None:
+            raise ValueError("pre-registration v5 needs the rf4 L1 run's flag calibration "
+                             "(EXP-0085; freeze after L1, before any probe data)")
+        changes = {
+            "from": {"file": PREREG_V4_PATH.name, "sha256": PREREG_V4_SHA256,
+                     "note": "v1..v4 are never edited; v5 is a new file"},
+            "changed": ["base", "every rule's reference arm: rf3 -> rf4", "guard.threshold",
+                        "guard.calibration", "readings.L1"],
+            "why": "user decision 2026-11-05 'Adopt rf4 as base' after EXP-0084 (its `no_gain` "
+                   "reading stays recorded; the cap is a safety fix, DIAGNOSTICS 29); the bar, "
+                   "normaliser, margins and flag threshold are recomputed by the same code, "
+                   "formulas and targets from the rf4 L1 run (EXP-0085), before any probe data",
+            "unchanged": "every rule of v4 (flag-count rule, penalised death P = B_we, sigma, "
+                         "minibatch, monitor, readings L2..L6) with the base read as rf4"}
+        doc = _rebased(doc)
+        doc["version"] = 5
+        doc["changes"] = changes
+        doc["base"] = {"producer": RF4_PRODUCER, "orderer": ORDERING,
+                       "source": "user decision 2026-11-05 'Adopt rf4 as base' (EXP-0084, task "
+                                 "4.2g); theta = 0 equals rf4 action for action "
+                                 "(tests/test_producer_residual.py)"}
+        doc["guard"]["threshold"] = FLAG_THRESHOLD_V5
+        doc["guard"]["calibration"] = {
+            **{k: v for k, v in doc["guard"]["calibration"].items()
+               if k in ("rule", "minibatches", "target")},
+            **FLAG_CALIBRATION_V5,
+            "sources": {"run": "EXP-0085 (noise_floor/noise_episodes.csv, "
+                               "noise_floor/margins.json, bar/bar.csv)", **FLAG_SOURCES_V5}}
+        doc["readings"]["L1"]["pass"] = (
+            f"r0 reproduces the bar's rf4 rows; rf4 equals EXP-0084 on 2 world-episodes; rf4's "
+            f"self-flag rate under the margin <= {SELF_FLAG_TARGET}; the flag threshold's "
+            f"self-disqualification rate <= {FLAG_TARGET}")
     return doc
 
 
-def freeze_prereg(path: Path = PREREG_PATH) -> tuple[str, str]:
+def _rebased(obj: Any) -> Any:
+    """v5: v4's rule text with the base read as rf4 (every 'rf3' in a rule string), leaving the
+    provenance strings (`source`, `why`, `changes`, `flags`) as recorded."""
+    keep = {"source", "sources", "why", "changes", "flags", "decisions", "minibatch_source",
+            "sigma_source", "adam_carried", "pairs_minibatch_source", "generations_source",
+            "episodes_source"}
+    if isinstance(obj, dict):
+        return {k: (v if k in keep else _rebased(v)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_rebased(v) for v in obj]
+    if isinstance(obj, str):
+        return obj.replace("rf3", "rf4")
+    return obj
+
+
+def freeze_prereg(path: Path = PREREG_PATH, version: int = PREREG_VERSION) -> tuple[str, str]:
     """Write the registered pre-registration if absent (FROZEN), else compare (MATCH / MISMATCH
     with the differing sections). Returns (status, file sha256)."""
-    doc = registered_prereg()
+    doc = registered_prereg(version)
     text = json.dumps(doc, indent=1, sort_keys=True) + "\n"
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -349,15 +403,17 @@ def freeze_prereg(path: Path = PREREG_PATH) -> tuple[str, str]:
     return ("MATCH" if not diff else "MISMATCH " + ",".join(diff)), sha256_file(str(path))
 
 
-def prereg_problems(path: Path = PREREG_PATH, pinned: str | None = None) -> list[str]:
+def prereg_problems(path: Path = PREREG_PATH, pinned: str | None = None,
+                    version: int = PREREG_VERSION) -> list[str]:
     """A real probe / train run needs the frozen file: its SHA-256 = PREREG_SHA256, and every
     section equal to this code's registration (a changed section or constant is refused)."""
     pinned = PREREG_SHA256 if pinned is None else pinned
     if pinned is None:
-        return ["no pinned pre-registration (task 2.3 freezes es_prereg_m5_v1.json)"]
+        return [f"no pinned pre-registration ({path.name} is frozen by `--mode freeze`; v5 after "
+                "the rf4 L1 run)"]
     if not path.exists() or sha256_file(str(path)) != pinned:
         return [f"{path.name} does not match the pinned SHA-256 {pinned[:12]}"]
-    have, want = json.loads(path.read_text()), registered_prereg()
+    have, want = json.loads(path.read_text()), registered_prereg(version)
     diff = sorted(k for k in set(want) | set(have) if want.get(k) != have.get(k))
     return [f"pre-registration sections differ from the code: {diff}"] if diff else []
 
@@ -483,6 +539,8 @@ def make_job(ts: TrainingSet, *, kind: str, producing: str, theta: np.ndarray | 
              **extra: Any) -> Job:
     e = ts.entries[world]
     t = None if theta is None else [float(x) for x in np.asarray(theta, np.float64)]
+    if producing == RESIDUAL:  # the residual's base (rf3: v1..v4; rf4: v5)
+        extra = {"residual_base": BASE_PRODUCER, **extra}
     return {"kind": kind, "producing": producing, "theta": t,
             "theta_sha256": "" if t is None else theta_sha256(np.asarray(t)),
             "generation": str(generation), "member": member, "sign": sign, "pair": pair,
@@ -527,7 +585,9 @@ def run_producer_job(job: Job) -> dict[str, str]:
                 def recorder(pid: str, cycle: int, phi: dict, psi: np.ndarray) -> None:
                     recorded["phi"].extend(phi.values())
                     recorded["psi"].append(psi)
-            prod = producer_residual_policy(np.asarray(job["theta"], np.float64), nm, recorder)
+            prod = producer_residual_policy(
+                np.asarray(job["theta"], np.float64), nm, recorder,
+                upgrade_cap=job.get("residual_base", BASE_PRODUCER) == RF4_PRODUCER)
             if theta_sha256(prod.theta) != job["theta_sha256"]:
                 raise AssertionError("job theta does not match its sha256")
         else:
@@ -789,7 +849,7 @@ def _select(ts: TrainingSet, max_world_episodes: int | None) -> list[tuple[str, 
 
 def run_bar(*, training_dir: str | Path, out_dir: str | Path, workers: int = 1,
             horizon: int = HORIZON, max_world_episodes: int | None = None,
-            atlas: str | Path | None = None, exp0079_episodes: str | Path | None = None,
+            atlas: str | Path | None = None, reference_episodes: str | Path | None = None,
             source_commit: str = "", dry_run: bool = False,
             run_job_fn: Callable[[Job], dict[str, str]] = run_producer_job,
             log: Callable[[str], None] = _log) -> int:
@@ -798,15 +858,16 @@ def run_bar(*, training_dir: str | Path, out_dir: str | Path, workers: int = 1,
     if not dry_run:
         p = real_run_problems(horizon=horizon, source_commit=source_commit,
                               filters={"max_world_episodes": max_world_episodes})
-        if (atlas is None) != (exp0079_episodes is None) or atlas is None:
-            p.append("a real bar run needs --atlas and --exp0079-episodes (the cross-check)")
+        if (atlas is None) != (reference_episodes is None) or atlas is None:
+            p.append("a real bar run needs --atlas and --reference-episodes (the cross-check: the "
+                     "base's supply-trace rows, EXP-0079 for rf3, EXP-0084 for rf4)")
         if p:
             raise ValueError("not a valid bar run (" + "; ".join(p) + "); pass --dry-run")
     we = _select(ts, max_world_episodes)
     pins = {"driver": DRIVER, "mode": BAR, "base": BASE_PRODUCER, "ordering": ORDERING,
             "horizon": horizon, "dry_run": dry_run, "world_episodes": we, **ts.pins,
-            "exp0079_episodes_sha256": (sha256_file(str(exp0079_episodes))
-                                        if exp0079_episodes else None),
+            "reference_episodes_sha256": (sha256_file(str(reference_episodes))
+                                        if reference_episodes else None),
             "source": source_fingerprint(source_commit or None)}
     spec = _open_run(out, BAR, pins, workers, log)
     # rf3 played as the residual at theta = 0 (equal to rf3 action for action, task 2.1), recording
@@ -835,10 +896,11 @@ def run_bar(*, training_dir: str | Path, out_dir: str | Path, workers: int = 1,
                                                      ).hexdigest()}}
         (out / "normaliser.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     cross: dict = {}
-    if atlas is not None and exp0079_episodes is not None:
-        cross = crosscheck_exp0079(atlas, exp0079_episodes, out, log)
+    if atlas is not None and reference_episodes is not None:
+        cross = crosscheck_reference(atlas, reference_episodes, out, log)
         if not cross["equal"]:
-            bad.append(f"rf3 replay differs from EXP-0079 on {cross['differing']}")
+            bad.append(f"{BASE_PRODUCER} replay differs from its reference rows on "
+                       f"{cross['differing']}")
     return _finish(out, spec, len(jobs), len(ordered), bad,
                    {"diagnostics": _diag(ordered), "crosscheck": cross}, log)
 
@@ -846,10 +908,11 @@ def run_bar(*, training_dir: str | Path, out_dir: str | Path, workers: int = 1,
 CROSSCHECK_N = 2
 
 
-def crosscheck_exp0079(atlas: str | Path, exp0079_episodes: str | Path, out: Path,
+def crosscheck_reference(atlas: str | Path, reference_episodes: str | Path, out: Path,
                        log: Callable[[str], None]) -> dict:
-    """rf3 replayed through the supply-trace job path on the first CROSSCHECK_N MWWk r0
-    world-episodes of EXP-0079 (sorted): every cell EXP-0079 wrote must be equal (D7)."""
+    """The base replayed through the supply-trace job path on the first CROSSCHECK_N MWWk r0
+    world-episodes of its reference run (EXP-0079 for rf3, EXP-0084 for rf4; sorted): every cell
+    the reference wrote must be equal (D7)."""
     from ..eval import supply_trace as st
     from ..eval.decoder_check import MWWK, decoder_arm, select_views, world_entry
     from ..eval.roster import DEFAULT_ROSTER, load_roster, member_id
@@ -857,7 +920,7 @@ def crosscheck_exp0079(atlas: str | Path, exp0079_episodes: str | Path, out: Pat
     from ..eval.teacher_audit import load_atlas
 
     csv.field_size_limit(1 << 30)
-    ref = {(r["world"], r["episode"], r["replicate"]): r for r in read_csv(Path(exp0079_episodes))
+    ref = {(r["world"], r["episode"], r["replicate"]): r for r in read_csv(Path(reference_episodes))
            if r["subject"].endswith("/mww_keyed") and r["replicate"] == "0"}
     keys = sorted(ref)[:CROSSCHECK_N]
     views = select_views(load_atlas(atlas), sorted({k[0] for k in keys}))
@@ -878,7 +941,7 @@ def crosscheck_exp0079(atlas: str | Path, exp0079_episodes: str | Path, out: Pat
         if diff:
             differing.append(f"{j['world']}:{j['episode']}")
     write_csv(out / "crosscheck.csv", ("world", "episode", "compared", "differing", "equal"), rows)
-    log(f"[producer_es] EXP-0079 cross-check: {sum(r['equal'] for r in rows)} / {len(rows)} equal")
+    log(f"[producer_es] reference cross-check: {sum(r['equal'] for r in rows)} / {len(rows)} equal")
     return {"rows": len(rows), "equal": len(rows) == CROSSCHECK_N and not differing,
             "differing": differing}
 
@@ -968,7 +1031,23 @@ FLAG_SOURCES = {  # EXP-0080's files the threshold and the reference counts come
 FLAG_CALIBRATION: dict[str, Any] = {  # calibrate_flag_threshold's output on those files
     "minibatches": 82, "re_keys": 4, "samples": 328, "self_disqualified": 9,
     "rate": 9 / 328, "rate_without_threshold": 135 / 328, "max_excess": 8 / 3}
+# v5 (base rf4): the same calibration on the rf4 L1 run (EXP-0085); None until computed by
+# `--mode flag-calibrate` on its files (then v5 is frozen, before any probe data)
+FLAG_THRESHOLD_V5: float | None = None
+FLAG_SOURCES_V5: dict[str, str] | None = None
+FLAG_CALIBRATION_V5: dict[str, Any] | None = None
 NOISE_ROWS = "noise_episodes.csv"
+
+
+def active_flag() -> tuple[float, dict[str, str] | None]:
+    """The flag threshold and its registered sources for the pinned version: v5's once
+    calibrated; before that (dry runs only: a real run is refused by `flag_source_problems`) the
+    v3 / v4 value."""
+    if PREREG_VERSION >= 5:
+        if FLAG_THRESHOLD_V5 is None:
+            return FLAG_THRESHOLD, None
+        return FLAG_THRESHOLD_V5, FLAG_SOURCES_V5
+    return FLAG_THRESHOLD, FLAG_SOURCES
 
 
 @dataclass(frozen=True)
@@ -1015,14 +1094,19 @@ def load_flag_reference(margins: str | Path, bar: Mapping, base_rows, margin: An
     """The noise-floor run's re-keyed rows (next to its margins.json)."""
     path = Path(margins).parent / NOISE_ROWS
     return flag_reference(read_csv(path), bar, base_rows, margin), {
-        "flag_rule": FLAG_RULE, "flag_threshold": FLAG_THRESHOLD,
+        "flag_rule": FLAG_RULE, "flag_threshold": active_flag()[0],
         "noise_episodes_sha256": sha256_file(str(path))}
 
 
-def flag_source_problems(pins: Mapping[str, Any]) -> list[str]:
-    """A real probe / train run reads the registered EXP-0080 files."""
+def flag_source_problems(pins: Mapping[str, Any],
+                         sources: Mapping[str, str] | None = None) -> list[str]:
+    """A real probe / train run reads the registered L1 files (EXP-0080 for v3 / v4, EXP-0085
+    for v5; `sources` overrides the pinned version's)."""
+    sources = active_flag()[1] if sources is None else sources
+    if sources is None:
+        return ["no registered flag calibration for this pre-registration (v5: EXP-0085)"]
     return [f"{k} {str(pins.get(k))[:12]} is not the registered {v[:12]}"
-            for k, v in FLAG_SOURCES.items() if pins.get(k) != v]
+            for k, v in sources.items() if pins.get(k) != v]
 
 
 def flag_minibatches(ts: TrainingSet, size: int = MINIBATCH) -> list[list[tuple[str, int]]]:
@@ -1098,7 +1182,8 @@ def score_member_v4(rows: Sequence[Mapping[str, str]], bar: Mapping, margin: Any
 def _scores(rows_by_member: Mapping[str, Sequence[Mapping[str, str]]], bar: Mapping,
             margin: Any, refs: Mapping, fref: FlagReference) -> dict:
     """Units-only fitness with v4's death penalty; disqualification by v3's flag-count rule."""
-    return {lab: score_member_v4(rs, bar, margin, refs, fref)
+    threshold = active_flag()[0]
+    return {lab: score_member_v4(rs, bar, margin, refs, fref, threshold)
             for lab, rs in rows_by_member.items()}
 
 
@@ -1387,8 +1472,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--verify-source-commit", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--max-world-episodes", type=int, help="bar dry run: the first N")
-    p.add_argument("--atlas", help="bar: atlas_v2.json (the EXP-0079 cross-check)")
-    p.add_argument("--exp0079-episodes", help="bar: EXP-0079's rf3 episodes.csv")
+    p.add_argument("--atlas", help="bar: atlas_v2.json (the reference cross-check)")
+    p.add_argument("--reference-episodes", "--exp0079-episodes", dest="reference_episodes",
+                   help="bar: the base's supply-trace episodes.csv (EXP-0079 rf3, EXP-0084 rf4)")
     p.add_argument("--replicates", help="noise-floor dry run: comma-separated (default 1,2,3,4)")
     p.add_argument("--generations", type=int, help="train: target generation count")
     p.add_argument("--opt-seed", type=int, default=0)
@@ -1416,7 +1502,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                   horizon=a.horizon, source_commit=commit, dry_run=a.dry_run)
     if a.mode == BAR:
         return run_bar(**common, max_world_episodes=a.max_world_episodes, atlas=a.atlas,
-                       exp0079_episodes=a.exp0079_episodes)
+                       reference_episodes=a.reference_episodes)
     if a.bar_dir is None:
         p.error(f"--mode {a.mode} needs --bar-dir")
     if a.mode == NOISE:

@@ -111,6 +111,17 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   MWWk only (a `--dry-run` supply-trace run, horizon ≠ 100): deaths and units. ≈ 1.2 vCPU-h, stop 6;
   cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P. After 4.2f.
   - Done 2026-11-05 (EXP-0084): **`no_gain`** (12: +116.8 / +113.7 vs floor 146.5; 0 deaths; run-down down 5 / 3); 42 +326 / +367 vs 362; horizon 200 (reported) +8.3%, 0 deaths both; rf4 == rf3 where no block. The base decision goes to the supervisor / user. ≈ 0.9 vCPU-h, M5-P ≈ 3.6 / 80.
+- [ ] 4.2h [code][local] Re-base on rf4 (user decision 2026-11-05 "Adopt rf4 as base"): the residual /
+  ES / reads take rf4 (`upgrade_cap`); θ = 0 == rf4; rf3 paths kept (v1..v4 rebuild unchanged).
+  Pre-registration v5 = v4's rules on base rf4, its flag threshold / sources from the rf4 L1 run;
+  frozen after EXP-0085, before any probe data. Verify: θ = 0 == rf4 (incl. a capped episode);
+  v1..v4 unchanged; v5 refused until calibrated; goldens.
+- [ ] 4.2i [experiment][remote:cpu16] EXP-0085: L1 on rf4 (bar + noise floor, M4's pinned training
+  set). Verify: r0 reproduces the bar; rf4 on 2 EXP-0057 world-episodes equals EXP-0084's rows;
+  self-flags ≤ 5%; 0 contract failures; training-set deaths reported (12-0016 / 12-0004 expected
+  none). ≈ 1.5, stop 3. Then (local, no pod up) `--mode flag-calibrate` → v5 constants → freeze v5.
+- [ ] 4.2j [experiment][remote:cpu16] EXP-0086: a fresh L2 probe on rf4 under v5 (new rows). Reading
+  as 4.2; `signal` / `weak` → 5.1 (L3 pilot, stop 14); else stop. ≈ 2, stop 4.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
 - [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to

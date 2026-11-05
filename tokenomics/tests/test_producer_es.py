@@ -133,9 +133,15 @@ def test_minibatches_follow_the_recorded_stream() -> None:
     assert len(pe.monitor_set(ts)) == 16 and len(ts.world_episodes) == 128
 
 
-@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(EXP0079)), reason="EXP-0052 / EXP-0079 absent")
-def test_crosscheck_reproduces_exp0079(tmp_path: Path) -> None:
-    res = pe.crosscheck_exp0079(ATLAS_V2, EXP0079, tmp_path, LOG)
+EXP0084 = (REPO / "experiments/EXP-0084-sustainable-upgrade/entity_planner_buyahead_k4_rf4"
+           / "artifacts" / "episodes.csv")
+
+
+@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(EXP0084)), reason="EXP-0052 / EXP-0084 absent")
+def test_crosscheck_reproduces_the_base_reference_exp0084(tmp_path: Path) -> None:
+    """The bar's cross-check replays the base (rf4 from v5) and equals EXP-0084's rf4 rows."""
+    assert pe.BASE_PRODUCER == pe.RF4_PRODUCER
+    res = pe.crosscheck_reference(ATLAS_V2, EXP0084, tmp_path, LOG)
     assert res["rows"] == pe.CROSSCHECK_N and res["equal"], res
 
 
@@ -194,7 +200,11 @@ def test_real_probe_and_train_need_the_pinned_preregistration(
         runs: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     kw = dict(training_dir=TRAINING, bar_dir=runs["bar"], margins=runs["noise"] / "margins.json",
               source_commit="0" * 40, log=LOG)
-    assert pe.prereg_problems() == []  # the frozen file, as pinned (task 2.3)
+    if pe.PREREG_SHA256 is None:  # v5 before the rf4 L1 run: every real probe / train is refused
+        with pytest.raises(ValueError, match="no pinned pre-registration"):
+            pe.run_probe(out_dir=tmp_path / "p0", **kw)
+    else:
+        assert pe.prereg_problems() == []  # the frozen file, as pinned
     monkeypatch.setattr(pe, "PREREG_SHA256", "0" * 64)
     with pytest.raises(ValueError, match="does not match the pinned SHA-256"):
         pe.run_probe(out_dir=tmp_path / "p", **kw)
@@ -208,20 +218,20 @@ def test_real_probe_and_train_need_the_pinned_preregistration(
 def test_freeze_matches_and_a_changed_section_is_refused(tmp_path: Path) -> None:
     """Task 2.3: the frozen file is the registration (MATCH); a copy with one section changed is
     refused, both by its SHA-256 and by the section comparison."""
-    status, sha = pe.freeze_prereg(pe.PREREG_PATH)
-    assert status == "MATCH" and sha == pe.PREREG_SHA256
-    doc = json.loads(pe.PREREG_PATH.read_text())
+    status, sha = pe.freeze_prereg(pe.PREREG_V4_PATH, 4)  # the last frozen file whatever is pinned
+    assert status == "MATCH" and sha == pe.PREREG_V4_SHA256
+    doc = json.loads(pe.PREREG_V4_PATH.read_text())
     doc["es"]["sigma"] = 0.07
     bad = tmp_path / "prereg.json"
     bad.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
-    assert pe.freeze_prereg(bad)[0] == "MISMATCH es"
+    assert pe.freeze_prereg(bad, 4)[0] == "MISMATCH es"
     from tokenomics.eval.provenance import sha256_file
 
-    assert "does not match the pinned" in pe.prereg_problems(bad)[0]
+    assert "does not match the pinned" in pe.prereg_problems(bad, pinned=pe.PREREG_V4_SHA256)[0]
     assert "sections differ from the code: ['es']" in pe.prereg_problems(
-        bad, pinned=sha256_file(str(bad)))[0]
+        bad, pinned=sha256_file(str(bad)), version=4)[0]
     fresh = tmp_path / "new.json"
-    assert pe.freeze_prereg(fresh) == ("FROZEN", pe.PREREG_SHA256)  # deterministic bytes
+    assert pe.freeze_prereg(fresh, 4) == ("FROZEN", pe.PREREG_V4_SHA256)  # deterministic bytes
 
 
 @needs_training
@@ -273,7 +283,7 @@ def test_rf3_rekeys_pass_the_flag_rule_at_the_registered_rate() -> None:
     """The registered threshold is calibrate_flag_threshold on EXP-0080's files, and rf3's own
     re-keys are disqualified on <= 5% of the re-keyed minibatches (the registered rate)."""
     bar, base, margin, refs, fref, pins = _v3_inputs()
-    assert pe.flag_source_problems(pins) == []
+    assert pe.flag_source_problems(pins, pe.FLAG_SOURCES) == []  # v3 / v4's EXP-0080 files
     cal = pe.calibrate_flag_threshold(pe.load_training(TRAINING), fref)
     assert cal["threshold"] == pytest.approx(pe.FLAG_THRESHOLD)
     assert {k: cal[k] for k in pe.FLAG_CALIBRATION} == pytest.approx(pe.FLAG_CALIBRATION)
@@ -306,7 +316,8 @@ def test_an_always_flagged_member_fails_and_deaths_stay_absolute() -> None:
 
 def test_real_probe_refuses_other_flag_sources() -> None:
     want = pe.FLAG_SOURCES["margins_sha256"][:12]
-    assert pe.flag_source_problems({**pe.FLAG_SOURCES, "margins_sha256": "0" * 64}) == [
+    assert pe.flag_source_problems({**pe.FLAG_SOURCES, "margins_sha256": "0" * 64},
+                                   pe.FLAG_SOURCES) == [
         f"margins_sha256 000000000000 is not the registered {want}"]
 
 
@@ -336,4 +347,12 @@ def test_a_death_scores_units_minus_the_penalty_and_is_not_auto_worst() -> None:
     # v3 still disqualifies the same death (the recorded rule, unchanged)
     assert pe.score_member_v3([{**rows[k], "dead": "true"} if k == live else rows[k] for k in mb],
                               bar, margin, refs, fref).disqualified
+
+
+def test_v5_real_runs_are_refused_until_the_rf4_calibration_exists() -> None:
+    if pe.FLAG_SOURCES_V5 is None:
+        assert pe.flag_source_problems(dict(pe.FLAG_SOURCES)) == [
+            "no registered flag calibration for this pre-registration (v5: EXP-0085)"]
+    else:
+        assert pe.flag_source_problems(dict(pe.FLAG_SOURCES_V5)) == []
 

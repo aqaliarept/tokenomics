@@ -87,11 +87,23 @@ class _Restricted:
 @needs_atlas
 @pytest.mark.parametrize("world,horizon", [(W12, 30), (W42, 15)])
 def test_theta_zero_is_rf3_action_for_action(world: str, horizon: int) -> None:
-    rf3 = b.EXTRA_PRODUCING[pr.BASE_PRODUCER]
+    rf3 = b.EXTRA_PRODUCING[pr.RF3_PRODUCER]
     assert _episode(pr.producer_residual_policy(np.zeros(pr.THETA_DIM)), world, horizon) == \
         _episode(b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False),
                  world, horizon)
     assert rf3.rf_parts == (False, False, True)
+
+
+@needs_atlas
+@pytest.mark.parametrize("world,horizon", [("ws-atlas-v1-12-0121", 40), (W42, 15)])
+def test_theta_zero_with_the_cap_is_rf4_action_for_action(world: str, horizon: int) -> None:
+    """Task 4.2h (base rf4): theta = 0 with `upgrade_cap` equals rf4, also on an episode where
+    the cap fires (atlas 12-0121 at horizon 40, test_buyahead)."""
+    assert pr.BASE_PRODUCER == pr.RF4_PRODUCER
+    assert _episode(pr.producer_residual_policy(np.zeros(pr.THETA_DIM), upgrade_cap=True),
+                    world, horizon) == \
+        _episode(b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False,
+                                                        upgrade_cap=True), world, horizon)
 
 
 @needs_atlas

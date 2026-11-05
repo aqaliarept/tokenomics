@@ -1,7 +1,8 @@
 """Producer residual on the M5 base (add-m5-potential-game-gnn task 2.1, design D2).
 
 The base is `entity_planner_buyahead_k4_rf3` (EXP-0079, design D8): buy-ahead k = 4 plus the early
-inventory expansion. A parameter vector theta, shared by every producer and every input row, corrects
+inventory expansion; with `upgrade_cap` it is `entity_planner_buyahead_k4_rf4` (rf3 + the
+sustainable-upgrade cap, task 4.2f; the base from pre-registration v5). A parameter vector theta, shared by every producer and every input row, corrects
 three of its decisions from features of the producer's own view and its own past cycles:
 
 - buffer per input: k_g = 4 * exp(clip(theta_k . phi_g, -K_CLIP, K_CLIP)) cycles of recent use;
@@ -37,6 +38,7 @@ from ..domain.producing_agent import ProducingAgentCommand
 from ..eval.baselines import (
     _action_from_producing_command,
     blocked_shortfall,
+    over_sustainable_max,
     plan_reservations_first,
     recent_input_use,
 )
@@ -46,7 +48,11 @@ if TYPE_CHECKING:
 
 Policy = Callable[["TokenomicsAECEnv", str], np.ndarray]
 
-BASE_PRODUCER = "entity_planner_buyahead_k4_rf3"
+RF3_PRODUCER = "entity_planner_buyahead_k4_rf3"  # the base of pre-registrations v1..v4
+RF4_PRODUCER = "entity_planner_buyahead_k4_rf4"  # rf3 + the sustainable-upgrade cap (task 4.2f)
+# The base (user decision 2026-11-05 "Adopt rf4 as base", after EXP-0084): theta = 0 is rf4 with
+# `upgrade_cap=True`, rf3 with False (the v1..v4 path).
+BASE_PRODUCER = RF4_PRODUCER
 BASE_K = 4.0
 K_CLIP = 2.0  # k_g in [4 e^-2, 4 e^2] ~ [0.54, 29.6] cycles
 HISTORY_ALPHA = 0.3  # the telemetry's EMA weight
@@ -204,7 +210,8 @@ def plan_residual(view: ProducerEntityView, theta: np.ndarray, shortfall_ema: di
                   max_replenish: int, replenish_cost_per_unit, funding_budget,
                   inventory_expansion_increases: int, inventory_expansion_cost,
                   normaliser: "Normaliser | None" = None,
-                  recorder: Callable | None = None) -> ProducingAgentCommand:
+                  recorder: Callable | None = None,
+                  upgrade_cap: bool = False) -> ProducingAgentCommand:
     """The base's command with theta's corrections (module docstring). `normaliser` standardises
     phi / psi before theta (task 2.3); `recorder(phi_raw, psi_raw)` receives the raw features of
     every decision (the bar run fits the normaliser on rf3's, i.e. theta = 0's, rows)."""
@@ -226,6 +233,8 @@ def plan_residual(view: ProducerEntityView, theta: np.ndarray, shortfall_ema: di
         kept_room=0, inventory_expansion_increases=inventory_expansion_increases,
         inventory_expansion_cost=inventory_expansion_cost, blocked_first=False, keep_room=False,
         expand_early=True, plan_view=plan_view)
+    if upgrade_cap and cmd.do_upgrade and over_sustainable_max(view):  # rf4 (task 4.2f)
+        cmd = replace(cmd, do_upgrade=False)
     if cmd.do_inventory_expansion or not theta_e.any():
         return cmd
     psi = producer_features(view, shortfall_ema)
@@ -255,7 +264,8 @@ def _affordable(view: ProducerEntityView, cmd: ProducingAgentCommand, funding_bu
 
 
 def producer_residual_policy(theta: np.ndarray, normaliser: "Normaliser | None" = None,
-                             recorder: Callable | None = None) -> Policy:
+                             recorder: Callable | None = None,
+                             upgrade_cap: bool = False) -> Policy:
     """A producing policy playing the residual with `theta` (THETA_DIM values, shared by every
     producer). Episode state (each producer's per-input shortfall EMA) is weak-keyed by the system
     and read before the current cycle enters it."""
@@ -278,7 +288,7 @@ def producer_residual_policy(theta: np.ndarray, normaliser: "Normaliser | None" 
                             funding_budget=system.investment_fund,
                             inventory_expansion_increases=mechanics.inventory_expansion_increases,
                             inventory_expansion_cost=mechanics.inventory_expansion_cost,
-                            normaliser=normaliser,
+                            normaliser=normaliser, upgrade_cap=upgrade_cap,
                             recorder=None if recorder is None else
                             (lambda phi, psi: recorder(pid, cycle, phi, psi)))
         if cycle != last_cycle:
@@ -290,5 +300,6 @@ def producer_residual_policy(theta: np.ndarray, normaliser: "Normaliser | None" 
 
     policy.theta = theta  # type: ignore[attr-defined]
     policy.normaliser = normaliser  # type: ignore[attr-defined]
+    policy.upgrade_cap = upgrade_cap  # type: ignore[attr-defined]
     policy.state = state  # type: ignore[attr-defined]
     return policy
