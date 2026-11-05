@@ -1,0 +1,242 @@
+{
+ "base": {
+  "orderer": "mww_keyed",
+  "producer": "entity_planner_buyahead_k5_rf5",
+  "source": "supervisor decision 2026-11-05: the final producer (EXP-0089, EXP-0088); theta = 0 equals k5_rf5 action for action (tests/test_producer_residual.py)"
+ },
+ "change": "add-m5-potential-game-gnn",
+ "changes": {
+  "changed": [
+   "es.frozen (theta_e fixed at 0)",
+   "readings.L6.clean_read"
+  ],
+  "from": {
+   "file": "es_prereg_m5_v6.json",
+   "note": "v1..v6 are never edited; v7 is a new file",
+   "sha256": "5cd0e302b233746e707059e49156e4f906d0ac9588e593d744b9c463b81143c1"
+  },
+  "unchanged": "every other rule of v6: base k5_rf5, its L1 run EXP-0090 (bar, normaliser, margins, flag threshold and calibration; theta = 0 and every job unchanged), sigma, minibatch, monitor, readings L2..L6",
+  "why": "EXP-0093 (L5 `kill` under v6): cand-s0's one extra death on atlas 12-0109 is DIAGNOSTICS 30, fund dilution by the learned expansion trigger theta_e (extra inventory-expansion orders put more producers in the investment-fund split; the sole maker p0_0 gets 0 and its restorations expire). The discriminating replay (cand-s0 with theta_e = 0) has 0 deaths on 12-0109's 16 episodes and keeps ~70% of the gain there. Supervisor decision 2026-11-05 (within M5-P): retrain without theta_e"
+ },
+ "decisions": "notes/user-decisions.md (2026-11-05) and notes/2.1-2.3.md (supervisor)",
+ "es": {
+  "adam": {
+   "beta1": 0.9,
+   "beta2": 0.999,
+   "eps": 1e-08,
+   "lr": 0.02
+  },
+  "adam_carried": "carried from M4 (es_prereg_m4_v1 `es.adam`), not re-tuned for the producer (flagged)",
+  "estimate": "g_j = sum_i (r(+i) - r(-i)) eps_ij / (2 pairs sigma_j)",
+  "frozen": {
+   "learned": "theta_k (9) and theta_b (9)",
+   "parameters": "theta_e (the 5 expansion-trigger values)",
+   "rule": "not perturbed (sigma 0 on those dimensions; the noise stream itself unchanged) and not updated (their gradient estimate set to 0 before Adam), so they stay 0",
+   "value": 0.0
+  },
+  "generations": {
+   "main": 40,
+   "pilot": 20
+  },
+  "generations_source": "DIAGNOSTICS 27 (under-trained at 20; >= 40)",
+  "minibatch": 24,
+  "minibatch_source": "M4's recorded stream for the optimiser seed (order_es_worlds.minibatch)",
+  "noise": "order_es.noise(opt_seed, g, pairs, theta_dim, 'm5-train') (stream m4-es-noise-v1)",
+  "opt_seeds": [
+   0,
+   1
+  ],
+  "pairs": 12,
+  "pairs_minibatch_source": "DIAGNOSTICS 25 / EXP-0069 (minibatch 24 suffices)",
+  "rank_shaping": "order_es.centered_ranks over the 2 * pairs members; disqualified members share the worst rank",
+  "sigma": 0.05,
+  "sigma_source": "M4's sigma on its normalised features (es_prereg_m4_v4 `sigma` 0.05)",
+  "update": "Adam ascent with L2 weight decay coupled into the gradient (order_es)",
+  "weight_decay": 0.005
+ },
+ "fitness": {
+  "death": {
+   "applies_to": "probe and train member scores; ranks by fitness, never auto-worst",
+   "penalty": "P = B_we, k5_rf5's units on the world-episode at r0 (the bar row): the episode scores units / B_we - 1",
+   "rule": "death-penalty-v1",
+   "why": "a death is as bad as delivering nothing extra over rf3 on that episode (supervisor default, 2026-11-05)"
+  },
+  "diagnostics": "holding units per cycle and the investment rejection rate per member, generation and read; never in a fitness or reading",
+  "formula": "mean over the minibatch of U / B_we; B_we = k5_rf5's units on the world-episode at r0 (the bar)",
+  "holding_term": null,
+  "source": "design D3, supervisor decision 2026-11-05 (units only; notes/2.2.md)"
+ },
+ "flags": [
+  "Adam lr 0.02 / weight decay 0.005 carried from M4, not re-tuned",
+  "L5 8 episodes per world carried from M4's power rule, not re-derived"
+ ],
+ "format": "m5-es-prereg-v1",
+ "guard": {
+  "applies_to": "probe and train member scores; the monitor and the L5 / L6 reads are unchanged",
+  "calibration": {
+   "max_excess": 3.0,
+   "minibatches": 82,
+   "rate": 0.03353658536585366,
+   "rate_without_threshold": 0.42073170731707316,
+   "re_keys": 4,
+   "rule": "leave-one-out on k5_rf5's re-keys: flags(r_k, M) - mean over the other re-keys of flags(r_j, M); threshold = the smallest t among 0 and the observed excesses with share(excess > t) <= target",
+   "samples": 328,
+   "self_disqualified": 11,
+   "sources": {
+    "bar_csv_sha256": "de67a546c0cb2904b268bb77ba77637ae7262702468074f99f763b3f3ebd5227",
+    "margins_sha256": "79c2ddaef4ba37a5be9e315bd36887b51395007abdd95b8ab8f907b10119eb00",
+    "noise_episodes_sha256": "a7d598882d7010ce9e5e18994cc9616730071369bbe22f1e849c3efa42bc2280",
+    "run": "EXP-0090 (noise_floor/noise_episodes.csv, noise_floor/margins.json, bar/bar.csv)"
+   },
+   "target": 0.05
+  },
+  "count_rule": "disqualified if flags(member, minibatch) - mean over k5_rf5's re-keys r1..r4 of flags(re-key, same world-episodes) > threshold",
+  "death": "no disqualification: a member episode that dies where k5_rf5 dies at no key (r0..r4) scores (units - P) / B_we in the fitness (fitness.death); a death where k5_rf5 dies at some key scores its units, as before",
+  "flag": "an episode is flagged when order_es.disqualifying's non-death clauses fire against k5_rf5's r0 (run-down r_end < x r_start or a consumer fill < y where k5_rf5 has none, beyond the margin below k5_rf5's own value)",
+  "margin": "c sqrt(2) x pooled within-world-episode SD over k5_rf5's replicates 0..4 (run-down ratio; each consumer's fill), c = 2.0",
+  "rule": "flag-count-v1 + death-penalty-v1",
+  "side_effect_params": "e2aee97ac38524d709862bc956c43940413ac0cb44c846304a4b8c3d324c3a99",
+  "source": "user decision 2026-11-05 after EXP-0081 (DIAGNOSTICS 25)",
+  "threshold": 1.6666666666666667,
+  "x_rundown": 0.7515841609654592,
+  "y_starvation": 0.7301724137931035
+ },
+ "normaliser": {
+  "clip": 5.0,
+  "rule": "M4's: per non-bias feature, (x - median) / scale clipped to +-5; scale = IQR, else the population std, else 1.0; fitted on k5_rf5's (theta = 0's) raw rows of every producer-cycle of the bar run's training world-episodes",
+  "source": "M4's normaliser (es_prereg_m4_v4 `normaliser`); supervisor decision 2026-11-05 (notes/2.3.md); pinned by the bar run's normaliser.json SHA-256"
+ },
+ "policy": {
+  "buffer": "k_g = 5 exp(clip(theta_k . phi_g, +-2.0))",
+  "expansion": "the base's triggers or theta_e . psi > 0 (configured, not running, affordable in the planner's spending order)",
+  "extra": "round(max(0, theta_b . phi_g)) units on top of the planner's want",
+  "initial_theta": "0 (the base)",
+  "input_features": [
+   "bias",
+   "stock_cover",
+   "inbound_cover",
+   "blocked_cover",
+   "log_use",
+   "headroom_frac",
+   "shortfall_ema_cover",
+   "latency",
+   "depth"
+  ],
+  "producer_features": [
+   "bias",
+   "headroom_frac",
+   "shortfall_cover",
+   "shortfall_ema_cover",
+   "fill_frac"
+  ],
+  "source": "design D2, notes/2.1.md",
+  "theta_dim": 23
+ },
+ "readings": {
+  "L1": {
+   "else": "stop, the user",
+   "pass": "r0 reproduces the bar's k5_rf5 rows; k5_rf5 equals EXP-0088 on 2 world-episodes; k5_rf5's self-disqualification under the flag-count rule <= 0.05 of its re-keyed minibatches (the calibration's rate)",
+   "superseded": "the per-episode self-flag rate under the margin (<= 0.05) is reported only (v5's user decision, kept)"
+  },
+  "L2": {
+   "arms": {
+    "S": 0.05,
+    "S2": 0.1
+   },
+   "licence": "the pilot is licensed by arm S's reading (signal or weak)",
+   "no_signal": "DIAGNOSTICS entry, stop",
+   "readings": {
+    "else": "no_signal",
+    "signal": 0.3,
+    "weak": 0.1
+   },
+   "same_as_S": "theta 0, eps, both minibatches (the recorded probe stream at size 24) and every key; only sigma differs",
+   "source": "M4 D7 thresholds; EXP-0069's A1-S2 step reading (supervisor decision 2026-11-05: probe at sigma and 2 sigma)",
+   "step_reading": {
+    "flat_at_sigma": "only S2 >= weak",
+    "heterogeneity": "both arms >= weak",
+    "next": {
+     "flat_at_sigma": "the step size becomes a design question; back to the user",
+     "heterogeneity": "heterogeneity was the issue; minibatch 24 suffices; pilot at sigma",
+     "no_signal": "no_signal again: DIAGNOSTICS entry, back to the user",
+     "sigma_only": "reported; proceed with sigma"
+    },
+    "no_signal": "neither",
+    "sigma_only": "only S >= weak"
+   }
+  },
+  "L3": {
+   "F_tr": "the floors rule on that comparison",
+   "feasible": "g_tr > F_tr",
+   "g_tr": "center - k5_rf5 on the monitor set at generation 20, equal weight over the 16 world-episodes, mean over replicates 0 and 1",
+   "unresolved": "else (DIAGNOSTICS 27's checks first)"
+  },
+  "L4": "seed 0 resumed to 40 generations; seed 1 from theta 0 to 40",
+  "L5": {
+   "arms": "both seeds' candidates, k5_rf5, entity_planner_buyahead_k4, entity_planner, all with MWWk; episode seeds from M4's validation stage (m4-es-validate); loaded worlds played",
+   "episodes_per_world": 8,
+   "episodes_source": "carried from M4's power-rule outcome (sizing.md \u00a7MDE: 8-episode reads); not re-derived for the producer pair (flagged)",
+   "kill": "below -F_val or extra deaths",
+   "plateau": "within F_val",
+   "precedence": [
+    "kill",
+    "transfer_failure",
+    "success",
+    "plateau"
+   ],
+   "replicates": 2,
+   "reported": "candidate vs entity_planner_buyahead_k4 and entity_planner; loss classes (observer on)",
+   "source": "design D6",
+   "success": "both seeds' candidate - k5_rf5 > F_val at 12, no extra deaths, run-down / starvation shares <= k5_rf5's",
+   "transfer_failure": "success at 12 and below -F_val at 42",
+   "worlds": "the loaded (rho > 0.28, not collapse) atlas v2 validation worlds at 12 (deciding) and 42 (reported)"
+  },
+  "L6": {
+   "clean_read": "EXP-0093's validation worlds informed this design (the death and the theta_e = 0 replay were found there), so the v7 L5 read is not a clean one; the L5 rules are unchanged and L6 on the held-out worlds is the clean read",
+   "confirmed": "the candidate - k5_rf5 clears its floor on the loaded held-out worlds at 12 and is not below -floor at 42; at 12 no extra deaths and the candidate's run-down and starvation shares (rows with r_end < x r_start; rows with a consumer fill < y) <= k5_rf5's (L5's clause); at 42 no extra deaths. This replaces v1's 'side effects within the margin' (review m5-2-4: the margin is a per-episode guard, not a read clause)",
+   "else": "not_confirmed",
+   "episodes": "8 per world (fresh seeds, stage m5-heldout), replicates 0 and 1, as L5; arms: the selected candidate, k5_rf5, entity_planner_buyahead_k4, entity_planner, all with MWWk",
+   "gating_worlds": "the loaded (rho > 0.28, not collapse) atlas v2 held-out worlds at 12 (deciding) and 42 (reported), as L5's; the other held-out worlds are played and reported",
+   "ledger": "key held-out/m5-producer; pending entry committed before launch",
+   "selection": "the seed whose candidate - k5_rf5 is larger on the 12-producer loaded validation world mean (L5's comparison); seed 0 on a tie. Selecting on validation is fine: L6 reads held-out worlds on fresh seeds",
+   "source": "design D6"
+  },
+  "floors": {
+   "rule": "per comparison: max(the atlas-spread floor at the read's counts, own 3 SE); own SE only with >= 2 paired observations on a world (the n = 1 rule); a gain at or below its floor is a tie",
+   "source": "es_prereg_m4_v4 `readings.floors` (applied to rf3 for A0)"
+  },
+  "monitor": {
+   "arms": [
+    "center",
+    "base (k5_rf5)"
+   ],
+   "at_generation_0": true,
+   "every": 10,
+   "replicates": [
+    0,
+    1
+   ],
+   "source": "M4's monitor (es_prereg_m4_v4 `es.monitor`); supervisor decision 2026-11-05",
+   "world_episodes": 16
+  },
+  "stock_heavy": {
+   "role": "reported only, never deciding; to the user",
+   "rule": "the selected theta's mean holding units per cycle > 1.5 x k5_rf5's on the read's world-episodes",
+   "source": "supervisor decision 2026-11-05 (notes/2.2.md)"
+  }
+ },
+ "status": "frozen before L2 (design D6); a real probe / train run refuses any other file",
+ "version": 7,
+ "worlds": {
+  "horizon": 100,
+  "order_ttl": 2,
+  "orderer_keys": "DrawKey(world, episode, replicate); replicate 0 for bar / members, 0 and 1 for the monitor, 1..4 for the noise floor",
+  "training": {
+   "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+   "size": 12,
+   "source": "design D7 (supervisor decision 2026-11-05)",
+   "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
+   "world_episodes": 128
+  }
+ }
+}

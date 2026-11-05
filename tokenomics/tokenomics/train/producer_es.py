@@ -120,13 +120,17 @@ PREREG_V5_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v5
 PREREG_V5_SHA256 = "06160cac20c001685077923440161d5d4959f23fb08f20581614f33ef2f219e4"
 # v6 (supervisor decision 2026-11-05: the producer is final, k5_rf5, EXP-0088): v5's rules on base
 # `entity_planner_buyahead_k5_rf5`, its L1 constants from the k5_rf5 L1 run; None until frozen.
-PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v6.json"
-# v6, frozen 2026-11-05 after EXP-0090 (R-2)
-PREREG_SHA256: str | None = "5cd0e302b233746e707059e49156e4f906d0ac9588e593d744b9c463b81143c1"
+PREREG_V6_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v6.json"
+PREREG_V6_SHA256 = "5cd0e302b233746e707059e49156e4f906d0ac9588e593d744b9c463b81143c1"
+# v7 (supervisor decision 2026-11-05, after EXP-0093's `kill`, DIAGNOSTICS 30): v6 with theta_e fixed
+# at 0 (the learner perturbs and updates theta_k and theta_b only); base, jobs and L1 constants as v6.
+PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v7.json"
+# v7, frozen 2026-11-05 (after EXP-0093; constants as v6)
+PREREG_SHA256: str | None = "986a8191f343423397571189b46a65e03c0f214d627be6d921bb3d9b41df60ff"
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
-PREREG_VERSION = 6
+PREREG_VERSION = 7
 TRAINING_PINS = {  # M4's pinned ES training set (EXP-0058 bar/), design D7
     "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
     "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38"}
@@ -422,7 +426,39 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
         doc["readings"]["L1"]["superseded"] = (
             f"the per-episode self-flag rate under the margin (<= {SELF_FLAG_TARGET}) is reported "
             f"only (v5's user decision, kept)")
+    if version >= 7:
+        doc["version"] = 7
+        doc["changes"] = {
+            "from": {"file": PREREG_V6_PATH.name, "sha256": PREREG_V6_SHA256,
+                     "note": "v1..v6 are never edited; v7 is a new file"},
+            "changed": ["es.frozen (theta_e fixed at 0)", "readings.L6.clean_read"],
+            "why": "EXP-0093 (L5 `kill` under v6): cand-s0's one extra death on atlas 12-0109 is "
+                   "DIAGNOSTICS 30, fund dilution by the learned expansion trigger theta_e (extra "
+                   "inventory-expansion orders put more producers in the investment-fund split; the sole "
+                   "maker p0_0 gets 0 and its restorations expire). The discriminating replay (cand-s0 "
+                   "with theta_e = 0) has 0 deaths on 12-0109's 16 episodes and keeps ~70% of the gain "
+                   "there. Supervisor decision 2026-11-05 (within M5-P): retrain without theta_e",
+            "unchanged": "every other rule of v6: base k5_rf5, its L1 run EXP-0090 (bar, normaliser, "
+                         "margins, flag threshold and calibration; theta = 0 and every job unchanged), "
+                         "sigma, minibatch, monitor, readings L2..L6"}
+        doc["es"]["frozen"] = {
+            "parameters": "theta_e (the 5 expansion-trigger values)", "value": 0.0,
+            "rule": "not perturbed (sigma 0 on those dimensions; the noise stream itself unchanged) "
+                    "and not updated (their gradient estimate set to 0 before Adam), so they stay 0",
+            "learned": "theta_k (9) and theta_b (9)"}
+        doc["readings"]["L6"]["clean_read"] = (
+            "EXP-0093's validation worlds informed this design (the death and the theta_e = 0 replay "
+            "were found there), so the v7 L5 read is not a clean one; the L5 rules are unchanged and "
+            "L6 on the held-out worlds is the clean read")
     return doc
+
+
+def frozen_mask() -> np.ndarray:
+    """1 where the pinned version learns a parameter, 0 where it fixes it (v7: theta_e = 0)."""
+    mask = np.ones(THETA_DIM)
+    if PREREG_VERSION >= 7:
+        mask[2 * N_IN:] = 0.0
+    return mask
 
 
 def _rebased(obj: Any, pairs: tuple[tuple[str, str], ...] = (("rf3", "rf4"),)) -> Any:
@@ -585,6 +621,12 @@ def probe_batches(ts: TrainingSet, size: int) -> tuple[list, list]:
 def job_id(kind: str, generation: object, member: str, world: str, episode: int,
            replicate: int) -> str:
     return f"{kind}|{generation}|{member}|{world}|{episode}|{replicate}"
+
+
+def frozen_pins() -> dict:
+    """v7: the fixed dimensions, pinned (a v6 run does not resume under v7); nothing before v7."""
+    m = frozen_mask()
+    return {} if m.all() else {"frozen_dims": [int(i) for i in np.flatnonzero(m == 0)]}
 
 
 def check_residual_base(jobs: Sequence[Job]) -> None:
@@ -1326,14 +1368,16 @@ def run_probe(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
     eps = noise(0, 0, pairs, THETA_DIM, NOISE_STREAM_PURPOSE["probe"])
     pins = {"driver": DRIVER, "mode": PROBE, "horizon": horizon, "dry_run": dry_run,
             "size": size, "pairs": pairs, "sigma": sigma, "sigma_arms": SIGMA_ARMS,
-            "theta_dim": THETA_DIM, **ts.pins, **bar_pins, **n_pins, **m_pins, **f_pins,
+            "theta_dim": THETA_DIM, **frozen_pins(), **ts.pins, **bar_pins, **n_pins, **m_pins,
+            **f_pins,
             "batches": [a, b], "eps_sha256": _sha(eps.tolist()), "prereg": PREREG_SHA256,
             "source": source_fingerprint(source_commit or None)}
     spec = _open_run(out, PROBE, pins, workers, log)
     jobs, arms = [], {}
     for arm, scale in SIGMA_ARMS.items():
         sig = np.full(THETA_DIM, sigma * scale)
-        thetas = {f"{arm}:{k}": v for k, v in member_thetas(np.zeros(THETA_DIM), eps, sig).items()
+        thetas = {f"{arm}:{k}": v for k, v in member_thetas(np.zeros(THETA_DIM), eps,
+                                                            sig * frozen_mask()).items()
                   if k != CENTER}
         arms[arm] = sig
         for bi, batch in enumerate((a, b)):
@@ -1353,7 +1397,7 @@ def run_probe(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
                 continue
             ranked = rank_and_estimate(eps, sig, {k: v.fitness for k, v in sc.items()},
                                        {k: v.disqualified for k, v in sc.items()})
-            est.append(ranked.estimate)
+            est.append(ranked.estimate * frozen_mask())
             batches.append({"batch": bi,
                             "disqualified": sum(v.disqualified for v in sc.values()),
                             "fitness_mean": fmean(v.fitness for v in sc.values()
@@ -1439,7 +1483,8 @@ def run_train(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
     pins = {"driver": DRIVER, "mode": TRAIN, "horizon": horizon, "dry_run": dry_run,
             "opt_seed": opt_seed, "size": size, "pairs": pairs, "sigma": sigma, "lr": lr,
             "monitor_every": monitor_every, "monitor_replicates": list(MONITOR_REPLICATES),
-            "theta_dim": THETA_DIM, **ts.pins, **bar_pins, **n_pins, **m_pins, **f_pins,
+            "theta_dim": THETA_DIM, **frozen_pins(), **ts.pins, **bar_pins, **n_pins, **m_pins,
+            **f_pins,
             "prereg": PREREG_SHA256, "source": source_fingerprint(source_commit or None)}
     spec = _open_run(out, TRAIN, pins, workers, log)
     refs = {k: v[0] for k, v in a0_values(base_rows).items()}
@@ -1504,7 +1549,8 @@ def run_train(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
     for g in range(start + 1, generations + 1):
         mb = minibatch(ts, opt_seed, g, size)
         eps = noise(opt_seed, g, pairs, THETA_DIM, NOISE_STREAM_PURPOSE["train"])
-        thetas = {k: v for k, v in member_thetas(theta, eps, sig).items() if k != CENTER}
+        thetas = {k: v for k, v in member_thetas(theta, eps, sig * frozen_mask()).items()
+                  if k != CENTER}
         jobs = _member_jobs(ts, TRAIN, thetas, mb, g, horizon, normaliser=nm)
         check_residual_base(jobs)
         rows, _ = play(out, ROW_FILES[TRAIN], jobs, workers, run_job_fn, bar, log)
@@ -1516,14 +1562,14 @@ def run_train(*, training_dir: str | Path, bar_dir: str | Path, margins: str | P
             break
         ranked = rank_and_estimate(eps, sig, {k: s.fitness for k, s in sc.items()},
                                    {k: s.disqualified for k, s in sc.items()})
-        theta, adam = adam_ascend(theta, ranked.estimate, adam, lr=lr)
+        theta, adam = adam_ascend(theta, ranked.estimate * frozen_mask(), adam, lr=lr)
         member_rows = [r for j in jobs if (r := rows.get(j["job_id"]))]
         fits = [s.fitness for s in sc.values() if s.fitness is not None]
         gens.append({"generation": g, "theta_sha256": theta_sha256(theta),
                      "minibatch_sha256": _sha(mb), "fitness_mean": fmean(fits),
                      "fitness_best": max(fits),
                      "disqualified": sum(s.disqualified for s in sc.values()),
-                     "grad_norm": float(np.linalg.norm(ranked.estimate)),
+                     "grad_norm": float(np.linalg.norm(ranked.estimate * frozen_mask())),
                      "theta_norm": float(np.linalg.norm(theta)), **_diag(member_rows)})
         write_csv(out / "generations.csv", GEN_COLUMNS, gens)
         save_checkpoint(checkpoint_path(out, g), {

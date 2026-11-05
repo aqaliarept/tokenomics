@@ -370,3 +370,17 @@ def test_probe_and_train_jobs_refuse_another_base() -> None:
                                "subject": "probe/x", "size": 12, "regime": "calm"})
     assert pe.is_failure(row) and "names no base" in json.dumps(row)
 
+
+@needs_training
+def test_v7_theta_e_stays_zero_through_training(runs: dict[str, Path], tmp_path: Path) -> None:
+    """v7 (DIAGNOSTICS 30): theta_e is never perturbed nor updated; theta_k / theta_b move."""
+    out = tmp_path / "t7"
+    assert pe.run_train(generations=2, **_train_kw(runs, out)) == 0
+    th = np.asarray(pe.load_checkpoint(out / "checkpoints" / "gen-002.json")["theta"])
+    assert not th[18:].any() and th[:18].any()
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["pins"]["frozen_dims"] == list(range(18, 23))
+    members = pe.read_csv(out / "members.csv")
+    assert members and all(not np.asarray(pe.load_checkpoint(c)["theta"])[18:].any()
+                           for c in (out / "checkpoints").glob("gen-*.json"))
+

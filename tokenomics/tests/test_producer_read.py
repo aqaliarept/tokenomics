@@ -281,27 +281,35 @@ def test_prereg_v5_untouched_on_rf4() -> None:
     assert "rf3" not in json.dumps({k: v5["readings"][k] for k in ("L3", "L5", "L6")})
 
 
-def test_prereg_v6_is_v5_rebased_on_k5_rf5_and_frozen_only_after_l1(monkeypatch) -> None:
-    """Producer finalization: v6 = v5's rules with the final producer k5_rf5 as the base (buffer
-    k = 5) and its own L1 calibration; before that run is calibrated, v6 cannot be built and no
-    real run is licensed."""
-    assert pe.PREREG_PATH.name == "es_prereg_m5_v6.json"
-    assert pe.BASE_PRODUCER == pe.K5_RF5_PRODUCER and rd.BASE == "k5_rf5"
-    if pe.FLAG_THRESHOLD_V6 is None:
-        assert pe.PREREG_SHA256 is None and "no pinned" in pe.prereg_problems()[0]
-        with pytest.raises(ValueError, match="needs the k5_rf5 L1 run"):
-            pe.registered_prereg(6)
-        monkeypatch.setattr(pe, "FLAG_THRESHOLD_V6", 1.0)
-        monkeypatch.setattr(pe, "FLAG_SOURCES_V6", {"noise_episodes_sha256": "x"})
-        monkeypatch.setattr(pe, "FLAG_CALIBRATION_V6", {"rate": 0.0})
-    v6, v5 = pe.registered_prereg(6), json.loads(pe.PREREG_V5_PATH.read_text())
+def test_prereg_v6_untouched_on_k5_rf5() -> None:
+    """Producer finalization: v6 = v5's rules on k5_rf5 with EXP-0090's calibration; never edited."""
+    from tokenomics.eval.provenance import sha256_file
+
+    assert sha256_file(str(pe.PREREG_V6_PATH)) == pe.PREREG_V6_SHA256
+    v6, v5 = json.loads(pe.PREREG_V6_PATH.read_text()), json.loads(pe.PREREG_V5_PATH.read_text())
+    assert v6 == pe.registered_prereg(6)
     assert v6["base"]["producer"] == pe.K5_RF5_PRODUCER and v6["version"] == 6
     assert v6["changes"]["from"]["sha256"] == pe.PREREG_V5_SHA256
-    assert v6["guard"]["threshold"] == pe.FLAG_THRESHOLD_V6
     assert v6["policy"]["buffer"].startswith("k_g = 5 exp(") and v5["policy"]["buffer"].startswith(
         "k_g = 4 exp(")
-    assert v6["es"] == v5["es"] and v6["fitness"]["death"]["rule"] == v5["fitness"]["death"]["rule"]
     text = json.dumps({k: v for k, v in v6.items() if k != "changes"})
-    assert "k5_rf5's units" in text and "candidate - k5_rf5" in text
+    assert "candidate - k5_rf5" in text and "k4_k5_rf5" not in text
     assert "rf4" not in json.dumps({k: v6["readings"][k] for k in ("L3", "L5", "L6")})
-    assert "k4_k5_rf5" not in text  # the full producer name was replaced first
+
+
+def test_prereg_v7_is_v6_with_theta_e_fixed() -> None:
+    """After EXP-0093 (DIAGNOSTICS 30): v7 = v6 with theta_e fixed at 0; base, L1 constants and the
+    readings' rules unchanged; L6 is recorded as the clean read."""
+    assert pe.PREREG_PATH.name == "es_prereg_m5_v7.json" and pe.prereg_problems() == []
+    assert pe.BASE_PRODUCER == pe.K5_RF5_PRODUCER and rd.BASE == "k5_rf5"
+    v7, v6 = json.loads(pe.PREREG_PATH.read_text()), json.loads(pe.PREREG_V6_PATH.read_text())
+    assert v7["version"] == 7 and v7["changes"]["from"]["sha256"] == pe.PREREG_V6_SHA256
+    assert sorted(k for k in set(v7) | set(v6) if v7.get(k) != v6.get(k)) == [
+        "changes", "es", "readings", "version"]
+    assert {k for k in v7["es"] if v7["es"][k] != v6["es"].get(k)} == {"frozen"}
+    assert {k: v for k, v in v7["readings"].items() if k != "L6"} == {
+        k: v for k, v in v6["readings"].items() if k != "L6"}
+    assert {k for k in v7["readings"]["L6"] if v7["readings"]["L6"][k] != v6["readings"]["L6"].get(k)
+            } == {"clean_read"}
+    assert v7["guard"] == v6["guard"] and v7["base"] == v6["base"]
+    assert list(pe.frozen_mask()) == [1.0] * 18 + [0.0] * 5
