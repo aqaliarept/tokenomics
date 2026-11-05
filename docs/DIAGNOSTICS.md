@@ -1071,6 +1071,15 @@ improved. The competing explanations call for different responses:
 - **Branch: the death penalty is too large for the probe's step.** The penalty size goes to the user as a new
   pre-registration version, with an independent justification.
 
+**Evidence (task 4.2e, death diagnostic; add-m5 notes/4.2e.md; 2026-11-05):** the EXP-0081–0083 deaths on
+train 12-0016 / 12-0004 are entry 29's **upgrade trap**, not draw noise and not a residual-only effect.
+- rf3 is itself trapped on 12-0016 and dies at cycle 115 at horizon 200.
+- The members reach the trap earlier, mainly through θ_e (more downstream expansions, which load the single
+  effective tier-0 maker).
+- Vetoing unsustainable upgrades prevents every death and roughly doubles rf3's units on both worlds.
+- So the probe's death clause was measuring the base's flaw. The response is a base rule (entry 29), the
+  user's decision; the scoring is unchanged.
+
 ## 26. A pod bills idle while a local step runs between two pod steps
 
 **Problem (plain English):** a run split into two steps on one pod (e.g. bar, then probe) puts a
@@ -1260,3 +1269,40 @@ call for different responses:
     times more often than A0's re-keying noise does under the same margin, so the
     disqualifications reflect real run-down / starvation by the perturbed members against
     MWWk, not draw noise.
+
+## 29. Upgrades past the sustainable max drain a producer to death (upgrade trap)
+
+_Status: diagnosed (2026-11-05, add-m5 task 4.2e, notes/4.2e.md) on 2 worlds (train 12-0016, 12-0004);
+how general it is across the training set is untested._
+
+**Problem (plain English):**
+- A producer's capacity degrades each cycle by a fixed percentage of its **max** capacity (`degradation_for`).
+  A restoration returns a fixed number of units, and only one runs at a time.
+- So each producer has a largest sustainable max: `restoration.restores / degradation %`.
+- `entity_planner` (and so buy-ahead / rf3) upgrades whenever demand pressure exceeds max (`producer_planner`
+  `upgrade_roi`), with no check of that ceiling.
+- Past it, even a restoration every cycle loses to degradation. Capacity drains steadily, and when that
+  producer is the only real maker of a product, the system dies.
+- Signs: steady capacity decline while restorations succeed; min capacity ratio and r_end falling; death late
+  in the episode; the horizon hiding it.
+
+**Discriminating checks (local, one-shot):**
+1. Per producer, compare max capacity against `floor(100 · restores / degradation)` over the episode
+   (`probes/death_trace.py`).
+2. **Counterfactual:** veto upgrades whose post-upgrade degradation exceeds `restores`, and replay
+   (`probes/death_counterfactual.py`; diagnostic only).
+3. **Horizon:** replay the base at horizon 200 to see whether the base itself dies.
+
+**Outcome branches:**
+- **The veto prevents the death:** the upgrade rule is the cause. A base-rule change (a sustainable-upgrade
+  guard) is a design decision for the user, and it re-bases the ladder (L1 again).
+- **Death persists under the veto:** another cause (restoration rejection, funding, shocks). Trace the
+  restorations' fates and the funds.
+
+**Evidence (task 4.2e):**
+- **12-0016:** p0_0's ceiling is 266. rf3 upgrades it to 303 (dies at cycle 115 at horizon 200); members go to
+  311–327 and die at 87–99.
+- **12-0004:** p0_2's ceiling is 300. rf3 goes to 288 and lives; +06 goes to 336 and dies at 91.
+- **Veto:** no deaths on either world at horizon 100 or 200. rf3's units are 1,886 → 3,500 (12-0016) and
+  3,282 → 4,514 (12-0004).
+- Restorations succeed about 0.97 per cycle throughout, and the funding share is unchanged.
