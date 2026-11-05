@@ -428,10 +428,23 @@ def over_sustainable_max(view: ProducerEntityView) -> bool:
     return False
 
 
+def over_sustainable_max_exact(view: ProducerEntityView) -> bool:
+    """rf5 (producer finalization, supervisor decision 2026-11-05): `over_sustainable_max` with the
+    producer's own degradation rate (`CapacityRow.degradation_rate`) instead of the estimate from
+    `degradation`, which errs at a small max (DIAGNOSTICS 29: atlas 12-0391's p1_1 at max 1). The
+    post-upgrade degradation is ceil(rate x (max + upgrade_effect) / 100), exactly the domain's
+    `degradation_for`; no cap when restore_effect = 0, as rf4."""
+    for r in view.capacity_rows:
+        if r.upgrade_effect > 0 and r.restore_effect > 0:
+            if math.ceil(r.degradation_rate * (r.max + r.upgrade_effect) / 100) > r.restore_effect:
+                return True
+    return False
+
+
 def producing_entity_planner_buyahead_rf(ahead_cycles: float = 4, *, blocked_first: bool = True,
                                          keep_room: bool = True,
                                          expand_early: bool = True,
-                                         upgrade_cap: bool = False) -> Policy:
+                                         upgrade_cap: bool | str = False) -> Policy:
     """`entity_planner_buyahead` at k plus "reservations first" (task 7.22). The kept room R is
     the ceiling of an EMA (alpha `RF_ALPHA`) of this producer's past cycles' total blocked
     shortfall, kept per (system, producer) in the policy and read before the current cycle's value
@@ -439,7 +452,8 @@ def producing_entity_planner_buyahead_rf(ahead_cycles: float = 4, *, blocked_fir
     itself (weakly), never by its address: a new episode always starts at R = 0, whatever ran
     earlier in the process (review m4-orderer-7-22); a cycle counter below the stored one (the
     same system replayed) also restarts it. `upgrade_cap` (M5 task 4.2f, rf4): an upgrade the plan
-    chose is dropped when `over_sustainable_max(view)`; the rest of the command is unchanged (the
+    chose is dropped when `over_sustainable_max(view)` (rf5: `upgrade_cap="exact"`,
+    `over_sustainable_max_exact`); the rest of the command is unchanged (the
     budget is not re-spent, as the EXP-0083 diagnostic's veto). Blocked upgrades are counted per
     system in `policy.upgrades_blocked`."""
     state: "weakref.WeakKeyDictionary[object, dict]" = weakref.WeakKeyDictionary()
@@ -461,7 +475,9 @@ def producing_entity_planner_buyahead_rf(ahead_cycles: float = 4, *, blocked_fir
             inventory_expansion_increases=mechanics.inventory_expansion_increases,
             inventory_expansion_cost=mechanics.inventory_expansion_cost,
             blocked_first=blocked_first, keep_room=keep_room, expand_early=expand_early)
-        if upgrade_cap and cmd.do_upgrade and over_sustainable_max(view):
+        if upgrade_cap and cmd.do_upgrade and (
+                over_sustainable_max_exact(view) if upgrade_cap == "exact"
+                else over_sustainable_max(view)):
             cmd = replace(cmd, do_upgrade=False)
             blocked[env.system] = blocked.get(env.system, 0) + 1
         if cycle != last_cycle:
@@ -658,6 +674,9 @@ EXTRA_PRODUCING: dict[str, Policy] = {
     # M5 task 4.2f: rf3 + never upgrade past the sustainable max (DIAGNOSTICS 29)
     "entity_planner_buyahead_k4_rf4": producing_entity_planner_buyahead_rf(
         4, blocked_first=False, keep_room=False, upgrade_cap=True),
+    # producer finalization (supervisor decision 2026-11-05): rf3 + the exact cap (own rate)
+    "entity_planner_buyahead_k4_rf5": producing_entity_planner_buyahead_rf(
+        4, blocked_first=False, keep_room=False, upgrade_cap="exact"),
 }
 
 

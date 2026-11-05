@@ -62,6 +62,10 @@ class CapacityRow:
     upgrade_effect: int
     upgrade_cost: int
     demand_pressure: int
+    # The producer's own configured degradation rate (% of max per cycle), additive (M5 producer
+    # finalization, rf5): `degradation` above is ceil(rate x max / 100), which hides the rate at a
+    # small max. No existing encoder or policy reads it.
+    degradation_rate: int = 0
 
 
 @dataclass
@@ -168,6 +172,7 @@ def _capacity_row(p: ProducingAgent, t: CapacityType, open_qty: dict[Product, in
         upgrade_effect=metrics.upgrade_effect(p, t),
         upgrade_cost=metrics.upgrade_cost(p, t),
         demand_pressure=metrics.capacity_demand_pressure(p, t, open_qty),
+        degradation_rate=p.degradation,
     )
 
 

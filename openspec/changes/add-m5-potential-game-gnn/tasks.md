@@ -123,6 +123,29 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   - Ran 2026-11-05 (EXP-0085): **L1 stop branch**: self-flags 28 / 512 = 5.47% > 5% (all other checks pass; 0 training deaths; flag-count calibration T = 5/3 at 4.27%). v5 not frozen; to the supervisor / user. ≈ 0.6 vCPU-h, M5-P ≈ 4.2 / 80.
 - [ ] 4.2j [experiment][remote:cpu16] EXP-0086: a fresh L2 probe on rf4 under v5 (new rows). Reading
   as 4.2; `signal` / `weak` → 5.1 (L3 pilot, stop 14); else stop. ≈ 2, stop 4.
+
+### Producer finalization (supervisor plan 2026-11-05; notes/producer-finalization.md)
+
+- [x] PF-1 [experiment][local-read] EXP-0087: rf4's loss classes (offline read of EXP-0084's rows).
+- [x] PF-2 [diagnostic][local] 12-0391: the cap's view estimate errs at a tiny max (DIAGNOSTICS 29).
+- [ ] PF-3 [code][local] rf5 = rf3 + the exact sustainable-upgrade cap. The producer's own degradation rate
+  is an additive `CapacityRow.degradation_rate` that no existing encoder or policy reads; there is no cap when
+  restore_effect = 0; rf4 is unchanged (supervisor decision). Verify: the exact rule allows 12-0391's p1_1 and
+  blocks p2_2 / p2_1; existing policies act identically with the rate perturbed; goldens.
+- [ ] PF-4 [experiment][remote:cpu16] EXP-0089: rf5 vs rf3, using EXP-0079's rows (digests must match).
+  × {MWWk R = 2, RR}, TTL 2, EXP-0057's worlds, observer on.
+  - **Pre-registered reading (2026-11-05, before data; as EXP-0084's; 12 producers decide, 42 reported):**
+    per orderer, diff_w = mean paired (episode, replicate) units(rf5) − units(rf3) per world, and
+    floor_w = the atlas v2 `noise_floor`.
+    - `rf5_helps` if mean_w(diff_w) > mean_w(floor_w) for BOTH orderers, with no extra deaths and run-down
+      check failures (r_end < 0.7516 r_start) up by ≤ 5 (absolute, per orderer).
+    - `harmful` if mean_w(diff_w) < −mean_w(floor_w), or extra deaths, for EITHER orderer.
+    - `no_gain` otherwise.
+  - **Reported only:** rf5 vs rf4 (EXP-0084's rows), the same statistics; horizon 200 rf5 vs EXP-0084's
+    h200 rf3 / rf4 (MWWk, 12, dry run); upgrades blocked; deaths; held stock; run-down.
+  - ≈ 1 vCPU-h, stop 6; cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P.
+- [ ] PF-5 [experiment][remote:cpu16] EXP-0088: buffer re-sweep k ∈ {3, 5, 6} on the stronger of rf5 / rf4
+  (rf5 if it helps or holds), with the k* rule as EXP-0077's.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
 - [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to

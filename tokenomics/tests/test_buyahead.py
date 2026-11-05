@@ -248,7 +248,8 @@ def test_rf_registered_entries() -> None:
                      "entity_planner_buyahead_k4_rf1": (4, (True, False, False)),
                      "entity_planner_buyahead_k4_rf12": (4, (True, True, False)),
                      "entity_planner_buyahead_k4_rf3": (4, (False, False, True)),
-                     "entity_planner_buyahead_k4_rf4": (4, (False, False, True))}
+                     "entity_planner_buyahead_k4_rf4": (4, (False, False, True)),
+                     "entity_planner_buyahead_k4_rf5": (4, (False, False, True))}
     assert hasattr(b.EXTRA_PRODUCING["entity_planner_buyahead_k4_rf4"], "upgrades_blocked")
     assert not any(hasattr(b.EXTRA_PRODUCING[n], "upgrades_blocked")
                    for n in ("entity_planner_buyahead_k4_rf3", "entity_planner_buyahead_k4"))
@@ -410,4 +411,75 @@ def test_rf4_first_departs_from_rf3_at_its_first_blocked_upgrade(monkeypatch) ->
     first = seen["first"]
     assert first is not None
     assert a4[:first] == a3[:first] and a4[first] != a3[first]
+
+
+# --- producer finalization: rf5 = rf3 + the exact cap (the producer's own degradation rate) ---
+
+def _exact_view(rate: int, mx: int, upgrade: int, restore: int):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(capacity_rows=[SimpleNamespace(
+        degradation_rate=rate, max=mx, upgrade_effect=upgrade, restore_effect=restore,
+        degradation=-(-rate * mx // 100))])
+
+
+def test_the_exact_cap_uses_the_own_rate_where_the_estimate_errs() -> None:
+    # 12-0391's p1_1 (6%, restore 53, upgrade 65) at max 1: the estimate blocks (view degradation
+    # 1 -> 66 > 53), the exact rule allows (ceil(6% x 66) = 4)
+    v = _exact_view(6, 1, 65, 53)
+    assert b.over_sustainable_max(v) and not b.over_sustainable_max_exact(v)
+    # p2_2 (8%, restore 57, +62) at 693: ceil(8% x 755) = 61 > 57 -> blocked by both
+    v = _exact_view(8, 693, 62, 57)
+    assert b.over_sustainable_max(v) and b.over_sustainable_max_exact(v)
+    assert not b.over_sustainable_max_exact(_exact_view(40, 300, 8, 0))  # no cap without restore
+
+
+def test_the_view_row_carries_the_own_rate() -> None:
+    from tokenomics.domain.producer_view import CapacityRow, build_producer_entity_view
+
+    assert CapacityRow.__dataclass_fields__["degradation_rate"].default == 0
+    cfg = ProducingAgentConfig(id="P", capacities={"a": 50}, degradation=6,
+                               restoration=Restoration("raw", 1, "a"),
+                               upgrade=Upgrade("raw", 1, "a"), produces=frozenset({"good"}))
+    p = ProducingAgent(cfg, {"good": GOOD})
+    row = build_producer_entity_view(p, EconomyTelemetry(), {"good": GOOD, "raw": RAW},
+                                     {}).capacity_rows[0]
+    assert (row.degradation_rate, row.degradation) == (6, 3)
+
+
+@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(ORDERER)), reason="records absent")
+def test_existing_policies_do_not_read_the_new_rate(monkeypatch) -> None:
+    """rf3 / rf4 / k4 / entity_planner act the same when every view row's rate is garbage."""
+    from dataclasses import replace as dc_replace
+
+    from tokenomics.domain import producer_view as pv
+
+    names = ("entity_planner", "entity_planner_buyahead_k4", "entity_planner_buyahead_k4_rf3",
+             "entity_planner_buyahead_k4_rf4")
+    clean = {n: _actions(b.producing_policy(n), "ws-atlas-v1-12-0121", 0) for n in names}
+    real = pv._capacity_row
+    monkeypatch.setattr(pv, "_capacity_row",
+                        lambda *a, **k: dc_replace(real(*a, **k), degradation_rate=999))
+    for n in names:
+        assert _actions(b.producing_policy(n), "ws-atlas-v1-12-0121", 0) == clean[n], n
+
+
+@pytest.mark.skipif(not (_lfs(ATLAS_V2) and _lfs(ORDERER)), reason="records absent")
+def test_rf5_allows_p1_1_and_blocks_p2_2_p2_1_on_12_0391(monkeypatch) -> None:
+    """Producer finalization step 2: on atlas 12-0391 (horizon 100) rf5 allows the tiny-max p1_1's
+    upgrades that rf4's estimate blocked, and blocks p2_2's / p2_1's past their ceilings."""
+    seen: dict = {}
+    real = b.over_sustainable_max_exact
+
+    def logged(view):
+        hit = real(view)
+        seen.setdefault(view.producer_id, set()).add(hit)
+        return hit
+
+    monkeypatch.setattr(b, "over_sustainable_max_exact", logged)
+    rf5 = b.producing_entity_planner_buyahead_rf(4, blocked_first=False, keep_room=False,
+                                                 upgrade_cap="exact")
+    _actions(rf5, "ws-atlas-v1-12-0391", 1, horizon=100)  # episode 1977552299
+    assert seen.get("p1_1") == {False}
+    assert True in seen.get("p2_2", set()) and True in seen.get("p2_1", set())
 
