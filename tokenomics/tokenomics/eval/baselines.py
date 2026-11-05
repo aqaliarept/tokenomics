@@ -369,6 +369,8 @@ def plan_reservations_first(view: ProducerEntityView, *, ahead_cycles: float, ma
         room = min(room, int(budget // float(replenish_cost_per_unit)))
     short = blocked_shortfall(view)
     order: dict = {}
+    if not (blocked_first or keep_room):  # (3) alone (M5 1.1): buying stays the buy-ahead plan's
+        order = dict(base.replenishments)
     if blocked_first:  # (1)
         for g in sorted((g for g, q in short.items() if q > 0),
                         key=lambda g: (-scores.input_value.get(g, 0.0), str(g))):
@@ -376,19 +378,20 @@ def plan_reservations_first(view: ProducerEntityView, *, ahead_cycles: float, ma
             if q > 0:
                 order[g] = q
                 room -= q
-    plain = dict(kw, scores=scores, funding_budget=None, replenish_cost_per_unit=None)
-    # entity_planner's own target on top of (1), then the k-term on top of both, minus kept room
-    step2 = plan_producer_command(_with_inbound(view, order, room), **plain).replenishments
-    for g, q in step2.items():
-        order[g] = order.get(g, 0) + q
-    room -= sum(step2.values())
-    reserve = kept_room if keep_room else 0
-    step3 = plan_producer_command(
-        buyahead_view(_with_inbound(view, order, room - reserve), ahead_cycles),
-        **plain).replenishments
-    for g, q in step3.items():
-        order[g] = order.get(g, 0) + q
-    order = {g: min(q, max_replenish) for g, q in order.items() if q > 0}
+    if blocked_first or keep_room:  # the staged plan of (1) / (2)
+        plain = dict(kw, scores=scores, funding_budget=None, replenish_cost_per_unit=None)
+        # entity_planner's own target on top of (1), then the k-term on top, minus kept room
+        step2 = plan_producer_command(_with_inbound(view, order, room), **plain).replenishments
+        for g, q in step2.items():
+            order[g] = order.get(g, 0) + q
+        room -= sum(step2.values())
+        reserve = kept_room if keep_room else 0
+        step3 = plan_producer_command(
+            buyahead_view(_with_inbound(view, order, room - reserve), ahead_cycles),
+            **plain).replenishments
+        for g, q in step3.items():
+            order[g] = order.get(g, 0) + q
+        order = {g: min(q, max_replenish) for g, q in order.items() if q > 0}
     # upgrade and expansion as the planner spends: after restoration and replenishment
     if budget is not None and replenish_cost_per_unit:
         budget -= sum(order.values()) * float(replenish_cost_per_unit)
@@ -618,6 +621,10 @@ EXTRA_PRODUCING: dict[str, Policy] = {
     "entity_planner_buyahead_k4_rf1": producing_entity_planner_buyahead_rf(
         4, keep_room=False, expand_early=False),
     "entity_planner_buyahead_k4_rf12": producing_entity_planner_buyahead_rf(4, expand_early=False),
+    # M5 task 1.1 (design D8): k = 4 with only part 3, the earlier inventory expansion; its buying
+    # is k = 4's exactly
+    "entity_planner_buyahead_k4_rf3": producing_entity_planner_buyahead_rf(
+        4, blocked_first=False, keep_room=False),
 }
 
 

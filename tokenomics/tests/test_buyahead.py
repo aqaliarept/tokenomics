@@ -246,7 +246,8 @@ def test_rf_registered_entries() -> None:
              if hasattr(p, "rf_parts")}
     assert parts == {"entity_planner_buyahead_k4_rf": (4, (True, True, True)),
                      "entity_planner_buyahead_k4_rf1": (4, (True, False, False)),
-                     "entity_planner_buyahead_k4_rf12": (4, (True, True, False))}
+                     "entity_planner_buyahead_k4_rf12": (4, (True, True, False)),
+                     "entity_planner_buyahead_k4_rf3": (4, (False, False, True))}
 
 
 def _actions(policy, world: str, episode_index: int, horizon: int = 40) -> list[bytes]:
@@ -326,3 +327,22 @@ def test_rf_state_restarts_when_the_cycle_counter_goes_back() -> None:
         assert policy.rf_state[system]["P"] == (1, b.RF_ALPHA * 4)
     finally:
         bl._action_from_producing_command = orig
+
+
+def test_rf3_buys_as_k4_and_only_expands_earlier() -> None:
+    """M5 task 1.1: part 3 alone keeps k = 4's replenishment, restoration and upgrade exactly; only
+    the inventory-expansion toggle can differ, and only when headroom is below the blocked
+    shortfall."""
+    kw = dict(inventory_expansion_increases=10, inventory_expansion_cost=0)
+    for limit, reserved in ((2, 4), (6, 4), (10, 0), (100, 3)):
+        view = _rf_view(limit=limit, reserved_gadgets=reserved)
+        k4 = plan_producer_command(b.buyahead_view(view, 4), max_replenish=100,
+                                   scores=b.score_producer_entity_view(view),
+                                   inventory_expansion_increases=10, inventory_expansion_cost=0)
+        rf3 = _rf(view, blocked_first=False, keep_room=False, **kw)
+        assert rf3.replenishments == k4.replenishments, limit
+        assert (rf3.do_restoration, rf3.do_upgrade) == (k4.do_restoration, k4.do_upgrade)
+        short = sum(b.blocked_shortfall(view).values())
+        early = view.globals.inventory_headroom < short
+        assert rf3.do_inventory_expansion == (k4.do_inventory_expansion or early), limit
+    assert b.EXTRA_PRODUCING["entity_planner_buyahead_k4_rf3"].rf_parts == (False, False, True)

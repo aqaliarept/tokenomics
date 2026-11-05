@@ -21,13 +21,26 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 
 ## 1. Pre-step: "expand earlier" alone (design D8)
 
-- [ ] 1.1 [code][local] Add `entity_planner_buyahead_k4_rf3` (k4 + part 3 of 7.22 only) to
+- [x] 1.1 [code][local] Add `entity_planner_buyahead_k4_rf3` (k4 + part 3 of 7.22 only) to
   `eval/baselines.py` `EXTRA_PRODUCING`. Verify: all parts off == k4 (existing test pattern);
   test_buyahead; goldens.
+  - Done 2026-11-05: `entity_planner_buyahead_k4_rf3` = `producing_entity_planner_buyahead_rf(4,
+    blocked_first=False, keep_room=False)`. With parts 1 / 2 off, `plan_reservations_first` now
+    keeps k = 4's replenishment exactly (it staged them before), so rf3 = k4 + earlier expansion only:
+    replenishment, restoration and upgrade equal k4's on views (test). rf / rf1 / rf12 unchanged
+    (EXP-0078 rf rows reproduced 6 / 6 on 12-0111 at horizon 100). test_buyahead 15,
+    test_supply_trace 28, goldens 336, test_roster 36.
 - [ ] 1.2 [experiment][remote:cpu16] EXP-0079: rf3 vs k4 (EXP-0077 rows; digests must match),
-  × {MWWk, RR}, TTL 2, EXP-0057's worlds, observer on. Reading as 7.22b (`rf_helps` / `no_gain` /
-  `harmful`, 12 decides). On `rf_helps` rf3 becomes the base for group 2 (design D8). ≈ 1 vCPU-h,
-  stop 3. After 1.1.
+  × {MWWk, RR}, TTL 2, EXP-0057's worlds, observer on. **Pre-registered reading (2026-11-05,
+  before data; as EXP-0078 / 7.22b; 12 producers decide, 42 reported):** per orderer, diff_w =
+  mean paired (episode, replicate) units(rf3) − units(k4) per world, floor_w = atlas v2
+  `noise_floor`; `rf_helps` if mean_w(diff_w) > mean_w(floor_w) for BOTH orderers with no extra
+  deaths and run-down check failures (r_end < 0.7516 r_start) up by ≤ 5 (absolute, per orderer);
+  `harmful` if mean_w(diff_w) < −mean_w(floor_w) or extra deaths for EITHER orderer; `no_gain`
+  otherwise. Report late / headroom-blocked late units, expansions requested / completed,
+  investment rejections, held stock. On `rf_helps` rf3 becomes the base for group 2 (design D8:
+  plan text updated); otherwise k4 stays the base. ≈ 0.7 vCPU-h (EXP-0078: 1.9 for 3 × 213 jobs),
+  stop 3; cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P. After 1.1.
 
 ## 2. Residual policy and learner (code)
 
