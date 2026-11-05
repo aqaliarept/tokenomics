@@ -316,6 +316,7 @@ def producing_entity_planner_buyahead(ahead_cycles: float = BUYAHEAD_K) -> Polic
         )
         return _action_from_producing_command(env.spec_, pid, cmd)
 
+    policy.ahead_cycles = ahead_cycles  # type: ignore[attr-defined]  (k, for tests / records)
     return policy
 
 
@@ -485,6 +486,8 @@ PRODUCING_BASELINES: dict[str, Policy] = {
 EXTRA_PRODUCING: dict[str, Policy] = {
     "entity_planner_buyahead": producing_entity_planner_buyahead(BUYAHEAD_K),  # k = 1 registered
     "entity_planner_buyahead_k2": producing_entity_planner_buyahead(2),  # k = 2 reported
+    "entity_planner_buyahead_k3": producing_entity_planner_buyahead(3),  # task 7.20: buffer sweep
+    "entity_planner_buyahead_k4": producing_entity_planner_buyahead(4),
 }
 
 

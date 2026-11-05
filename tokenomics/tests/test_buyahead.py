@@ -68,6 +68,8 @@ def test_buyahead_stocks_k_cycles_of_use_before_any_order() -> None:
     assert dict(base.replenishments) == {} == _replenish(view, 0)
     assert _replenish(view, 1) == {"raw": 5}   # max(3, 0 + 0 + 8) - 3
     assert _replenish(view, 2) == {"raw": 13}  # max(3, 16) - 3
+    assert _replenish(view, 3) == {"raw": 21}  # max(3, 24) - 3 (task 7.20)
+    assert _replenish(view, 4) == {"raw": 29}  # max(3, 32) - 3
     idle = _view(completed_per_cycle=0, inventory=3)
     assert _replenish(idle, 1) == {}  # no past use: nothing ahead
 
@@ -142,3 +144,10 @@ def test_supply_observer_runs_with_buyahead(tmp_path: Path) -> None:
         st.run_supply_trace(atlas_path=ATLAS_V2, out_dir=tmp_path / "y", orderer_ckpt=str(ORDERER),
                             order_ttl=2, producer="entity_planner_buyahead",
                             exp0057_episodes="e.csv", dry_run=True)
+
+
+def test_registered_k_values() -> None:
+    """Task 7.20: the registered buy-ahead producers and their k."""
+    assert {n: p.ahead_cycles for n, p in b.EXTRA_PRODUCING.items()} == {
+        "entity_planner_buyahead": 1, "entity_planner_buyahead_k2": 2,
+        "entity_planner_buyahead_k3": 3, "entity_planner_buyahead_k4": 4}
