@@ -27,7 +27,8 @@ from .config import ProcessSheet, ProducingAgentConfig
 from .requests import InvestmentRequest, InvestmentType, ReplenishmentRequest
 
 # A composite reservation waits at most this many cycles for its inputs before
-# failing (rejected, −5). Mirrors the order TTL (ADR-0025).
+# failing (rejected, −5). The default; a producer's `reservation_ttl` follows the world's
+# order TTL (`Configuration.ttl`, task 7.16), so the two lifetimes stay aligned (ADR-0025).
 RESERVATION_TTL = 2
 
 # Why a bid was rejected or a reservation failed (add-m3-development-audit D2, "Telemetry").
@@ -151,9 +152,11 @@ class ProducingAgentView:
 
 class ProducingAgent:
     def __init__(
-        self, config: ProducingAgentConfig, sheets: dict[Product, ProcessSheet] | None = None
+        self, config: ProducingAgentConfig, sheets: dict[Product, ProcessSheet] | None = None,
+        reservation_ttl: int = RESERVATION_TTL,
     ) -> None:
         self.id = config.id
+        self.reservation_ttl = reservation_ttl  # = the world's order TTL (task 7.16)
         self.capacities: dict[CapacityType, Capacity] = dict(config.capacities)
         self.max_capacities: dict[CapacityType, Capacity] = dict(config.capacities)
         self.produces: frozenset[Product] = config.produces  # ADR-0028
@@ -456,7 +459,7 @@ class ProducingAgent:
                 completed.append(r.bid)
             else:
                 r.cycles_waited += 1
-                if r.cycles_waited >= RESERVATION_TTL:
+                if r.cycles_waited >= self.reservation_ttl:
                     # TTL hit: the reservation fails and frees its held capacity
                     # back to this cycle's budget for the new-bid auction below.
                     for t, c in r.bid.capacities.items():

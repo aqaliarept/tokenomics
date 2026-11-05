@@ -342,7 +342,8 @@ class System:
         # each producer owns the recipes for the products it makes (ADR-0029), so it
         # can expand routed sub-orders into capacity bundles itself.
         self.producing_agents: dict[ProducerId, ProducingAgent] = {
-            p.id: ProducingAgent(p, {prod: self.process_sheets[prod] for prod in p.produces})
+            p.id: ProducingAgent(p, {prod: self.process_sheets[prod] for prod in p.produces},
+                                 reservation_ttl=self.order_ttl)
             for p in config.producer_configs
         }
         self.ordering_agents: dict[OrderingAgentId, OrderingAgent] = {}

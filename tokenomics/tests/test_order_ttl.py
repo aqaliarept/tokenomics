@@ -124,3 +124,63 @@ def test_ttl4_sweep_dry_run(tmp_path: Path) -> None:
     reading = json.loads((out / "reading.json").read_text())
     assert reading["readings_withheld"] is True and reading["arms"] == list(dc.TTL_SWEEP_ARMS)
     assert (out / "contract_failures.csv").read_text().count("\n") == 1
+
+
+# --- task 7.16: the reservation lifetime follows the world's order TTL ---
+
+def _assembler(reservation_ttl: int) -> "ProducingAgent":
+    from tokenomics.domain.config import ProcessSheet, ProducingAgentConfig, Restoration, Upgrade
+    from tokenomics.domain.producing_agent import ProducingAgent, SubOrder
+
+    good = ProcessSheet("good", {"a": 2}, {"raw": 1})
+    cfg = ProducingAgentConfig(id="P", capacities={"a": 10}, degradation=0,
+                               restoration=Restoration("raw", 1, "a"),
+                               upgrade=Upgrade("raw", 1, "a"), produces=frozenset({"good"}),
+                               inventory_limit=10)
+    p = ProducingAgent(cfg, {"good": good}, reservation_ttl=reservation_ttl)
+    p.place_sub_orders([SubOrder(order_id=1, product="good", quantity=1, tokens=10)])
+    first = p.produce()
+    assert len(first.accepted) == 1 and not first.completed and len(p.reservations) == 1
+    return p
+
+
+@pytest.mark.parametrize("ttl", [2, 3, 4])
+def test_reservation_waits_ttl_cycles_for_inputs(ttl: int) -> None:
+    """Accepted without inputs in cycle t: it can still assemble in cycle t + ttl, and fails
+    there (FAIL_TTL) when the inputs have not arrived."""
+    from tokenomics.domain.producing_agent import FAIL_TTL
+
+    for inputs_arrive in (True, False):
+        p = _assembler(ttl)
+        for _ in range(ttl - 1):  # cycles t+1 .. t+ttl-1: waiting, nothing resolves
+            res = p.produce()
+            assert not res.completed and not res.failed and len(p.reservations) == 1
+        if inputs_arrive:
+            p.inventory["raw"] = 1
+        res = p.produce()  # cycle t + ttl
+        if inputs_arrive:
+            assert len(res.completed) == 1 and not res.failed
+        else:
+            assert len(res.failed) == 1 and res.failure_reasons == [FAIL_TTL]
+        assert not p.reservations
+
+
+def test_ttl4_reservation_survives_4_cycles_where_ttl2_fails() -> None:
+    p2, p4 = _assembler(2), _assembler(4)
+    assert p2.produce().failed == [] and len(p2.produce().failed) == 1  # TTL 2: gone at t + 2
+    for _ in range(3):
+        assert not p4.produce().failed  # TTL 4: still waiting at t + 3
+    p4.inventory["raw"] = 1
+    assert len(p4.produce().completed) == 1  # assembled at t + 4
+
+
+def test_system_producers_take_the_world_ttl() -> None:
+    from tokenomics.domain import build_system
+    from tokenomics.domain.producing_agent import RESERVATION_TTL
+
+    assert RESERVATION_TTL == DEFAULT_ORDER_TTL
+    for ttl in (None, 2, 3, 4):
+        cfg = load_config(COMPOSITE) if ttl is None else replace(load_config(COMPOSITE),
+                                                                 order_ttl=ttl)
+        system = build_system(cfg)
+        assert {p.reservation_ttl for p in system.producing_agents.values()} == {cfg.ttl}
