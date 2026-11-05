@@ -1062,6 +1062,15 @@ improved. The competing explanations call for different responses:
 - **New branch, death-driven:** the units direction tips one knife-edge world into system death. That is a real
   side effect, not draw noise. The response goes to the user as a new pre-registration version.
 
+**Evidence (EXP-0083, v4 penalised death P = B_we; offline re-score of EXP-0081's rows; 2026-11-05):**
+- `no_signal`: S −0.239, S2 −0.161. 0 disqualified on B.
+- **Scale:** one penalised death moves a member's minibatch mean by 0.042, against a member fitness SD on B of
+  0.020 / 0.033. So the 12-0016 deaths still sort B.
+- **Post-hoc sweep of P = p · B_we** (reported only, never a basis for P): p 0 / 0.1 / 0.25 / 0.5 / 1 gives
+  S 0.840 / 0.803 / 0.788 / 0.517 / −0.239.
+- **Branch: the death penalty is too large for the probe's step.** The penalty size goes to the user as a new
+  pre-registration version, with an independent justification.
+
 ## 26. A pod bills idle while a local step runs between two pod steps
 
 **Problem (plain English):** a run split into two steps on one pod (e.g. bar, then probe) puts a
