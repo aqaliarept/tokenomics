@@ -307,3 +307,29 @@ def test_sweep_ttl4_dry_run(tmp_path: Path) -> None:
     assert spec["pins"]["order_ttl"] == 4 and spec["result"]["contract_failures"] == 0
     assert (out / "contract_failures.csv").read_text().count("\n") == 1
     assert len(list(csv.DictReader((out / "supply_trace.csv").open()))) == 6
+
+
+def test_large_producer_cycle_cells_read_without_a_reference(tmp_path: Path,
+                                                             monkeypatch: pytest.MonkeyPatch
+                                                             ) -> None:
+    """Task 7.21 (EXP-0077 crash): a run that loads no reference must still read rows whose
+    `st_producer_cycles` cell exceeds csv's default 131,072-character limit. In a fresh process
+    the default limit refuses such a cell; after `allow_large_cells` it reads; and
+    `run_supply_trace` calls it before anything else."""
+    import subprocess
+    import sys
+
+    big = tmp_path / "big.csv"
+    big.write_text("a,b\n1," + "x" * 300_000 + "\n")
+    code = ("import csv, sys; from tokenomics.eval import supply_trace as st; "
+            f"p = {str(big)!r}; "
+            "ok = lambda: len(list(csv.DictReader(open(p))))\n"
+            "try:\n    ok(); sys.exit(3)\nexcept csv.Error:\n    pass\n"
+            "st.allow_large_cells(); sys.exit(0 if ok() == 1 else 4)")
+    assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+    calls = []
+    monkeypatch.setattr(st, "allow_large_cells", lambda: calls.append(1))
+    with pytest.raises(ValueError):  # an early refusal: the limit is raised before it
+        st.run_supply_trace(atlas_path=ATLAS_V2, out_dir=tmp_path / "o", orderer_ckpt="x",
+                            shock_profile="bogus")
+    assert calls == [1]

@@ -600,6 +600,7 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     taken. The 7.15 reading is reported per arm; EXP-0075 reads across the TTL runs.
     `producer` (task 7.18, sweep only) replaces `entity_planner` in every arm (subjects
     `<producer>/<router>`); references apply to `entity_planner` rows only."""
+    allow_large_cells()  # before execute / read_rows re-read episodes.csv (task 7.21)
     sweep = order_ttl is not None
     if producer != PRODUCER:
         if not sweep:
@@ -796,6 +797,17 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     log(f"[supply_trace] {'DRY RUN ' if dry_run else ''}{status}"
         + (f", reading {reading['reading']}" if code == 0 else ""))
     return code
+
+
+def allow_large_cells() -> None:
+    """Raise the csv module's (process-wide) field limit before any episodes.csv is read: the
+    `st_producer_cycles` JSON cell of a 42-producer horizon-100 row is ~300k characters, over the
+    default 131,072. EXP-0074-0076 only passed because `decoder_check.read_reference` (loading a
+    reference) raised the limit as a side effect; EXP-0077's runs take no reference and crashed
+    in `gate_cli.read_rows` (task 7.21)."""
+    import csv
+
+    csv.field_size_limit(1 << 30)
 
 
 def _csv_strs(s: str | None) -> list[str] | None:
