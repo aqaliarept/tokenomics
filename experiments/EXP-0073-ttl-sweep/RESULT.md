@@ -1,5 +1,8 @@
 # EXP-0073: Order TTL sweep (TTL 2 / 3 / 4) on the hand-written stacks
 
+> **Correction (2026-11-05, supervisor; found in task 7.14).** This run changed only the order lifetime. A producer that accepted an order but was waiting for inputs held it as a reservation that still failed after a fixed 2 cycles (`RESERVATION_TTL = 2` in `domain/producing_agent.py`, not tied to `order_ttl`). So TTL 3 / 4 never gave producers more time to wait for inputs, and the conclusion that input-wait losses are "scarcity" is **untested**. The gain from orders that lost an auction getting more tries stands. The sweep is re-run with the reservation lifetime tied to the world TTL (tasks 7.16 / 7.17).
+
+
 **Status: complete, valid.** Task 7.13 of `add-m4-orderer-redesign`. Not an acceptance read.
 
 ## In plain English

@@ -1279,6 +1279,7 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - **Cost.** Tranche A billed ≈ 88.8 of 125 vCPU-h.
 
 ### Is the order TTL the limit? (EXP-0073)
+**Correction (2026-11-05):** the reservation lifetime stayed at 2 cycles (`RESERVATION_TTL`), so EXP-0073 did not test longer input waiting; its input-wait "scarcity" conclusion is untested and the sweep is re-run (7.16 / 7.17).
 
 - **The question.** Most of MWW's lost consumer units are orders that expire while the producer
   waits for inputs. Would longer-lived orders be delivered (timing), or does the economy simply
