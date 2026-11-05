@@ -1,0 +1,30 @@
+bar deaths [(('ws-m4-es-train-v1-12-0022', 1267846658), 145.0)]
+== batch 0
+12-0094 1184750839 members flagged 1/48 {'rundown': 1} | rf3 rekeys flagged 0/4 {} | dead members 0 rekeys 0
+12-0176 434046227 members flagged 3/48 {'starvation': 2, 'rundown': 1} | rf3 rekeys flagged 0/4 {} | dead members 0 rekeys 0
+12-0019 1975693812 members flagged 1/48 {'starvation': 1} | rf3 rekeys flagged 0/4 {} | dead members 0 rekeys 0
+12-0022 1360957404 members flagged 4/48 {'starvation': 4} | rf3 rekeys flagged 0/4 {} | dead members 0 rekeys 0
+12-0055 302755993 members flagged 3/48 {'starvation': 3} | rf3 rekeys flagged 0/4 {} | dead members 0 rekeys 0
+{'probe': 12, 'probe_n': 1152, 'noise': 0, 'noise_n': 96}
+== batch 1
+12-0302 1504978459 members flagged 1/48 {'starvation': 1} | rf3 rekeys flagged 1/4 {'starvation': 1} | dead members 0 rekeys 0
+12-0004 47747607 members flagged 5/48 {'death': 5} | rf3 rekeys flagged 0/4 {} | dead members 5 rekeys 0
+12-0005 2141806174 members flagged 6/48 {'starvation': 6} | rf3 rekeys flagged 1/4 {'starvation': 1} | dead members 0 rekeys 0
+12-0007 1468423735 members flagged 23/48 {'starvation': 23} | rf3 rekeys flagged 4/4 {'starvation': 4} | dead members 0 rekeys 0
+12-0013 1124120002 members flagged 17/48 {'starvation': 17} | rf3 rekeys flagged 2/4 {'starvation': 2} | dead members 0 rekeys 0
+12-0016 1929968846 members flagged 24/48 {'death': 24} | rf3 rekeys flagged 0/4 {} | dead members 24 rekeys 0
+12-0044 2143077829 members flagged 35/48 {'starvation': 35} | rf3 rekeys flagged 4/4 {'starvation': 4} | dead members 0 rekeys 0
+12-0050 572716247 members flagged 5/48 {'starvation': 5} | rf3 rekeys flagged 0/4 {} | dead members 0 rekeys 0
+{'probe': 116, 'probe_n': 1152, 'noise': 12, 'noise_n': 96}
+== rf3 re-keys as members (any flag over the batch => disqualified)
+0 1 24 clean []
+0 2 24 clean []
+0 3 24 clean []
+0 4 24 clean []
+1 1 24 disqualified [('0005', ['starvation']), ('0007', ['starvation']), ('0044', ['starvation'])]
+1 2 24 disqualified [('0302', ['starvation']), ('0007', ['starvation']), ('0044', ['starvation'])]
+1 3 24 disqualified [('0013', ['starvation']), ('0007', ['starvation']), ('0044', ['starvation'])]
+1 4 24 disqualified [('0013', ['starvation']), ('0007', ['starvation']), ('0044', ['starvation'])]
+== 0016 deaths by member
+['S2:+01', 'S2:+02', 'S2:+03', 'S2:+04', 'S2:+06', 'S2:+08', 'S2:+09', 'S2:+11', 'S2:-00', 'S2:-05', 'S2:-07', 'S2:-08', 'S2:-11', 'S:+03', 'S:+04', 'S:+08', 'S:-00', 'S:-02', 'S:-04', 'S:-05', 'S:-07', 'S:-08', 'S:-09', 'S:-11']
+['S2:+06', 'S2:+08', 'S2:-05', 'S2:-11', 'S:+06']

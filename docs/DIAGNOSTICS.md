@@ -1039,6 +1039,19 @@ improved. The competing explanations call for different responses:
     - A1-S2 at about twice A1's cosine also fits partial flatness at σ. The registered table
       does not grade it.
 
+**Evidence (EXP-0081, M5 task 4.2, producer residual on rf3; 2026-11-05):**
+- The registered reading was undefined: all 24 members were disqualified on minibatch B in both σ arms, so the
+  estimate norm was 0. Minibatch A had 3 / 24 and 8 / 24 disqualified. The step reading was `no_signal`.
+- **Check 1 (rule off):** cosine **0.840** at σ and **0.902** at 2σ, so the signal is recovered.
+- **Check 2 (self-rate):** from EXP-0080's r1–r4 re-keys, no pod needed.
+  - rf3 at θ = 0 is disqualified as a member on minibatch B **4 / 4**, and on A 0 / 4.
+  - Per episode on B: rf3 12.5%, members 10.1%.
+  - The flags come from knife-edge world-episodes (starvation on train 12-0044 and 12-0007 at 4 / 4, and on
+    12-0013 at 2 / 4). The per-episode 4.69% calibration does not bound the per-member rate under "any episode
+    flags".
+  - Real but non-directional deaths: on 12-0016, 24 / 48 members die (rf3 re-keys 0 / 4).
+- **Branch: disqualification-driven.** A rule redesign goes to the user as a new pre-registration version.
+
 ## 26. A pod bills idle while a local step runs between two pod steps
 
 **Problem (plain English):** a run split into two steps on one pod (e.g. bar, then probe) puts a

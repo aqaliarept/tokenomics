@@ -87,6 +87,7 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   - Done 2026-11-05 (EXP-0080): r0 128 / 128 equal; EXP-0079 cross-check 2 / 2; self-flags 24 / 512 = 4.69% (margins run-down 0.0966, starvation 0.1180); 0 contract failures; bar mean 3,196.5 units; ≈ 0.7 vCPU-h, M5-P ≈ 1.6 / 80.
 - [ ] 4.2 [experiment][remote:cpu16] EXP-0081: L2 gradient probe. Reading `signal` / `weak` /
   `no_signal` (cosine 0.3 / 0.1); `no_signal` → DIAGNOSTICS entry, stop. ≈ 2, stop 4 (sizing.md).
+  - Ran 2026-11-05 (EXP-0081): **stop branch.** Cosine undefined (minibatch B 24 / 24 disqualified), step `no_signal`. DIAGNOSTICS 25 disqualification-driven: rule off 0.840 / 0.902; rf3 re-keys 4 / 4 disqualified on B. Rule redesign goes to the user (new prereg version). ≈ 1.1 vCPU-h, M5-P ≈ 2.7 / 80.
 
 ## 5. Pilot and main (experiment). Gated: EXP-0081 `signal` or `weak`
 
