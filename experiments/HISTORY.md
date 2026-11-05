@@ -1278,3 +1278,26 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
     - Held-out confirmation and the per-order cost read (groups 8–9) were not reached.
   - **Cost.** Tranche A billed ≈ 88.8 of 125 vCPU-h.
 
+### Is the order TTL the limit? (EXP-0073)
+
+- **The question.** Most of MWW's lost consumer units are orders that expire while the producer
+  waits for inputs. Would longer-lived orders be delivered (timing), or does the economy simply
+  not make enough (scarcity)?
+- **The run.** Task 7.12 made the TTL a world setting. `entity_planner` with MWWk or round-robin
+  was replayed at TTL 2, 3 and 4 on EXP-0057's sample.
+- **What it found.**
+  - Units rise steadily with TTL: about +5% at TTL 3 and +8–9% at TTL 4, with no world worse
+    beyond its floor.
+  - Readings at 12 producers: round-robin `scarcity` at TTL 3 and `timing` at TTL 4; MWWk
+    `scarcity`, then `mixed` (4 more episodes fail the run-down check).
+  - Expired units barely fall, and input-wait expiries fall only 2–5%. The gain comes from
+    orders that lost one auction (`no_fit`, `displaced`) winning a later one.
+  - About three quarters of ordered units stay undelivered at every TTL.
+- **What it means.**
+  - The losses are mainly scarcity, with a small timing component that works through auction
+    retries.
+  - The TTL is not the lever for the orderer. Changing it is a world-design decision (a human
+    gate).
+  - The source of the input shortage is not diagnosed here.
+- **Cost.** ≈ 1.4 vCPU-h; tranche A ≈ 90.2 of 125.
+

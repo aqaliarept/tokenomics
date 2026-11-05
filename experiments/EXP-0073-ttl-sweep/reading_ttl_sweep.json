@@ -1,0 +1,287 @@
+{
+ "neutrality_ttl2_vs_exp0057": {
+  "rows": 213,
+  "missing_in_exp0057": 0,
+  "shared_columns": 105,
+  "differing_columns": {},
+  "neutral": true
+ },
+ "cells": [
+  {
+   "size": 12,
+   "arm": "MWWk",
+   "worlds": 23,
+   "per_ttl": {
+    "2": {
+     "units_mean_per_episode": 2095.9883720930234,
+     "expired_units": 457725.0,
+     "expired_units_inputs_short": 340166.0,
+     "deaths": 0,
+     "rundown_fails": 66,
+     "r_ratio_mean": 0.6641357263622143,
+     "pooled_fill": 0.24820649105655232,
+     "overflow_orders": 0.0,
+     "episodes": 86
+    },
+    "3": {
+     "units_mean_per_episode": 2208.4186046511627,
+     "expired_units": 457509.0,
+     "expired_units_inputs_short": 337625.0,
+     "deaths": 0,
+     "rundown_fails": 74,
+     "r_ratio_mean": 0.6548806468710348,
+     "pooled_fill": 0.2615204549522878,
+     "overflow_orders": 0.0,
+     "episodes": 86
+    },
+    "4": {
+     "units_mean_per_episode": 2276.7093023255816,
+     "expired_units": 458100.0,
+     "expired_units_inputs_short": 332374.0,
+     "deaths": 0,
+     "rundown_fails": 70,
+     "r_ratio_mean": 0.6556688563190048,
+     "pooled_fill": 0.2696074246450849,
+     "overflow_orders": 0.0,
+     "episodes": 86
+    }
+   },
+   "vs_ttl2": {
+    "3": {
+     "mean_diff": 108.40217391304348,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 5,
+     "worlds_below": 0,
+     "rise": false,
+     "within": true,
+     "no_worse": false,
+     "reading": "scarcity"
+    },
+    "4": {
+     "mean_diff": 175.1304347826087,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 14,
+     "worlds_below": 0,
+     "rise": true,
+     "within": false,
+     "no_worse": false,
+     "reading": "mixed"
+    }
+   }
+  },
+  {
+   "size": 12,
+   "arm": "RR",
+   "worlds": 23,
+   "per_ttl": {
+    "2": {
+     "units_mean_per_episode": 2163.3255813953488,
+     "expired_units": 240496.0,
+     "expired_units_inputs_short": 205796.0,
+     "deaths": 0,
+     "rundown_fails": 34,
+     "r_ratio_mean": 0.6849882814284267,
+     "pooled_fill": 0.2561805488619308,
+     "overflow_orders": 0.0,
+     "episodes": 43
+    },
+    "3": {
+     "units_mean_per_episode": 2298.3488372093025,
+     "expired_units": 236670.0,
+     "expired_units_inputs_short": 198828.0,
+     "deaths": 0,
+     "rundown_fails": 31,
+     "r_ratio_mean": 0.6838128041836051,
+     "pooled_fill": 0.27216997369979207,
+     "overflow_orders": 0.0,
+     "episodes": 43
+    },
+    "4": {
+     "units_mean_per_episode": 2363.139534883721,
+     "expired_units": 234550.0,
+     "expired_units_inputs_short": 195922.0,
+     "deaths": 0,
+     "rundown_fails": 33,
+     "r_ratio_mean": 0.6810652710292466,
+     "pooled_fill": 0.27984247414730873,
+     "overflow_orders": 0.0,
+     "episodes": 43
+    }
+   },
+   "vs_ttl2": {
+    "3": {
+     "mean_diff": 130.84782608695653,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 10,
+     "worlds_below": 0,
+     "rise": false,
+     "within": true,
+     "no_worse": true,
+     "reading": "scarcity"
+    },
+    "4": {
+     "mean_diff": 194.84782608695653,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 10,
+     "worlds_below": 0,
+     "rise": true,
+     "within": false,
+     "no_worse": true,
+     "reading": "timing"
+    }
+   }
+  },
+  {
+   "size": 42,
+   "arm": "MWWk",
+   "worlds": 14,
+   "per_ttl": {
+    "2": {
+     "units_mean_per_episode": 5924.785714285715,
+     "expired_units": 636073.0,
+     "expired_units_inputs_short": 486137.0,
+     "deaths": 0,
+     "rundown_fails": 50,
+     "r_ratio_mean": 0.6376741918453566,
+     "pooled_fill": 0.31173238526179703,
+     "overflow_orders": 0.0,
+     "episodes": 56
+    },
+    "3": {
+     "units_mean_per_episode": 6200.035714285715,
+     "expired_units": 625524.0,
+     "expired_units_inputs_short": 471982.0,
+     "deaths": 1,
+     "rundown_fails": 51,
+     "r_ratio_mean": 0.6312650863442295,
+     "pooled_fill": 0.32812885409785403,
+     "overflow_orders": 0.0,
+     "episodes": 56
+    },
+    "4": {
+     "units_mean_per_episode": 6402.892857142857,
+     "expired_units": 629105.0,
+     "expired_units_inputs_short": 471885.0,
+     "deaths": 0,
+     "rundown_fails": 52,
+     "r_ratio_mean": 0.6280570717702867,
+     "pooled_fill": 0.3368879752258685,
+     "overflow_orders": 0.0,
+     "episodes": 56
+    }
+   },
+   "vs_ttl2": {
+    "3": {
+     "mean_diff": 275.25,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 4,
+     "worlds_below": 0,
+     "rise": false,
+     "within": true,
+     "no_worse": false,
+     "reading": "scarcity"
+    },
+    "4": {
+     "mean_diff": 478.10714285714283,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 7,
+     "worlds_below": 0,
+     "rise": true,
+     "within": false,
+     "no_worse": false,
+     "reading": "mixed"
+    }
+   }
+  },
+  {
+   "size": 42,
+   "arm": "RR",
+   "worlds": 14,
+   "per_ttl": {
+    "2": {
+     "units_mean_per_episode": 5606.214285714285,
+     "expired_units": 332122.0,
+     "expired_units_inputs_short": 298163.0,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "r_ratio_mean": 0.6344660745573799,
+     "pooled_fill": 0.294970761113032,
+     "overflow_orders": 0.0,
+     "episodes": 28
+    },
+    "3": {
+     "units_mean_per_episode": 5986.75,
+     "expired_units": 327054.0,
+     "expired_units_inputs_short": 291006.0,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "r_ratio_mean": 0.6234862441081219,
+     "pooled_fill": 0.3149926339050826,
+     "overflow_orders": 0.0,
+     "episodes": 28
+    },
+    "4": {
+     "units_mean_per_episode": 6150.321428571428,
+     "expired_units": 324816.0,
+     "expired_units_inputs_short": 288270.0,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "r_ratio_mean": 0.6235628248420878,
+     "pooled_fill": 0.323598938681018,
+     "overflow_orders": 0.0,
+     "episodes": 28
+    }
+   },
+   "vs_ttl2": {
+    "3": {
+     "mean_diff": 380.5357142857143,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 5,
+     "worlds_below": 0,
+     "rise": true,
+     "within": false,
+     "no_worse": true,
+     "reading": "timing"
+    },
+    "4": {
+     "mean_diff": 544.1071428571429,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 8,
+     "worlds_below": 0,
+     "rise": true,
+     "within": false,
+     "no_worse": true,
+     "reading": "timing"
+    }
+   }
+  }
+ ],
+ "readings": {
+  "12/MWWk": {
+   "3": "scarcity",
+   "4": "mixed"
+  },
+  "12/RR": {
+   "3": "scarcity",
+   "4": "timing"
+  },
+  "42/MWWk": {
+   "3": "scarcity",
+   "4": "mixed"
+  },
+  "42/RR": {
+   "3": "timing",
+   "4": "timing"
+  }
+ },
+ "deciding": {
+  "12/MWWk": {
+   "3": "scarcity",
+   "4": "mixed"
+  },
+  "12/RR": {
+   "3": "scarcity",
+   "4": "timing"
+  }
+ }
+}

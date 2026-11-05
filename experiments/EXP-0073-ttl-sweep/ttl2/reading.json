@@ -1,0 +1,12 @@
+{
+  "arms": [
+    "MWWk",
+    "RR"
+  ],
+  "dry_run": false,
+  "note": "D3's decoder readings do not apply; EXP-0073's reading is computed across the TTL runs (task 7.13)",
+  "order_ttl": 2,
+  "profile": "ttl_sweep",
+  "readings_withheld": true,
+  "status": "valid"
+}
