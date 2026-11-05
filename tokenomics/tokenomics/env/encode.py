@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..domain.common import Product, Tokens, is_nan
-from ..domain.order import ORDER_TTL, OrderInfo
+from ..domain.order import OrderInfo
 from ..domain.orderer_view import OrdererEconomyView, ProductStreamView
 from ..domain.producing_agent import ProducerInfo, ProducingAgentView
 from .spaces import (
@@ -184,7 +184,7 @@ def _entity_product_row(spec: EnvSpec, r) -> list[float]:
         r.recent_routed_qty / spec.inv_ref,
         r.recent_completed_qty / spec.inv_ref,
         r.recent_rejected_qty / spec.inv_ref,
-        r.recent_completion_latency / ORDER_TTL,
+        r.recent_completion_latency / spec.order_ttl,
         r.active_reservation_qty / spec.inv_ref,
         r.capacity_makeable_qty / spec.inv_ref,
         r.input_makeable_qty / spec.inv_ref,
@@ -316,8 +316,8 @@ def _pp_features(spec: EnvSpec, pp) -> list[float]:
         pp.recent_rejected_qty / spec.inv_ref,
         pp.recent_success_rate,
         pp.recent_throughput / spec.inv_ref,
-        pp.recent_completion_latency / ORDER_TTL,
-        pp.recent_failure_latency / ORDER_TTL,
+        pp.recent_completion_latency / spec.order_ttl,
+        pp.recent_failure_latency / spec.order_ttl,
     ]
 
 
@@ -330,8 +330,8 @@ def _enriched_slot_block(spec: EnvSpec, slot, view: OrdererEconomyView) -> list[
     out.append(slot.available_tokens / spec.token_ref)
     out.append(slot.unresolved_quantity / spec.inv_ref)
     out.append(slot.tokens_per_unit / spec.token_ref)
-    out.append(slot.order_age / ORDER_TTL)
-    out.append(slot.ttl_remaining / ORDER_TTL)
+    out.append(slot.order_age / spec.order_ttl)
+    out.append(slot.ttl_remaining / spec.order_ttl)
     out.extend(slot.order_type)  # one_hot(consumer, replenishment, investment)
     out.append(slot.eligible_producer_count / spec.num_producers)
     # slot product one-hot (Q)
@@ -400,8 +400,8 @@ def _stream_slot_block(spec: EnvSpec, slot) -> list[float]:
         slot.available_tokens / spec.token_ref,
         slot.unresolved_quantity / spec.inv_ref,
         slot.tokens_per_unit / spec.token_ref,
-        slot.order_age / ORDER_TTL,
-        slot.ttl_remaining / ORDER_TTL,
+        slot.order_age / spec.order_ttl,
+        slot.ttl_remaining / spec.order_ttl,
         *slot.order_type,  # one_hot(consumer, replenishment, investment)
     ]
 

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from . import metrics
 from .common import CapacityUnitPrice, OrderId, Product, ProducerId
 from .config import ProcessSheet
-from .order import ORDER_TTL, Order
+from .order import Order
 from .producing_agent import ProducingAgent
 from .telemetry import EconomyTelemetry
 
@@ -178,7 +178,7 @@ def _order_slot(
         available_tokens=tokens,
         tokens_per_unit=tokens / max(1, q),
         order_age=order.cycle_counter,
-        ttl_remaining=max(0, ORDER_TTL - order.cycle_counter),
+        ttl_remaining=max(0, order.ttl - order.cycle_counter),
         order_type=_order_type(order),
         eligible_producer_count=sum(1 for m in mask.values() if m == 1.0),
         eligible_mask=mask,

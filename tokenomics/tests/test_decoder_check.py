@@ -932,7 +932,7 @@ def test_cli_modes_route_and_refuse(monkeypatch: pytest.MonkeyPatch) -> None:
     assert sorted(seen["check"]) == sorted([
         "atlas_path", "out_dir", "orderer_ckpt", "roster", "exp0052_episodes",
         "exp0056_episodes", "workers", "horizon", "worlds", "max_worlds", "arms",
-        "shock_profile", "source_commit", "dry_run"])
+        "shock_profile", "source_commit", "dry_run", "order_ttl"])
     assert dc.main(base + ["--mode", "arm-compare", "--arm", "utwf",
                            "--exp0057-episodes", "e.csv"]) == 0
     assert seen["cmp"]["arm"] == "utwf" and seen["cmp"]["exp0057_episodes"] == "e.csv"

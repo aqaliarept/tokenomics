@@ -102,6 +102,7 @@ class Order:
         funded: bool,
         replenishment_request: ReplenishmentRequest | None = None,
         placement_cycle: int | None = None,
+        ttl: int = ORDER_TTL,
     ) -> None:
         self.id = id
         self.tokens = tokens
@@ -115,6 +116,8 @@ class Order:
         # add-measurement-gate-harness), so the env can count ordered units from
         # played cycles and skip the final, never-played placement.
         self.placement_cycle = placement_cycle
+        # The world's order TTL (`Configuration.ttl`, task 7.12), the same for every order.
+        self.ttl = ttl
         self.cycle_counter = 0
         # Cumulative sub-order accounting (ADR-0025). A sub-order's tokens are
         # burnt the cycle it clears the auction (accepted), never refunded — even
@@ -126,26 +129,29 @@ class Order:
         self.burnt_tokens: Tokens = 0  # tokens of accepted sub-orders (out of circulation)
 
     @classmethod
-    def new_investment_order(cls, id: OrderId, ps: ProcessSheet, request: InvestmentRequest) -> "Order":
+    def new_investment_order(cls, id: OrderId, ps: ProcessSheet, request: InvestmentRequest,
+                             ttl: int = ORDER_TTL) -> "Order":
         # Investment orders are for a single means-of-production unit.
-        return cls(id, 0, ps.product, 1, None, request, False)
+        return cls(id, 0, ps.product, 1, None, request, False, ttl=ttl)
 
     @classmethod
-    def new_replenishment_order(cls, id: OrderId, ps: ProcessSheet, request: ReplenishmentRequest) -> "Order":
+    def new_replenishment_order(cls, id: OrderId, ps: ProcessSheet, request: ReplenishmentRequest,
+                                ttl: int = ORDER_TTL) -> "Order":
         # A producer buying `quantity` units of an input product; unfunded until
         # the central fund backs it (priority 1), like an investment order.
         return cls(
             id, 0, ps.product, request.quantity, None, None, False,
-            replenishment_request=request,
+            replenishment_request=request, ttl=ttl,
         )
 
     @classmethod
     def new_consumer_order(
-        cls, id: OrderId, ps: ProcessSheet, request: ConsumerRequest, placement_cycle: int | None = None
+        cls, id: OrderId, ps: ProcessSheet, request: ConsumerRequest, placement_cycle: int | None = None,
+        ttl: int = ORDER_TTL,
     ) -> "Order":
         return cls(
             id, request.tokens, ps.product, request.quantity, request, None, True,
-            placement_cycle=placement_cycle,
+            placement_cycle=placement_cycle, ttl=ttl,
         )
 
     # --- funding (unchanged contract; used by distribute_investment_fund) ---
@@ -258,7 +264,7 @@ class Order:
         if reserved_pending == 0 and self.unresolved_quantity() == 0:
             return self._reject(3)
 
-        if self.cycle_counter == ORDER_TTL:
+        if self.cycle_counter == self.ttl:
             return self._reject(5)
 
         self.cycle_counter += 1

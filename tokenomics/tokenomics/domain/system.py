@@ -336,6 +336,7 @@ class System:
         self.state = SystemState.ORDERS_PLACEMENT
         self.id_gen = id_gen
         self.cycle_emission: Tokens = config.cycle_emission
+        self.order_ttl: int = config.ttl  # task 7.12: the world's order TTL
         self.investment_fund: Tokens = 0
         self.process_sheets = {ps.product: ps for ps in config.process_sheets}
         # each producer owns the recipes for the products it makes (ADR-0029), so it
@@ -468,9 +469,9 @@ class System:
             oid = self.id_gen.new()
             ps = must_get(self.process_sheets, r.product)
             if isinstance(r, ReplenishmentRequest):
-                self.orders[oid] = Order.new_replenishment_order(oid, ps, r)
+                self.orders[oid] = Order.new_replenishment_order(oid, ps, r, ttl=self.order_ttl)
             else:
-                self.orders[oid] = Order.new_investment_order(oid, ps, r)
+                self.orders[oid] = Order.new_investment_order(oid, ps, r, ttl=self.order_ttl)
 
     # --- ordering agent phase ---
     def ordering_agent_view(self, aid: OrderingAgentId) -> OrderingAgentView:
@@ -526,7 +527,7 @@ class System:
                 oid = self.id_gen.new()
                 self.orders[oid] = Order.new_consumer_order(
                     oid, must_get(self.process_sheets, request.product), request,
-                    placement_cycle=placement_cycle,
+                    placement_cycle=placement_cycle, ttl=self.order_ttl,
                 )
                 # product-level demand history (true demand, not routed load).
                 self.telemetry.record_demand(request.product, request.quantity)

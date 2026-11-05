@@ -14,6 +14,10 @@ from .common import Capacity, CapacityType, Product, Tokens
 from .shocks import ProducerFacts, ShockModel, shock_model_from_dict, validate_shock_model
 
 
+
+DEFAULT_ORDER_TTL = 2  # = order.ORDER_TTL (the order lifetime the domain was built on)
+MAX_ORDER_TTL = 4  # task 7.12: the largest TTL a world may set
+
 @dataclass(frozen=True)
 class ProcessSheet:
     """Recipe: product -> required capacity per type, plus input products it
@@ -236,9 +240,24 @@ class Configuration:
     # drift there (a world has at most one demand process). None = unchanged; the fingerprint
     # then omits the field.
     demand_pattern: DemandPattern | None = None
+    # Order TTL in cycles, one value for the whole world (task 7.12 of add-m4-orderer-redesign).
+    # None = the default 2 (`order.ORDER_TTL`); an explicit 2 is normalised to None so every
+    # default-TTL fingerprint and digest stays unchanged (the field is omitted when unset).
+    order_ttl: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.order_ttl == DEFAULT_ORDER_TTL:
+            object.__setattr__(self, "order_ttl", None)
+
+    @property
+    def ttl(self) -> int:
+        """The world's order TTL (cycles an order may stay in progress before rejection)."""
+        return DEFAULT_ORDER_TTL if self.order_ttl is None else self.order_ttl
 
     def validate(self) -> None:
         """Port of Configuration.Validate."""
+        if not (isinstance(self.ttl, int) and 1 <= self.ttl <= MAX_ORDER_TTL):
+            raise ValueError(f"order TTL must be an int in [1, {MAX_ORDER_TTL}], got {self.ttl}")
         if self.cycle_emission <= 0:
             raise ValueError(f"cycle emission must be positive, got {self.cycle_emission}")
 
@@ -485,6 +504,8 @@ def load_config(path: str | Path) -> Configuration:
         demand_drift=_load_drift(data["demandDrift"]) if "demandDrift" in data else None,
         # optional top-level `demandPattern` (add-m3-development-audit D11); absent -> none.
         demand_pattern=_load_pattern(data["demandPattern"]) if "demandPattern" in data else None,
+        # optional top-level `orderTtl` (task 7.12); absent -> the default 2.
+        order_ttl=data.get("orderTtl"),
     )
     cfg.validate()
     return cfg

@@ -316,7 +316,7 @@ def _jsonable(o: object) -> object:
 # (EXP-0050), dropped from the hash when unset so every earlier pin still reproduces. A new
 # optional field joins this tuple. `shocks` / `demand_drift` predate the pins and stay hashed
 # as null (task 4.4 review; tests/test_world_space.py pins EXP-0050's hashes).
-DIGEST_OMIT_WHEN_UNSET = ("demand_pattern",)
+DIGEST_OMIT_WHEN_UNSET = ("demand_pattern", "order_ttl")
 
 
 def config_digest(cfg: object) -> str:
@@ -473,10 +473,13 @@ def job_config(job: Job) -> object:
     """The job's world configuration, rebuilt from its generator-ref once per process."""
     from .task_archive import REPRODUCERS
 
-    key = json.dumps([job["world"], job["world_seed"], job["generator"]], sort_keys=True)
+    ttl = job.get("order_ttl")  # task 7.12: a sweep's world TTL override (absent = the default)
+    key = json.dumps([job["world"], job["world_seed"], job["generator"], ttl], sort_keys=True)
     if key not in _CONFIGS:
         g = job["generator"]
         cfg = REPRODUCERS[g["generator"]](job["world_seed"], **g.get("params", {}))
+        if ttl is not None:
+            cfg = replace(cfg, order_ttl=int(ttl))
         cfg.validate()
         _CONFIGS[key] = cfg
     return _CONFIGS[key]

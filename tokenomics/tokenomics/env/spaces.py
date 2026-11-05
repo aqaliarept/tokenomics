@@ -168,6 +168,10 @@ class EnvSpec:
     price_ref: float
     inv_ref: float
     k: int = ORDER_LIFETIME
+    # The world's order TTL (task 7.12): features divide by it and a stream holds up to
+    # `order_lifetime` = TTL + 1 orders. Defaults = TTL 2, so every default spec is unchanged.
+    order_ttl: int = ORDER_LIFETIME - 1
+    order_lifetime: int = ORDER_LIFETIME
     # 1 = legacy capacity-blind ordering obs (ADR-0029); 2 = enriched producer/
     # product/order obs (EXP-0006A). Opt-in so v1 checkpoints stay valid. Hashed into
     # config_fingerprint (which takes an explicit orderer_obs_version) so a v2 model
@@ -199,7 +203,8 @@ class EnvSpec:
         # never leaks producer input-product width into the orderer contract (the
         # ADR-0052 goal). Exposed as a corrected versioned contract (orderer_obs_version
         # 4); v3 keeps `k` so its checkpoints stay loadable.
-        return ORDER_LIFETIME + INVESTMENT_STREAMS if self.orderer_obs_version >= 4 else self.k
+        return (self.order_lifetime + INVESTMENT_STREAMS if self.orderer_obs_version >= 4
+                else self.k)
 
     @property
     def num_types(self) -> int:
@@ -373,7 +378,7 @@ class EnvSpec:
 # `schedule` (add-measurement-gate-harness 2.2) is included: hashing its empty default had
 # silently moved every fingerprint (EXP-0006B pins 548120bd72921234); omitting it restores the
 # pre-M1 values.
-_OMIT_WHEN_UNSET = ("shocks", "demand_drift", "demand_pattern")
+_OMIT_WHEN_UNSET = ("shocks", "demand_drift", "demand_pattern", "order_ttl")
 _OMIT_CONSUMER_WHEN_EMPTY = ("schedule",)
 
 
@@ -518,8 +523,14 @@ def build_spec(
     # each ungated so it stacks up to ORDER_LIFETIME. Otherwise orders beyond K are
     # invisible in the obs and fall back to an uncontrollable even split in decode.
     max_rel = max((len(v) for v in producer_inputs.values()), default=0)
-    k = max(ORDER_LIFETIME, INVESTMENT_STREAMS + ORDER_LIFETIME * max_rel)
+    # task 7.12: the slots follow the world's TTL (TTL + 1 orders per stream), so no order of a
+    # longer-lived world falls back to the uncontrollable split; at the default TTL 2 this is
+    # ORDER_LIFETIME and every shape, fingerprint and checkpoint is unchanged.
+    life = config.ttl + 1
+    k = max(life, INVESTMENT_STREAMS + life * max_rel)
     return EnvSpec(
+        order_ttl=config.ttl,
+        order_lifetime=life,
         producer_ids=producer_ids,
         capacity_types=capacity_types,
         type_index=type_index,

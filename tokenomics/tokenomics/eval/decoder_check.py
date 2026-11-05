@@ -962,9 +962,39 @@ DRY_BANNER = ("> **DRY RUN — not an acceptance read.** Filtered worlds or arms
               "or shock window, unregistered inputs or no source commit; see `spec.json`.\n\n")
 
 
+TTL_SWEEP_ARMS = (MWWK, RR)  # task 7.12 / 7.13: the hand-written stacks a TTL sweep plays
+
+
+def _finish_ttl_sweep(out: Path, spec: dict, rows: Sequence, dicts: Sequence[Mapping[str, str]],
+                      table: Sequence[Mapping], grid: Mapping, failures: Sequence,
+                      missing: set, order_ttl: int, arms: Sequence[str], dry_run: bool,
+                      log: Callable[[str], None]) -> int:
+    """The TTL-sweep profile's outputs: the rows, `routing_metrics.csv`, a `reading.json` that
+    withholds D3's readings (EXP-0073 reads across the TTL runs, task 7.13) and the spec
+    result. Exit 0, or `CONTRACT_INVALID` on contract failures or missing rows."""
+    invalid = bool(failures or missing)
+    write_csv(out / "routing_metrics.csv", METRIC_COLUMNS, metrics_table(dicts, table))
+    reading = {"profile": "ttl_sweep", "order_ttl": order_ttl, "arms": list(arms),
+               "dry_run": dry_run, "status": INVALID if invalid else "valid",
+               "readings_withheld": True,
+               "note": "D3's decoder readings do not apply; EXP-0073's reading is computed "
+                       "across the TTL runs (task 7.13)"}
+    (out / "reading.json").write_text(json.dumps(reading, indent=2, sort_keys=True) + "\n")
+    spec["status"] = INVALID if invalid else "complete"
+    spec["result"] = {"status": spec["status"], "rows": len(rows),
+                      "contract_failures": len(failures), "missing_rows": len(missing),
+                      "profile": "ttl_sweep", "order_ttl": order_ttl, "acceptance_read": False}
+    _write_spec(out, spec)
+    status = ("complete" if not invalid else
+              f"INVALID ({len(failures)} contract failure(s), {len(missing)} missing row(s))")
+    log(f"[decoder_check] {'DRY RUN ' if dry_run else ''}TTL sweep (order_ttl {order_ttl}): "
+        f"{status}, {len(rows)} rows over {len(grid)} worlds")
+    return CONTRACT_INVALID if invalid else 0
+
+
 def real_run_problems(*, atlas: Mapping, roster: Roster, horizon: int, source_commit: str,
                       orderer_sha: str, references: Mapping[str, str | None],
-                      filters: Mapping[str, object]) -> list[str]:
+                      filters: Mapping[str, object], ttl_sweep: bool = False) -> list[str]:
     problems = [msg for bad, msg in (
         (atlas.get("content_hash") != REGISTERED_ATLAS_HASH,
          f"atlas {str(atlas.get('content_hash'))[:12]} is not the registered EXP-0052 "
@@ -976,10 +1006,10 @@ def real_run_problems(*, atlas: Mapping, roster: Roster, horizon: int, source_co
         (orderer_sha != ROLE_CHECKPOINTS["orderer"],
          f"orderer checkpoint {orderer_sha[:12]} is not the registered "
          f"{ROLE_CHECKPOINTS['orderer'][:12]}"),
-        (references.get(EXP0052) != EXP0052_EPISODES_SHA,
+        (not ttl_sweep and references.get(EXP0052) != EXP0052_EPISODES_SHA,
          f"--exp0052-episodes {str(references.get(EXP0052))[:12]} is not the registered "
          f"EXP-0052 episodes.csv {EXP0052_EPISODES_SHA[:12]}"),
-        (references.get(EXP0056) != EXP0056_EPISODES_SHA,
+        (not ttl_sweep and references.get(EXP0056) != EXP0056_EPISODES_SHA,
          f"--exp0056-episodes {str(references.get(EXP0056))[:12]} is not the registered "
          f"EXP-0056 episodes.csv {EXP0056_EPISODES_SHA[:12]}"),
     ) if bad]
@@ -993,12 +1023,22 @@ def run_decoder_check(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
                       horizon: int = HORIZON, worlds: Sequence[str] | None = None,
                       max_worlds: int | None = None, arms: Sequence[str] | None = None,
                       shock_profile: str | None = None, source_commit: str = "",
-                      dry_run: bool = False,
+                      dry_run: bool = False, order_ttl: int | None = None,
                       run_job_fn: Callable[[Job], dict[str, str]] = run_decoder_job,
                       log: Callable[[str], None] = print) -> int:
     """Run (or resume) D3's decoder check into `out_dir`; return the exit status (0, or
     `CONTRACT_INVALID` on contract failures, missing rows, digest differences or a reference
-    mismatch)."""
+    mismatch). `order_ttl` (task 7.12) selects the TTL-sweep profile: the same sample and
+    keys with every world at that order TTL, arms within `TTL_SWEEP_ARMS`, no reference
+    comparison (EXP-0052 / 0056 ran at TTL 2) and D3's reading withheld (EXP-0073 reads across
+    the TTL runs); the TTL is pinned in spec.json and passed to every job."""
+    sweep = order_ttl is not None
+    if sweep:
+        if arms is None:
+            arms = list(TTL_SWEEP_ARMS)
+        if set(arms) - set(TTL_SWEEP_ARMS) or exp0052_episodes or exp0056_episodes:
+            raise ValueError(f"--order-ttl (TTL sweep) plays arms within {TTL_SWEEP_ARMS} and "
+                             "takes no reference episodes")
     if shock_profile not in (None, SHOCKS_I_SMOKE):
         raise ValueError(f"--shock-profile takes {SHOCKS_I_SMOKE} only (a dry run's window)")
     chosen_arms = tuple(arms) if arms is not None else ARMS
@@ -1016,9 +1056,9 @@ def run_decoder_check(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
     if not dry_run:
         problems = real_run_problems(
             atlas=atlas, roster=roster, horizon=horizon, source_commit=source_commit,
-            orderer_sha=pin["sha256"], references=ref_sha,
-            filters={"worlds": worlds, "max_worlds": max_worlds, "arms": arms,
-                     "shock_profile": shock_profile})
+            orderer_sha=pin["sha256"], references=ref_sha, ttl_sweep=sweep,
+            filters={"worlds": worlds, "max_worlds": max_worlds,
+                     "arms": None if sweep else arms, "shock_profile": shock_profile})
         if problems:
             raise ValueError("not a valid decoder-check run (" + "; ".join(problems)
                              + "); pass --dry-run for a smoke run")
@@ -1048,6 +1088,8 @@ def run_decoder_check(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
         "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
         "grid": grid,
     }
+    if sweep:
+        pins.update({"order_ttl": int(order_ttl), "profile": "ttl_sweep"})
     old_spec, done = _prepare_resume(out, pins, grid, expected)
     spec = _open_spec(out, old_spec, workers, {
         "experiment": out.name, "driver": DRIVER, "kind": "dry-run" if dry_run else "audit",
@@ -1074,6 +1116,8 @@ def run_decoder_check(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
     by_subject = {a["subject"]: a for a in table}
     for j in jobs:
         j["arm"] = by_subject[j["subject"]]["arm"]
+        if sweep:
+            j["order_ttl"] = int(order_ttl)  # routing_audit.job_config rebuilds the world
     if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
         raise AssertionError("job list and pinned grid disagree")  # internal invariant
     episodes = out / "episodes.csv"
@@ -1101,6 +1145,9 @@ def run_decoder_check(*, atlas_path: str | Path, out_dir: str | Path, orderer_ck
 
     failures = read_failures(out)
     invalid = bool(failures or missing)
+    if sweep:
+        return _finish_ttl_sweep(out, spec, rows, dicts, table, grid, failures, missing,
+                                 int(order_ttl), chosen_arms, dry_run, log)
     results = world_table(arm_units(dicts), views)
     reading = readings(results, dicts, views)
     reading["dry_run"] = dry_run
@@ -1617,10 +1664,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--arms", help=f"dry run: arms out of {','.join(ARMS)}")
     p.add_argument("--horizon", type=int, default=HORIZON)
     p.add_argument("--shock-profile", choices=(SHOCKS_I_SMOKE,))
+    p.add_argument("--order-ttl", type=int, choices=(1, 2, 3, 4),
+                   help="check: the TTL-sweep profile (task 7.12): every world at this order TTL, "
+                        f"arms within {','.join(TTL_SWEEP_ARMS)}, no references")
     a = p.parse_args(argv)
     if a.mode == ARM_COMPARE:
         wrong = [f for f, v in (("--arms", a.arms), ("--exp0052-episodes", a.exp0052_episodes),
                                 ("--exp0056-episodes", a.exp0056_episodes)) if v is not None]
+        if a.order_ttl is not None:
+            wrong.append("--order-ttl")
         if wrong or a.arm is None:
             p.error(f"--mode arm-compare takes --arm and --exp0057-episodes, not {wrong}"
                     if wrong else "--mode arm-compare needs --arm")
@@ -1648,7 +1700,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             roster=load_roster(a.roster), exp0052_episodes=a.exp0052_episodes,
             exp0056_episodes=a.exp0056_episodes, workers=a.workers, horizon=a.horizon,
             worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds, arms=_csv_strs(a.arms),
-            shock_profile=a.shock_profile, source_commit=commit, dry_run=a.dry_run)
+            shock_profile=a.shock_profile, source_commit=commit, dry_run=a.dry_run,
+            order_ttl=a.order_ttl)
     except (ContractRunError, DigestMismatch):  # recorded in contract_failures.csv
         return CONTRACT_INVALID
 
