@@ -1395,3 +1395,19 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
     its input, which a producer's replenishment command cannot remove.
   - Buy-ahead k = 4 stays the strongest producer.
 - **Cost.** ≈ 1.9 vCPU-h; tranche A ≈ 108.1 of 125.
+
+## 15. M5: producer learning
+
+### Does expanding inventory earlier help on its own? (EXP-0079)
+
+- **The question.** EXP-0078's one useful part, requesting more inventory space as soon as room
+  falls below what waiting orders need, was run alone on buy-ahead k = 4. Its buying is unchanged.
+- **What it found.**
+  - It adds +11% consumer units at 12 producers with both orderers (+326 / +345 against a floor of
+    146.5), with no deaths and no extra run-down: `rf_helps`. The same holds at 42.
+  - Late inputs fall by 14%.
+  - The cost is more held stock and more rejected investment orders, since expansions compete for
+    the fund.
+- **What it means.** `entity_planner_buyahead_k4_rf3` is the strongest known producer, and the base
+  the M5 learner must beat.
+- **Cost.** ≈ 0.9 vCPU-h; M5-P ≈ 0.9 of 80.

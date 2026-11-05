@@ -1,0 +1,207 @@
+{
+ "digests_vs_exp0077_k4": {
+  "rf3": {
+   "rows": 213,
+   "mismatched": 0
+  }
+ },
+ "cells": [
+  {
+   "size": 12,
+   "orderer": "MWWk",
+   "worlds": 23,
+   "stats": {
+    "k4": {
+     "episodes": 86,
+     "units_mean": 3100.639534883721,
+     "deaths": 0,
+     "rundown_fails": 71,
+     "holding_units_per_cycle_mean": 233.0760465116279,
+     "investment_rejection_rate_mean": 0.07786316362014338,
+     "input_late": 178082.0,
+     "late_headroom_blocked": null,
+     "input_died_upstream": 76945.0,
+     "contention": 67581.0,
+     "capacity": 24594.0,
+     "lost": 449640.0
+    },
+    "rf3": {
+     "episodes": 86,
+     "units_mean": 3448.5348837209303,
+     "deaths": 0,
+     "rundown_fails": 71,
+     "holding_units_per_cycle_mean": 257.56197674418604,
+     "investment_rejection_rate_mean": 0.09861630487040789,
+     "input_late": 153496.0,
+     "late_headroom_blocked": 9660.0,
+     "input_died_upstream": 69435.0,
+     "contention": 69467.0,
+     "capacity": 22263.0,
+     "lost": 419885.0
+    }
+   },
+   "vs_k4": {
+    "rf3": {
+     "mean_diff": 326.2282608695652,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 8,
+     "worlds_below": 0,
+     "exceeds": true,
+     "below": false,
+     "extra_deaths": false,
+     "rundown_delta": 0,
+     "guard": true
+    }
+   }
+  },
+  {
+   "size": 12,
+   "orderer": "RR",
+   "worlds": 23,
+   "stats": {
+    "k4": {
+     "episodes": 43,
+     "units_mean": 3199.906976744186,
+     "deaths": 0,
+     "rundown_fails": 33,
+     "holding_units_per_cycle_mean": 250.30767441860465,
+     "investment_rejection_rate_mean": 0.08010523183014627,
+     "input_late": 90450.0,
+     "late_headroom_blocked": null,
+     "input_died_upstream": 39482.0,
+     "contention": 35074.0,
+     "capacity": 9151.0,
+     "lost": 220655.0
+    },
+    "rf3": {
+     "episodes": 43,
+     "units_mean": 3565.6976744186045,
+     "deaths": 0,
+     "rundown_fails": 32,
+     "holding_units_per_cycle_mean": 275.6406976744186,
+     "investment_rejection_rate_mean": 0.10119748674326218,
+     "input_late": 79565.0,
+     "late_headroom_blocked": 5428.0,
+     "input_died_upstream": 36106.0,
+     "contention": 35403.0,
+     "capacity": 9416.0,
+     "lost": 205149.0
+    }
+   },
+   "vs_k4": {
+    "rf3": {
+     "mean_diff": 344.9347826086956,
+     "mean_floor": 146.50592278917375,
+     "worlds_beyond": 9,
+     "worlds_below": 0,
+     "exceeds": true,
+     "below": false,
+     "extra_deaths": false,
+     "rundown_delta": -1,
+     "guard": true
+    }
+   }
+  },
+  {
+   "size": 42,
+   "orderer": "MWWk",
+   "worlds": 14,
+   "stats": {
+    "k4": {
+     "episodes": 56,
+     "units_mean": 7975.5,
+     "deaths": 0,
+     "rundown_fails": 51,
+     "holding_units_per_cycle_mean": 1167.1896428571429,
+     "investment_rejection_rate_mean": 0.17101388590793026,
+     "input_late": 225882.0,
+     "late_headroom_blocked": null,
+     "input_died_upstream": 125589.0,
+     "contention": 57158.0,
+     "capacity": 46612.0,
+     "lost": 603783.0
+    },
+    "rf3": {
+     "episodes": 56,
+     "units_mean": 8843.910714285714,
+     "deaths": 0,
+     "rundown_fails": 53,
+     "holding_units_per_cycle_mean": 1256.443392857143,
+     "investment_rejection_rate_mean": 0.20236620927680438,
+     "input_late": 183529.0,
+     "late_headroom_blocked": 36900.0,
+     "input_died_upstream": 121414.0,
+     "contention": 55675.0,
+     "capacity": 44921.0,
+     "lost": 555806.0
+    }
+   },
+   "vs_k4": {
+    "rf3": {
+     "mean_diff": 868.4107142857143,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 4,
+     "worlds_below": 0,
+     "exceeds": true,
+     "below": false,
+     "extra_deaths": false,
+     "rundown_delta": 2,
+     "guard": true
+    }
+   }
+  },
+  {
+   "size": 42,
+   "orderer": "RR",
+   "worlds": 14,
+   "stats": {
+    "k4": {
+     "episodes": 28,
+     "units_mean": 7680.25,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "holding_units_per_cycle_mean": 1269.4357142857143,
+     "investment_rejection_rate_mean": 0.16775199945728447,
+     "input_late": 112206.0,
+     "late_headroom_blocked": null,
+     "input_died_upstream": 68860.0,
+     "contention": 25241.0,
+     "capacity": 23707.0,
+     "lost": 310076.0
+    },
+    "rf3": {
+     "episodes": 28,
+     "units_mean": 8620.535714285714,
+     "deaths": 0,
+     "rundown_fails": 26,
+     "holding_units_per_cycle_mean": 1365.8192857142858,
+     "investment_rejection_rate_mean": 0.20308320414247957,
+     "input_late": 90435.0,
+     "late_headroom_blocked": 19650.0,
+     "input_died_upstream": 66828.0,
+     "contention": 23670.0,
+     "capacity": 24620.0,
+     "lost": 284099.0
+    }
+   },
+   "vs_k4": {
+    "rf3": {
+     "mean_diff": 940.2857142857143,
+     "mean_floor": 362.18672067841555,
+     "worlds_beyond": 4,
+     "worlds_below": 0,
+     "exceeds": true,
+     "below": false,
+     "extra_deaths": false,
+     "rundown_delta": 0,
+     "guard": true
+    }
+   }
+  }
+ ],
+ "readings": {
+  "12/rf3": "rf_helps",
+  "42/rf3": "rf_helps"
+ },
+ "deciding": "rf_helps"
+}

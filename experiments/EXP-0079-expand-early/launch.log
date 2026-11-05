@@ -1,0 +1,242 @@
+[run_pod] verified clean source commit 0352821b0c51a572c84d4521b656adccf0833bcd (synced tree + launcher); injected into --train
+[run_pod] creating pod: POST /v1/pods {"name": "exp0079-x", "imageName": "runpod/base:0.7.0-ubuntu2004", "computeType": "CPU", "containerDiskInGb": 30, "volumeMountPath": "/workspace", "cloudType": "SECURE", "ports": ["22/tcp"], "vcpuCount": 16, "cpuFlavorIds": ["cpu5c"], "dataCenterIds": ["EUR-IS-1"]}
+[run_pod] created pod 2o5lqkdzg94d56
+[run_pod] pod 2o5lqkdzg94d56 status: RUNNING
+[run_pod] pod already running
+[run_pod] waiting for pod to become reachable (timeout 600s)...
+[run_pod] SSH up at 185.226.156.232:49520
+[run_pod] pod image runpod/base:0.7.0-ubuntu2004; exported as EXP0039_POD_IMAGE into the run
+[run_pod] syncing /srv/research/wt-exp0079/tokenomics -> 185.226.156.232:/workspace/tokenomics
+
+sent 1,968,345 bytes  received 3,874 bytes  788,887.60 bytes/sec
+total size is 5,960,173  speedup is 3.02
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.15.0+cpu cuda False
+[run_pod] launching detached: -u -m tokenomics.eval.supply_trace --atlas /workspace/tokenomics/_pod_ckpts/exp0079/atlas_v2.json --orderer-ckpt /workspace/tokenomics/_pod_ckpts/exp0079/orderer_scorer.pt --order-ttl 2 --producer entity_planner_buyahead_k4_rf3 --workers 16 --source-commit 0352821b0c51a572c84d4521b656adccf0833bcd --out-dir /workspace/tokenomics/runs/exp0079/entity_planner_buyahead_k4_rf3
+[run_pod] launch ssh did not return within 60s; the job is detached (own session) — proceeding to monitor via pid/exit files
+[run_pod] launched (survives disconnect). Reattach any time: python run_pod_training.py --pod-id 2o5lqkdzg94d56 --attach --remote-log /workspace/train.log --cpu
+[run_pod] mirroring remote log -> train.live.log (tail -f); status -> train.status
+[routing_audit] 213 jobs, 0 already done, 213 to run
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k4_rf3/round_robin r0 units=23470 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k4_rf3/round_robin r0 units=24385 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k4_rf3/round_robin r0 units=4263 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k4_rf3/round_robin r0 units=4057 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=23954 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=22911 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=23985 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=23439 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4881 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4760 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4772 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4958 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2691 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2576 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2654 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k4_rf3/round_robin r0 units=2558 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k4_rf3/round_robin r0 units=5646 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=6227 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=6184 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k4_rf3/round_robin r0 units=3493 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=6396 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=3814 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=3832 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4002 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=3932 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k4_rf3/round_robin r0 units=3595 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2535 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k4_rf3/round_robin r0 units=2365 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=10671 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k4_rf3/round_robin r0 units=10554 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=10984 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=10868 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=10704 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4684 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k4_rf3/round_robin r0 units=4021 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4122 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=6095 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k4_rf3/round_robin r0 units=10697 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=29727 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=29341 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k4_rf3/round_robin r0 units=5324 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4326 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4354 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k4_rf3/round_robin r0 units=4229 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=29905 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k4_rf3/round_robin r0 units=31888 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k4_rf3/round_robin r0 units=31565 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=29432 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=9184 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=7920 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k4_rf3/round_robin r0 units=8562 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=8689 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k4_rf3/round_robin r0 units=10046 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=9383 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k4_rf3/round_robin r0 units=2810 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=3936 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=3850 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=3787 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=3990 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k4_rf3/round_robin r0 units=2829 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k4_rf3/round_robin r0 units=2462 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2898 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2795 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2920 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1646 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2956 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k4_rf3/round_robin r0 units=2404 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1663 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1643 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k4_rf3/round_robin r0 units=1450 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1074 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=17366 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k4_rf3/round_robin r0 units=1032 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1076 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=3459 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=17460 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k4_rf3/round_robin r0 units=3359 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=3497 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k4_rf3/round_robin r0 units=16411 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=3395 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1571 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=804 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=3302 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k4_rf3/round_robin r0 units=3235 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=17102 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=816 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k4_rf3/round_robin r0 units=780 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=819 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=794 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k4_rf3/round_robin r0 units=1406 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k4_rf3/round_robin r0 units=773 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=5184 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5260 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k4_rf3/round_robin r0 units=5192 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=5211 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5058 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k4_rf3/round_robin r0 units=5320 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k4_rf3/round_robin r0 units=16652 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=741 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=9304 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=743 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k4_rf3/round_robin r0 units=9695 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=790 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=9695 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k4_rf3/round_robin r0 units=752 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k4_rf3/round_robin r0 units=8778 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=9230 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=810 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1280 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k4_rf3/round_robin r0 units=706 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1260 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=9296 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k4_rf3/round_robin r0 units=1250 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=17183 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2662 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k4_rf3/round_robin r0 units=2516 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1354 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2593 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1364 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k4_rf3/round_robin r0 units=1498 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k4_rf3/round_robin r0 units=1555 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1273 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1342 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=6516 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=6426 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k4_rf3/round_robin r0 units=6422 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=6372 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=6536 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k4_rf3/round_robin r0 units=6402 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4805 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4909 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=5343 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k4_rf3/round_robin r0 units=4806 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4759 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k4_rf3/round_robin r0 units=5128 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5395 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4945 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k4_rf3/round_robin r0 units=4924 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5042 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k4_rf3/round_robin r0 units=4968 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5026 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k4_rf3/round_robin r0 units=1071 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1132 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1113 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1147 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4010 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1258 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k4_rf3/round_robin r0 units=1414 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2634 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k4_rf3/round_robin r0 units=2480 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2601 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2481 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2511 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k4_rf3/round_robin r0 units=2451 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2615 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=5705 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5913 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k4_rf3/round_robin r0 units=5978 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=5767 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5750 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k4_rf3/round_robin r0 units=5995 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1202 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1236 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k4_rf3/round_robin r0 units=1096 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1186 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1221 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k4_rf3/round_robin r0 units=2041 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k4_rf3/round_robin r0 units=1054 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1510 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k4_rf3/round_robin r0 units=2670 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1420 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k4_rf3/round_robin r0 units=2733 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2074 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2081 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1839 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1729 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k4_rf3/round_robin r0 units=1652 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1911 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1986 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k4_rf3/round_robin r0 units=1500 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k4_rf3/round_robin r0 units=1754 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=3417 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=3540 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4818 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4567 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k4_rf3/round_robin r0 units=4542 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4257 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k4_rf3/round_robin r0 units=6203 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k4_rf3/round_robin r0 units=4882 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5215 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4795 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4742 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=4705 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k4_rf3/round_robin r0 units=6323 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=4696 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k4_rf3/round_robin r0 units=1897 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2261 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2260 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2198 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k4_rf3/round_robin r0 units=1905 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2180 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k4_rf3/round_robin r0 units=7700 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=6375 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=5708 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=1952 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=6416 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=1922 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=6437 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k4_rf3/round_robin r0 units=7845 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k4_rf3/round_robin r0 units=1545 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k4_rf3/mww_keyed r1 units=2063 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k4_rf3/mww_keyed r0 units=2059 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k4_rf3/round_robin r0 units=1736 dead=false
+[supply_trace] complete, reading None
+[run_pod] detached run finished (exit 0); pulling results
+[run_pod] pulling /workspace/tokenomics/runs/exp0079/ -> ./experiments/EXP-0079-expand-early/
+[run_pod] stopping pod 2o5lqkdzg94d56...
+[run_pod] pod stopped
+[run_pod] terminating pod 2o5lqkdzg94d56 (removing)...
+[run_pod] pod terminated

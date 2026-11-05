@@ -30,7 +30,7 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
     replenishment, restoration and upgrade equal k4's on views (test). rf / rf1 / rf12 unchanged
     (EXP-0078 rf rows reproduced 6 / 6 on 12-0111 at horizon 100). test_buyahead 15,
     test_supply_trace 28, goldens 336, test_roster 36.
-- [ ] 1.2 [experiment][remote:cpu16] EXP-0079: rf3 vs k4 (EXP-0077 rows; digests must match),
+- [x] 1.2 [experiment][remote:cpu16] EXP-0079: rf3 vs k4 (EXP-0077 rows; digests must match),
   × {MWWk, RR}, TTL 2, EXP-0057's worlds, observer on. **Pre-registered reading (2026-11-05,
   before data; as EXP-0078 / 7.22b; 12 producers decide, 42 reported):** per orderer, diff_w =
   mean paired (episode, replicate) units(rf3) − units(k4) per world, floor_w = atlas v2
@@ -41,6 +41,7 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   investment rejections, held stock. On `rf_helps` rf3 becomes the base for group 2 (design D8:
   plan text updated); otherwise k4 stays the base. ≈ 0.7 vCPU-h (EXP-0078: 1.9 for 3 × 213 jobs),
   stop 3; cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P. After 1.1.
+  - Done 2026-11-05 (EXP-0079): `rf_helps` (12: +326 / +345 vs floor 146.5, 0 deaths, run-down 0 / −1; 42: +868 / +940). **The ladder's base is now `entity_planner_buyahead_k4_rf3`** (design D8): every "base" below means rf3; θ = 0 equivalence and the D5 guard are to rf3. ≈ 0.9 vCPU-h; M5-P ≈ 0.9 / 80 (notes/tranche-ledger.md).
 
 ## 2. Residual policy and learner (code)
 
@@ -73,8 +74,8 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 
 ## 4. Base and probe (experiment). Gated: tranche M5-P approved by the user
 
-- [ ] 4.1 [experiment][remote:cpu16] EXP-0080: L1 bar + noise floor on the base (design D5).
-  Verify: r0 reproduces EXP-0077 / EXP-0079 base rows on shared world-episodes; self-flags ≤ 5%
+- [ ] 4.1 [experiment][remote:cpu16] EXP-0080: L1 bar + noise floor on the base (rf3, design D5).
+  Verify: r0 reproduces EXP-0079's rf3 rows on shared world-episodes; self-flags ≤ 5%
   with the margin; 0 contract failures. ≈ 3, stop 6.
 - [ ] 4.2 [experiment][remote:cpu16] EXP-0081: L2 gradient probe. Reading `signal` / `weak` /
   `no_signal` (cosine 0.3 / 0.1); `no_signal` → DIAGNOSTICS entry, stop. ≈ 4, stop 8.

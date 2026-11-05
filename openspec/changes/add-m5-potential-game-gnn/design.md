@@ -51,7 +51,10 @@
   diagnostic showing orderer-side headroom given the learned producer, e.g. a supply trace whose
   `c_outbid` / routing classes then dominate.
 
-### D2. The policy: a residual on buy-ahead k = 4 over shared per-row features
+### D2. The policy: a residual on the base producer over shared per-row features
+
+**Base (EXP-0079, D8 applied): `entity_planner_buyahead_k4_rf3`** (buy-ahead k = 4 + early inventory expansion; +11% over k = 4 at 12 producers). Below, "the base" and "k = 4" in the residual's definition mean rf3: its expansion trigger is the residual's starting trigger, and θ = 0 equals rf3.
+
 - **The base:** `entity_planner_buyahead_k4`. The residual changes exactly three things, with
   everything else the base's (restoration, upgrade, the planner's input priority):
   - **Buffer per input:** k_g = 4 · exp(clip(θ_k · φ_g)), applied through `buyahead_view`
