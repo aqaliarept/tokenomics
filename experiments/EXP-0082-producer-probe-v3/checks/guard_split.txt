@@ -1,0 +1,14 @@
+S batch 0 deaths {}
+S batch 1 deaths {'+03': ['12-0016'], '+04': ['12-0016'], '+06': ['12-0004'], '+08': ['12-0016'], '-00': ['12-0016'], '-02': ['12-0016'], '-04': ['12-0016'], '-05': ['12-0016'], '-08': ['12-0016'], '-07': ['12-0016'], '-09': ['12-0016'], '-11': ['12-0016']}
+S v3 cosine -0.67 disqualified A/B 0 12
+S deaths_only cosine -0.67 disqualified A/B 0 12
+S flags_only cosine 0.84 disqualified A/B 0 0
+S off cosine 0.84 disqualified A/B 0 0
+S2 batch 0 deaths {}
+S2 batch 1 deaths {'+03': ['12-0016'], '+02': ['12-0016'], '+06': ['12-0016', '12-0004'], '+01': ['12-0016'], '+04': ['12-0016'], '+08': ['12-0016', '12-0004'], '+11': ['12-0016'], '+09': ['12-0016'], '-00': ['12-0016'], '-05': ['12-0016', '12-0004'], '-08': ['12-0016'], '-07': ['12-0016'], '-11': ['12-0016', '12-0004']}
+S2 v3 cosine -0.748 disqualified A/B 1 13
+S2 deaths_only cosine -0.799 disqualified A/B 0 13
+S2 flags_only cosine 0.836 disqualified A/B 1 0
+S2 off cosine 0.902 disqualified A/B 0 0
+12-0016 bar 1669.0 members mean 1642.9 dying mean 1590.9
+death cycle (played cycles) per world: {('12-0016', None): 24, ('12-0004', None): 5}

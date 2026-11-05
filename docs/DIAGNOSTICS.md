@@ -1052,6 +1052,16 @@ improved. The competing explanations call for different responses:
   - Real but non-directional deaths: on 12-0016, 24 / 48 members die (rf3 re-keys 0 / 4).
 - **Branch: disqualification-driven.** A rule redesign goes to the user as a new pre-registration version.
 
+**Evidence (EXP-0082, v3 flag-count rule; offline re-score of EXP-0081's rows; 2026-11-05):**
+- `no_signal`: S −0.670, S2 −0.748. Disqualified on B: 12 / 13 members, all deaths.
+- **Split:**
+  - flags only: 0.840 / 0.836 (0 disqualified on B);
+  - deaths only: −0.670 / −0.799.
+- 11 of S's 12 deaths are on train 12-0016, where rf3 lives at all 5 keys. The deaths cost about −5% units, so
+  they are presumably late.
+- **New branch, death-driven:** the units direction tips one knife-edge world into system death. That is a real
+  side effect, not draw noise. The response goes to the user as a new pre-registration version.
+
 ## 26. A pod bills idle while a local step runs between two pod steps
 
 **Problem (plain English):** a run split into two steps on one pod (e.g. bar, then probe) puts a

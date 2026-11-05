@@ -1,0 +1,255 @@
+{
+ "acceptance_read": false,
+ "driver": "tokenomics.train.producer_es",
+ "mode": "probe",
+ "pins": {
+  "bar_csv_sha256": "c42b9ecc2bdcd9c4d39454facd79144ba6cb0497c8b167a4a1d358abcd1265bf",
+  "bar_spec_pins_sha256": "4d3dfe479c1ab52ae789b6bb21ce11d8a0f8cb864bc8bf5ccee0a4aa19b3231c",
+  "batches": [
+   [
+    [
+     "ws-m4-es-train-v1-12-0034",
+     941602896
+    ],
+    [
+     "ws-m4-es-train-v1-12-0017",
+     541812697
+    ],
+    [
+     "ws-atlas-v1-12-0230",
+     843506519
+    ],
+    [
+     "ws-m4-es-train-v1-12-0003",
+     192798404
+    ],
+    [
+     "ws-atlas-v1-12-0005",
+     78907865
+    ],
+    [
+     "ws-atlas-v1-12-0094",
+     1184750839
+    ],
+    [
+     "ws-m4-es-train-v1-12-0057",
+     2069676497
+    ],
+    [
+     "ws-m4-es-train-v1-12-0045",
+     66994023
+    ],
+    [
+     "ws-atlas-v1-12-0483",
+     463951027
+    ],
+    [
+     "ws-m4-es-train-v1-12-0055",
+     302755993
+    ],
+    [
+     "ws-m4-es-train-v1-12-0048",
+     1181815137
+    ],
+    [
+     "ws-m4-es-train-v1-12-0022",
+     1360957404
+    ],
+    [
+     "ws-m4-es-train-v1-12-0036",
+     1529919415
+    ],
+    [
+     "ws-atlas-v1-12-0392",
+     1349000731
+    ],
+    [
+     "ws-atlas-v1-12-0176",
+     434046227
+    ],
+    [
+     "ws-m4-es-train-v1-12-0025",
+     2859859
+    ],
+    [
+     "ws-atlas-v1-12-0060",
+     401879355
+    ],
+    [
+     "ws-m4-es-train-v1-12-0002",
+     1600056319
+    ],
+    [
+     "ws-m4-es-train-v1-12-0040",
+     1818130039
+    ],
+    [
+     "ws-m4-es-train-v1-12-0030",
+     13822738
+    ],
+    [
+     "ws-m4-es-train-v1-12-0019",
+     1975693812
+    ],
+    [
+     "ws-m4-es-train-v1-12-0046",
+     1944349881
+    ],
+    [
+     "ws-m4-es-train-v1-12-0021",
+     1658926801
+    ],
+    [
+     "ws-m4-es-train-v1-12-0032",
+     1352823277
+    ]
+   ],
+   [
+    [
+     "ws-m4-es-train-v1-12-0050",
+     572716247
+    ],
+    [
+     "ws-m4-es-train-v1-12-0014",
+     362098158
+    ],
+    [
+     "ws-atlas-v1-12-0361",
+     1871882284
+    ],
+    [
+     "ws-m4-es-train-v1-12-0007",
+     1468423735
+    ],
+    [
+     "ws-atlas-v1-12-0254",
+     1942251076
+    ],
+    [
+     "ws-m4-es-train-v1-12-0013",
+     1124120002
+    ],
+    [
+     "ws-atlas-v1-12-0408",
+     517154806
+    ],
+    [
+     "ws-m4-es-train-v1-12-0005",
+     2141806174
+    ],
+    [
+     "ws-atlas-v1-12-0121",
+     72674252
+    ],
+    [
+     "ws-atlas-v1-12-0365",
+     35744542
+    ],
+    [
+     "ws-m4-es-train-v1-12-0010",
+     583449320
+    ],
+    [
+     "ws-m4-es-train-v1-12-0049",
+     1692962056
+    ],
+    [
+     "ws-m4-es-train-v1-12-0004",
+     47747607
+    ],
+    [
+     "ws-m4-es-train-v1-12-0051",
+     1572602726
+    ],
+    [
+     "ws-m4-es-train-v1-12-0037",
+     1783463990
+    ],
+    [
+     "ws-atlas-v1-12-0155",
+     1281933034
+    ],
+    [
+     "ws-m4-es-train-v1-12-0016",
+     1929968846
+    ],
+    [
+     "ws-m4-es-train-v1-12-0018",
+     1719590143
+    ],
+    [
+     "ws-m4-es-train-v1-12-0000",
+     1901237609
+    ],
+    [
+     "ws-atlas-v1-12-0302",
+     1504978459
+    ],
+    [
+     "ws-m4-es-train-v1-12-0041",
+     1361968267
+    ],
+    [
+     "ws-atlas-v1-12-0321",
+     1658267042
+    ],
+    [
+     "ws-m4-es-train-v1-12-0044",
+     2143077829
+    ],
+    [
+     "ws-atlas-v1-12-0308",
+     1275641963
+    ]
+   ]
+  ],
+  "driver": "tokenomics.train.producer_es",
+  "dry_run": false,
+  "eps_sha256": "e05c997d1f94bfc8606952074b92cbc901e591d3d5b4b68d2b5b9772420f4cef",
+  "flag_rule": "flag-count-v1",
+  "flag_threshold": 1.6666666666666667,
+  "horizon": 100,
+  "margins_sha256": "561c94e2afacf7daf53ce6f07fbdef9b3f567b6d9f29114b157129e00686f09b",
+  "mode": "probe",
+  "noise_episodes_sha256": "cc6ef40557672ef9390b7827ae6c287ff0930f523f506673c71237be2f642a63",
+  "normaliser_sha256": "660559b49144d139a9ef6b0c5b84ae75cf51e8a825266506f54a91fd8b961fe2",
+  "pairs": 12,
+  "prereg": "97c3332c3584ce6fd2d84fe40cac5c9e03eb4f8e59fdd76d1d036defef7b9d04",
+  "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+  "sigma": 0.05,
+  "sigma_arms": {
+   "S": 1.0,
+   "S2": 2.0
+  },
+  "size": 24,
+  "source": {
+   "commit": "d825401264e01906c75236394b69cb0fbf3d29fb",
+   "n_files": 81,
+   "tree_sha256": "a3ae8d017a35534ad29e9607e4a65c2e521cd8175b3627619beb6dc2e30874fd"
+  },
+  "theta_dim": 23,
+  "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9"
+ },
+ "rescore": {
+  "decision": "supervisor 2026-11-05: EXP-0082 = offline re-score of EXP-0081's recorded probe rows under v3, no pod; every job's row was pre-seeded, no job ran (run_job_fn raises)",
+  "exp0081_probe_episodes_sha256": "0d83d654525ebc6560195ac71194bca46b0edb3c6beeb69cc2628c58aef4dc9e",
+  "exp0081_spec_sha256": "d560aa8cb59127a44fb1893e9b240fa135a9a252199446d4507eaaed8dbea6a1",
+  "rows_identical": true
+ },
+ "result": {
+  "contract_failures": 0,
+  "cosine": {
+   "S": -0.669757982142031,
+   "S2": -0.7482241419954764
+  },
+  "expected_rows": 2304,
+  "problems": [],
+  "reading": "no_signal",
+  "rows": 2304,
+  "status": "complete",
+  "step_reading": "no_signal"
+ },
+ "started": 1793904325.3948705,
+ "status": "complete",
+ "workers": 1
+}
