@@ -78,6 +78,12 @@
   count is independent of size and topology.
 
 ### D3. The learner: ES with paired episodes, not policy gradient
+- **Fitness (decided 2026-11-05, supervisor; notes/2.2.md):** consumer units only, relative to
+  the bar (rf3 + MWWk on the same world-episode and key). There is no holding term, unlike M4's
+  `order_es`. The D5 guard (run-down / starvation, relative to rf3) is unchanged. Holding units
+  per cycle and the investment rejection rate are reported in every generation and read, never
+  deciding. The pre-registration's sanity check `stock_heavy` flags a selected θ whose held stock
+  exceeds rf3's by > 50%. It is reported only, and goes to the user.
 - **Why ES:**
   - The decisions act through multi-cycle delays (an input order resolves 1–4 cycles later, losses
     land at TTL), so per-decision credit for policy gradient is noisy and needs a critic. M4 never

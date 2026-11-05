@@ -343,19 +343,24 @@ def plan_reservations_first(view: ProducerEntityView, *, ahead_cycles: float, ma
                             replenish_cost_per_unit, funding_budget, kept_room: int,
                             inventory_expansion_increases: int, inventory_expansion_cost,
                             blocked_first: bool = True, keep_room: bool = True,
-                            expand_early: bool = True) -> ProducingAgentCommand:
+                            expand_early: bool = True,
+                            plan_view: ProducerEntityView | None = None) -> ProducingAgentCommand:
     """"Reservations first" (add-m4-orderer-redesign task 7.22, notes/7.22.md) on top of buy-ahead:
     (1) the cycle's headroom and per-input ceiling go first to inputs live reservations still lack
     (`blocked_shortfall`, by input value); (2) the buy-ahead k-term may not use the last
     `kept_room` units of headroom; (3) an inventory expansion is also requested when headroom is
     below the total blocked shortfall. Restoration, upgrade and the input priority are the
-    buy-ahead planner's. With (1)-(3) off this is `producing_entity_planner_buyahead` exactly."""
+    buy-ahead planner's. With (1)-(3) off this is `producing_entity_planner_buyahead` exactly.
+    `plan_view` (M5 task 2.1): the view the base plans its buying from instead of
+    `buyahead_view(view, ahead_cycles)` (the input priority is still scored from `view`); None keeps
+    every existing caller unchanged."""
     scores = score_producer_entity_view(view, input_stock_target=DEFAULT_INPUT_STOCK_TARGET)
     kw = dict(max_replenish=max_replenish, replenish_cost_per_unit=replenish_cost_per_unit,
               funding_budget=funding_budget, scores=scores,
               inventory_expansion_increases=inventory_expansion_increases,
               inventory_expansion_cost=inventory_expansion_cost)
-    base = plan_producer_command(buyahead_view(view, ahead_cycles), **kw)
+    base = plan_producer_command(
+        buyahead_view(view, ahead_cycles) if plan_view is None else plan_view, **kw)
     if not (blocked_first or keep_room or expand_early):
         return base
     # the buy-ahead planner's own replenishment budget: headroom, capped by the fund after the

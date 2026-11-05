@@ -45,13 +45,14 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 
 ## 2. Residual policy and learner (code)
 
-- [ ] 2.1 [code][local] `train/producer_residual.py`: the D2 residual (per-input k_g, extra buying,
+- [x] 2.1 [code][local] `train/producer_residual.py`: the D2 residual (per-input k_g, extra buying,
   expansion trigger) over shared per-row features. The features are agent-local and past-only,
   with episode state weak-keyed by the system (7.22's fix). Verify:
   - θ = 0 equals the base action for action over an episode at 12 and at 42;
   - the parameter count is identical at 12 and 42;
   - an ADR-0058 check: features read only the producer's own view and history;
   - goldens.
+  - Done 2026-11-05 (notes/2.1.md): θ 23 values (θ_k 9, θ_b 9, θ_e 5) on rf3; buffer k_g = 4·exp(clip(θ_k·φ_g, ±2)), extra units on top of the target, expansion when θ_e·ψ > 0; `plan_reservations_first(plan_view=)` added (None = unchanged); θ = 0 == rf3 at 12 and 42; tests 6.
 - [ ] 2.2 [code][local] `train/producer_es.py`: ES on 2.1 reusing `order_es`:
   - bar precompute on the base, keyed draws, antithetic pairs, rank fitness, Adam, minibatch 24;
   - modes `probe` / `train` / `noise-floor`;
