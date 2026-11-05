@@ -7,3 +7,4 @@
 | 2026-11-05 | EXP-0081 (task 4.2, L2 probe) | `aiqj4crcpytzse`, secure 8 vCPU (16 unavailable), EUR-IS-1, 18:16–18:25 UTC | 4 | ≈ 1.1 | ≈ 2.7 / 80 |
 | 2026-11-05 | EXP-0081..0083 re-scores, task 4.2e traces | none (offline / local) | — | 0 | ≈ 2.7 / 80 |
 | 2026-11-05 | EXP-0084 (task 4.2g, rf4 vs rf3 + horizon 200) | `91m4a0f6czzczj`, secure 16 vCPU, EUR-IS-1, 19:44–19:48 UTC | 6 | ≈ 0.9 | ≈ 3.6 / 80 |
+| 2026-11-05 | EXP-0085 (task 4.2i, L1 on rf4) | `t70u0084cnq136`, secure 16 vCPU, EUR-IS-1, 20:21–20:23 UTC (creation retried ≈ 14 min, no capacity) | 3 | ≈ 0.6 | ≈ 4.2 / 80 |

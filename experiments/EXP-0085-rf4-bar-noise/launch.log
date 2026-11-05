@@ -1,0 +1,30 @@
+[run_pod] verified clean source commit 875c59432796e475b5bb6d64813234a7a3c335ae (synced tree + launcher); injected into --train
+[run_pod] creating pod: POST /v1/pods {"name": "exp0085-x", "imageName": "runpod/base:0.7.0-ubuntu2004", "computeType": "CPU", "containerDiskInGb": 30, "volumeMountPath": "/workspace", "cloudType": "SECURE", "ports": ["22/tcp"], "vcpuCount": 16, "cpuFlavorIds": ["cpu5c"], "dataCenterIds": ["EUR-IS-1"]}
+[run_pod] created pod t70u0084cnq136
+[run_pod] pod t70u0084cnq136 status: RUNNING
+[run_pod] pod already running
+[run_pod] waiting for pod to become reachable (timeout 600s)...
+[run_pod] SSH up at 185.226.156.232:30309
+[run_pod] pod image runpod/base:0.7.0-ubuntu2004; exported as EXP0039_POD_IMAGE into the run
+[run_pod] syncing /srv/research/wt-exp0085/tokenomics -> 185.226.156.232:/workspace/tokenomics
+
+sent 10,070,679 bytes  received 4,319 bytes  1,343,333.07 bytes/sec
+total size is 60,179,315  speedup is 5.97
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.15.0+cpu cuda False
+[run_pod] launching detached: -u -c "import sys; from tokenomics.train.producer_es import main; P='/workspace/tokenomics/_pod_ckpts/exp0085/'; O='/workspace/tokenomics/runs/exp0085/'; r=main(['--mode','bar','--training-dir',P+'training','--out-dir',O+'bar','--workers','16','--source-commit','875c59432796e475b5bb6d64813234a7a3c335ae','--atlas',P+'atlas_v2.json','--reference-episodes',P+'exp0084_rf4_episodes.csv']); sys.exit(r if r else main(['--mode','noise-floor','--training-dir',P+'training','--bar-dir',O+'bar','--out-dir',O+'noise_floor','--workers','16','--source-commit','875c59432796e475b5bb6d64813234a7a3c335ae']))"
+[run_pod] launch ssh did not return within 60s; the job is detached (own session) — proceeding to monitor via pid/exit files
+[run_pod] launched (survives disconnect). Reattach any time: python run_pod_training.py --pod-id t70u0084cnq136 --attach --remote-log /workspace/train.log --cpu
+[run_pod] mirroring remote log -> train.live.log (tail -f); status -> train.status
+[producer_es] reference cross-check: 2 / 2 equal
+[producer_es] bar complete
+[producer_es] noise-floor complete
+[run_pod] detached run finished (exit 0); pulling results
+[run_pod] pulling /workspace/tokenomics/runs/exp0085/ -> ./experiments/EXP-0085-rf4-bar-noise/
+[run_pod] stopping pod t70u0084cnq136...
+[run_pod] pod stopped
+[run_pod] terminating pod t70u0084cnq136 (removing)...
+[run_pod] pod terminated

@@ -1,0 +1,58 @@
+{
+ "acceptance_read": false,
+ "driver": "tokenomics.train.producer_es",
+ "mode": "noise-floor",
+ "pins": {
+  "bar_csv_sha256": "3a072a1ebf21f82013407f927bb8308e0c4f9ab2b529da5a93a01c1a7a9ddd2a",
+  "bar_spec_pins_sha256": "5a13cbd38531439f8d222711c7608d83c61f735b8fcc95f0d4351b42df930742",
+  "base": "entity_planner_buyahead_k4_rf4",
+  "c": 2.0,
+  "driver": "tokenomics.train.producer_es",
+  "dry_run": false,
+  "horizon": 100,
+  "mode": "noise-floor",
+  "replicates": [
+   1,
+   2,
+   3,
+   4
+  ],
+  "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+  "source": {
+   "commit": "875c59432796e475b5bb6d64813234a7a3c335ae",
+   "n_files": 81,
+   "tree_sha256": "5b5273e6a022394ae1c227c7ce1c50a227cddd28ade46e67c08651b9e04494ba"
+  },
+  "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9"
+ },
+ "result": {
+  "contract_failures": 0,
+  "diagnostics": {
+   "holding_units_per_cycle": 247.386578125,
+   "investment_rejection_rate": 0.0980470617322354,
+   "units": 3423.1921875
+  },
+  "expected_rows": 640,
+  "margins": {
+   "c": 2.0,
+   "df_rundown": 512,
+   "df_starvation": 5368,
+   "episodes": 512,
+   "rundown": 0.09524098944994623,
+   "self_flag_rate": 0.0546875,
+   "self_flags": 28,
+   "self_flags_without_margin": 122,
+   "sigma_rundown": 0.033672774743486705,
+   "sigma_starvation": 0.04065361755011917,
+   "starvation": 0.11498579459781481,
+   "target_met": false,
+   "target_rate": 0.05
+  },
+  "problems": [],
+  "rows": 640,
+  "status": "complete"
+ },
+ "started": 1793910136.689372,
+ "status": "complete",
+ "workers": 16
+}

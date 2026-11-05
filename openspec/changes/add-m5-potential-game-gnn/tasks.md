@@ -120,6 +120,7 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   set). Verify: r0 reproduces the bar; rf4 on 2 EXP-0057 world-episodes equals EXP-0084's rows;
   self-flags ≤ 5%; 0 contract failures; training-set deaths reported (12-0016 / 12-0004 expected
   none). ≈ 1.5, stop 3. Then (local, no pod up) `--mode flag-calibrate` → v5 constants → freeze v5.
+  - Ran 2026-11-05 (EXP-0085): **L1 stop branch**: self-flags 28 / 512 = 5.47% > 5% (all other checks pass; 0 training deaths; flag-count calibration T = 5/3 at 4.27%). v5 not frozen; to the supervisor / user. ≈ 0.6 vCPU-h, M5-P ≈ 4.2 / 80.
 - [ ] 4.2j [experiment][remote:cpu16] EXP-0086: a fresh L2 probe on rf4 under v5 (new rows). Reading
   as 4.2; `signal` / `weak` → 5.1 (L3 pilot, stop 14); else stop. ≈ 2, stop 4.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
