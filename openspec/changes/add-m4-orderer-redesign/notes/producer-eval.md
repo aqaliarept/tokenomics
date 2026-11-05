@@ -59,4 +59,16 @@ Reading **`buyahead_helps`** (12, k = 1: MWWk +217, RR +224 vs floor 146.5; 0 de
 Held stock +18% / +37%; investment rejection rate 0.058 → 0.064 → 0.067.
 Reading for step 3: buying ahead works through intermediate suppliers (died-upstream), not the final assembler (late unchanged); not saturated at k = 2. Open: roster inclusion (human gate); a larger k or a per-level rule.
 
+## Step 2d — buffer sweep (task 7.21, EXP-0077)
+Done 2026-11-05: k = 3 / 4 added (k = 2, entity_planner from EXP-0076; digests equal). **k* = 4** at 12 (MWWk k*_o 4, RR 3; registered max), 3 at 42.
+| 12 MWWk | EP | k1 | k2 | k3 | k4 |
+|---|---|---|---|---|---|
+| units / episode | 2,096 | 2,323 | 2,669 | 2,935 | 3,101 |
+| held stock / cycle | 132 | 156 | 180 | 208 | 233 |
+| run-down fails / 86 | 66 | 70 | 70 | 64 | 71 |
+| investment rejection | 0.058 | 0.064 | 0.067 | 0.074 | 0.078 |
+| died upstream | 156k | 134k | 105k | 86k | 77k |
+| input arrived late | 174k | 173k | 177k | 177k | 178k |
+k* sits at the sweep's edge (gains shrinking but beyond the floor for MWWk; run-down at the +5 limit), so the optimum is not established. Late inputs at the final assembler stay flat → step 4 (7.22) targets them on top of k* = 4.
+
 ## Step 3 — producer teacher (later, decided by step 2)

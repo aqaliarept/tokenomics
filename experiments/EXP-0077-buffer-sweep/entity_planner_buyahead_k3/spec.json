@@ -1,0 +1,3352 @@
+{
+  "acceptance_read": false,
+  "blas_threads": 1,
+  "date": "2026-11-05",
+  "driver": "tokenomics.eval.supply_trace",
+  "environment": {
+    "gymnasium": "1.4.0",
+    "image": "runpod/base:0.7.0-ubuntu2004",
+    "implementation": "cpython",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "numpy_blas": "scipy-openblas",
+    "pettingzoo": "1.27.0",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.31",
+    "python": "3.12.11",
+    "torch": "2.15.0+cpu",
+    "torch_build": "c03064435730"
+  },
+  "experiment": "entity_planner_buyahead_k3",
+  "inputs": {
+    "orderer": {
+      "path": "/workspace/tokenomics/_pod_ckpts/exp0077/orderer_scorer.pt",
+      "sha256": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    }
+  },
+  "kind": "audit",
+  "pins": {
+    "arm_table": [
+      {
+        "arm": "MWWk",
+        "contract": "joint_stack",
+        "kind": "stochastic",
+        "ordering": "mww_keyed",
+        "producing": "entity_planner_buyahead_k3",
+        "random": true,
+        "replicates": 2,
+        "roster": false,
+        "router": "mww_keyed",
+        "subject": "entity_planner_buyahead_k3/mww_keyed",
+        "trained": false
+      },
+      {
+        "arm": "RR",
+        "contract": "joint_stack",
+        "kind": "deterministic",
+        "ordering": "round_robin",
+        "producing": "entity_planner_buyahead_k3",
+        "random": false,
+        "roster": false,
+        "router": "round_robin",
+        "side": "blind",
+        "subject": "entity_planner_buyahead_k3/round_robin",
+        "trained": false
+      }
+    ],
+    "arms": [
+      "MWWk",
+      "RR"
+    ],
+    "atlas": {
+      "content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+      "path": "/workspace/tokenomics/_pod_ckpts/exp0077/atlas_v2.json",
+      "sha256": "7517314f297ac39e1c00da3fb734bb40fcfecc9492ee2e67936fc910f8cf9568"
+    },
+    "checkpoints": {
+      "orderer": "d25388bfa33ea3fc82aebbac48c75c886ed5c091f6016f1ce36eeb4293744a8c"
+    },
+    "driver": "tokenomics.eval.supply_trace",
+    "dry_run": false,
+    "grid": {
+      "ws-atlas-v1-12-0005": {
+        "episodes": [
+          1034002112
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0060": {
+        "episodes": [
+          1295251592,
+          7166650
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0094": {
+        "episodes": [
+          78410946,
+          1885066463
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0111": {
+        "episodes": [
+          195303600,
+          2030511473
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0121": {
+        "episodes": [
+          1758129913,
+          698545856
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0139": {
+        "episodes": [
+          1649418142,
+          96110564
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0155": {
+        "episodes": [
+          533949274
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0176": {
+        "episodes": [
+          232428550
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0230": {
+        "episodes": [
+          883543740,
+          1934666033
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0254": {
+        "episodes": [
+          2115056251,
+          1646377889
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0302": {
+        "episodes": [
+          811165134,
+          489786601
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0308": {
+        "episodes": [
+          1768789793,
+          1324323162
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0321": {
+        "episodes": [
+          1577443475,
+          2013809044
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0340": {
+        "episodes": [
+          39812336,
+          981506722
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0344": {
+        "episodes": [
+          1680874617,
+          263907294
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0352": {
+        "episodes": [
+          547143209,
+          613180837
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0361": {
+        "episodes": [
+          1707798378,
+          1858927482
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0365": {
+        "episodes": [
+          910414941,
+          1794806094
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0391": {
+        "episodes": [
+          924519316,
+          1977552299
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0392": {
+        "episodes": [
+          515039714,
+          678961384
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0408": {
+        "episodes": [
+          724917058,
+          677063316
+        ],
+        "regime": "calm",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0436": {
+        "episodes": [
+          952577233,
+          440603155
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-12-0483": {
+        "episodes": [
+          1810761330,
+          1379119214
+        ],
+        "regime": "shocked",
+        "size": 12
+      },
+      "ws-atlas-v1-42-0000": {
+        "episodes": [
+          535939028,
+          1067090871
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0013": {
+        "episodes": [
+          126034777,
+          684102246
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0031": {
+        "episodes": [
+          188168481,
+          1956340570
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0034": {
+        "episodes": [
+          830810322,
+          693991194
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0037": {
+        "episodes": [
+          1138298054,
+          1881677704
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0039": {
+        "episodes": [
+          2036154428,
+          1801822691
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0040": {
+        "episodes": [
+          649489157,
+          33433251
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0043": {
+        "episodes": [
+          832857904,
+          596659810
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0076": {
+        "episodes": [
+          18344953,
+          1621765017
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0081": {
+        "episodes": [
+          943950126,
+          1800031693
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0093": {
+        "episodes": [
+          1706887913,
+          1841799353
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0113": {
+        "episodes": [
+          285891905,
+          968215995
+        ],
+        "regime": "shocked",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0119": {
+        "episodes": [
+          1050056246,
+          706983495
+        ],
+        "regime": "calm",
+        "size": 42
+      },
+      "ws-atlas-v1-42-0126": {
+        "episodes": [
+          285624650,
+          252677189
+        ],
+        "regime": "calm",
+        "size": 42
+      }
+    },
+    "horizon": 100,
+    "order_ttl": 2,
+    "producer": "entity_planner_buyahead_k3",
+    "profile": "ttl_sweep",
+    "reference": null,
+    "reference_exp0073": null,
+    "sample": [
+      {
+        "choice": "dense",
+        "class": "hard",
+        "pattern": "cyclic",
+        "rho": 0.5149136577708006,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0005"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "hard",
+        "pattern": "burst",
+        "rho": 0.32595993322203676,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0060"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "cyclic",
+        "rho": 0.3377630121816169,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0094"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 0.47089262613195343,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0111"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "drift",
+        "rho": 2.2443181818181817,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0121"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 0.46195652173913043,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0139"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "cyclic",
+        "rho": 0.7990314769975786,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0155"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "hard",
+        "pattern": "cyclic",
+        "rho": 0.29882044560943644,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0176"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 0.6049382716049383,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0230"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "cyclic",
+        "rho": 2.272751322751323,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0254"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 1.1180555555555556,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0302"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "seasonal",
+        "rho": 1.05,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0308"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "hit",
+        "rho": 1.5190520842212942,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0321"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "pattern": "seasonal",
+        "rho": 0.31564070351758794,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0340"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 0.6003180492976411,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0344"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "pattern": "switch",
+        "rho": 4.485981308411215,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0352"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "pattern": "iid",
+        "rho": 0.49390243902439024,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0361"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "pattern": "switch",
+        "rho": 1.2029702970297032,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0365"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "switch",
+        "rho": 2.380767814577237,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0391"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "drift",
+        "rho": 1.008130081300813,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0392"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "pattern": "seasonal",
+        "rho": 1.1009389671361502,
+        "shocks": false,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0408"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "drift",
+        "rho": 1.6654804270462633,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0436"
+      },
+      {
+        "choice": "dense",
+        "class": "open",
+        "pattern": "iid",
+        "rho": 1.8300970873786406,
+        "shocks": true,
+        "size": 12,
+        "world": "ws-atlas-v1-12-0483"
+      },
+      {
+        "choice": "sparse_f7",
+        "class": "open",
+        "pattern": "hit",
+        "rho": 0.5680866199417425,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0000"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 0.5669390289840651,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0013"
+      },
+      {
+        "choice": "sparse_f14",
+        "class": "hard",
+        "pattern": "hit",
+        "rho": 0.4529616724738676,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0031"
+      },
+      {
+        "choice": "sparse_f7",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 0.3328123669941523,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0034"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "iid",
+        "rho": 0.29331612102987836,
+        "shocks": false,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0037"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "iid",
+        "rho": 1.3806598117431659,
+        "shocks": false,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0039"
+      },
+      {
+        "choice": "sparse_f2",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 0.38925927805564486,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0040"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "seasonal",
+        "rho": 0.6441927481432179,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0043"
+      },
+      {
+        "choice": "sparse_f14",
+        "class": "hard",
+        "pattern": "burst",
+        "rho": 1.23840281855549,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0076"
+      },
+      {
+        "choice": "sparse_f4",
+        "class": "open",
+        "pattern": "drift",
+        "rho": 5.42227679841727,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0081"
+      },
+      {
+        "choice": "sparse_f14",
+        "class": "hard",
+        "pattern": "hit",
+        "rho": 0.34159378036929056,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0093"
+      },
+      {
+        "choice": "sparse_f14",
+        "class": "open",
+        "pattern": "burst",
+        "rho": 0.28658146964856224,
+        "shocks": true,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0113"
+      },
+      {
+        "choice": "dense",
+        "class": "hard",
+        "pattern": "burst",
+        "rho": 0.4846365062761506,
+        "shocks": false,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0119"
+      },
+      {
+        "choice": "sparse_f14",
+        "class": "hard",
+        "pattern": "iid",
+        "rho": 0.8041733547351524,
+        "shocks": false,
+        "size": 42,
+        "world": "ws-atlas-v1-42-0126"
+      }
+    ],
+    "shock_profile": null,
+    "source": {
+      "commit": "08bb01a76b1130125cb884c9edfaedc5add9900c",
+      "tree_sha256": "f370ac3e191f1c9311f015da19e409030dcf412803e56a5689fad73eea490ce0"
+    },
+    "subjects": {
+      "MWWk": "entity_planner_buyahead_k3/mww_keyed",
+      "RR": "entity_planner_buyahead_k3/round_robin"
+    },
+    "worlds": [
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "8564738c742948863451c4a72a2e8adad582fc40ad97374579c1bdc96df93837",
+        "coordinates": {
+          "cv_capacity": 0.5580923470661565,
+          "cv_cost": 0.2001796498001413,
+          "cv_degradation": 0.38140673208110143,
+          "demand_concentration": 0.2945986557793335,
+          "demand_volatility": 0.10798151549185238,
+          "rho": 0.5149136577708006,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.4620408163265306
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 5,
+        "levers": {
+          "capacity_scale": 0.2676213221578264,
+          "choice": "dense",
+          "h_cap": 1.3101381439844826,
+          "h_cost": 0.9839447990264348,
+          "h_deg": 1.2310039535599506,
+          "hit_magnitude": 0.5646785724926761,
+          "k_c": 1.447308718420147,
+          "m_q": 1.9846040184825968,
+          "outage_duration": 6,
+          "pattern": "cyclic",
+          "pattern_params": {},
+          "shock_rate": 1.2086980085422365,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1908557372,
+        "pool_width": null,
+        "seed": 1908557372,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0005"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "63e01342ff973702199696249cd13b4b5af77b835ca6901e4c908d29d0d1616c",
+        "coordinates": {
+          "cv_capacity": 0.761370734135766,
+          "cv_cost": 0.13010740204643487,
+          "cv_degradation": 0.44796315092798794,
+          "demand_concentration": 0.2882786367940267,
+          "demand_volatility": 0.39501458770520387,
+          "rho": 0.32595993322203676,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.526653005,
+          "shock_outage_duration": 3.5,
+          "sigma": 0.22202301054650048
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 60,
+        "levers": {
+          "capacity_scale": 1.7168402703695202,
+          "choice": "sparse_f4",
+          "h_cap": 1.6206827036654499,
+          "h_cost": 0.6293675572479243,
+          "h_deg": 1.6380576544061731,
+          "hit_magnitude": 0.5266530051369962,
+          "k_c": 2.2563638175368332,
+          "m_q": 2.660848984714653,
+          "outage_duration": 2,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.03718936924320634
+          },
+          "shock_rate": 2.168557099348533,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 2063402108,
+        "pool_width": null,
+        "seed": 2063402108,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0060"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "8fb0c340cb89f64c96094592dde218b2bf355689a2e988636098af93c85e982d",
+        "coordinates": {
+          "cv_capacity": 0.6214685055608138,
+          "cv_cost": 0.15942259158488853,
+          "cv_degradation": 0.5214097295515997,
+          "demand_concentration": 0.3722233430312812,
+          "demand_volatility": 0.34442187909778427,
+          "rho": 0.3377630121816169,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.665859415,
+          "shock_outage_duration": 7.5,
+          "sigma": 0.7867241379310345
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 94,
+        "levers": {
+          "capacity_scale": 0.4878911986545213,
+          "choice": "sparse_f4",
+          "h_cap": 1.0285306936725223,
+          "h_cost": 0.8259576834003104,
+          "h_deg": 1.6343086491108536,
+          "hit_magnitude": 0.665859415433997,
+          "k_c": 0.536194333839157,
+          "m_q": 2.439216945786195,
+          "outage_duration": 6,
+          "pattern": "cyclic",
+          "pattern_params": {},
+          "shock_rate": 1.8062524366609392,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1580943170,
+        "pool_width": null,
+        "seed": 1580943170,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0094"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "be004c2c9815a3e942ed246cc5586b4dc58b22c14d93ecedf1dc68c1eb684982",
+        "coordinates": {
+          "cv_capacity": 0.026215664117916954,
+          "cv_cost": 0.09747659191043688,
+          "cv_degradation": 0.3214635991224449,
+          "demand_concentration": 0.2997412702861336,
+          "demand_volatility": 0.435605935137057,
+          "rho": 0.47089262613195343,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.215114969,
+          "shock_outage_duration": 4.5,
+          "sigma": 0.3720630987617415
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 111,
+        "levers": {
+          "capacity_scale": 1.4067219017939707,
+          "choice": "sparse_f2",
+          "h_cap": 0.07685417940550528,
+          "h_cost": 0.44379764805770766,
+          "h_deg": 1.511747867532156,
+          "hit_magnitude": 0.2151149685202031,
+          "k_c": 2.510022610111238,
+          "m_q": 6.347466426909869,
+          "outage_duration": 3,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.09673920388308244
+          },
+          "shock_rate": 1.9518477292138794,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1633498243,
+        "pool_width": null,
+        "seed": 1633498243,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0111"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "9d222fa892cecd69e24de58d82cd11e0d574e5f455d80dd1b11f03211dc48276",
+        "coordinates": {
+          "cv_capacity": 0.2615251390480148,
+          "cv_cost": 0.07075157724765876,
+          "cv_degradation": 0.5331788632604759,
+          "demand_concentration": 0.2849512813059289,
+          "demand_volatility": 0.05487597762284307,
+          "rho": 2.2443181818181817,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.41746411483253587
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 121,
+        "levers": {
+          "capacity_scale": 0.8892960517775758,
+          "choice": "sparse_f4",
+          "h_cap": 0.355052090285836,
+          "h_cost": 0.3177760658792916,
+          "h_deg": 1.9147920927307132,
+          "hit_magnitude": 0.2703671820808452,
+          "k_c": 6.296521301852906,
+          "m_q": 5.592190583154621,
+          "outage_duration": 4,
+          "pattern": "drift",
+          "pattern_params": {},
+          "shock_rate": 2.491224188991312,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 709080971,
+        "pool_width": null,
+        "seed": 709080971,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0121"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "decc554ba41ee70b4a86bfa474cfab22e8eadecf474d23d76f933f3e66af241a",
+        "coordinates": {
+          "cv_capacity": 0.25087765845671545,
+          "cv_cost": 0.010296208401818482,
+          "cv_degradation": 0.22105581108231834,
+          "demand_concentration": 0.2896436390747277,
+          "demand_volatility": 0.6594242799491167,
+          "rho": 0.46195652173913043,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 1.2264000000000002
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 139,
+        "levers": {
+          "capacity_scale": 0.7744846555827203,
+          "choice": "sparse_f4",
+          "h_cap": 0.2595266304441745,
+          "h_cost": 0.06156390855944469,
+          "h_deg": 1.0793827371926907,
+          "hit_magnitude": 0.2732883138970884,
+          "k_c": 1.0276963564705028,
+          "m_q": 1.6055669983500305,
+          "outage_duration": 5,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.05917449782449846
+          },
+          "shock_rate": 1.6238407429580142,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 79857090,
+        "pool_width": null,
+        "seed": 79857090,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0139"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "caeda76feb183ed2008ab15925f336d907239b21b53a30d9afbbb76e577e999a",
+        "coordinates": {
+          "cv_capacity": 0.014706501010154272,
+          "cv_cost": 0.21503315444508145,
+          "cv_degradation": 0.09252607892711547,
+          "demand_concentration": 0.48144884188787407,
+          "demand_volatility": 0.26954727854319727,
+          "rho": 0.7990314769975786,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 1.9192540792540793
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 155,
+        "levers": {
+          "capacity_scale": 0.31274525242142476,
+          "choice": "sparse_f2",
+          "h_cap": 0.03274031221755408,
+          "h_cost": 0.9878873278005231,
+          "h_deg": 0.45957593235668154,
+          "hit_magnitude": 0.7360890622114802,
+          "k_c": 0.7449335049680182,
+          "m_q": 4.934692313501874,
+          "outage_duration": 8,
+          "pattern": "cyclic",
+          "pattern_params": {},
+          "shock_rate": 2.922090542503665,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1086829631,
+        "pool_width": null,
+        "seed": 1086829631,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0155"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "250fddb417fcdb3a26c4013efbba2d5676112f4462fcf4db2b277fb3ea0cadc2",
+        "coordinates": {
+          "cv_capacity": 0.048311535891862656,
+          "cv_cost": 0.31348334783247833,
+          "cv_degradation": 0.07005258480945839,
+          "demand_concentration": 0.3071355797167422,
+          "demand_volatility": 0.2662985959187739,
+          "rho": 0.29882044560943644,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.3694189602446483
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 176,
+        "levers": {
+          "capacity_scale": 1.808445267294787,
+          "choice": "sparse_f4",
+          "h_cap": 0.07383220586278702,
+          "h_cost": 1.8020455295381168,
+          "h_deg": 0.16810133669627722,
+          "hit_magnitude": 0.6326547861281384,
+          "k_c": 0.9486124391763728,
+          "m_q": 6.8023094498871535,
+          "outage_duration": 10,
+          "pattern": "cyclic",
+          "pattern_params": {},
+          "shock_rate": 2.420804583996227,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 109358168,
+        "pool_width": null,
+        "seed": 109358168,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0176"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "101db3e78e2c86f6bc33e430b81244563e86084d9c288f80d8e98ac14ad79122",
+        "coordinates": {
+          "cv_capacity": 0.4800768751647149,
+          "cv_cost": 0.002237791741045061,
+          "cv_degradation": 0.09298109298109299,
+          "demand_concentration": 0.2572009096305351,
+          "demand_volatility": 0.6717828434133297,
+          "rho": 0.6049382716049383,
+          "shock_events_per_producer": 0.25,
+          "shock_hit_magnitude": 0.226243612,
+          "shock_outage_duration": 7.5,
+          "sigma": 1.174326923076923
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 230,
+        "levers": {
+          "capacity_scale": 0.39464715494521546,
+          "choice": "dense",
+          "h_cap": 1.827651527117283,
+          "h_cost": 0.0432041745782443,
+          "h_deg": 0.2898467928301626,
+          "hit_magnitude": 0.22624361167768478,
+          "k_c": 0.5385595016851543,
+          "m_q": 6.925226315485701,
+          "outage_duration": 6,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.033793528404334305
+          },
+          "shock_rate": 0.9925799245986358,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 2112276608,
+        "pool_width": null,
+        "seed": 2112276608,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0230"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "635ac72580228fb969cd146701caee9092ff74e6e03cfd42576345bf99ffd554",
+        "coordinates": {
+          "cv_capacity": 0.25245476804902345,
+          "cv_cost": 0.26725681759063896,
+          "cv_degradation": 0.07792207792207792,
+          "demand_concentration": 0.27119635146833554,
+          "demand_volatility": 0.0722707977959918,
+          "rho": 2.272751322751323,
+          "shock_events_per_producer": 0.16666666666666666,
+          "shock_hit_magnitude": 0.545418667,
+          "shock_outage_duration": 6.5,
+          "sigma": 0.5027380873748515
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 254,
+        "levers": {
+          "capacity_scale": 1.4779705269099737,
+          "choice": "sparse_f2",
+          "h_cap": 0.4220530166385316,
+          "h_cost": 1.2666968451152738,
+          "h_deg": 0.005052040679441597,
+          "hit_magnitude": 0.5454186674142046,
+          "k_c": 6.0699058674283215,
+          "m_q": 7.43512130315452,
+          "outage_duration": 5,
+          "pattern": "cyclic",
+          "pattern_params": {},
+          "shock_rate": 0.6621827104197522,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 482372076,
+        "pool_width": null,
+        "seed": 482372076,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0254"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "7ac0b1ec183c2606880d7557cc8cf9899943eb4251eb980a4ed6dabc4803dece",
+        "coordinates": {
+          "cv_capacity": 0.6429301539271944,
+          "cv_cost": 0.08639650733752144,
+          "cv_degradation": 0.2087633680126005,
+          "demand_concentration": 0.25035550299793974,
+          "demand_volatility": 0.2408419036875717,
+          "rho": 1.1180555555555556,
+          "shock_events_per_producer": 0.5833333333333334,
+          "shock_hit_magnitude": 0.719032938,
+          "shock_outage_duration": 8.5,
+          "sigma": 0.23896112831097352
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 302,
+        "levers": {
+          "capacity_scale": 0.7559831066111463,
+          "choice": "dense",
+          "h_cap": 1.038779777761682,
+          "h_cost": 0.42479353977108797,
+          "h_deg": 0.9484146941408066,
+          "hit_magnitude": 0.7190329375005888,
+          "k_c": 6.356222633767936,
+          "m_q": 1.7351171898666162,
+          "outage_duration": 7,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.022930815489078354
+          },
+          "shock_rate": 2.3840979030013227,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 280333438,
+        "pool_width": null,
+        "seed": 280333438,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0302"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "0bc0f1f2e8447e9fe9ccf9e98855657229710d2dc5c943afecb48b86c1107d51",
+        "coordinates": {
+          "cv_capacity": 0.24305146384650778,
+          "cv_cost": 0.11482367167366478,
+          "cv_degradation": 0.037037037037037035,
+          "demand_concentration": 0.27145003953344543,
+          "demand_volatility": 0.3694343107239166,
+          "rho": 1.05,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.6299198683164311
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 308,
+        "levers": {
+          "capacity_scale": 0.8221785708953968,
+          "choice": "sparse_f2",
+          "h_cap": 0.906303041715857,
+          "h_cost": 0.548158538684798,
+          "h_deg": 0.06418149804674825,
+          "hit_magnitude": 0.7954754213173147,
+          "k_c": 2.4312286955950717,
+          "m_q": 7.167218600772358,
+          "outage_duration": 6,
+          "pattern": "seasonal",
+          "pattern_params": {
+            "amplitude": 0.5416320750148966,
+            "period": 28,
+            "phase": 1.834581883007302
+          },
+          "shock_rate": 1.964393130131343,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 683989985,
+        "pool_width": null,
+        "seed": 683989985,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0308"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "22e45359bc056a67153e5048b288180524e743786f06b600ac14874702e18571",
+        "coordinates": {
+          "cv_capacity": 0.02310914421008843,
+          "cv_cost": 0.18355680880779815,
+          "cv_degradation": 0.24887527816589108,
+          "demand_concentration": 0.25439603846984693,
+          "demand_volatility": 0.1404136694015022,
+          "rho": 1.5190520842212942,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 1.2249688291447496
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 321,
+        "levers": {
+          "capacity_scale": 0.25082046588571016,
+          "choice": "sparse_f2",
+          "h_cap": 0.14464834937496798,
+          "h_cost": 0.7247217395215916,
+          "h_deg": 0.9172168979456666,
+          "hit_magnitude": 0.7776055688548749,
+          "k_c": 1.5478957208937378,
+          "m_q": 3.858099013043388,
+          "outage_duration": 9,
+          "pattern": "hit",
+          "pattern_params": {
+            "hit_alpha": 1.696864272262819,
+            "hit_period": 22
+          },
+          "shock_rate": 1.714278207242075,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1215496820,
+        "pool_width": 4,
+        "seed": 1215496820,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0321"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "b78a90e234dce48826334a5c00bdc7e261dd1160796f8ea52df6f941ca78a31e",
+        "coordinates": {
+          "cv_capacity": 0.3802129543473151,
+          "cv_cost": 0.3005495458052412,
+          "cv_degradation": 0.15665064136418838,
+          "demand_concentration": 0.25126313853914406,
+          "demand_volatility": 0.3214961511801761,
+          "rho": 0.31564070351758794,
+          "shock_events_per_producer": 0.3333333333333333,
+          "shock_hit_magnitude": 0.280837743,
+          "shock_outage_duration": 10.5,
+          "sigma": 0.5118823529411765
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 340,
+        "levers": {
+          "capacity_scale": 1.6641882729713804,
+          "choice": "dense",
+          "h_cap": 0.7627234249462785,
+          "h_cost": 1.282139528563583,
+          "h_deg": 0.5816270270418722,
+          "hit_magnitude": 0.28083774327687017,
+          "k_c": 0.8350877334828013,
+          "m_q": 6.505960987258293,
+          "outage_duration": 9,
+          "pattern": "seasonal",
+          "pattern_params": {
+            "amplitude": 0.45359720038088724,
+            "period": 11,
+            "phase": 3.6973824616846382
+          },
+          "shock_rate": 1.4254454211518,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1171715372,
+        "pool_width": null,
+        "seed": 1171715372,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0340"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "ddefffcf839154087f5673bdad35ee35efc7ece80cb8dfae53290d5d040f7247",
+        "coordinates": {
+          "cv_capacity": 0.20239637318196868,
+          "cv_cost": 0.28075287271515526,
+          "cv_degradation": 0.0996268797913759,
+          "demand_concentration": 0.28706013006782527,
+          "demand_volatility": 0.295606350165527,
+          "rho": 0.6003180492976411,
+          "shock_events_per_producer": 0.5833333333333334,
+          "shock_hit_magnitude": 0.663119394,
+          "shock_outage_duration": 3.5,
+          "sigma": 0.22194016249361265
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 344,
+        "levers": {
+          "capacity_scale": 1.4232796581475249,
+          "choice": "sparse_f2",
+          "h_cap": 0.8152513614418799,
+          "h_cost": 1.55563263043938,
+          "h_deg": 0.46886354780695577,
+          "hit_magnitude": 0.6631193941305201,
+          "k_c": 6.465851177202179,
+          "m_q": 2.4637357985118795,
+          "outage_duration": 2,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.07829314369626973
+          },
+          "shock_rate": 2.3705756598055983,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 128846000,
+        "pool_width": null,
+        "seed": 128846000,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0344"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "106d6a766975dde680e280173743f77e178bacfa82f0d372466e9305f97571e6",
+        "coordinates": {
+          "cv_capacity": 0.6099560561641524,
+          "cv_cost": 0.11244445881692769,
+          "cv_degradation": 0.40797601598349614,
+          "demand_concentration": 0.2604074183765657,
+          "demand_volatility": 0.06537494974242063,
+          "rho": 4.485981308411215,
+          "shock_events_per_producer": 0.3333333333333333,
+          "shock_hit_magnitude": 0.314033591,
+          "shock_outage_duration": 7.5,
+          "sigma": 0.7864915254237288
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 352,
+        "levers": {
+          "capacity_scale": 0.29580041206126634,
+          "choice": "dense",
+          "h_cap": 1.685133799773049,
+          "h_cost": 0.47644219738038285,
+          "h_deg": 1.7042920404841635,
+          "hit_magnitude": 0.31403359109306006,
+          "k_c": 6.687376573930161,
+          "m_q": 4.598146286618656,
+          "outage_duration": 6,
+          "pattern": "switch",
+          "pattern_params": {
+            "low_weight": 0.05217970531307532,
+            "switch_count": 3
+          },
+          "shock_rate": 1.3174602268672162,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 895745354,
+        "pool_width": 4,
+        "seed": 895745354,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0352"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "8a7af7dc46906c2cc1208a05f613843272475d37b30817ec5f5dfa9c0e395344",
+        "coordinates": {
+          "cv_capacity": 0.5874984270820132,
+          "cv_cost": 0.15573750362555477,
+          "cv_degradation": 0.2977871705067911,
+          "demand_concentration": 0.25072895091395364,
+          "demand_volatility": 0.14013403089099263,
+          "rho": 0.49390243902439024,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.2613626373626374
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 361,
+        "levers": {
+          "capacity_scale": 0.2636176358276861,
+          "choice": "dense",
+          "h_cap": 1.6725036566194604,
+          "h_cost": 0.8396628698743652,
+          "h_deg": 1.4095816410387105,
+          "hit_magnitude": 0.53296494110544,
+          "k_c": 2.2258286846703847,
+          "m_q": 1.0773736631653477,
+          "outage_duration": 7,
+          "pattern": "iid",
+          "pattern_params": {},
+          "shock_rate": 1.7731203993189455,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 93313479,
+        "pool_width": null,
+        "seed": 93313479,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0361"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "8470e7a25ebaf02d485f72a7e6eda5d23c96ae305a7f2af55e6b6458adb8ef7b",
+        "coordinates": {
+          "cv_capacity": 0.112972053522713,
+          "cv_cost": 0.3031745217395232,
+          "cv_degradation": 0.1599626415069054,
+          "demand_concentration": 0.25048671481264606,
+          "demand_volatility": 0.13784383794668864,
+          "rho": 1.2029702970297032,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.9510588235294118
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 365,
+        "levers": {
+          "capacity_scale": 0.3042689189234831,
+          "choice": "dense",
+          "h_cap": 0.1920792011143642,
+          "h_cost": 1.6672988045492034,
+          "h_deg": 1.0926328362716458,
+          "hit_magnitude": 0.6453798934116919,
+          "k_c": 1.563669761860748,
+          "m_q": 3.104158573515092,
+          "outage_duration": 9,
+          "pattern": "switch",
+          "pattern_params": {
+            "low_weight": 0.24854009207742211,
+            "switch_count": 2
+          },
+          "shock_rate": 2.6633859459735616,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1436314012,
+        "pool_width": 4,
+        "seed": 1436314012,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0365"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "2a121a89cfcfdaf8c14b8bff36d293743b6722176f4fd565e073f40a29088914",
+        "coordinates": {
+          "cv_capacity": 0.48679682177838907,
+          "cv_cost": 0.3799783251491867,
+          "cv_degradation": 0.4182624378237476,
+          "demand_concentration": 0.2509458524107736,
+          "demand_volatility": 0.062216135297398244,
+          "rho": 2.380767814577237,
+          "shock_events_per_producer": 0.25,
+          "shock_hit_magnitude": 0.601351634,
+          "shock_outage_duration": 4.5,
+          "sigma": 0.5159310496638407
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 391,
+        "levers": {
+          "capacity_scale": 1.3275077467247334,
+          "choice": "sparse_f2",
+          "h_cap": 1.56103633266312,
+          "h_cost": 1.9705346055359916,
+          "h_deg": 1.6846681077802768,
+          "hit_magnitude": 0.601351633853775,
+          "k_c": 7.497339931351843,
+          "m_q": 5.1392109252450915,
+          "outage_duration": 3,
+          "pattern": "switch",
+          "pattern_params": {
+            "low_weight": 0.08789097107492282,
+            "switch_count": 3
+          },
+          "shock_rate": 0.8717036341837194,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1743854074,
+        "pool_width": 4,
+        "seed": 1743854074,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0391"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "aaffe99dcf1c9c988d131ecdc8c46fe4a59a0d39910439d9a35fc8c72c25d822",
+        "coordinates": {
+          "cv_capacity": 0.5771498632333177,
+          "cv_cost": 0.4859022028969222,
+          "cv_degradation": 0.30270761576361704,
+          "demand_concentration": 0.29042269187259706,
+          "demand_volatility": 0.0832502673352008,
+          "rho": 1.008130081300813,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.44090853284223447
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 392,
+        "levers": {
+          "capacity_scale": 1.7415998289196195,
+          "choice": "sparse_f4",
+          "h_cap": 1.5442919507623742,
+          "h_cost": 1.588571729951871,
+          "h_deg": 1.1835792214930265,
+          "hit_magnitude": 0.5515905447113364,
+          "k_c": 2.889848988888382,
+          "m_q": 7.88401161523136,
+          "outage_duration": 10,
+          "pattern": "drift",
+          "pattern_params": {},
+          "shock_rate": 1.53187191910813,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1581181319,
+        "pool_width": null,
+        "seed": 1581181319,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0392"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "d0e3f3ff66c08fd0da07e2d0f10ce286cacd547b07f6d184c3b667ae9139c176",
+        "coordinates": {
+          "cv_capacity": 0.7278306244508544,
+          "cv_cost": 0.3290630101076215,
+          "cv_degradation": 0.14667582996462328,
+          "demand_concentration": 0.2512237314747852,
+          "demand_volatility": 0.31684586035274714,
+          "rho": 1.1009389671361502,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.23636148007590133
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 408,
+        "levers": {
+          "capacity_scale": 1.263619229517652,
+          "choice": "dense",
+          "h_cap": 1.2108115883321788,
+          "h_cost": 1.6099541294660038,
+          "h_deg": 0.5017600577733852,
+          "hit_magnitude": 0.6147217881805443,
+          "k_c": 5.5275390368168065,
+          "m_q": 4.7382326050148,
+          "outage_duration": 10,
+          "pattern": "seasonal",
+          "pattern_params": {
+            "amplitude": 0.5481272623789395,
+            "period": 24,
+            "phase": 7.966515916509747
+          },
+          "shock_rate": 1.9226860777735308,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1389291730,
+        "pool_width": null,
+        "seed": 1389291730,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0408"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "c542bb44fbc92598abff272413c10ffe6121fab604d00dfb98e6186c1611e74a",
+        "coordinates": {
+          "cv_capacity": 0.08217931117457038,
+          "cv_cost": 0.32100709446449405,
+          "cv_degradation": 0.233550388050467,
+          "demand_concentration": 0.266464987411515,
+          "demand_volatility": 0.10270847994504566,
+          "rho": 1.6654804270462633,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.638754399,
+          "shock_outage_duration": 8.5,
+          "sigma": 0.977327053100638
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "11": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "20": 2,
+          "21": 2,
+          "22": 2,
+          "23": 2,
+          "3": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 436,
+        "levers": {
+          "capacity_scale": 0.25237858371637195,
+          "choice": "sparse_f2",
+          "h_cap": 0.24157286717203896,
+          "h_cost": 1.8672319963402833,
+          "h_deg": 1.1370627937213056,
+          "hit_magnitude": 0.6387543985833346,
+          "k_c": 2.33687289437509,
+          "m_q": 4.072192776213114,
+          "outage_duration": 7,
+          "pattern": "drift",
+          "pattern_params": {},
+          "shock_rate": 1.9198550456992851,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 712668690,
+        "pool_width": null,
+        "seed": 712668690,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0436"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "a50a65c66836f88607b90c0b670a952472152d611b90d8e1668989d079f84b5f",
+        "coordinates": {
+          "cv_capacity": 0.30183134288892416,
+          "cv_cost": 0.05614772844947799,
+          "cv_degradation": 0.17174803113412965,
+          "demand_concentration": 0.25155633802274074,
+          "demand_volatility": 0.10005313387123395,
+          "rho": 1.8300970873786406,
+          "shock_events_per_producer": 0.4166666666666667,
+          "shock_hit_magnitude": 0.34240315899999996,
+          "shock_outage_duration": 4.5,
+          "sigma": 0.8803921568627452
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "11": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "20": 4,
+          "21": 4,
+          "22": 4,
+          "23": 4,
+          "3": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 483,
+        "levers": {
+          "capacity_scale": 0.4349270943710728,
+          "choice": "dense",
+          "h_cap": 0.3505864191362843,
+          "h_cost": 0.2555288885709096,
+          "h_deg": 0.5220647568110529,
+          "hit_magnitude": 0.34240315860041814,
+          "k_c": 2.537129692794464,
+          "m_q": 3.9734869428794233,
+          "outage_duration": 3,
+          "pattern": "iid",
+          "pattern_params": {},
+          "shock_rate": 1.5264448436943339,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 392086912,
+        "pool_width": null,
+        "seed": 392086912,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 12,
+        "world_id": "ws-atlas-v1-12-0483"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "da36ce1ddd9e1859c5038db3af579c166f36573cf13dc2e0d98f2ed62d99cfa2",
+        "coordinates": {
+          "cv_capacity": 0.524253784291001,
+          "cv_cost": 0.06448288717260055,
+          "cv_degradation": 0.26558595077323965,
+          "demand_concentration": 0.0893421686085004,
+          "demand_volatility": 0.09702842184632358,
+          "rho": 0.5680866199417425,
+          "shock_events_per_producer": 0.5714285714285714,
+          "shock_hit_magnitude": 0.679985808,
+          "shock_outage_duration": 8.5,
+          "sigma": 0.8361717632495873
+        },
+        "declarers_per_product": {
+          "0": 7,
+          "1": 7,
+          "10": 7,
+          "100": 7,
+          "101": 7,
+          "102": 7,
+          "103": 7,
+          "104": 7,
+          "105": 7,
+          "106": 7,
+          "107": 7,
+          "108": 7,
+          "109": 7,
+          "11": 7,
+          "110": 7,
+          "111": 7,
+          "112": 7,
+          "113": 7,
+          "12": 7,
+          "13": 7,
+          "2": 7,
+          "200": 7,
+          "201": 7,
+          "202": 7,
+          "203": 7,
+          "204": 7,
+          "205": 7,
+          "206": 7,
+          "207": 7,
+          "208": 7,
+          "209": 7,
+          "210": 7,
+          "211": 7,
+          "212": 7,
+          "213": 7,
+          "3": 7,
+          "4": 7,
+          "5": 7,
+          "6": 7,
+          "7": 7,
+          "8": 7,
+          "9": 7
+        },
+        "generator_version": "world-space-v1",
+        "index": 0,
+        "levers": {
+          "capacity_scale": 0.39536347840951364,
+          "choice": "sparse_f7",
+          "h_cap": 0.8691423551729961,
+          "h_cost": 0.25822909666194654,
+          "h_deg": 1.0782163528086675,
+          "hit_magnitude": 0.6799858077339561,
+          "k_c": 0.9698589292866666,
+          "m_q": 3.8715640523036763,
+          "outage_duration": 7,
+          "pattern": "hit",
+          "pattern_params": {
+            "hit_alpha": 1.7183700585882415,
+            "hit_period": 15
+          },
+          "shock_rate": 2.2602411899884878,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 312859014,
+        "pool_width": 4,
+        "seed": 312859014,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0000"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "66575e05a0d5059f2fcc996f6aec048f7b1937dc428a90e16e4615e6b698eff5",
+        "coordinates": {
+          "cv_capacity": 0.34262308063687924,
+          "cv_cost": 0.1689064745698401,
+          "cv_degradation": 0.10247648578638267,
+          "demand_concentration": 0.08113053145079845,
+          "demand_volatility": 0.175712662458095,
+          "rho": 0.5669390289840651,
+          "shock_events_per_producer": 0.7142857142857143,
+          "shock_hit_magnitude": 0.45493549899999997,
+          "shock_outage_duration": 8.5,
+          "sigma": 0.26939356312381574
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "100": 4,
+          "101": 4,
+          "102": 4,
+          "103": 4,
+          "104": 4,
+          "105": 4,
+          "106": 4,
+          "107": 4,
+          "108": 4,
+          "109": 4,
+          "11": 4,
+          "110": 4,
+          "111": 4,
+          "112": 4,
+          "113": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "200": 4,
+          "201": 4,
+          "202": 4,
+          "203": 4,
+          "204": 4,
+          "205": 4,
+          "206": 4,
+          "207": 4,
+          "208": 4,
+          "209": 4,
+          "210": 4,
+          "211": 4,
+          "212": 4,
+          "213": 4,
+          "3": 4,
+          "4": 4,
+          "5": 4,
+          "6": 4,
+          "7": 4,
+          "8": 4,
+          "9": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 13,
+        "levers": {
+          "capacity_scale": 1.8188607454026202,
+          "choice": "sparse_f4",
+          "h_cap": 0.7073878479630552,
+          "h_cost": 0.6434455701141943,
+          "h_deg": 0.2728577243306517,
+          "hit_magnitude": 0.45493549939470734,
+          "k_c": 3.617338655862422,
+          "m_q": 6.721919568952787,
+          "outage_duration": 7,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.055952114103863
+          },
+          "shock_rate": 2.902735105307193,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 778561992,
+        "pool_width": null,
+        "seed": 778561992,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0013"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "3902b2888470c011035890485f7802fc8338487d04af70af5459f07d1d1ed05d",
+        "coordinates": {
+          "cv_capacity": 0.18079362267522267,
+          "cv_cost": 0.18329955832410594,
+          "cv_degradation": 0.4742781709761486,
+          "demand_concentration": 0.08776484860016324,
+          "demand_volatility": 0.07682695193426065,
+          "rho": 0.4529616724738676,
+          "shock_events_per_producer": 0.5952380952380952,
+          "shock_hit_magnitude": 0.716672024,
+          "shock_outage_duration": 7.5,
+          "sigma": 0.44006666666666666
+        },
+        "declarers_per_product": {
+          "0": 14,
+          "1": 14,
+          "10": 14,
+          "100": 14,
+          "101": 14,
+          "102": 14,
+          "103": 14,
+          "104": 14,
+          "105": 14,
+          "106": 14,
+          "107": 14,
+          "108": 14,
+          "109": 14,
+          "11": 14,
+          "110": 14,
+          "111": 14,
+          "112": 14,
+          "113": 14,
+          "12": 14,
+          "13": 14,
+          "2": 14,
+          "200": 14,
+          "201": 14,
+          "202": 14,
+          "203": 14,
+          "204": 14,
+          "205": 14,
+          "206": 14,
+          "207": 14,
+          "208": 14,
+          "209": 14,
+          "210": 14,
+          "211": 14,
+          "212": 14,
+          "213": 14,
+          "3": 14,
+          "4": 14,
+          "5": 14,
+          "6": 14,
+          "7": 14,
+          "8": 14,
+          "9": 14
+        },
+        "generator_version": "world-space-v1",
+        "index": 31,
+        "levers": {
+          "capacity_scale": 0.7723078451857214,
+          "choice": "sparse_f14",
+          "h_cap": 0.38351227071664273,
+          "h_cost": 0.7656237181432728,
+          "h_deg": 1.5675955257283138,
+          "hit_magnitude": 0.7166720239357698,
+          "k_c": 1.3266960227630622,
+          "m_q": 3.8119132420993806,
+          "outage_duration": 6,
+          "pattern": "hit",
+          "pattern_params": {
+            "hit_alpha": 1.7977501583144289,
+            "hit_period": 5
+          },
+          "shock_rate": 2.360543693033664,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1095824237,
+        "pool_width": 4,
+        "seed": 1095824237,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0031"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "fb77f740d73213e6723bb8385c655005174bb259b3ffa7e716376fc59f4e5e3d",
+        "coordinates": {
+          "cv_capacity": 0.14105082044928402,
+          "cv_cost": 0.4082241460686029,
+          "cv_degradation": 0.4586210422893191,
+          "demand_concentration": 0.08270426702762479,
+          "demand_volatility": 0.2758037241447986,
+          "rho": 0.3328123669941523,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.7269324420000001,
+          "shock_outage_duration": 7.5,
+          "sigma": 0.26271413749578454
+        },
+        "declarers_per_product": {
+          "0": 7,
+          "1": 7,
+          "10": 7,
+          "100": 7,
+          "101": 7,
+          "102": 7,
+          "103": 7,
+          "104": 7,
+          "105": 7,
+          "106": 7,
+          "107": 7,
+          "108": 7,
+          "109": 7,
+          "11": 7,
+          "110": 7,
+          "111": 7,
+          "112": 7,
+          "113": 7,
+          "12": 7,
+          "13": 7,
+          "2": 7,
+          "200": 7,
+          "201": 7,
+          "202": 7,
+          "203": 7,
+          "204": 7,
+          "205": 7,
+          "206": 7,
+          "207": 7,
+          "208": 7,
+          "209": 7,
+          "210": 7,
+          "211": 7,
+          "212": 7,
+          "213": 7,
+          "3": 7,
+          "4": 7,
+          "5": 7,
+          "6": 7,
+          "7": 7,
+          "8": 7,
+          "9": 7
+        },
+        "generator_version": "world-space-v1",
+        "index": 34,
+        "levers": {
+          "capacity_scale": 0.36544800480164463,
+          "choice": "sparse_f7",
+          "h_cap": 0.328694296554862,
+          "h_cost": 1.666476886397252,
+          "h_deg": 1.6714205852619706,
+          "hit_magnitude": 0.7269324419287106,
+          "k_c": 2.34149274623044,
+          "m_q": 1.119180015693416,
+          "outage_duration": 6,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.08339217565654646
+          },
+          "shock_rate": 2.0573757961215526,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1280159712,
+        "pool_width": null,
+        "seed": 1280159712,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0034"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "ed475b44db39e425aa40055ed3a0714d2c67d3d243f53db2219911f1bb687b8b",
+        "coordinates": {
+          "cv_capacity": 0.8899599614740916,
+          "cv_cost": 0.09236581930371046,
+          "cv_degradation": 0.30024921854047093,
+          "demand_concentration": 0.09518880015774427,
+          "demand_volatility": 0.10867976704282573,
+          "rho": 0.29331612102987836,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 4.609510513714367
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "100": 4,
+          "101": 4,
+          "102": 4,
+          "103": 4,
+          "104": 4,
+          "105": 4,
+          "106": 4,
+          "107": 4,
+          "108": 4,
+          "109": 4,
+          "11": 4,
+          "110": 4,
+          "111": 4,
+          "112": 4,
+          "113": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "200": 4,
+          "201": 4,
+          "202": 4,
+          "203": 4,
+          "204": 4,
+          "205": 4,
+          "206": 4,
+          "207": 4,
+          "208": 4,
+          "209": 4,
+          "210": 4,
+          "211": 4,
+          "212": 4,
+          "213": 4,
+          "3": 4,
+          "4": 4,
+          "5": 4,
+          "6": 4,
+          "7": 4,
+          "8": 4,
+          "9": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 37,
+        "levers": {
+          "capacity_scale": 0.3847102769728158,
+          "choice": "sparse_f4",
+          "h_cap": 1.6482871159695964,
+          "h_cost": 0.3870853791037195,
+          "h_deg": 1.097986650347157,
+          "hit_magnitude": 0.5903246577484937,
+          "k_c": 0.8470903920701152,
+          "m_q": 1.8155014764068667,
+          "outage_duration": 6,
+          "pattern": "iid",
+          "pattern_params": {},
+          "shock_rate": 1.319266892122197,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1601853855,
+        "pool_width": null,
+        "seed": 1601853855,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0037"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "c15ce52486f45c3a6fbb19976a7a0612a1bfa5861a89881548ccd85544cc873b",
+        "coordinates": {
+          "cv_capacity": 0.3203335769100255,
+          "cv_cost": 0.4543160376357086,
+          "cv_degradation": 0.4753766524922707,
+          "demand_concentration": 0.07900012204818084,
+          "demand_volatility": 0.034152643038129794,
+          "rho": 1.3806598117431659,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.33432740630630464
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "100": 4,
+          "101": 4,
+          "102": 4,
+          "103": 4,
+          "104": 4,
+          "105": 4,
+          "106": 4,
+          "107": 4,
+          "108": 4,
+          "109": 4,
+          "11": 4,
+          "110": 4,
+          "111": 4,
+          "112": 4,
+          "113": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "200": 4,
+          "201": 4,
+          "202": 4,
+          "203": 4,
+          "204": 4,
+          "205": 4,
+          "206": 4,
+          "207": 4,
+          "208": 4,
+          "209": 4,
+          "210": 4,
+          "211": 4,
+          "212": 4,
+          "213": 4,
+          "3": 4,
+          "4": 4,
+          "5": 4,
+          "6": 4,
+          "7": 4,
+          "8": 4,
+          "9": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 39,
+        "levers": {
+          "capacity_scale": 1.983879873184379,
+          "choice": "sparse_f4",
+          "h_cap": 0.5700912628872822,
+          "h_cost": 1.7286212829207586,
+          "h_deg": 1.7356562230393755,
+          "hit_magnitude": 0.48443192364057763,
+          "k_c": 7.263494280860037,
+          "m_q": 5.191077290699474,
+          "outage_duration": 6,
+          "pattern": "iid",
+          "pattern_params": {},
+          "shock_rate": 2.702085809434328,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1917734954,
+        "pool_width": null,
+        "seed": 1917734954,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0039"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "ff44a240d3585f368be272b8cba7ef98f455d1694d6a6bbadfed4e396dd5ed18",
+        "coordinates": {
+          "cv_capacity": 0.11295032396587967,
+          "cv_cost": 0.42154772961227904,
+          "cv_degradation": 0.17380455400914654,
+          "demand_concentration": 0.08045888454505885,
+          "demand_volatility": 0.3062271751069855,
+          "rho": 0.38925927805564486,
+          "shock_events_per_producer": 0.5,
+          "shock_hit_magnitude": 0.6698588830000001,
+          "shock_outage_duration": 8.5,
+          "sigma": 0.41606895930230314
+        },
+        "declarers_per_product": {
+          "0": 2,
+          "1": 2,
+          "10": 2,
+          "100": 2,
+          "101": 2,
+          "102": 2,
+          "103": 2,
+          "104": 2,
+          "105": 2,
+          "106": 2,
+          "107": 2,
+          "108": 2,
+          "109": 2,
+          "11": 2,
+          "110": 2,
+          "111": 2,
+          "112": 2,
+          "113": 2,
+          "12": 2,
+          "13": 2,
+          "2": 2,
+          "200": 2,
+          "201": 2,
+          "202": 2,
+          "203": 2,
+          "204": 2,
+          "205": 2,
+          "206": 2,
+          "207": 2,
+          "208": 2,
+          "209": 2,
+          "210": 2,
+          "211": 2,
+          "212": 2,
+          "213": 2,
+          "3": 2,
+          "4": 2,
+          "5": 2,
+          "6": 2,
+          "7": 2,
+          "8": 2,
+          "9": 2
+        },
+        "generator_version": "world-space-v1",
+        "index": 40,
+        "levers": {
+          "capacity_scale": 0.9308256274140582,
+          "choice": "sparse_f2",
+          "h_cap": 0.2912927204544159,
+          "h_cost": 1.930614847029805,
+          "h_deg": 0.7296004972873901,
+          "hit_magnitude": 0.6698588829956429,
+          "k_c": 2.018591743316582,
+          "m_q": 3.3643225239875956,
+          "outage_duration": 7,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.08882351898028298
+          },
+          "shock_rate": 1.9873247621127423,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 781242424,
+        "pool_width": null,
+        "seed": 781242424,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0040"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "93196ba743207b59cf02f399f2421c4c7d373414165abde02d3ff1b7b04bef99",
+        "coordinates": {
+          "cv_capacity": 0.47689793834925115,
+          "cv_cost": 0.04909898705408236,
+          "cv_degradation": 0.39942493369221516,
+          "demand_concentration": 0.11122777284696313,
+          "demand_volatility": 0.3929281206755173,
+          "rho": 0.6441927481432179,
+          "shock_events_per_producer": 0.40476190476190477,
+          "shock_hit_magnitude": 0.30788248399999996,
+          "shock_outage_duration": 11.5,
+          "sigma": 1.290614377280372
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "100": 4,
+          "101": 4,
+          "102": 4,
+          "103": 4,
+          "104": 4,
+          "105": 4,
+          "106": 4,
+          "107": 4,
+          "108": 4,
+          "109": 4,
+          "11": 4,
+          "110": 4,
+          "111": 4,
+          "112": 4,
+          "113": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "200": 4,
+          "201": 4,
+          "202": 4,
+          "203": 4,
+          "204": 4,
+          "205": 4,
+          "206": 4,
+          "207": 4,
+          "208": 4,
+          "209": 4,
+          "210": 4,
+          "211": 4,
+          "212": 4,
+          "213": 4,
+          "3": 4,
+          "4": 4,
+          "5": 4,
+          "6": 4,
+          "7": 4,
+          "8": 4,
+          "9": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 43,
+        "levers": {
+          "capacity_scale": 0.35855609664173277,
+          "choice": "sparse_f4",
+          "h_cap": 1.4541581594252548,
+          "h_cost": 0.18859091002749864,
+          "h_deg": 1.3788859744458,
+          "hit_magnitude": 0.30788248407565844,
+          "k_c": 0.8031638841546295,
+          "m_q": 5.244298889894438,
+          "outage_duration": 10,
+          "pattern": "seasonal",
+          "pattern_params": {
+            "amplitude": 0.6615001190690676,
+            "period": 19,
+            "phase": 2.313492189777912
+          },
+          "shock_rate": 1.593829895512728,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 811980187,
+        "pool_width": null,
+        "seed": 811980187,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0043"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "d6bd8bd8fa1ec110bbbef5a583a305eb1fcc541200689673ab128c719980e0df",
+        "coordinates": {
+          "cv_capacity": 0.030052005390779197,
+          "cv_cost": 0.20285429192267987,
+          "cv_degradation": 0.13980468133068355,
+          "demand_concentration": 0.09211433813186422,
+          "demand_volatility": 0.3600261448475792,
+          "rho": 1.23840281855549,
+          "shock_events_per_producer": 0.6666666666666666,
+          "shock_hit_magnitude": 0.29486952099999997,
+          "shock_outage_duration": 4.5,
+          "sigma": 2.211684210526316
+        },
+        "declarers_per_product": {
+          "0": 14,
+          "1": 14,
+          "10": 14,
+          "100": 14,
+          "101": 14,
+          "102": 14,
+          "103": 14,
+          "104": 14,
+          "105": 14,
+          "106": 14,
+          "107": 14,
+          "108": 14,
+          "109": 14,
+          "11": 14,
+          "110": 14,
+          "111": 14,
+          "112": 14,
+          "113": 14,
+          "12": 14,
+          "13": 14,
+          "2": 14,
+          "200": 14,
+          "201": 14,
+          "202": 14,
+          "203": 14,
+          "204": 14,
+          "205": 14,
+          "206": 14,
+          "207": 14,
+          "208": 14,
+          "209": 14,
+          "210": 14,
+          "211": 14,
+          "212": 14,
+          "213": 14,
+          "3": 14,
+          "4": 14,
+          "5": 14,
+          "6": 14,
+          "7": 14,
+          "8": 14,
+          "9": 14
+        },
+        "generator_version": "world-space-v1",
+        "index": 76,
+        "levers": {
+          "capacity_scale": 0.27549016019112027,
+          "choice": "sparse_f14",
+          "h_cap": 0.04520057875156588,
+          "h_cost": 0.8593896465498077,
+          "h_deg": 0.7044152086808906,
+          "hit_magnitude": 0.2948695206011659,
+          "k_c": 0.9243077460086478,
+          "m_q": 6.174509656033569,
+          "outage_duration": 3,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.03994702885266948
+          },
+          "shock_rate": 2.651898676362654,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1198410278,
+        "pool_width": null,
+        "seed": 1198410278,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0076"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "056eaa63f1a19793e41fcc7247e6ec43a4497d87a65eb58273a77886478e6f48",
+        "coordinates": {
+          "cv_capacity": 0.7032770945186994,
+          "cv_cost": 0.43290838124447395,
+          "cv_degradation": 0.44837940807570437,
+          "demand_concentration": 0.08290162311853048,
+          "demand_volatility": 0.04975398756035619,
+          "rho": 5.42227679841727,
+          "shock_events_per_producer": 0.2619047619047619,
+          "shock_hit_magnitude": 0.541936339,
+          "shock_outage_duration": 5.5,
+          "sigma": 4.540936333218061
+        },
+        "declarers_per_product": {
+          "0": 4,
+          "1": 4,
+          "10": 4,
+          "100": 4,
+          "101": 4,
+          "102": 4,
+          "103": 4,
+          "104": 4,
+          "105": 4,
+          "106": 4,
+          "107": 4,
+          "108": 4,
+          "109": 4,
+          "11": 4,
+          "110": 4,
+          "111": 4,
+          "112": 4,
+          "113": 4,
+          "12": 4,
+          "13": 4,
+          "2": 4,
+          "200": 4,
+          "201": 4,
+          "202": 4,
+          "203": 4,
+          "204": 4,
+          "205": 4,
+          "206": 4,
+          "207": 4,
+          "208": 4,
+          "209": 4,
+          "210": 4,
+          "211": 4,
+          "212": 4,
+          "213": 4,
+          "3": 4,
+          "4": 4,
+          "5": 4,
+          "6": 4,
+          "7": 4,
+          "8": 4,
+          "9": 4
+        },
+        "generator_version": "world-space-v1",
+        "index": 81,
+        "levers": {
+          "capacity_scale": 0.2844062772299366,
+          "choice": "sparse_f4",
+          "h_cap": 1.0708206700497287,
+          "h_cost": 1.910067646669399,
+          "h_deg": 1.504409357636464,
+          "hit_magnitude": 0.5419363387893142,
+          "k_c": 2.968859834485764,
+          "m_q": 5.868012648004821,
+          "outage_duration": 4,
+          "pattern": "drift",
+          "pattern_params": {},
+          "shock_rate": 1.0379437479072429,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1522101374,
+        "pool_width": null,
+        "seed": 1522101374,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0081"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "10ca9adfaf7d003dfa44811b0b37d1e006c2eed38195fe656320cdfa904753b4",
+        "coordinates": {
+          "cv_capacity": 0.5542675245381014,
+          "cv_cost": 0.4202702317906073,
+          "cv_degradation": 0.11138305700836908,
+          "demand_concentration": 0.07728733891538157,
+          "demand_volatility": 0.06817384528806666,
+          "rho": 0.34159378036929056,
+          "shock_events_per_producer": 0.3333333333333333,
+          "shock_hit_magnitude": 0.452924226,
+          "shock_outage_duration": 11.5,
+          "sigma": 0.3405251141552511
+        },
+        "declarers_per_product": {
+          "0": 14,
+          "1": 14,
+          "10": 14,
+          "100": 14,
+          "101": 14,
+          "102": 14,
+          "103": 14,
+          "104": 14,
+          "105": 14,
+          "106": 14,
+          "107": 14,
+          "108": 14,
+          "109": 14,
+          "11": 14,
+          "110": 14,
+          "111": 14,
+          "112": 14,
+          "113": 14,
+          "12": 14,
+          "13": 14,
+          "2": 14,
+          "200": 14,
+          "201": 14,
+          "202": 14,
+          "203": 14,
+          "204": 14,
+          "205": 14,
+          "206": 14,
+          "207": 14,
+          "208": 14,
+          "209": 14,
+          "210": 14,
+          "211": 14,
+          "212": 14,
+          "213": 14,
+          "3": 14,
+          "4": 14,
+          "5": 14,
+          "6": 14,
+          "7": 14,
+          "8": 14,
+          "9": 14
+        },
+        "generator_version": "world-space-v1",
+        "index": 93,
+        "levers": {
+          "capacity_scale": 0.319589319886264,
+          "choice": "sparse_f14",
+          "h_cap": 1.7680735403815244,
+          "h_cost": 1.7362852206987285,
+          "h_deg": 0.3837400263009666,
+          "hit_magnitude": 0.4529242257846724,
+          "k_c": 1.097262617101998,
+          "m_q": 1.6944542862937815,
+          "outage_duration": 10,
+          "pattern": "hit",
+          "pattern_params": {
+            "hit_alpha": 1.0147491794588124,
+            "hit_period": 16
+          },
+          "shock_rate": 1.328045322596012,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1767236088,
+        "pool_width": 4,
+        "seed": 1767236088,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0093"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "cc6b1a4b451c88755df7fca015b341721d9883424bcd7352e287a32d541212d4",
+        "coordinates": {
+          "cv_capacity": 0.5649763097370913,
+          "cv_cost": 0.03271345868371163,
+          "cv_degradation": 0.5134996537692816,
+          "demand_concentration": 0.11043714812072795,
+          "demand_volatility": 0.4523202237587857,
+          "rho": 0.28658146964856224,
+          "shock_events_per_producer": 0.14285714285714285,
+          "shock_hit_magnitude": 0.544782616,
+          "shock_outage_duration": 8.5,
+          "sigma": 0.5296428571428572
+        },
+        "declarers_per_product": {
+          "0": 14,
+          "1": 14,
+          "10": 14,
+          "100": 14,
+          "101": 14,
+          "102": 14,
+          "103": 14,
+          "104": 14,
+          "105": 14,
+          "106": 14,
+          "107": 14,
+          "108": 14,
+          "109": 14,
+          "11": 14,
+          "110": 14,
+          "111": 14,
+          "112": 14,
+          "113": 14,
+          "12": 14,
+          "13": 14,
+          "2": 14,
+          "200": 14,
+          "201": 14,
+          "202": 14,
+          "203": 14,
+          "204": 14,
+          "205": 14,
+          "206": 14,
+          "207": 14,
+          "208": 14,
+          "209": 14,
+          "210": 14,
+          "211": 14,
+          "212": 14,
+          "213": 14,
+          "3": 14,
+          "4": 14,
+          "5": 14,
+          "6": 14,
+          "7": 14,
+          "8": 14,
+          "9": 14
+        },
+        "generator_version": "world-space-v1",
+        "index": 113,
+        "levers": {
+          "capacity_scale": 0.26622711812726635,
+          "choice": "sparse_f14",
+          "h_cap": 1.8340315333828439,
+          "h_cost": 0.13026536744936293,
+          "h_deg": 1.689501835648941,
+          "hit_magnitude": 0.5447826158406854,
+          "k_c": 0.7592297932167178,
+          "m_q": 1.3835622395477398,
+          "outage_duration": 7,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.03032818178233878
+          },
+          "shock_rate": 0.5071242892239272,
+          "shocks": true
+        },
+        "measure_horizon": 100,
+        "measure_seed": 913256181,
+        "pool_width": null,
+        "seed": 913256181,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0113"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "937fb089e71908f4973d3957113e96b63cff5fc7e1875efc32f946fdfac29f6e",
+        "coordinates": {
+          "cv_capacity": 0.1174866460927555,
+          "cv_cost": 0.06457356001932775,
+          "cv_degradation": 0.294957894165563,
+          "demand_concentration": 0.2503526002595666,
+          "demand_volatility": 0.15547110853742674,
+          "rho": 0.4846365062761506,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 0.13488088183003435
+        },
+        "declarers_per_product": {
+          "0": 14,
+          "1": 14,
+          "10": 14,
+          "11": 14,
+          "12": 14,
+          "13": 14,
+          "2": 14,
+          "20": 14,
+          "21": 14,
+          "22": 14,
+          "23": 14,
+          "3": 14
+        },
+        "generator_version": "world-space-v1",
+        "index": 119,
+        "levers": {
+          "capacity_scale": 1.4356544605311419,
+          "choice": "dense",
+          "h_cap": 0.19529227594726767,
+          "h_cost": 0.2493857197893658,
+          "h_deg": 0.925153672546862,
+          "hit_magnitude": 0.36666244331575387,
+          "k_c": 5.658500628421692,
+          "m_q": 1.7282944777201683,
+          "outage_duration": 3,
+          "pattern": "burst",
+          "pattern_params": {
+            "burst_p": 0.030662838144926256
+          },
+          "shock_rate": 2.041473425119901,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 2018475672,
+        "pool_width": null,
+        "seed": 2018475672,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0119"
+      },
+      {
+        "atlas": "atlas-v1",
+        "config_sha256": "6d37a6a640c4ed2248d1510a3d26f46e828a15b33321c8744e7e2c30c750cda5",
+        "coordinates": {
+          "cv_capacity": 0.7698418772397951,
+          "cv_cost": 0.39027455505429665,
+          "cv_degradation": 0.4872347324753208,
+          "demand_concentration": 0.07760003364880837,
+          "demand_volatility": 0.08550877785372421,
+          "rho": 0.8041733547351524,
+          "shock_events_per_producer": 0.0,
+          "shock_hit_magnitude": 0.0,
+          "shock_outage_duration": 0.0,
+          "sigma": 1.0090625
+        },
+        "declarers_per_product": {
+          "0": 14,
+          "1": 14,
+          "10": 14,
+          "100": 14,
+          "101": 14,
+          "102": 14,
+          "103": 14,
+          "104": 14,
+          "105": 14,
+          "106": 14,
+          "107": 14,
+          "108": 14,
+          "109": 14,
+          "11": 14,
+          "110": 14,
+          "111": 14,
+          "112": 14,
+          "113": 14,
+          "12": 14,
+          "13": 14,
+          "2": 14,
+          "200": 14,
+          "201": 14,
+          "202": 14,
+          "203": 14,
+          "204": 14,
+          "205": 14,
+          "206": 14,
+          "207": 14,
+          "208": 14,
+          "209": 14,
+          "210": 14,
+          "211": 14,
+          "212": 14,
+          "213": 14,
+          "3": 14,
+          "4": 14,
+          "5": 14,
+          "6": 14,
+          "7": 14,
+          "8": 14,
+          "9": 14
+        },
+        "generator_version": "world-space-v1",
+        "index": 126,
+        "levers": {
+          "capacity_scale": 0.3157037064096906,
+          "choice": "sparse_f14",
+          "h_cap": 1.8453730096376644,
+          "h_cost": 1.7882881875908376,
+          "h_deg": 1.5291493268469167,
+          "hit_magnitude": 0.5999338939908582,
+          "k_c": 1.0180074709578333,
+          "m_q": 4.374769547964929,
+          "outage_duration": 10,
+          "pattern": "iid",
+          "pattern_params": {},
+          "shock_rate": 1.1858214323737886,
+          "shocks": false
+        },
+        "measure_horizon": 100,
+        "measure_seed": 1654069917,
+        "pool_width": null,
+        "seed": 1654069917,
+        "shock_window": [
+          21,
+          90
+        ],
+        "size": 42,
+        "world_id": "ws-atlas-v1-42-0126"
+      }
+    ]
+  },
+  "pre_registered": {
+    "decisions": {
+      "a_capacity": "capacity: restoration / upgrade (a_degraded, a_dropped), what to reserve (a_held), order size vs capacity (a_max)",
+      "b1_not_ordered": "input buying: which inputs, how many, when",
+      "b2_not_delivered": "input buying lead time and the upstream / fund path (its sub-causes)",
+      "b3_upstream_unable": "upstream producers' capacity and inputs (structural)",
+      "b4_contention": "production choice: which reservation gets the stock",
+      "c_outbid": "price / routing (not a producer decision)",
+      "d_outage": "shocks (not a decision)",
+      "never_bid": "none (never routed)"
+    },
+    "groups": {
+      "a_capacity": [
+        "a_held",
+        "a_degraded",
+        "a_max",
+        "a_dropped"
+      ],
+      "b1_not_ordered": [
+        "b1_not_ordered"
+      ],
+      "b2_not_delivered": [
+        "b2_late",
+        "b2_short",
+        "b2_unfunded",
+        "b2_open",
+        "b2_lost_outage",
+        "b2_lost_no_fit",
+        "b2_lost_displaced",
+        "b2_lost_dropped",
+        "b2_lost_ttl",
+        "b2_lost_ttl_outage"
+      ],
+      "b3_upstream_unable": [
+        "b3_upstream_unable"
+      ],
+      "b4_contention": [
+        "b4_contention"
+      ],
+      "c_outbid": [
+        "c_displaced"
+      ],
+      "d_outage": [
+        "d_outage",
+        "d_ttl_outage"
+      ],
+      "never_bid": [
+        "never_bid"
+      ]
+    },
+    "reading": "MWWk, entity_planner: per size, the pooled share of lost consumer units per top-level class (a capacity, b1 not ordered, b2 not delivered, b3 upstream unable, b4 contention, c outbid, d outage, never_bid); the largest at 12 producers names the producer decision to target in step 3; a runner-up within 5 points is a tie and goes to the user; 42 reported",
+    "sample": "EXP-0057's: atlas v2 train split, rho > 0.28, not collapse (23 at 12, 14 at 42), every confirm episode seed; arm MWWk, R = 2, EXP-0057's draw keys",
+    "sweep": "tasks 7.17a / 7.17 (EXP-0075): EXP-0073's stacks (MWWk R = 2, RR), worlds and keys at this order TTL, reservation lifetime = order TTL (task 7.16); EXP-0073's pre-registered reading (timing / scarcity / mixed against the atlas noise floor, 12 decides, 42 reported) is read across the TTL runs; the 7.15 rule is reported per arm",
+    "task": "add-m4-orderer-redesign 7.14 / 7.15 (inserted 2026-11-05, user decision: producer evaluation, notes/producer-eval.md)",
+    "tie_points": 0.05
+  },
+  "result": {
+    "acceptance_read": false,
+    "compared_rows": 0,
+    "contract_failures": 0,
+    "neutral_rows": 0,
+    "reading": null,
+    "rows": 213,
+    "status": "complete"
+  },
+  "resumes": [],
+  "source": {
+    "commit": "08bb01a76b1130125cb884c9edfaedc5add9900c",
+    "n_files": 78,
+    "tree_sha256": "f370ac3e191f1c9311f015da19e409030dcf412803e56a5689fad73eea490ce0"
+  },
+  "started": "2026-11-05T13:09:16.190027+00:00",
+  "status": "complete",
+  "workers": 16
+}

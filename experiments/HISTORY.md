@@ -1363,3 +1363,17 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - The buy-ahead producer is now the strongest known producer, and belongs in the next roster
     draft (a human gate).
 - **Cost.** ≈ 1.25 vCPU-h; tranche A ≈ 99.0 of 125.
+
+### How big should the input buffer be? (EXP-0077)
+
+- **The run.** k = 3 and k = 4 cycles of buffer were added to EXP-0076's sweep.
+- **What it found.**
+  - Consumer units keep rising: +46% over `entity_planner` at k = 4 at 12 producers, with no deaths.
+    Each step adds less (k 3 → 4: +166 / +135).
+  - Again the gain is input orders no longer dying upstream. Late inputs at the final assembler stay
+    flat.
+  - Held stock rises 77%.
+- **The registered k\* rule gives k\* = 4** (k\* = 3 at 42). That is the largest k tested, and
+  MWWk's run-down failures sit exactly at the +5 limit there, so the optimum is not established.
+- **Cost.** ≈ 7.2 vCPU-h, of which 5.5 was lost on an unreachable pod and 0.67 on a driver crash
+  (fixed); tranche A ≈ 106.2 of 125.
