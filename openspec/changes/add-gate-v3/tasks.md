@@ -27,6 +27,8 @@ Coordination with M4: every gate-v3 code commit changes M4's package source hash
 
   Verify: those tests and the Goldens pass; `python -m tokenomics.eval.signal_check` prints a row for each of the five routers.
 - [x] 1.2 [code][local] Write the ADR (next free number after 0059) "Gate v3: promoted routers, region families, per-family side-effect parameters, per-order gate subject" in `/srv/research/tokenomics/docs/adr/`, from design D1–D8. Rejected alternatives: atlas worlds, unselected screen worlds, pooled X / Y, trained roster members, `ub`, moving the defaults during M4. After 1.1. Verify: the ADR cites EXP-0047 / 0048 / 0051 / 0052 / 0053 and add-m4-orderer-redesign D6 / D9; `grep -c` of "Status" = 1; no edits outside `docs/adr/`.
+- [x] 1.3 [code][local] (inserted 2026-11-05 by user decision "draft now, re-screen later"; standing rule: the roster holds the strongest known policy) Add `entity_planner_buyahead_k4` (M4 EXP-0076 / EXP-0077: +46% consumer units over `entity_planner` at 12 producers, k* = 4) as a producing member of the **roster v3 draft only**: crossed with the v3 orderers, stochastic flags per `roster.is_stochastic`. Roster v1 / v2 drafts and every frozen gate file stay byte-identical (tests). The re-screen is deferred until gate-v3 resumes. Verify: v1 / v2 draft hashes unchanged; the v3 draft gains the new members; `test_roster` + goldens green.
+  - Done 2026-11-05 (notes/1.3.md): `roster.V3_EXTRA_PRODUCING`; v3 draft 99 members / 35 stochastic / 239 runs; drafts/roster_v3_draft.json rewritten; v1 / v2 drafts + six frozen files unchanged (test); before the re-screen `gate_cli.job_policies` needs `producing_policy` (gate_cli paused, not touched).
 
 ## 2. Registry v3 draft and per-family parameters (code)
 

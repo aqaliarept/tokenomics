@@ -40,6 +40,7 @@ from tokenomics.eval.roster import (
     build_roster_v1,
     build_roster_v2,
     build_roster_v3,
+    V3_EXTRA_PRODUCING,
     contract_for,
     freeze_roster,
     load_roster,
@@ -282,17 +283,24 @@ FROZEN_HASHES = {  # tests/test_frozen_v2.py FROZEN_V1 / FROZEN_V2
 }
 
 
-def test_roster_v3_draft_is_88_members_32_stochastic() -> None:
-    """Scenario "Roster v3 draft": every producing baseline × every v2 ordering baseline and each
-    promoted router, no trained stack; 32 stochastic members (11 with the `random` producer, 7
-    producers × 3 stochastic routers), so 216 runs per world-episode at R = 5."""
+def test_roster_v3_draft_is_99_members_35_stochastic() -> None:
+    """Scenario "Roster v3 draft": every producing baseline, plus the buy-ahead producer at k* = 4
+    (task 1.3), × every v2 ordering baseline and each promoted router, no trained stack; 35
+    stochastic members (11 with the `random` producer, 8 producers × 3 stochastic routers), so 239
+    runs per world-episode at R = 5."""
     r = build_roster_v3()
     assert ROSTER_V3_ORDERING == ROSTER_V2_ORDERING + PROMOTED_V3
     assert set(ROSTER_V3_ORDERING) == set(ORDERING_BASELINES)
+    assert V3_EXTRA_PRODUCING == ("entity_planner_buyahead_k4",)
     assert {(m.producing, m.ordering) for m in r.members} == {
-        (p, o) for p in PRODUCING_BASELINES for o in ROSTER_V3_ORDERING}
-    assert len(r.members) == 88 and sum(m.random for m in r.members) == 32
-    assert sum(r.replicates_for(m) for m in r.members) == 216
+        (p, o) for p in (*PRODUCING_BASELINES, *V3_EXTRA_PRODUCING) for o in ROSTER_V3_ORDERING}
+    assert len(r.members) == 99 and sum(m.random for m in r.members) == 35
+    assert sum(r.replicates_for(m) for m in r.members) == 239
+    k4 = [m for m in r.members if m.producing == "entity_planner_buyahead_k4"]
+    assert len(k4) == 11 and all(m.contract == contract_for(m.producing, m.ordering) for m in k4)
+    assert {m.ordering for m in k4 if m.contract == LEGACY} == {"obs_price"}  # obs_* orderer
+    assert {m.ordering for m in k4 if m.random} == {o for o in ROSTER_V3_ORDERING
+                                                    if o in STOCHASTIC_BASELINES}
     assert r.name == "roster-v3" and r.version_tag == 3 and r.replicates == 5
     assert not r.frozen and r.pruning is None and r.screened_on is None
     assert all(m.random == (m.producing in STOCHASTIC_BASELINES or m.ordering in STOCHASTIC_BASELINES)
@@ -352,7 +360,7 @@ def test_stochastic_members_get_replicate_seeds() -> None:
     roster = build_roster_v3()
     world = load_registry(REGISTRY_V2).gate_worlds(DEVELOPMENT)[0]
     jobs = build_jobs([world], roster, None, episodes_per_world=1)
-    assert len(jobs) == 216
+    assert len(jobs) == 239  # 216 + the buy-ahead k = 4 members (task 1.3): 8 + 3 x 5
     ep = world.episode_seeds[0]
     seeds: dict[str, list] = {}
     for j in jobs:
@@ -380,3 +388,15 @@ def test_rotation_routers_imports_neither_baselines_nor_diagnostics() -> None:
     names = {(n.module or "") for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     names |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     assert not any(x.split(".")[-1] in ("baselines", "routing_diagnostics") for x in names), names
+
+
+def test_v3_draft_member_policies_resolve_the_extra_producer() -> None:
+    """Task 1.3: a v3 member with the buy-ahead producer resolves through `producing_policy`
+    (EXTRA_PRODUCING), and the roster validator accepts it."""
+    from tokenomics.eval.baselines import EXTRA_PRODUCING
+
+    m = build_roster_v3().member("entity_planner_buyahead_k4/round_robin")
+    prod, order = member_policies(m)
+    assert prod is EXTRA_PRODUCING["entity_planner_buyahead_k4"]
+    assert order is ORDERING_BASELINES["round_robin"]
+    Roster("roster-v3", 5, (m,))  # validates

@@ -1,5 +1,5 @@
 {
-  "content_hash": "68504053eb8480253a465e256d30cf39271ab9433ff2d38f35d9d7bfd6030d01",
+  "content_hash": "f9b3f9dc988fafb1cb80808ddc41877fcad03e2ccd83539e6cd4991f92479345",
   "frozen": false,
   "members": [
     {
@@ -198,6 +198,72 @@
       "contract": "joint_stack",
       "ordering": "shock_reactive",
       "producing": "entity_planner",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "blend_0.5",
+      "producing": "entity_planner_buyahead_k4",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split",
+      "producing": "entity_planner_buyahead_k4",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "even_split_rotating",
+      "producing": "entity_planner_buyahead_k4",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_split",
+      "producing": "entity_planner_buyahead_k4",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "makeable_weighted_whole",
+      "producing": "entity_planner_buyahead_k4",
+      "random": true
+    },
+    {
+      "contract": "legacy",
+      "ordering": "obs_price",
+      "producing": "entity_planner_buyahead_k4",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "proportional",
+      "producing": "entity_planner_buyahead_k4",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random",
+      "producing": "entity_planner_buyahead_k4",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "random_whole",
+      "producing": "entity_planner_buyahead_k4",
+      "random": true
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "round_robin",
+      "producing": "entity_planner_buyahead_k4",
+      "random": false
+    },
+    {
+      "contract": "joint_stack",
+      "ordering": "shock_reactive",
+      "producing": "entity_planner_buyahead_k4",
       "random": false
     },
     {

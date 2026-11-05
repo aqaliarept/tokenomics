@@ -26,7 +26,14 @@ from typing import Collection, Iterable
 
 from ..domain.config import Configuration
 from ..env import TokenomicsAECEnv
-from .baselines import ORDERING_BASELINES, PRODUCING_BASELINES, STOCHASTIC_BASELINES, Policy
+from .baselines import (
+    EXTRA_PRODUCING,
+    ORDERING_BASELINES,
+    PRODUCING_BASELINES,
+    STOCHASTIC_BASELINES,
+    Policy,
+    producing_policy,
+)
 from .joint_stack import joint_stack_env
 
 ROSTER_V1 = Path(__file__).parent / "registry" / "roster_v1.json"
@@ -45,6 +52,11 @@ ROSTER_V2_ORDERING = ROSTER_V1_ORDERING + (SHOCK_REACTIVE,)
 PROMOTED_V3 = ("round_robin", "even_split_rotating", "random_whole", "makeable_weighted_whole",
                "makeable_split")
 ROSTER_V3_ORDERING = ROSTER_V2_ORDERING + PROMOTED_V3
+# Producers the v3 draft adds beyond `PRODUCING_BASELINES` (add-gate-v3 task 1.3, user decision
+# "draft now, re-screen later"; the roster holds the strongest known policy): M4's buy-ahead
+# producer at k* = 4 (EXP-0076 / EXP-0077). They live in `baselines.EXTRA_PRODUCING`, so the v1 /
+# v2 drafts (which cross `PRODUCING_BASELINES` only) and every frozen file stay byte-identical.
+V3_EXTRA_PRODUCING = ("entity_planner_buyahead_k4",)
 # The pre-screen pilot's roster (add-gate-v3 D3 step 0): `entity_planner` alone, the only
 # producer that has ever set the per-episode best. A dry-run screen input, never a gate roster.
 PILOT_PRODUCING = "entity_planner"
@@ -276,7 +288,7 @@ class Roster:
         if len(set(ids)) != len(ids):
             raise ValueError(f"duplicate roster members: {sorted({i for i in ids if ids.count(i) > 1})}")
         for m in self.members:
-            if m.producing not in PRODUCING_BASELINES:
+            if m.producing not in PRODUCING_BASELINES and m.producing not in EXTRA_PRODUCING:
                 raise ValueError(f"{m.id}: unknown producing baseline {m.producing!r}")
             if m.ordering not in ORDERING_BASELINES:
                 raise ValueError(f"{m.id}: unknown ordering baseline {m.ordering!r}")
@@ -398,12 +410,15 @@ def build_roster_v2(replicates: int = DEFAULT_REPLICATES) -> Roster:
 
 
 def build_roster_v3(replicates: int = DEFAULT_REPLICATES) -> Roster:
-    """Draft roster v3 (add-gate-v3 D1): every producing baseline (8) × the v2 ordering baselines
-    and the five promoted routers (11) = 88 members, 32 stochastic (216 runs per world-episode
-    at R = 5), unfrozen and unpruned. `obs_stock_aware` × a promoted router runs LEGACY
+    """Draft roster v3 (add-gate-v3 D1): every producing baseline (8) plus `V3_EXTRA_PRODUCING`
+    (task 1.3: `entity_planner_buyahead_k4`) × the v2 ordering baselines and the five promoted
+    routers (11) = 99 members, 35 stochastic (239 runs per world-episode at R = 5), unfrozen and
+    unpruned. `obs_stock_aware` × a promoted router runs LEGACY
     (`contract_for`); the routers read `env.system` and emit the raw action both contracts
     decode. The two-wave v3 development screen (D3) prunes and freezes it."""
-    return Roster(name="roster-v3", replicates=replicates, members=_cross(ROSTER_V3_ORDERING))
+    return Roster(name="roster-v3", replicates=replicates,
+                  members=_cross(ROSTER_V3_ORDERING)
+                  + _cross(ROSTER_V3_ORDERING, producing=V3_EXTRA_PRODUCING))
 
 
 def build_pilot_roster_v3(replicates: int = DEFAULT_REPLICATES) -> Roster:
@@ -416,7 +431,7 @@ def build_pilot_roster_v3(replicates: int = DEFAULT_REPLICATES) -> Roster:
 
 def member_policies(m: RosterMember) -> tuple[Policy, Policy]:
     """(producing, ordering) policies of a member."""
-    return PRODUCING_BASELINES[m.producing], ORDERING_BASELINES[m.ordering]
+    return producing_policy(m.producing), ORDERING_BASELINES[m.ordering]
 
 
 def member_env(m: RosterMember, config: Configuration, horizon: int) -> TokenomicsAECEnv:
