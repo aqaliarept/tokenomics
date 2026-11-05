@@ -17,4 +17,20 @@ Caveats: bounds assume no degradation (free, perfect restoration), no TTL / auct
 Reading: real room likely on the supply side → step 2.
 
 ## Step 2 — traced supply replay (tasks 7.14 / 7.15, EXP-0074)
+Done 2026-11-05 (EXP-0074, `eval/supply_trace.py`, `entity_planner` + MWWk on EXP-0057's 71 world-episodes, TTL 2; neutral 142 / 142, consistent).
+Reading: **`b2_not_delivered`** — inputs ordered but not delivered in time are 74.6% of lost consumer units at 12 (79.5% at 42); runner-up contention 10.2% (no tie).
+| class | 12 | 42 |
+|---|---|---|
+| b2 late (input arrived after the reservation expired) | 32.6% | 31.7% |
+| b2 lost_ttl (input order lost upstream: supplier's reservation expired) | 29.1% | 30.6% |
+| b2 lost displaced / no_fit upstream | 9.6% | 11.7% |
+| b2 unfunded / short / open | 2.5% | 4.5% |
+| b4 contention | 10.2% | 7.0% |
+| c outbid | 8.8% | 3.6% |
+| a capacity (degraded 2.6%) | 5.2% | 6.9% |
+| b1 never ordered | 0.5% | 2.0% |
+| d outage | 0.5% | 1.0% |
+| b3 upstream unable | 0.1% | 0.04% |
+Restorations complete (37,571 / 37,741 at 12); replenishment units rejected 47% / 61%.
+Decision to target in step 3: **input buying lead time / timing** (order earlier or stock ahead), not capacity or restoration. Open: does a longer reservation lifetime let inputs arrive (7.17, EXP-0075)?
 ## Step 3 — producer teacher (later, decided by step 2)

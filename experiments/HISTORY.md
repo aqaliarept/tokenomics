@@ -1302,3 +1302,21 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - The source of the input shortage is not diagnosed here.
 - **Cost.** ≈ 1.4 vCPU-h; tranche A ≈ 90.2 of 125.
 
+### Why are consumer units lost on the supply side? (EXP-0074)
+
+- **The question.** The MWW + `entity_planner` stack reaches about half of the tightest atlas
+  bound, and no simple orderer does better (notes/producer-eval.md step 1). Which producer
+  failure loses the consumer orders?
+- **The run.** A read-only observer (task 7.14) traced every lost consumer unit of `entity_planner`
+  + MWWk on EXP-0057's sample, at TTL 2, to one cause.
+- **What it found.**
+  - About three quarters of the losses (74.6% at 12 producers, 79.5% at 42) are inputs that were
+    ordered but did not arrive in time.
+    - Either they came after the waiting reservation expired (≈ 32%), or the input order died
+      upstream because the supplier's own reservation expired waiting for its inputs (≈ 30%).
+  - Producers do order their inputs (0.5% never ordered), and upstream can make them (0.1%).
+    Capacity and restoration are minor (5%).
+- **What it means.** The producer decision to target is input buying, its lead time and timing.
+  The losses chain through the supply network. EXP-0075 (task 7.17) tests whether a longer
+  reservation lifetime lets those inputs arrive.
+- **Cost.** ≈ 0.64 vCPU-h; tranche A ≈ 90.8 of 125.
