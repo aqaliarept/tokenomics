@@ -97,24 +97,29 @@ ROW_FILES = {BAR: "bar_episodes.csv", NOISE: "noise_episodes.csv", PROBE: "probe
 CHECKPOINT_FORMAT = "m5-es-checkpoint-v1"
 # The frozen pre-registration (task 2.3) every real probe / train run needs; None until 2.3 pins it,
 # so a real L2 / L3 run is refused (review m5-2-2).
-PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v1.json"
-PREREG_SHA256: str | None = "67721b3828931c7904616368465f03b8febad7362d7e039bf8e5124478c18623"  # frozen 2026-11-05 (task 2.3)
+# v1 (task 2.3) is never edited; v2 (task 2.4, before any data) adds L6's candidate selection and
+# its gating worlds. The code is pinned to v2.
+PREREG_V1_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v1.json"
+PREREG_V1_SHA256 = "67721b3828931c7904616368465f03b8febad7362d7e039bf8e5124478c18623"
+PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v2.json"
+PREREG_SHA256: str | None = "5887b2b272ed5829fa1374166cbdf13fbb533aad9766386a331796e71942dbf0"  # v2, frozen 2026-11-05 (task 2.4, re-frozen after review m5-2-4)
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
+PREREG_VERSION = 2
 TRAINING_PINS = {  # M4's pinned ES training set (EXP-0058 bar/), design D7
     "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
     "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38"}
 
 
-def registered_prereg() -> dict[str, Any]:
+def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
     """The M5 pre-registration (task 2.3), built from this module's constants: every value cites
     its source; `carried` marks values taken from M4 unchanged and not re-tuned for the producer."""
     from . import order_es as oe
     from . import order_es_worlds as ow
     from .producer_residual import INPUT_FEATURES, K_CLIP, PRODUCER_FEATURES
 
-    return {
+    doc = {
         "format": PREREG_FORMAT,
         "change": "add-m5-potential-game-gnn",
         "status": "frozen before L2 (design D6); a real probe / train run refuses any other file",
@@ -228,6 +233,37 @@ def registered_prereg() -> dict[str, Any]:
         "flags": ["Adam lr 0.02 / weight decay 0.005 carried from M4, not re-tuned",
                   "L5 8 episodes per world carried from M4's power rule, not re-derived"],
     }
+    if version >= 2:
+        doc["version"] = 2
+        doc["changes"] = {
+            "from": {"file": PREREG_V1_PATH.name, "sha256": PREREG_V1_SHA256,
+                     "note": "v1 is never edited; v2 is a new file"},
+            "changed": ["readings.L6.selection", "readings.L6.gating_worlds",
+                        "readings.L6.episodes", "readings.L6.confirmed", "readings.L5.arms"],
+            "why": "supervisor decisions 2026-11-05 (notes/2.4.md), before any data: L6 reads "
+                   "one candidate, chosen on validation; L6's world set, episodes and side-effect "
+                   "clause written out as L5's; L5's arms written out (review m5-2-4)",
+            "unchanged": "every other section of v1"}
+        doc["readings"]["L6"].update({
+            "confirmed": "the candidate - rf3 clears its floor on the loaded held-out worlds at "
+                         "12 and is not below -floor at 42; at 12 no extra deaths and the "
+                         "candidate's run-down and starvation shares (rows with r_end < x r_start; "
+                         "rows with a consumer fill < y) <= rf3's (L5's clause); at 42 no extra "
+                         "deaths. This replaces v1's 'side effects within the margin' (review "
+                         "m5-2-4: the margin is a per-episode guard, not a read clause)",
+            "selection": "the seed whose candidate - rf3 is larger on the 12-producer loaded "
+                         "validation world mean (L5's comparison); seed 0 on a tie. Selecting on "
+                         "validation is fine: L6 reads held-out worlds on fresh seeds",
+            "gating_worlds": "the loaded (rho > 0.28, not collapse) atlas v2 held-out worlds at 12 "
+                             "(deciding) and 42 (reported), as L5's; the other held-out worlds "
+                             "are played and reported",
+            "episodes": "8 per world (fresh seeds, stage m5-heldout), replicates 0 and 1, as L5; "
+                        "arms: the selected candidate, rf3, entity_planner_buyahead_k4, "
+                        "entity_planner, all with MWWk"})
+        doc["readings"]["L5"]["arms"] = ("both seeds' candidates, rf3, entity_planner_buyahead_k4, "
+                                         "entity_planner, all with MWWk; episode seeds from M4's "
+                                         "validation stage (m4-es-validate); loaded worlds played")
+    return doc
 
 
 def freeze_prereg(path: Path = PREREG_PATH) -> tuple[str, str]:
@@ -400,6 +436,15 @@ def run_producer_job(job: Job) -> dict[str, str]:
     try:
         env = joint_stack_env(job_config(job), job["horizon"])
         set_draw_key(env, DrawKey(str(job["world"]), int(job["episode"]), int(job["replicate"])))
+        tracer = observer = None
+        if job.get("observe"):  # the L5 / L6 reads: loss classes (design D7)
+            from ..eval.routing_trace import RoutingTracer
+            from ..eval.supply_trace import SupplyObserver
+
+            tracer = RoutingTracer()
+            tracer.attach(env)
+            observer = SupplyObserver()
+            observer.attach(env)  # after the tracer: the outer complete_cycle wrapper
         monitor = ContractMonitor(env)
         recorded: dict | None = None
         if job["producing"] == RESIDUAL:
@@ -433,12 +478,20 @@ def run_producer_job(job: Job) -> dict[str, str]:
         row = row_to_dict(row_from_stats(job["world"], job["size"], job["regime"],
                                          job["episode"], job["subject"], job["replicate"],
                                          stats))
+        if tracer is not None:
+            from ..eval.routing_audit import trace_cells
+
+            row.update(trace_cells(tracer))
+            row.update(observer.cells())
         row.update({"job_id": job["job_id"], "kind": job["kind"], "generation": job["generation"],
                     "member": job["member"], "sign": str(job["sign"]), "pair": str(job["pair"]),
                     "batch": str(job["batch"]), "theta_sha256": job["theta_sha256"],
                     "producing": job["producing"], "nonfinite": "false",
                     "episode_seconds": repr(secs),
                     "job_seconds": repr(time.perf_counter() - started)})
+        if tracer is not None:
+            row["arm"] = str(job.get("arm", ""))
+            return row
         return {c: row.get(c, "") for c in ROW_COLUMNS}
     except Exception as exc:  # noqa: BLE001 - recorded as the job's failure, never fatal
         return job_failure(job, exc).to_dict()
@@ -467,10 +520,10 @@ def write_csv(path: Path, columns: Sequence[str], rows: Sequence[Mapping[str, An
             w.writerow(r)
 
 
-def _append(path: Path, row: Mapping[str, str]) -> None:
+def _append(path: Path, row: Mapping[str, str], columns: Sequence[str] = ROW_COLUMNS) -> None:
     new = not path.exists()
     with path.open("a", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(ROW_COLUMNS), extrasaction="ignore")
+        w = csv.DictWriter(fh, fieldnames=list(columns), extrasaction="ignore")
         if new:
             w.writeheader()
         w.writerow(row)
@@ -482,7 +535,8 @@ class DigestMismatch(RuntimeError):
 
 def play(out: Path, rows_file: str, jobs: Sequence[Job], workers: int,
          run_job_fn: Callable[[Job], dict[str, str]], bar: Mapping | None,
-         log: Callable[[str], None]) -> tuple[dict[str, dict[str, str]], int]:
+         log: Callable[[str], None], columns: Sequence[str] = ROW_COLUMNS
+         ) -> tuple[dict[str, dict[str, str]], int]:
     """Run every job whose row is not yet in `rows_file` (longest first), appending rows as they
     land. A row of an earlier session must carry this job's theta; with a `bar`, every row must see
     the bar's demand / shock digests (CRN). Returns (rows by job id, new contract failures)."""
@@ -513,7 +567,7 @@ def play(out: Path, rows_file: str, jobs: Sequence[Job], workers: int,
                     exc = DigestMismatch(f"{d['job_id']} saw {what} {d[what]}, the bar saw {ref}")
                     append_failure(out, run_failure(DIGEST, exc))
                     raise exc
-        _append(path, d)
+        _append(path, d, columns)
         have[d["job_id"]] = d
 
     if workers <= 1 or len(todo) <= 1:

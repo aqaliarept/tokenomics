@@ -142,9 +142,15 @@
 - **L6, held-out read** (atlas held-out worlds, fresh seeds; ledger key `held-out/m5-producer`,
   pending entry committed before launch, M4 design D9's C0 / C1 rule):
   - `confirmed` if θ beats rf3 + MWW beyond the floor at 12 and is not below the floor at
-    42, with no extra deaths and side effects within the margin;
+    42, with L5's side-effect clause (no extra deaths; run-down / starvation shares <= rf3's at
+    12; no extra deaths at 42). The per-episode guard margin is a training-time rule only (supervisor
+    decision 2026-11-05, pre-registration v2).
   - else `not_confirmed` (DIAGNOSTICS, user).
 
+  - **Selection (supervisor decision 2026-11-05, pre-registration v2 `5887b2b2…`):** the
+    seed whose candidate − rf3 is larger on the 12-producer loaded validation world mean; seed 0
+    on a tie. L6 gates on the loaded held-out worlds, as L5, and its side-effect clause is L5's
+    (no extra deaths; run-down / starvation shares <= rf3's at 12; no extra deaths at 42).
 ### D7. Data, splits and pairing
 - **Training (supervisor decision 2026-11-05, notes/2.2.md):** M4's pinned ES training set and
   schedule (EXP-0058 `bar/`). That is 64 worlds at 12 producers (the 23 loaded atlas v2 train
