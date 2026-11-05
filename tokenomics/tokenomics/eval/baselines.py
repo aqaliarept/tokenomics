@@ -677,6 +677,9 @@ EXTRA_PRODUCING: dict[str, Policy] = {
     # producer finalization (supervisor decision 2026-11-05): rf3 + the exact cap (own rate)
     "entity_planner_buyahead_k4_rf5": producing_entity_planner_buyahead_rf(
         4, blocked_first=False, keep_room=False, upgrade_cap="exact"),
+    # producer finalization PF-5 (EXP-0088): the buffer re-sweep on rf5, k = 3 / 5 / 6
+    **{f"entity_planner_buyahead_k{k}_rf5": producing_entity_planner_buyahead_rf(
+        k, blocked_first=False, keep_room=False, upgrade_cap="exact") for k in (3, 5, 6)},
 }
 
 

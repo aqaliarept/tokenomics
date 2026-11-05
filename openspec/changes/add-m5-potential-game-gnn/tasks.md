@@ -128,11 +128,11 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
 
 - [x] PF-1 [experiment][local-read] EXP-0087: rf4's loss classes (offline read of EXP-0084's rows).
 - [x] PF-2 [diagnostic][local] 12-0391: the cap's view estimate errs at a tiny max (DIAGNOSTICS 29).
-- [ ] PF-3 [code][local] rf5 = rf3 + the exact sustainable-upgrade cap. The producer's own degradation rate
+- [x] PF-3 [code][local] rf5 = rf3 + the exact sustainable-upgrade cap. The producer's own degradation rate
   is an additive `CapacityRow.degradation_rate` that no existing encoder or policy reads; there is no cap when
   restore_effect = 0; rf4 is unchanged (supervisor decision). Verify: the exact rule allows 12-0391's p1_1 and
   blocks p2_2 / p2_1; existing policies act identically with the rate perturbed; goldens.
-- [ ] PF-4 [experiment][remote:cpu16] EXP-0089: rf5 vs rf3, using EXP-0079's rows (digests must match).
+- [x] PF-4 [experiment][remote:cpu16] EXP-0089: rf5 vs rf3, using EXP-0079's rows (digests must match).
   × {MWWk R = 2, RR}, TTL 2, EXP-0057's worlds, observer on.
   - **Pre-registered reading (2026-11-05, before data; as EXP-0084's; 12 producers decide, 42 reported):**
     per orderer, diff_w = mean paired (episode, replicate) units(rf5) − units(rf3) per world, and
@@ -144,8 +144,21 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   - **Reported only:** rf5 vs rf4 (EXP-0084's rows), the same statistics; horizon 200 rf5 vs EXP-0084's
     h200 rf3 / rf4 (MWWk, 12, dry run); upgrades blocked; deaths; held stock; run-down.
   - ≈ 1 vCPU-h, stop 6; cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P.
-- [ ] PF-5 [experiment][remote:cpu16] EXP-0088: buffer re-sweep k ∈ {3, 5, 6} on the stronger of rf5 / rf4
-  (rf5 if it helps or holds), with the k* rule as EXP-0077's.
+  - Done 2026-11-05 (EXP-0089): **`no_gain`** (12: +135.3 / +155.1 vs floor 146.5, 0 below, 0 deaths); vs rf4 +18.5 / +44.4; horizon 200 +9.1%. Holds, so PF-5 runs on rf5.
+- [ ] PF-5 [experiment][remote:cpu16] EXP-0088: buffer re-sweep on rf5 (it holds: EXP-0089), adding
+  `entity_planner_buyahead_k{3,5,6}_rf5` (registrations only); k = 4 is rf5 (EXP-0089's rows, digests must
+  match). × {MWWk R = 2, RR}, TTL 2, EXP-0057's worlds, observer on.
+  - **Pre-registered k* rule (2026-11-05, before data; as EXP-0077's, with rf5 = k 4 as the reference):**
+    per orderer o at 12 producers (42 reported):
+    - eligible(k) = deaths(k) ≤ deaths(rf5), and run-down check failures (r_end < 0.7516 r_start) of k
+      minus those of rf5 ≤ 5 (absolute);
+    - best = the eligible k with the largest mean units per episode;
+    - within(k) = mean_w(units_best − units_k) ≤ mean_w(floor_w), paired per world;
+    - k*_o = the smallest eligible k with within(k); k* = max over the two orderers; none eligible → no k*.
+  - **Reported:** units, held stock, run-down, deaths, investment rejection, upgrades blocked, and the late /
+    died-upstream / contention classes per k.
+  - **Stop rule (supervisor):** if k* = 4, the buffer step's gain is within the floor and the step stops there.
+  - ≈ 2 vCPU-h, stop 4; cpu16 pinned EUR-IS-1 (fallback 8, pinned), charged to M5-P.
 - [ ] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
 - [ ] 5.2 [experiment][remote:cpu16] EXP-0082 (resume): seed 0 to 40 generations; then seed 1 to

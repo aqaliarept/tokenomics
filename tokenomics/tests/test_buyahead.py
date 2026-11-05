@@ -249,7 +249,9 @@ def test_rf_registered_entries() -> None:
                      "entity_planner_buyahead_k4_rf12": (4, (True, True, False)),
                      "entity_planner_buyahead_k4_rf3": (4, (False, False, True)),
                      "entity_planner_buyahead_k4_rf4": (4, (False, False, True)),
-                     "entity_planner_buyahead_k4_rf5": (4, (False, False, True))}
+                     "entity_planner_buyahead_k4_rf5": (4, (False, False, True)),
+                     **{f"entity_planner_buyahead_k{k}_rf5": (k, (False, False, True))
+                        for k in (3, 5, 6)}}
     assert hasattr(b.EXTRA_PRODUCING["entity_planner_buyahead_k4_rf4"], "upgrades_blocked")
     assert not any(hasattr(b.EXTRA_PRODUCING[n], "upgrades_blocked")
                    for n in ("entity_planner_buyahead_k4_rf3", "entity_planner_buyahead_k4"))
