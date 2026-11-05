@@ -179,3 +179,40 @@ def test_extra_buying_counts_in_a_surplus_state() -> None:
     assert _plan(view, np.zeros(pr.THETA_DIM)).replenishments == {}
     assert _plan(view, _unit("b", "bias", 2.0)).replenishments == {"raw": 2, "rare": 2}
     assert _plan(view, _unit("b", "bias", 5.0)).replenishments == {"raw": 5, "rare": 5}
+
+
+# --- task 2.3: M4's median / IQR normaliser ---
+
+def test_normaliser_fit_apply_and_zero_spread_rule() -> None:
+    rng = np.random.default_rng(0)
+    phi = np.column_stack([np.ones(200), rng.normal(5, 2, (200, pr.N_IN - 1))])
+    phi[:, 2] = 3.0  # constant column: IQR 0 and std 0 -> scale 1.0
+    phi[:5, 3], phi[5:, 3] = 1.0, 0.0  # IQR 0, std > 0 -> population std
+    psi = np.column_stack([np.ones(50), rng.normal(0, 1, (50, pr.N_P - 1))])
+    nm = pr.Normaliser.fit(phi, psi)
+    assert nm.input_scale[1] == 1.0  # column 2 (feature index 1 after the bias)
+    assert nm.input_scale[2] == pytest.approx(float(np.std(phi[:, 3])))
+    f = np.array([1.0] + [1e6] * (pr.N_IN - 1))
+    out = nm.input(f)
+    assert out[0] == 1.0 and np.all(out[1:] <= pr.NORM_CLIP)  # bias kept, clipped at +5
+    assert pr.Normaliser.from_dict(nm.to_dict()).sha256 == nm.sha256
+    with pytest.raises(ValueError):
+        pr.Normaliser.from_dict({**nm.to_dict(), "input_features": ["x"]})
+
+
+def test_normaliser_keeps_theta_zero_and_rescales_theta() -> None:
+    from tests.test_buyahead import _rf_view
+
+    view = _rf_view(limit=200, reserved_gadgets=0)
+    phi = pr.input_features(view, {})
+    rows = np.array(list(phi.values()))
+    nm = pr.Normaliser(np.zeros(pr.N_IN - 1), np.full(pr.N_IN - 1, 100.0),
+                       np.zeros(pr.N_P - 1), np.ones(pr.N_P - 1))
+    zero = np.zeros(pr.THETA_DIM)
+    assert _plan(view, zero, normaliser=nm) == _plan(view, zero)  # theta 0: the base either way
+    theta = _unit("k", "stock_cover", 1.0)  # stock cover 0 here: equal either way
+    assert _plan(view, theta, normaliser=nm) == _plan(view, theta)
+    theta = _unit("k", "log_use", 1.0)  # log(1 + 16) ~ 2.83: k = 4 e^2 raw, ~4 e^0.03 normalised
+    raw, normed = _plan(view, theta), _plan(view, theta, normaliser=nm)
+    assert raw.replenishments["raw"] > normed.replenishments["raw"] >= 64
+    assert rows.shape[1] == pr.N_IN

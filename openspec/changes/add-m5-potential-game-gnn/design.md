@@ -78,6 +78,13 @@
   count is independent of size and topology.
 
 ### D3. The learner: ES with paired episodes, not policy gradient
+- **Pre-registration (task 2.3, notes/2.3.md):** `es_prereg_m5_v1.json` (`67721b38…`).
+  - Features are standardised by M4's median / IQR normaliser (clip ±5), fitted on rf3's rows
+    from the bar and pinned by SHA.
+  - σ = 0.05; the L2 probe also runs 2σ = 0.1, and M4's step reading decides the pilot's σ.
+  - The monitor follows M4: the centre and rf3 at replicates 0 and 1, every 10 generations and at
+    generation 0.
+  - Adam lr / weight decay and L5's 8 episodes per world are carried from M4 (flagged).
 - **Fitness (decided 2026-11-05, supervisor; notes/2.2.md):** consumer units only, relative to
   the bar (rf3 + MWWk on the same world-episode and key). There is no holding term, unlike M4's
   `order_es`. The D5 guard (run-down / starvation, relative to rf3) is unchanged. Holding units
@@ -118,8 +125,9 @@
   - Target: ≤ 5% self-flags.
 
 ### D6. The ladder and pre-registered readings (frozen in `es_prereg_m5_v1.json` before L2)
-- **L1, base and noise floor:** bar precompute for k4 + MWWk on the training split. Reproduces
-  EXP-0077's rows on shared world-episodes; margin per D5.
+- **L1, base and noise floor:** bar precompute for rf3 + MWWk on M4's pinned training set (D7);
+  r0 reproduces the bar's rf3 rows, and rf3 replayed on 2 EXP-0057 world-episodes equals EXP-0079's
+  rows; margin per D5.
 - **L2, gradient probe:** cosine of the ES gradient across two disjoint 24-episode minibatches.
   - `signal` ≥ 0.3, `weak` ≥ 0.1, else `no_signal` (DIAGNOSTICS entry, stop).
 - **L3, pilot:** 20 generations, seed 0. `feasible` if g_tr > F_tr; else `unresolved` (M4's
@@ -133,7 +141,7 @@
   - `transfer_failure` if 12 succeeds and 42 is below its floor.
 - **L6, held-out read** (atlas held-out worlds, fresh seeds; ledger key `held-out/m5-producer`,
   pending entry committed before launch, M4 design D9's C0 / C1 rule):
-  - `confirmed` if θ beats buy-ahead k4 + MWW beyond the floor at 12 and is not below the floor at
+  - `confirmed` if θ beats rf3 + MWW beyond the floor at 12 and is not below the floor at
     42, with no extra deaths and side effects within the margin;
   - else `not_confirmed` (DIAGNOSTICS, user).
 

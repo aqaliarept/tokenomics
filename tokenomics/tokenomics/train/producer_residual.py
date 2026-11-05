@@ -60,6 +60,82 @@ TTL_SCALE = 2.0  # latency normalised by the default order TTL
 DEPTH_SCALE = 3.0
 
 
+NORM_CLIP = 5.0  # M4's normaliser clip (es_prereg_m4 `normaliser.clip`)
+NORMALISER_FORMAT = "m5-normaliser-v1"
+
+
+class Normaliser:
+    """M4's median / IQR normaliser (task 2.3, supervisor decision): every non-bias feature becomes
+    clip((x - median) / scale, +-NORM_CLIP); scale = the IQR, or the population std when the IQR is
+    0, or 1.0 when that is 0 too (M4's zero-spread rule). Fitted on rf3's own feature rows from the
+    bar run's training world-episodes (`fit`), pinned by SHA-256 (`sha256`)."""
+
+    def __init__(self, input_median, input_scale, producer_median, producer_scale,
+                 clip: float = NORM_CLIP) -> None:
+        self.input_median = np.asarray(input_median, np.float64)
+        self.input_scale = np.asarray(input_scale, np.float64)
+        self.producer_median = np.asarray(producer_median, np.float64)
+        self.producer_scale = np.asarray(producer_scale, np.float64)
+        self.clip = float(clip)
+        if self.input_median.shape != (N_IN - 1,) or self.producer_median.shape != (N_P - 1,):
+            raise ValueError("normaliser shapes do not match the features")
+
+    @staticmethod
+    def _scale(col: np.ndarray) -> float:
+        q75, q25 = np.percentile(col, [75, 25])
+        iqr = float(q75 - q25)
+        if iqr > 0:
+            return iqr
+        sd = float(np.std(col))
+        return sd if sd > 0 else 1.0
+
+    @classmethod
+    def fit(cls, input_rows: np.ndarray, producer_rows: np.ndarray) -> "Normaliser":
+        """`input_rows` (n, N_IN) / `producer_rows` (m, N_P): raw features, bias column first."""
+        a = np.asarray(input_rows, np.float64)[:, 1:]
+        b = np.asarray(producer_rows, np.float64)[:, 1:]
+        if not len(a) or not len(b):
+            raise ValueError("a normaliser needs feature rows")
+        return cls(np.percentile(a, 50, axis=0), [cls._scale(a[:, j]) for j in range(a.shape[1])],
+                   np.percentile(b, 50, axis=0), [cls._scale(b[:, j]) for j in range(b.shape[1])])
+
+    def to_dict(self) -> dict:
+        return {"format": NORMALISER_FORMAT, "clip": self.clip,
+                "input_features": list(INPUT_FEATURES[1:]),
+                "producer_features": list(PRODUCER_FEATURES[1:]),
+                "input_median": [float(x) for x in self.input_median],
+                "input_scale": [float(x) for x in self.input_scale],
+                "producer_median": [float(x) for x in self.producer_median],
+                "producer_scale": [float(x) for x in self.producer_scale]}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Normaliser":
+        if d.get("format") != NORMALISER_FORMAT or d.get("input_features") != list(
+                INPUT_FEATURES[1:]) or d.get("producer_features") != list(PRODUCER_FEATURES[1:]):
+            raise ValueError("not an M5 normaliser for these features")
+        return cls(d["input_median"], d["input_scale"], d["producer_median"],
+                   d["producer_scale"], d["clip"])
+
+    @property
+    def sha256(self) -> str:
+        import hashlib
+        import json
+
+        return hashlib.sha256(json.dumps(self.to_dict(), sort_keys=True,
+                                         separators=(",", ":")).encode()).hexdigest()
+
+    def input(self, f: np.ndarray) -> np.ndarray:
+        out = f.copy()
+        out[1:] = np.clip((f[1:] - self.input_median) / self.input_scale, -self.clip, self.clip)
+        return out
+
+    def producer(self, f: np.ndarray) -> np.ndarray:
+        out = f.copy()
+        out[1:] = np.clip((f[1:] - self.producer_median) / self.producer_scale, -self.clip,
+                          self.clip)
+        return out
+
+
 def split_theta(theta: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     theta = np.asarray(theta, dtype=np.float64)
     if theta.shape != (THETA_DIM,):
@@ -126,13 +202,22 @@ def residual_view(view: ProducerEntityView, theta_k: np.ndarray, theta_b: np.nda
 
 def plan_residual(view: ProducerEntityView, theta: np.ndarray, shortfall_ema: dict, *,
                   max_replenish: int, replenish_cost_per_unit, funding_budget,
-                  inventory_expansion_increases: int, inventory_expansion_cost
-                  ) -> ProducingAgentCommand:
-    """The base's command with theta's corrections (module docstring)."""
+                  inventory_expansion_increases: int, inventory_expansion_cost,
+                  normaliser: "Normaliser | None" = None,
+                  recorder: Callable | None = None) -> ProducingAgentCommand:
+    """The base's command with theta's corrections (module docstring). `normaliser` standardises
+    phi / psi before theta (task 2.3); `recorder(phi_raw, psi_raw)` receives the raw features of
+    every decision (the bar run fits the normaliser on rf3's, i.e. theta = 0's, rows)."""
     theta_k, theta_b, theta_e = split_theta(theta)
     zero = not (theta_k.any() or theta_b.any())
-    plan_view = None if zero else residual_view(view, theta_k, theta_b,
-                                                input_features(view, shortfall_ema))
+    phi_raw = None
+    if recorder is not None or not zero:
+        phi_raw = input_features(view, shortfall_ema)
+    if recorder is not None:
+        recorder(phi_raw, producer_features(view, shortfall_ema))
+    phi = phi_raw if normaliser is None or phi_raw is None else {
+        g: normaliser.input(f) for g, f in phi_raw.items()}
+    plan_view = None if zero else residual_view(view, theta_k, theta_b, phi)
     # the base (rf3): buy-ahead k = 4 (or theta's targets), its early expansion; input priority
     # scored from the unmodified view
     cmd = plan_reservations_first(
@@ -144,6 +229,8 @@ def plan_residual(view: ProducerEntityView, theta: np.ndarray, shortfall_ema: di
     if cmd.do_inventory_expansion or not theta_e.any():
         return cmd
     psi = producer_features(view, shortfall_ema)
+    if normaliser is not None:
+        psi = normaliser.producer(psi)
     if float(theta_e @ psi) > 0 and view.globals.active_investments[2] == 0.0 \
             and inventory_expansion_increases > 0 and _affordable(view, cmd, funding_budget,
                                                                  replenish_cost_per_unit,
@@ -167,7 +254,8 @@ def _affordable(view: ProducerEntityView, cmd: ProducingAgentCommand, funding_bu
     return budget >= expansion_cost
 
 
-def producer_residual_policy(theta: np.ndarray) -> Policy:
+def producer_residual_policy(theta: np.ndarray, normaliser: "Normaliser | None" = None,
+                             recorder: Callable | None = None) -> Policy:
     """A producing policy playing the residual with `theta` (THETA_DIM values, shared by every
     producer). Episode state (each producer's per-input shortfall EMA) is weak-keyed by the system
     and read before the current cycle enters it."""
@@ -189,7 +277,10 @@ def producer_residual_policy(theta: np.ndarray) -> Policy:
                             replenish_cost_per_unit=mechanics.replenish_cost_per_unit,
                             funding_budget=system.investment_fund,
                             inventory_expansion_increases=mechanics.inventory_expansion_increases,
-                            inventory_expansion_cost=mechanics.inventory_expansion_cost)
+                            inventory_expansion_cost=mechanics.inventory_expansion_cost,
+                            normaliser=normaliser,
+                            recorder=None if recorder is None else
+                            (lambda phi, psi: recorder(pid, cycle, phi, psi)))
         if cycle != last_cycle:
             short = blocked_shortfall(view)
             per_system[pid] = (cycle, {g: HISTORY_ALPHA * short.get(g, 0)
@@ -198,5 +289,6 @@ def producer_residual_policy(theta: np.ndarray) -> Policy:
         return _action_from_producing_command(env.spec_, pid, cmd)
 
     policy.theta = theta  # type: ignore[attr-defined]
+    policy.normaliser = normaliser  # type: ignore[attr-defined]
     policy.state = state  # type: ignore[attr-defined]
     return policy

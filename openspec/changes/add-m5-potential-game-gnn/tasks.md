@@ -60,10 +60,11 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   Verify: a horizon-12 dry run; resume refuses other pins; noise-floor mode reproduces the bar's
   base rows.
   - Done 2026-11-05 (notes/2.2.md): modes bar / noise-floor / probe / train on M4's pinned training set; units-only fitness, rf3-relative guard with the v4 margin formula; holding / investment-rejection diagnostics; EXP-0079 cross-check in the bar; tests 7 (dry chain, resume, pin refusal, CRN, cross-check); constants pending 2.3.
-- [ ] 2.3 [code][local] Pre-registration `train/registry/es_prereg_m5_v1.json`: the D6 readings,
+- [x] 2.3 [code][local] Pre-registration `train/registry/es_prereg_m5_v1.json`: the D6 readings,
   thresholds, the D5 margin formula, the monitor set, σ, learning rate. Frozen by `--mode
   freeze`, pinned by SHA-256; real runs refuse a mismatch. Verify: freeze gives MATCH; a changed
   section is refused.
+  - Done 2026-11-05 (notes/2.3.md): frozen `67721b38…` (pinned `PREREG_SHA256`); supervisor decisions: M4's normaliser fitted on rf3's bar rows, probe at σ 0.05 and 2σ with M4's step reading, M4 monitor (replicates 0 / 1, generation 0); flags: Adam lr / wd and L5 8 episodes carried from M4. Tests: producer_es 13, producer_residual 9.
 - [ ] 2.4 [code][local] Validation and held-out reads (L5 / L6) reusing `order_es_validate` and the
   M4 ledger design (D9 C0 / C1), with key `held-out/m5-producer`. Verify: the reading table per
   size; `transfer_failure`; ledger refusals; `--recompute` MATCH on a dry run.

@@ -64,11 +64,17 @@ def test_bar_and_noise_floor(runs: dict[str, Path]) -> None:
 
 
 @needs_training
-def test_probe_reads_a_cosine(runs: dict[str, Path]) -> None:
+def test_probe_reads_both_sigma_arms_and_the_step(runs: dict[str, Path]) -> None:
     doc = json.loads((runs["probe"] / "probe.json").read_text())
-    assert doc["cosine"] is not None and -1 <= doc["cosine"] <= 1
-    assert doc["reading"] in ("signal", "weak", "no_signal")
-    assert len(doc["batches"]) == 2
+    assert set(doc["arms"]) == {"S", "S2"}
+    assert doc["arms"]["S"]["sigma"] == pytest.approx(pe.SIGMA)
+    assert doc["arms"]["S2"]["sigma"] == pytest.approx(2 * pe.SIGMA)
+    for arm in doc["arms"].values():
+        assert arm["cosine"] is not None and -1 <= arm["cosine"] <= 1
+        assert arm["reading"] in ("signal", "weak", "no_signal") and len(arm["batches"]) == 2
+    assert doc["reading"] == doc["arms"]["S"]["reading"]  # the pilot's licence is arm S's
+    assert doc["step"]["step_reading"] in ("heterogeneity", "flat_at_sigma", "sigma_only",
+                                           "no_signal")
 
 
 @needs_training
@@ -147,17 +153,18 @@ def test_a_monitor_lost_in_a_crash_runs_on_resume(runs: dict[str, Path], tmp_pat
     out = tmp_path / "t"
 
     def dies_in_monitor(job):
-        if job["kind"] == "monitor":
+        if job["kind"] == "monitor" and job["generation"] == "2":
             raise KeyboardInterrupt("pod lost")
         return pe.run_producer_job(job)
 
     with pytest.raises(KeyboardInterrupt):
         pe.run_train(generations=2, run_job_fn=dies_in_monitor, **_train_kw(runs, out))
-    assert pe.checkpoint_path(out, 2).exists() and not (out / "monitor.csv").exists()
+    assert pe.checkpoint_path(out, 2).exists()
+    assert [m["generation"] for m in csv.DictReader((out / "monitor.csv").open())] == ["0"]
     assert pe.run_train(generations=3, **_train_kw(runs, out)) == 0
     mon = list(csv.DictReader((out / "monitor.csv").open()))
-    assert [m["generation"] for m in mon] == ["2"]
-    assert mon[0]["theta_sha256"] == pe.load_checkpoint(pe.checkpoint_path(out, 2))["theta_sha256"]
+    assert [m["generation"] for m in mon] == ["0", "2"]
+    assert mon[1]["theta_sha256"] == pe.load_checkpoint(pe.checkpoint_path(out, 2))["theta_sha256"]
 
 
 @needs_training
@@ -183,14 +190,60 @@ def test_a_generation_row_without_its_checkpoint_is_not_duplicated(
 
 
 @needs_training
-def test_real_probe_and_train_need_the_pinned_preregistration(runs: dict[str, Path],
-                                                              tmp_path: Path) -> None:
+def test_real_probe_and_train_need_the_pinned_preregistration(
+        runs: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     kw = dict(training_dir=TRAINING, bar_dir=runs["bar"], margins=runs["noise"] / "margins.json",
               source_commit="0" * 40, log=LOG)
-    assert pe.PREREG_SHA256 is None  # until task 2.3
-    with pytest.raises(ValueError, match="pre-registration"):
+    assert pe.prereg_problems() == []  # the frozen file, as pinned (task 2.3)
+    monkeypatch.setattr(pe, "PREREG_SHA256", "0" * 64)
+    with pytest.raises(ValueError, match="does not match the pinned SHA-256"):
         pe.run_probe(out_dir=tmp_path / "p", **kw)
-    with pytest.raises(ValueError, match="pre-registration"):
+    with pytest.raises(ValueError, match="does not match the pinned SHA-256"):
         pe.run_train(out_dir=tmp_path / "t", generations=20, **kw)
+    monkeypatch.undo()
     with pytest.raises(ValueError, match="--monitor-every is set"):
         pe.run_train(out_dir=tmp_path / "t2", generations=20, monitor_every=7, **kw)
+
+
+def test_freeze_matches_and_a_changed_section_is_refused(tmp_path: Path) -> None:
+    """Task 2.3: the frozen file is the registration (MATCH); a copy with one section changed is
+    refused, both by its SHA-256 and by the section comparison."""
+    status, sha = pe.freeze_prereg(pe.PREREG_PATH)
+    assert status == "MATCH" and sha == pe.PREREG_SHA256
+    doc = json.loads(pe.PREREG_PATH.read_text())
+    doc["es"]["sigma"] = 0.07
+    bad = tmp_path / "prereg.json"
+    bad.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+    assert pe.freeze_prereg(bad)[0] == "MISMATCH es"
+    from tokenomics.eval.provenance import sha256_file
+
+    assert "does not match the pinned" in pe.prereg_problems(bad)[0]
+    assert "sections differ from the code: ['es']" in pe.prereg_problems(
+        bad, pinned=sha256_file(str(bad)))[0]
+    fresh = tmp_path / "new.json"
+    assert pe.freeze_prereg(fresh) == ("FROZEN", pe.PREREG_SHA256)  # deterministic bytes
+
+
+@needs_training
+def test_bar_fits_and_pins_the_normaliser(runs: dict[str, Path]) -> None:
+    nm, pins = pe.load_normaliser(runs["bar"])
+    doc = json.loads((runs["bar"] / "normaliser.json").read_text())
+    assert pins["normaliser_sha256"] == nm.sha256 == doc["sha256"]
+    assert doc["fit_rows"]["input_rows"] > 0 and doc["clip"] == 5.0
+    assert all(sc > 0 for sc in nm.input_scale) and all(sc > 0 for sc in nm.producer_scale)
+    spec = json.loads((runs["train"] / "spec.json").read_text())
+    assert spec["pins"]["normaliser_sha256"] == nm.sha256
+    assert spec["pins"]["prereg"] == pe.PREREG_SHA256
+
+
+@needs_training
+def test_monitor_runs_at_generation_0_at_two_replicates(runs: dict[str, Path]) -> None:
+    import csv
+
+    mon = list(csv.DictReader((runs["train"] / "monitor.csv").open()))
+    assert [m["generation"] for m in mon][:2] == ["0", "2"]
+    eps = list(csv.DictReader((runs["train"] / "monitor_episodes.csv").open()))
+    assert {e["replicate"] for e in eps} == {"0", "1"}
+    assert {e["kind"] for e in eps} == {"monitor", "monitor_base"}
+    g0 = [m for m in mon if m["generation"] == "0"][0]
+    assert g0["g_tr"] in ("", "0.0")  # theta 0 equals rf3 at both keys (or no monitor episode)
