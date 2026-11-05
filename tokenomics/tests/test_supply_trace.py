@@ -254,3 +254,56 @@ def test_real_run_refuses_filters(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="not a valid supply-trace run"):
         st.run_supply_trace(atlas_path=ATLAS_V2, out_dir=tmp_path / "o", orderer_ckpt=str(ORDERER),
                             worlds=[WORLD], source_commit="0" * 40)
+
+
+# --- task 7.17a: the TTL-sweep profile (both arms, --order-ttl) ---
+
+EXP0073_TTL2 = REPO / "experiments/EXP-0073-ttl-sweep/ttl2/artifacts/episodes.csv"
+needs_records = pytest.mark.skipif(
+    not all(_lfs(p) for p in (ATLAS_V2, EXP0057, ORDERER, EXP0073_TTL2)),
+    reason="EXP-0052 / EXP-0057 / EXP-0073 / EXP-0012 records absent")
+
+
+def _args(out: Path, *extra: str) -> list[str]:
+    return ["--atlas", str(ATLAS_V2), "--orderer-ckpt", str(ORDERER), "--dry-run", "--worlds",
+            WORLD, "--workers", "1", "--out-dir", str(out), *extra]
+
+
+@needs_records
+def test_sweep_refusals(tmp_path: Path) -> None:
+    kw = dict(atlas_path=ATLAS_V2, out_dir=tmp_path / "o", orderer_ckpt=str(ORDERER))
+    with pytest.raises(ValueError, match="arms within"):
+        st.run_supply_trace(**kw, order_ttl=2, arms=["TR"], dry_run=True)
+    with pytest.raises(ValueError, match="TTL 2 only"):
+        st.run_supply_trace(**kw, order_ttl=4, exp0073_episodes=EXP0073_TTL2, dry_run=True)
+    with pytest.raises(ValueError, match="belong to the TTL sweep"):
+        st.run_supply_trace(**kw, arms=["RR"], dry_run=True)
+    with pytest.raises(ValueError, match="EXP-0073 ttl2"):  # a real TTL-2 sweep needs both refs
+        st.run_supply_trace(**kw, order_ttl=2, exp0057_episodes=EXP0057, source_commit="0" * 40)
+
+
+@needs_records
+def test_sweep_ttl2_equals_exp0057_and_exp0073(tmp_path: Path) -> None:
+    """TTL 2, horizon 100, one world, both arms (6 rows): every row equals EXP-0057's and
+    EXP-0073 ttl2's; TTL pinned; the 7.15 shares reported per arm."""
+    out = tmp_path / "ttl2"
+    assert st.main(_args(out, "--order-ttl", "2", "--exp0057-episodes", str(EXP0057),
+                         "--exp0073-episodes", str(EXP0073_TTL2))) == 0
+    for f in ("neutrality.csv", "neutrality_exp0073.csv"):
+        rows = list(csv.DictReader((out / f).open()))
+        assert len(rows) == 6 and all(r["equal"] == "true" for r in rows), f
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["pins"]["order_ttl"] == 2 and spec["pins"]["profile"] == "ttl_sweep"
+    reading = json.loads((out / "reading.json").read_text())
+    assert reading["status"] == "valid" and set(reading["per_arm"]) == {"MWWk", "RR"}
+    assert {r["arm"] for r in csv.DictReader((out / "supply_trace.csv").open())} == {"MWWk", "RR"}
+
+
+@needs_records
+def test_sweep_ttl4_dry_run(tmp_path: Path) -> None:
+    out = tmp_path / "ttl4"
+    assert st.main(_args(out, "--order-ttl", "4", "--horizon", "12")) == 0
+    spec = json.loads((out / "spec.json").read_text())
+    assert spec["pins"]["order_ttl"] == 4 and spec["result"]["contract_failures"] == 0
+    assert (out / "contract_failures.csv").read_text().count("\n") == 1
+    assert len(list(csv.DictReader((out / "supply_trace.csv").open()))) == 6

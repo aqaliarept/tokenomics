@@ -95,8 +95,10 @@ from .decoder_check import (
     EXPECTED_WORLDS,
     HORIZON,
     MWWK,
+    RR,
     SIZES,
     SUBJECT,
+    TTL_SWEEP_ARMS,
     decoder_arm,
     decoder_policies,
     job_draw_key,
@@ -141,7 +143,10 @@ from .teacher_audit import checked_orderer, load_atlas
 
 DRIVER = "tokenomics.eval.supply_trace"
 EXPERIMENT = "EXP-0074"
-ARMS = (MWWK,)
+ARMS = (MWWK,)  # EXP-0074 (task 7.15)
+SWEEP_ARMS = TTL_SWEEP_ARMS  # task 7.17a: MWWk and RR, EXP-0073's stacks
+# registered TTL-2 reference of a sweep (task 7.17a): EXP-0073's ttl2 episodes (MWWk + RR)
+EXP0073_TTL2_EPISODES_SHA = "19888e2666bda7556aceb519a77f39ea58ee295aababd916de5e4b5eb2377e02"
 CONSISTENCY = "supply_trace_consistency"
 NEVER_BID = "never_bid"
 HISTORY_CYCLES = 8  # an order lives at most order TTL + 1 <= 5 cycles (MAX_ORDER_TTL 4)
@@ -521,21 +526,30 @@ def producer_cycle_rows(dicts: Sequence[Mapping[str, str]]) -> list[dict]:
     out = []
     for d in dicts:
         for rec in json.loads(d[PC_CELL]):
-            out.append({"world": d["world"], "episode": d["episode"], "replicate": d["replicate"],
-                        **dict(zip(PC_FIELDS, rec))})
+            out.append({"world": d["world"], "episode": d["episode"], "arm": d.get("arm"),
+                        "replicate": d["replicate"], **dict(zip(PC_FIELDS, rec))})
     return out
 
 
 def episode_rows(dicts: Sequence[Mapping[str, str]]) -> list[dict]:
-    return [{"size": d["size"], "world": d["world"], "episode": d["episode"],
+    return [{"size": d["size"], "world": d["world"], "episode": d["episode"], "arm": d.get("arm"),
              "replicate": d["replicate"], "units": float(d["units"]),
              "lost": float(d["st_lost_consumer_total"]),
              **{k: float(d[f"st_{k}"]) for k in CLASSES}}
             for d in sorted(dicts, key=lambda d: (int(d["size"]), d["world"], int(d["episode"]),
-                                                  int(d["replicate"])))]
+                                                  d.get("arm", ""), int(d["replicate"])))]
 
 
-EPISODE_TABLE_COLUMNS = ("size", "world", "episode", "replicate", "units", "lost", *CLASSES)
+EPISODE_TABLE_COLUMNS = ("size", "world", "episode", "arm", "replicate", "units", "lost",
+                         *CLASSES)
+
+
+def labelled_neutrality(dicts: Sequence[Mapping[str, str]], ref: Sequence[Mapping[str, str]],
+                        label: str) -> tuple[list[dict], list[tuple[str, str]]]:
+    """`split_need.neutrality` against `ref`, its messages naming `label` (only the reference's
+    arms are compared: EXP-0057 holds both MWWk and RR, EXP-0073 ttl2 both)."""
+    rows, problems = neutrality(dicts, ref)
+    return rows, [(c, m.replace("EXP-0057", label)) for c, m in problems]
 
 
 # --- driver ---
@@ -548,7 +562,7 @@ RULE_TEXT = ("MWWk, entity_planner: per size, the pooled share of lost consumer 
 RESULT_SKELETON = """# {title}
 
 {banner}**Status: {status}.** Not an acceptance read. {n_rows} episode rows over {n_worlds}
-worlds, arm MWWk, `entity_planner` producer, horizon {horizon}. Produced by `python -m {driver}`
+worlds, arms {arms}, `entity_planner` producer, horizon {horizon}. Produced by `python -m {driver}`
 (see `spec.json`); reading in `reading.json`.
 
 ## Pre-registered reading (task 7.15)
@@ -573,11 +587,28 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
                      horizon: int = HORIZON, worlds: Sequence[str] | None = None,
                      max_worlds: int | None = None, shock_profile: str | None = None,
                      source_commit: str = "", dry_run: bool = False,
+                     order_ttl: int | None = None, arms: Sequence[str] | None = None,
+                     exp0073_episodes: str | Path | None = None,
                      run_job_fn: Callable[[Job], dict[str, str]] = run_supply_job,
                      log: Callable[[str], None] = print) -> int:
     """Run (or resume) the supply trace into `out_dir`; return 0, or `CONTRACT_INVALID` on
     contract failures, missing rows, digest differences, an observer inconsistency or an EXP-0057
-    neutrality mismatch."""
+    neutrality mismatch. `order_ttl` (task 7.17a) selects the TTL-sweep profile: every world at
+    that TTL, arms within `SWEEP_ARMS` (default both), the TTL pinned in spec.json and passed to
+    every job; at TTL 2 the rows are checked against EXP-0057 and EXP-0073 ttl2 (a real run
+    needs both); at TTL 3 / 4 no reference applies (task 7.16 changed those rows) and none is
+    taken. The 7.15 reading is reported per arm; EXP-0075 reads across the TTL runs."""
+    sweep = order_ttl is not None
+    if sweep:
+        chosen_arms = tuple(arms) if arms is not None else SWEEP_ARMS
+        if not chosen_arms or set(chosen_arms) - set(SWEEP_ARMS):
+            raise ValueError(f"--order-ttl (TTL sweep) plays arms within {SWEEP_ARMS}")
+        if int(order_ttl) != 2 and (exp0057_episodes or exp0073_episodes):
+            raise ValueError("references apply at TTL 2 only (task 7.16 changed TTL 3 / 4 rows)")
+    else:
+        if arms is not None or exp0073_episodes is not None:
+            raise ValueError("--arms / --exp0073-episodes belong to the TTL sweep (--order-ttl)")
+        chosen_arms = ARMS
     if shock_profile not in (None, SHOCKS_I_SMOKE):
         raise ValueError(f"--shock-profile takes {SHOCKS_I_SMOKE} only (a dry run's window)")
     atlas_path = Path(atlas_path)
@@ -585,13 +616,20 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     views = select_views(atlas, worlds, max_worlds)
     ref_path = Path(exp0057_episodes) if exp0057_episodes is not None else None
     ref_sha = sha256_file(ref_path) if ref_path is not None else None
+    ref73_path = Path(exp0073_episodes) if exp0073_episodes is not None else None
+    ref73_sha = sha256_file(ref73_path) if ref73_path is not None else None
     out = Path(out_dir)
     pin = checked_orderer(out, orderer_ckpt, log)
     if not dry_run:
+        refs_apply = not sweep or int(order_ttl) == 2
         problems = real_run_problems(
             atlas=atlas, horizon=horizon, source_commit=source_commit, orderer_sha=pin["sha256"],
-            reference_sha=ref_sha, filters={"worlds": worlds, "max_worlds": max_worlds,
-                                            "shock_profile": shock_profile})
+            reference_sha=ref_sha if refs_apply else EXP0057_EPISODES_SHA,
+            filters={"worlds": worlds, "max_worlds": max_worlds, "shock_profile": shock_profile,
+                     "arms": arms})
+        if sweep and refs_apply and ref73_sha != EXP0073_TTL2_EPISODES_SHA:
+            problems.append(f"--exp0073-episodes {str(ref73_sha)[:12]} is not the registered "
+                            f"EXP-0073 ttl2 episodes.csv {EXP0073_TTL2_EPISODES_SHA[:12]}")
         if problems:
             raise ValueError("not a valid supply-trace run (" + "; ".join(problems)
                              + "); pass --dry-run for a smoke run")
@@ -601,7 +639,7 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     checkpoints = {"orderer": pin}
     roster = load_roster(DEFAULT_ROSTER)
     entries = [world_entry(v, shock_profile) for v in views]
-    table = [decoder_arm(a, roster) for a in ARMS]
+    table = [decoder_arm(a, roster) for a in chosen_arms]
     grid = job_grid(entries, None)
     expected: set[Key] = expected_keys(grid, table, 1)
     source = source_fingerprint(source_commit or None)
@@ -612,7 +650,8 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
         "checkpoints": {"orderer": pin["sha256"]},
         "reference": ({"exp0057_episodes": {"path": str(ref_path), "sha256": ref_sha}}
                       if ref_path is not None else None),
-        "producer": PRODUCER, "arms": list(ARMS), "subjects": {a: SUBJECT[a] for a in ARMS},
+        "producer": PRODUCER, "arms": list(chosen_arms),
+        "subjects": {a: SUBJECT[a] for a in chosen_arms},
         "arm_table": table, "shock_profile": shock_profile,
         "sample": [{"world": v["world"], "size": v["size"], "class": v["class"],
                     "rho": v["rho"], "choice": v["choice"], "pattern": v["pattern"],
@@ -621,13 +660,18 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
         "source": {"tree_sha256": source["tree_sha256"], "commit": source["commit"]},
         "grid": grid,
     }
-    reference = read_reference(ref_path) if ref_path is not None else None
-    if reference is not None:  # fail before any job: every row must have an EXP-0057 row
+    if sweep:  # only under the sweep: EXP-0074's pins stay as they were
+        pins.update({"order_ttl": int(order_ttl), "profile": "ttl_sweep",
+                     "reference_exp0073": ({"path": str(ref73_path), "sha256": ref73_sha}
+                                           if ref73_path is not None else None)})
+    references = [(lbl, read_reference(pth)) for lbl, pth in
+                  (("EXP-0057", ref_path), ("EXP-0073 ttl2", ref73_path)) if pth is not None]
+    for lbl, reference in references:  # fail before any job: every row needs a reference row
         have = {(d["world"], int(d["episode"]), d["subject"], int(d["replicate"]))
                 for d in reference}
         absent = sorted(expected - have)
         if absent:
-            raise ValueError(f"--exp0057-episodes lacks {len(absent)} of the run's "
+            raise ValueError(f"the {lbl} reference lacks {len(absent)} of the run's "
                              f"{len(expected)} rows, e.g. {absent[:2]}")
     old_spec, done = _prepare_resume(out, pins, grid, expected)
     spec = _open_spec(out, old_spec, workers, {
@@ -639,12 +683,21 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
             "sample": "EXP-0057's: atlas v2 train split, rho > 0.28, not collapse (23 at 12, 14 "
                       "at 42), every confirm episode seed; arm MWWk, R = 2, EXP-0057's draw keys",
             "reading": RULE_TEXT, "tie_points": float(TIE_POINTS), "groups": GROUPS,
-            "decisions": DECISION},
+            "decisions": DECISION,
+            **({"sweep": "tasks 7.17a / 7.17 (EXP-0075): EXP-0073's stacks (MWWk R = 2, RR), "
+                         "worlds and keys at this order TTL, reservation lifetime = order TTL "
+                         "(task 7.16); EXP-0073's pre-registered reading (timing / scarcity / "
+                         "mixed against the atlas noise floor, 12 decides, 42 reported) is read "
+                         "across the TTL runs; the 7.15 rule is reported per arm"}
+               if sweep else {})},
     })
     ensure_failures_file(out)
     jobs = build_jobs(entries, table, 1, horizon, None, checkpoints)
+    by_subject = {a["subject"]: a for a in table}
     for j in jobs:
-        j["arm"] = MWWK
+        j["arm"] = by_subject[j["subject"]]["arm"]
+        if sweep:
+            j["order_ttl"] = int(order_ttl)  # routing_audit.job_config rebuilds the world
     if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
         raise AssertionError("job list and pinned grid disagree")  # internal invariant
     episodes = out / "episodes.csv"
@@ -662,21 +715,39 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     recorded = {f["message"] for f in read_failures(out)}
     problems = consistency(dicts)
     neutral: list[dict] = []
-    if reference is not None:
-        neutral, more = neutrality(dicts, reference)
+    neutral73: list[dict] = []
+    for lbl, reference in references:
+        got, more = labelled_neutrality(dicts, reference, lbl)
+        if lbl == "EXP-0057":
+            neutral = got
+        else:
+            neutral73 = got
         problems += more
     for check, msg in problems:
         if msg not in recorded:
             append_failure(out, run_failure(check, ValueError(msg)))
             log(f"[supply_trace] {check} {msg}")
     write_csv(out / "neutrality.csv", NEUTRALITY_COLUMNS, neutral)
+    if sweep:
+        write_csv(out / "neutrality_exp0073.csv", NEUTRALITY_COLUMNS, neutral73)
 
     failures = read_failures(out)
     invalid = bool(failures or missing)
+    sizes = sorted({int(v["size"]) for v in views})
     reading = {"experiment": EXPERIMENT, "dry_run": dry_run, "rule": RULE_TEXT,
                "neutrality_checked": ref_path is not None,
-               "neutral_rows": sum(r["equal"] for r in neutral), "compared_rows": len(neutral),
-               **supply_reading(dicts, sorted({int(v["size"]) for v in views}))}
+               "neutral_rows": sum(r["equal"] for r in neutral), "compared_rows": len(neutral)}
+    if sweep:  # per arm; EXP-0075's pre-registered reading is across the TTL runs
+        reading.update({
+            "experiment": "EXP-0075", "profile": "ttl_sweep", "order_ttl": int(order_ttl),
+            "neutral_rows_exp0073": sum(r["equal"] for r in neutral73),
+            "compared_rows_exp0073": len(neutral73),
+            "per_arm": {a: supply_reading([d for d in dicts if d.get("arm") == a], sizes)
+                        for a in chosen_arms},
+            "reading": None, "note": "the 7.15 rule is reported per arm; EXP-0075 reads across "
+                                     "the TTL runs"})
+    else:
+        reading.update(supply_reading(dicts, sizes))
     if invalid:
         reading = {**withheld_reading({"experiment": EXPERIMENT, "dry_run": dry_run,
                                        "rules": RULE_TEXT}, len(failures), len(missing)),
@@ -684,7 +755,7 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
     else:
         reading.update({"status": "valid", "readings_withheld": False})
     write_csv(out / "supply_trace.csv", EPISODE_TABLE_COLUMNS, episode_rows(dicts))
-    write_csv(out / "producer_cycles.csv", ("world", "episode", "replicate", *PC_FIELDS),
+    write_csv(out / "producer_cycles.csv", ("world", "episode", "arm", "replicate", *PC_FIELDS),
               producer_cycle_rows(dicts))
     (out / "reading.json").write_text(json.dumps(reading, indent=2, sort_keys=True,
                                                  default=str) + "\n")
@@ -708,6 +779,7 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
         result_md.write_text(RESULT_SKELETON.format(
             title=out.name, banner=DRY_BANNER if dry_run else "", status=status,
             n_rows=len(rows), n_worlds=len(grid), horizon=horizon, driver=DRIVER,
+            arms=", ".join(chosen_arms),
             rule=RULE_TEXT[0].upper() + RULE_TEXT[1:]))
     log(f"[supply_trace] {'DRY RUN ' if dry_run else ''}{status}"
         + (f", reading {reading['reading']}" if code == 0 else ""))
@@ -734,6 +806,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--max-worlds", type=int, help="dry run: the first N sampled worlds")
     p.add_argument("--horizon", type=int, default=HORIZON)
     p.add_argument("--shock-profile", choices=(SHOCKS_I_SMOKE,))
+    p.add_argument("--order-ttl", type=int, choices=(1, 2, 3, 4),
+                   help="the TTL-sweep profile (task 7.17a): every world at this order TTL, arms "
+                        f"within {','.join(SWEEP_ARMS)}")
+    p.add_argument("--arms", help=f"sweep dry run: arms out of {','.join(SWEEP_ARMS)}")
+    p.add_argument("--exp0073-episodes",
+                   help="sweep at TTL 2: EXP-0073's ttl2 episodes.csv (neutrality, both arms)")
     a = p.parse_args(argv)
     commit = resolve_verified_commit() if a.verify_source_commit else a.source_commit
     try:
@@ -741,7 +819,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             atlas_path=a.atlas, out_dir=a.out_dir, orderer_ckpt=a.orderer_ckpt,
             exp0057_episodes=a.exp0057_episodes, workers=a.workers, horizon=a.horizon,
             worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds, shock_profile=a.shock_profile,
-            source_commit=commit, dry_run=a.dry_run)
+            source_commit=commit, dry_run=a.dry_run, order_ttl=a.order_ttl,
+            arms=_csv_strs(a.arms), exp0073_episodes=a.exp0073_episodes)
     except (ContractRunError, DigestMismatch):  # recorded in contract_failures.csv
         return CONTRACT_INVALID
 
