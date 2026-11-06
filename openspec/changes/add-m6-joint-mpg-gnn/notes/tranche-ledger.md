@@ -9,3 +9,5 @@
 | EXP-0103 held-out (aborted launch lya3nhr20bnmtl ≈ 0.2 + run 0ryv5idl4w17ex) | 2026-11-06 | 16 vCPU, EUR-IS-1, 12:11–12:18 | 2.2 (stop 8) | 16.9 |
 | EXP-0104 drain diagnostic (h200, 9 worlds at 42) | 2026-11-06 | o0vjweodztdyvt, 16 vCPU, EUR-IS-1, 12:23–12:30 | 1.9 (stop 6) | 18.8 |
 | EXP-0105 attempt 1 (collect done; fit killed, out of memory: 16 workers each held the samples) | 2026-11-06 | l5cqpvr1zpowxt, 16 vCPU / 32 GB, EUR-IS-1, 13:44–13:49 | 1.3 (stop 24, raised from 16 by the supervisor) | 20.1 |
+| EXP-0105 attempt 2 (fit hung: 'Too many open files', file_descriptor sharing; stopped after 5 min without progress) | 2026-11-06 | pmwe2rrpy4mmsj, 16 vCPU / 32 GB, EUR-IS-1, 14:19–14:27 | 2.1 | 22.2 |
+| EXP-0105 attempt 3 (fit + check, commit 134c267) | 2026-11-06 | 53yvp4v7yj77ub, 16 vCPU / 32 GB, EUR-IS-1, 14:27–15:15 | 12.8 (stop 24) | 35.0 |
