@@ -1523,6 +1523,14 @@ _Status: open (2026-11-06, EXP-0110); the two branches are not yet separated._
 - **Not detectable, and the policy is near-deterministic:** absent. More exploration (a temperature on the
   gates) is a design decision for the user / supervisor.
 
+**Outcome (EXP-0111, 2026-11-06): `absent`, with a mechanism.**
+- **Orderer:** no measurable return sensitivity (D ≈ 0 ± 0.25 at KL 0.01).
+- **Producer:** the point estimate is positive but its CI includes 0. Signal / noise per seed ≈ 0.08, which needs
+  about 700 seeds per half.
+- 99.4–99.7% of the producer's score is the Gaussian replenish exploration. The investment gates explore 0.8–1.1%.
+- The branch "near-deterministic gates, exploration spent where the return does not move" holds. More seeds is
+  not affordable. Re-shaping exploration (deterministic replenish, gate temperature) is the design decision.
+
 **Evidence (EXP-0110):**
 - Null q95 0.40–0.70.
 - Producer gate flips 0.047 per decision; orderer entropy 0.91 nats.

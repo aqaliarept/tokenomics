@@ -89,6 +89,8 @@ rule).
     capacity −7% / −13% in cycles 0–49) and loses more inputs to TTL; DIAGNOSTICS 34; ≈ 2.8 vCPU-h.
 - [x] 2.16 [experiment][remote:cpu16] EXP-0110: critic-free Stage 0 (prereg v8): **`no_signal`** (no D0.3 cosine beats its null);
   D0.1 0.98 / 0.97; D0.2 γ 0.99 / 0.90; D0.5 ≈ 110 s per 42 episode; absent vs underpowered open (DIAGNOSTICS 35); ≈ 2.9 vCPU-h.
+- [x] 2.17 [experiment][remote:cpu8] EXP-0111: power calibration (DIAGNOSTICS 35): **`absent`**: the producer's score is 99.4% replenish
+  exploration, the gates explore about 1%, the orderer moves no return; about 700 seeds per half needed; ≈ 2.1 vCPU-h. Options to the user.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop
