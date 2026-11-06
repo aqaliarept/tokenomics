@@ -1,0 +1,58 @@
+{
+ "arms": {
+  "gnn": "GNN producer + GNN orderer",
+  "gnn_p": "GNN producer + MWWk (reported)",
+  "k5_rf5": "k5_rf5 + MWWk (the base)"
+ },
+ "change": "add-m6-joint-mpg-gnn",
+ "clauses": "deaths, run-down share (r_end < X r_start), starvation share (any consumer fill < Y), X / Y = side-effect params v2",
+ "decision": "supervisor 2026-11-06: validate the imitated stack on unseen worlds before RL (the user's parity goal); the held-out set is not touched",
+ "floor": "L5's (producer_read._comparisons: order_es_validate.mean_comp, equal-weight world mean, max(atlas floor, own 3 SE), both arms with 2 replicates)",
+ "format": "m6-prereg-v3",
+ "keeps": {
+  "m6_prereg_v2.json": "2460cd07755930225837f996450f359e10480d495e3fc3e5be540d597a76d4a3",
+  "note": "v1 and v2 stay frozen, unedited"
+ },
+ "models": {
+  "from": "EXP-0100 fit/models.pt",
+  "sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+ },
+ "reported": [
+  "the 42-producer reading",
+  "the GNN producer + MWWk arm",
+  "holding, investment rejection, min capacity ratio per arm"
+ ],
+ "rule": "at 12 producers (deciding), GNN + GNN vs k5_rf5 + MWWk on the loaded atlas v2 validation worlds (L5's set and floors): parity if g >= -floor, no extra deaths, and run-down and starvation shares <= the base's; better if parity and g > floor; else short. 42 producers and the GNN producer + MWWk arm: the same rule, reported only",
+ "stage": "validation of the imitated stack (EXP-0102), before MAPPO",
+ "status": "frozen before EXP-0102's data; the real read refuses any other file",
+ "worlds": {
+  "atlas_content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+  "episodes": 8,
+  "horizon": 100,
+  "ids": {
+   "12": [
+    "ws-atlas-v1-12-0050",
+    "ws-atlas-v1-12-0089",
+    "ws-atlas-v1-12-0092",
+    "ws-atlas-v1-12-0109",
+    "ws-atlas-v1-12-0330",
+    "ws-atlas-v1-12-0350",
+    "ws-atlas-v1-12-0384",
+    "ws-atlas-v1-12-0464",
+    "ws-atlas-v1-12-0494"
+   ],
+   "42": [
+    "ws-atlas-v1-42-0066",
+    "ws-atlas-v1-42-0072",
+    "ws-atlas-v1-42-0102"
+   ]
+  },
+  "loaded": "rho > 0.28, not collapse",
+  "replicates": [
+   0,
+   1
+  ],
+  "split": "atlas v2 validation",
+  "stage": "m4-es-validate"
+ }
+}

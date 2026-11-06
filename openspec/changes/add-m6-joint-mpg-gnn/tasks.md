@@ -43,6 +43,12 @@ rule).
     capacity, fund).
   - Pinned EUR-IS-1, 16 vCPU, watchdog, stop ≤ 8 vCPU-h.
   - Done 2026-11-06: **`clean`** (run-down 0.563 vs 0.781, starvation 0.656 vs 0.750, deaths 0 / 0; h200 clean); ≈ 0.6 vCPU-h.
+- [ ] 2.8 [experiment][remote:cpu16] EXP-0102: validation of the imitated stack on unseen worlds (supervisor
+  decision 2026-11-06), before MAPPO. Pre-registered in `train/registry/m6_prereg_v3.json` (SHA `409643f2…`; v1 / v2
+  frozen). The EXP-0100 models; arms GNN + GNN, GNN producer + MWWk (reported), k5_rf5 + MWWk (base); L5's loaded
+  atlas v2 validation worlds (9 at 12, deciding; 3 at 42, reported), 8 episodes (stage m4-es-validate) × replicates
+  0 / 1, horizon 100, L5's floors. `parity` if g ≥ −floor with no extra deaths and run-down / starvation shares ≤ the
+  base's; `better` if parity and g > floor; else `short`. Held-out set untouched. Pinned EUR-IS-1, stop ≤ 8.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

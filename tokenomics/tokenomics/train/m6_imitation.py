@@ -28,7 +28,7 @@ import json
 import pickle
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import get_context
 from pathlib import Path
@@ -884,6 +884,149 @@ def run_side_effects(training_dir: str, models: str, out_dir: str, workers: int,
     return 0
 
 
+# --- validation read (EXP-0102; pre-registration v3, frozen before its data) ---
+
+PREREG_V3_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v3.json"
+PREREG_V3_SHA256: str | None = "409643f205aadce1fc504b07282f7fec295b3d1960d9f5268dcba3df095e2267"  # frozen before EXP-0102
+VALIDATE_ARMS = {"gnn": "monitor", "gnn_p": "swap_gnn_producer", "k5_rf5": "monitor_base"}
+VALIDATE_RULE = ("at 12 producers (deciding), GNN + GNN vs k5_rf5 + MWWk on the loaded atlas v2 "
+                 "validation worlds (L5's set and floors): parity if g >= -floor, no extra deaths, "
+                 "and run-down and starvation shares <= the base's; better if parity and g > floor; "
+                 "else short. 42 producers and the GNN producer + MWWk arm: the same rule, reported "
+                 "only")
+
+
+def validation_worlds(atlas: Mapping) -> list[dict]:
+    from .producer_read import VALIDATE, read_views
+
+    return read_views(atlas, VALIDATE, None, None)
+
+
+def registered_prereg_v3(atlas: Mapping) -> dict:
+    from .order_es_validate import VALIDATION_STAGE
+    from .producer_read import READ_EPISODES, READ_REPLICATES, RHO_LOADED
+
+    views = validation_worlds(atlas)
+    return {
+        "format": "m6-prereg-v3", "change": "add-m6-joint-mpg-gnn",
+        "stage": "validation of the imitated stack (EXP-0102), before MAPPO",
+        "status": "frozen before EXP-0102's data; the real read refuses any other file",
+        "keeps": {"m6_prereg_v2.json": PREREG_SHA256, "note": "v1 and v2 stay frozen, unedited"},
+        "decision": "supervisor 2026-11-06: validate the imitated stack on unseen worlds before RL "
+                    "(the user's parity goal); the held-out set is not touched",
+        "models": {"sha256": EXP0100_MODELS_SHA256, "from": "EXP-0100 fit/models.pt"},
+        "arms": {"gnn": "GNN producer + GNN orderer", "gnn_p": "GNN producer + MWWk (reported)",
+                 "k5_rf5": "k5_rf5 + MWWk (the base)"},
+        "worlds": {"split": "atlas v2 validation", "loaded": f"rho > {RHO_LOADED}, not collapse",
+                   "atlas_content_hash": REGISTERED_ATLAS_HASH,
+                   "ids": {str(sz): [v["world"] for v in views if v["size"] == sz]
+                           for sz in (12, 42)},
+                   "episodes": READ_EPISODES, "stage": VALIDATION_STAGE,
+                   "replicates": list(READ_REPLICATES), "horizon": pe.HORIZON},
+        "rule": VALIDATE_RULE,
+        "floor": "L5's (producer_read._comparisons: order_es_validate.mean_comp, equal-weight world "
+                 "mean, max(atlas floor, own 3 SE), both arms with 2 replicates)",
+        "clauses": "deaths, run-down share (r_end < X r_start), starvation share (any consumer "
+                   "fill < Y), X / Y = side-effect params v2",
+        "reported": ["the 42-producer reading", "the GNN producer + MWWk arm", "holding, "
+                     "investment rejection, min capacity ratio per arm"]}
+
+
+def freeze_prereg_v3(atlas: Mapping, path: Path = PREREG_V3_PATH) -> tuple[str, str]:
+    from ..eval.provenance import sha256_file
+
+    doc = registered_prereg_v3(atlas)
+    if not path.exists():
+        path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+        return "FROZEN", sha256_file(str(path))
+    return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
+
+
+def validate_job(job: dict) -> dict[str, str]:
+    row = side_effect_job({**job, "kind": VALIDATE_ARMS[job["arm"]]})
+    row["arm"] = job["arm"]
+    return row
+
+
+def validation_reading(dicts: Sequence[dict], cells: Mapping) -> dict:
+    """VALIDATE_RULE per size and arm (12 / gnn deciding)."""
+    from .producer_read import BASE, _comparisons, _guard_ok
+
+    per = _comparisons(dicts, cells, ("gnn", "gnn_p"))
+    out: dict[str, Any] = {"rule": VALIDATE_RULE, "per_size": per, "readings": {}}
+    for size, d in per.items():
+        for arm in ("gnn", "gnn_p"):
+            c, f = d["comparisons"].get(arm), d["flags"]
+            if c is None:
+                r = None
+            else:
+                ok = c["diff"] >= -c["floor"] and _guard_ok(f[arm], f[BASE])
+                r = ("better" if ok and c["diff"] > c["floor"] else "parity" if ok else "short")
+            out["readings"][f"{size}/{arm}"] = r
+    out["reading"] = out["readings"].get("12/gnn")
+    return out
+
+
+def run_validate(atlas_path: str, models: str, out_dir: str, workers: int,
+                 dry_run: bool = False, max_worlds: int | None = None,
+                 episodes: int | None = None, horizon: int = pe.HORIZON) -> int:
+    """EXP-0102: VALIDATE_ARMS on the loaded atlas v2 validation worlds (L5's set)."""
+    import csv
+
+    from ..eval.provenance import sha256_file
+    from ..eval.teacher_audit import load_atlas
+    from .order_es_validate import VALIDATION_STAGE
+    from .producer_read import READ_EPISODES, READ_REPLICATES, _cells, entry_for
+
+    atlas = load_atlas(atlas_path)
+    eps = episodes or READ_EPISODES
+    if not dry_run:
+        p = []
+        if PREREG_V3_SHA256 is None or not PREREG_V3_PATH.exists() or \
+                sha256_file(str(PREREG_V3_PATH)) != PREREG_V3_SHA256:
+            p.append("m6_prereg_v3.json is not the pinned file")
+        elif json.loads(PREREG_V3_PATH.read_text()) != registered_prereg_v3(atlas):
+            p.append("the v3 pre-registration differs from the code / atlas")
+        if atlas.get("content_hash") != REGISTERED_ATLAS_HASH:
+            p.append("not the registered atlas v2")
+        if sha256_file(models) != EXP0100_MODELS_SHA256:
+            p.append("the models are not EXP-0100's")
+        if max_worlds or episodes or horizon != pe.HORIZON:
+            p.append("a filter is set (--max-world-episodes / --episodes / --horizon)")
+        _refuse(p)
+    views = validation_worlds(atlas)
+    if max_worlds:
+        views = [v for sz in (12, 42) for v in [x for x in views if x["size"] == sz][:max_worlds]]
+    cells = _cells(views, atlas)
+    jobs = []
+    for v in views:
+        e = entry_for(v, eps, VALIDATION_STAGE)
+        for ep in e.episode_seeds:
+            for r in READ_REPLICATES:
+                for arm in VALIDATE_ARMS:
+                    jobs.append({"kind": arm, "arm": arm, "world": e.id, "size": e.size,
+                                 "regime": e.regime, "world_seed": e.world_seed,
+                                 "generator": e.generator, "episode": int(ep), "replicate": r,
+                                 "horizon": horizon, "models": models, "generation": "0"})
+    jobs.sort(key=lambda j: (-j["size"], j["arm"] == "k5_rf5"))  # longest first
+    rows = _pool(validate_job, jobs, workers)
+    doc = {**validation_reading(rows, cells), "dry_run": dry_run,
+           "prereg": PREREG_V3_SHA256, "models_sha256": sha256_file(models),
+           "source_commit": SOURCE_COMMIT, "worlds": [v["world"] for v in views],
+           "episodes": eps, "horizon": horizon, "rows": len(rows), "jobs": len(jobs)}
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "reading.json").write_text(json.dumps(doc, indent=1, sort_keys=True, default=str) + "\n")
+    cols = list(dict.fromkeys(k for r in rows for k in r))
+    with (out / "episodes.csv").open("w", newline="") as fh:
+        w = csv.DictWriter(fh, cols)
+        w.writeheader()
+        for r in sorted(rows, key=lambda r: (r["arm"], r["world"], r["episode"], r["replicate"])):
+            w.writerow(r)
+    print(f"[m6_imitation] validation: {doc['reading']} {doc['readings']}", flush=True)
+    return 0 if len(rows) == len(jobs) else 2
+
+
 def run_timing(atlas: str, horizon: int, worlds: Sequence[str]) -> dict:
     """L0 timing probe: seconds per decision (GNN vs k5_rf5 / MWWk) and per horizon-H episode."""
     from ..eval.baselines import producing_policy
@@ -930,7 +1073,9 @@ def run_timing(atlas: str, horizon: int, worlds: Sequence[str]) -> dict:
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", required=True,
-                   choices=("timing", "collect", "fit", "check", "side-effects", "freeze"))
+                   choices=("timing", "collect", "fit", "check", "side-effects", "validate",
+                            "freeze", "freeze-v3"))
+    p.add_argument("--episodes", type=int)
     p.add_argument("--horizons", default=",".join(str(h) for h in SIDE_ARMS))
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--source-commit", default="", help="recorded in every output (provenance)")
@@ -949,7 +1094,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     a = p.parse_args(argv)
     global SOURCE_COMMIT
     SOURCE_COMMIT = a.source_commit
-    if not a.dry_run and a.mode in ("collect", "fit", "check", "side-effects") and \
+    if not a.dry_run and a.mode in ("collect", "fit", "check", "side-effects", "validate") and \
             len(SOURCE_COMMIT) != 40:
         p.error("a real run needs a 40-hex --source-commit")
     if a.mode == "freeze":
@@ -962,6 +1107,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if a.mode == "collect":
         return run_collect(a.training_dir, a.out_dir, a.workers, a.horizon, a.max_world_episodes,
                            a.dry_run)
+    if a.mode == "freeze-v3":
+        from ..eval.teacher_audit import load_atlas
+
+        status, sha = freeze_prereg_v3(load_atlas(a.atlas))
+        print(f"[m6_imitation] pre-registration v3 {status} {sha}")
+        return 0 if status in ("FROZEN", "MATCH") else 2
+    if a.mode == "validate":
+        return run_validate(a.atlas, a.models, a.out_dir, a.workers, a.dry_run,
+                            a.max_world_episodes, a.episodes, a.horizon)
     if a.mode == "side-effects":
         return run_side_effects(a.training_dir, a.models, a.out_dir, a.workers,
                                 a.max_world_episodes, a.dry_run,
