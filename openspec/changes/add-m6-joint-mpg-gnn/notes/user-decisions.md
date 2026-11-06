@@ -24,3 +24,14 @@
   models) is used only for the promotion gate: a paired test on the same seeds. The potential penalties stay in the
   per-cycle reward, normalised per world. A Stage 0 diagnostic (pinned m6_prereg_v5) decides whether and how
   Stage 1 runs; the critic code is kept only for Stage 0's offline audit.
+- 2026-11-06 (user, via the supervisor), after EXP-0111 `absent`: **reshape exploration and re-test** (EXP-0112, pinned
+  m6_prereg_v9; v8 stays).
+  - Input buying is frozen at its imitated deterministic value (no Gaussian noise, outside the RL gradient).
+  - The producer's investment gates get a temperature, set offline so each of restore / upgrade / expand flips
+    about 5% (training rollouts only; the deployed greedy policy is unchanged).
+  - The orderer is as is.
+  - A new estimator E4 (per-agent local value on the agent's own view, cross-fitted on split halves; the user's
+    IPPO / DPO report).
+  - The same power check as EXP-0111.
+  - `signal` needs a producer estimator to beat its null at 12, with ≤ 96 seeds per half for 80% power; 42 is
+    reported.

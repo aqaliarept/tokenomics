@@ -1,0 +1,43 @@
+{
+ "change": "add-m6-joint-mpg-gnn",
+ "decision": "user 2026-11-06 (via the supervisor), after EXP-0111 absent: reshape exploration and re-test",
+ "estimators": {
+  "E1_E3": "as v8 (per-cycle aggregated scores)",
+  "E4": {
+   "V": "ridge, alpha 1.0, per role and size, separate from the actor",
+   "advantage": "G_t (team return-to-go, gamma from D0.2) - V(x_d)",
+   "cross_fit": "V fitted on one split half advantages the other",
+   "null": "decision advantages moved between seeds (aligned by sibling and decision index), 200 draws, 95th percentile",
+   "reported": "held-out explained variance",
+   "x": "the frozen start actor's pooled embedding of the agent's own view (producer 4 x hidden, orderer 3 x hidden), t / H, 1"
+  }
+ },
+ "format": "m6-prereg-v9",
+ "keeps": {
+  "m6_prereg_v8.json": "d55e757ce6d2f900bb1b847b035915bdc461fb843d9b1783ffccbb17d528ade6",
+  "note": "v1..v8 stay frozen"
+ },
+ "policy": {
+  "gates": {
+   "distribution": "Bernoulli(sigmoid(logit / T_g))",
+   "reported": "flip rate per gate and size in the rollouts",
+   "rule": "T_g set offline so the greedy flip rate (sampled != logit > 0) is 5% per gate on EXP-0105's 12-producer monitor samples (the start policy); the deployed greedy policy is unchanged",
+   "temps": {
+    "expand": 2.4004,
+    "restore": 3.4522,
+    "upgrade": 2.5629
+   }
+  },
+  "orderer": "as v8 (keyed softmax draw, temperature 1)",
+  "replenish": "frozen at the start model's deterministic output; no noise; outside the RL gradient"
+ },
+ "power": "as EXP-0111 (notes/exp0111-prereg.md) under this policy: 12 24 seeds x 4 directions, 42 4 x 3; eps per direction at mean per-decision KL 0.01 (tempered gates; categorical slots); n80 per estimator at the measured |grad J|",
+ "rule": "signal iff at 12 producers some estimator (E1, E2, E3, E4) has a producer split-half cosine above its permutation null's 95th percentile AND its n80 at the measured |grad J| (point estimate, paired +-eps perturbations at a per-direction mean KL 0.01) is <= 96 seeds per half; else absent, with the mechanism (per-gate flip rates, score shares, E4's held-out explained variance). 42: D0.5 cost and the gradient, reported only",
+ "stage": "EXP-0112: Stage 0 + power check with reshaped exploration",
+ "start": {
+  "extension": "as v8 (zero-weight v4 inputs)",
+  "models_sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+ },
+ "status": "frozen before EXP-0112's data; the real run refuses any other file",
+ "worlds_seeds_calibration": "as v8: the same 24 + 8 Stage 0 seeds, G = 4 siblings, EXP-0110's calibration (lambda, mu, nu, unit scales) reused"
+}
