@@ -1354,3 +1354,30 @@ _Status: diagnosed (2026-11-05, EXP-0093, one death); how general it is is untes
 - k5_rf5 lives on that episode.
 - Investment rejection on the episode is 0.22 (base 0.10).
 
+
+## 31. A behaviour-cloned GNN's loss diverges (unscaled input features)
+
+**Problem (plain English):** a network trained to copy a teacher reports a training loss that grows to
+astronomical values (1e18, 1e24) while a clipped agreement metric still looks finite. The network has
+learned enormous weights, because some input features are raw counts in the thousands, and its output
+scores became so extreme that the copying is meaningless.
+
+**Check:**
+1. Per-column |max| of each feature block over the recorded samples. Any column ≫ 10 when the other
+   actor's features are log-scaled?
+2. Max |weight| per layer and the logit magnitudes on the monitor samples. Weights in the hundreds and logits
+   ≫ 1e3 confirm it.
+3. Per-slot loss distribution. A finite median with an astronomical mean means a few slots carry it.
+
+**Outcome branches:**
+- **Unscaled features** (raw columns ≫ 10, weights and logits exploded): log1p / standardise the features,
+  clip gradients, and refit. That needs a new pre-registration version.
+- **Features scaled but still diverging:** fit instability. Compare Hogwild against a single-process fit at
+  the same lr.
+
+**Evidence (EXP-0099, `artifacts/diag_orderer_scale.py`):**
+- Orderer feature columns reach 5,966 (global) and 2,688 (producer rows).
+- Orderer weights are ≈ 500 (the producer GNN's are ≤ 16).
+- Logit |max| has a median of 9e31.
+- Slot loss: median 1.39, mean 1.3e24.
+- The fit was Hogwild × 16 at lr 3e-3. The producer GNN, with scaled features in the same fit, converged.
