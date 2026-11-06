@@ -218,6 +218,22 @@ def test_sync_fit_is_deterministic() -> None:
         assert torch.equal(x, y)
 
 
+def test_shard_files_give_the_same_fit_as_in_memory(tmp_path: Path) -> None:
+    """EXP-0105's out-of-memory fix: each worker loads only its shard file (samples[w::workers]);
+    the sync fit is bit-identical to the in-memory one, and so is the normaliser."""
+    samples = {"producer": [], "orderer": _raw_orderer_samples(96, seed=2)}
+    a = im.fit(samples, 2, batch=16, workers=2, mode="sync", log=lambda s: None)
+    sh = im.write_shards(samples, 2, tmp_path / "sh", 50_000)
+    assert len(sh.paths) == 2 and sh.counts == (0, 96)
+    b = im.fit(sh, 2, batch=16, workers=2, mode="sync", log=lambda s: None)
+    for x, y in zip(a[1].state_dict().values(), b[1].state_dict().values()):
+        assert torch.equal(x, y)
+    h = im.fit(sh, 1, batch=16, workers=2, mode="hogwild", log=lambda s: None)
+    assert np.isfinite(h[2][-1]["orderer_loss"])
+    with pytest.raises(ValueError, match="shard count"):
+        im.fit(sh, 1, workers=3, log=lambda s: None)
+
+
 def test_real_stage_one_runs_need_the_pinned_preregistration(tmp_path: Path) -> None:
     """A real collect / fit / check refuses without the pin (v5, Stage I v3), a changed file, other
     settings; the frozen v2 still matches its code."""

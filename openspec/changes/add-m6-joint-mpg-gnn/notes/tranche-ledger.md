@@ -8,3 +8,4 @@
 | EXP-0102 validation (L5 worlds, 3 arms) | 2026-11-06 | o78goq826u3u1d, 16 vCPU, EUR-IS-1, 11:54–12:01 | 1.9 (stop 8) | 14.7 |
 | EXP-0103 held-out (aborted launch lya3nhr20bnmtl ≈ 0.2 + run 0ryv5idl4w17ex) | 2026-11-06 | 16 vCPU, EUR-IS-1, 12:11–12:18 | 2.2 (stop 8) | 16.9 |
 | EXP-0104 drain diagnostic (h200, 9 worlds at 42) | 2026-11-06 | o0vjweodztdyvt, 16 vCPU, EUR-IS-1, 12:23–12:30 | 1.9 (stop 6) | 18.8 |
+| EXP-0105 attempt 1 (collect done; fit killed, out of memory: 16 workers each held the samples) | 2026-11-06 | l5cqpvr1zpowxt, 16 vCPU / 32 GB, EUR-IS-1, 13:44–13:49 | 1.3 (stop 24, raised from 16 by the supervisor) | 20.1 |

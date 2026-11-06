@@ -28,6 +28,7 @@ import json
 import pickle
 import sys
 import time
+from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import get_context
@@ -446,16 +447,67 @@ def _epochs(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list, epochs:
     return curve
 
 
+@dataclass
+class Shards:
+    """The training samples split for the parallel fit (EXP-0105: 16 workers each holding the whole
+    sample list ran a 32 GB pod out of memory). File w holds `samples[w::workers]`, so a shard fit
+    is the same computation as the in-memory one; each worker loads only its own file. `norm`
+    holds the normaliser's strided subsample, taken before the split."""
+
+    paths: list[str]
+    counts: tuple[int, int]  # total producer / orderer decisions
+    norm: dict[str, list]
+
+
+def write_shards(samples: dict, workers: int, out: Path, norm_decisions: int) -> Shards:
+    out.mkdir(parents=True, exist_ok=True)
+    prod, orde = samples["producer"], samples["orderer"]
+    paths = []
+    for w in range(workers):
+        p = out / f"shard_{w:02d}.pkl"
+        with p.open("wb") as fh:
+            pickle.dump({"producer": prod[w::workers], "orderer": orde[w::workers]}, fh,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+        paths.append(str(p))
+    return Shards(paths, (len(prod), len(orde)),
+                  {"producer": _norm_feats(prod, norm_decisions),
+                   "orderer": _norm_feats(orde, norm_decisions)})
+
+
+def _shard(src: Any) -> tuple[list, list]:
+    """A worker's shard: an in-memory pair, or the path of its shard file (loaded here, in the
+    worker, so the parent never hands it the whole sample list)."""
+    if isinstance(src, str):
+        with open(src, "rb") as fh:
+            d = pickle.load(fh)
+        return d["producer"], d["orderer"]
+    return src
+
+
+def release_memory() -> None:
+    """gc, then return freed heap to the OS (glibc), before forking the fit workers."""
+    import ctypes
+    import gc
+
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except OSError:
+        pass
+
+
 def _hogwild(args: tuple) -> list[dict]:
-    pm, om, prod, orde, epochs, batch, lr, seed, clip = args
+    pm, om, src, epochs, batch, lr, seed, clip = args
+    prod, orde = _shard(src)
     return _epochs(pm, om, prod, orde, epochs, batch, lr, seed, lambda s: None, clip)
 
 
-def _sync_worker(w: int, pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list,
+def _sync_worker(w: int, pm: g.ProducerGNN, om: g.OrdererGNN, src: Any,
                  epochs: int, steps: int, batch: int, seed: int, gbuf: torch.Tensor,
                  lbuf: torch.Tensor, ready: Any, done: Any) -> None:
     """One shard of the synchronous fit: per step its shard-mean gradient into `gbuf[w]`."""
     torch.set_num_threads(1)
+    prod, orde = _shard(src)
     params = [*pm.parameters(), *om.parameters()]
     for ep in range(epochs):
         rng = np.random.default_rng([seed, ep, w])
@@ -474,9 +526,9 @@ def _sync_worker(w: int, pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: 
             done.wait()
 
 
-def _sync_fit(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list, epochs: int,
-              batch: int, lr: float, seed: int, workers: int, clip: float | None, log: Any
-              ) -> list[dict]:
+def _sync_fit(pm: g.ProducerGNN, om: g.OrdererGNN, srcs: list, counts: tuple[int, int],
+              epochs: int, batch: int, lr: float, seed: int, workers: int, clip: float | None,
+              log: Any) -> list[dict]:
     """Synchronous data-parallel fit (v2): shard w = samples[w::workers]; per step the workers'
     gradients are averaged in worker order, clipped, and one Adam step is applied to the shared
     weights. Deterministic given the seed (BLAS 1 thread, fixed reduction order)."""
@@ -489,10 +541,10 @@ def _sync_fit(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list, epoch
     lbuf = torch.zeros(workers, 2).share_memory_()
     ctx = torch.multiprocessing.get_context("fork")
     ready, done = ctx.Barrier(workers + 1, timeout=1800), ctx.Barrier(workers + 1, timeout=1800)
-    steps = max(1, max(len(prod), len(orde)) // (batch * workers))
+    steps = max(1, max(counts) // (batch * workers))
     procs = [ctx.Process(target=_sync_worker, args=(
-        w, pm, om, prod[w::workers], orde[w::workers], epochs, steps, batch, seed, gbuf, lbuf,
-        ready, done), daemon=True) for w in range(workers)]
+        w, pm, om, srcs[w], epochs, steps, batch, seed, gbuf, lbuf, ready, done), daemon=True)
+        for w in range(workers)]
     for pr in procs:
         pr.start()
     opt = torch.optim.Adam(params, lr=lr)
@@ -536,7 +588,7 @@ def _norm_feats(samples: list, cap: int) -> list[dict]:
     return [f for f, _y in samples[::k]]
 
 
-def fit(samples: dict, epochs: int, batch: int = 64, lr: float = 3e-3, seed: int = 0,
+def fit(samples: dict | Shards, epochs: int, batch: int = 64, lr: float = 3e-3, seed: int = 0,
         log: Any = print, workers: int = 1, mode: str = "sync", clip: float | None = 1.0,
         norm_decisions: int = 50_000
         ) -> tuple[g.ProducerGNN, g.OrdererGNN, list[dict], dict]:
@@ -547,29 +599,36 @@ def fit(samples: dict, epochs: int, batch: int = 64, lr: float = 3e-3, seed: int
     wall time without the normaliser fit}."""
     torch.manual_seed(seed)
     pm, om = g.ProducerGNN(), g.OrdererGNN()
-    prod, orde = samples["producer"], samples["orderer"]
-    info: dict[str, Any] = {"normaliser": {
-        "producer": pm.norm.fit(_norm_feats(prod, norm_decisions)),
-        "orderer": om.norm.fit(_norm_feats(orde, norm_decisions))}}
+    if isinstance(samples, Shards):
+        if len(samples.paths) != workers:
+            raise ValueError("the shard count differs from --workers")
+        norm, counts, srcs = samples.norm, samples.counts, list(samples.paths)
+    else:
+        prod, orde = samples["producer"], samples["orderer"]
+        norm = {"producer": _norm_feats(prod, norm_decisions),
+                "orderer": _norm_feats(orde, norm_decisions)}
+        counts = (len(prod), len(orde))
+        srcs = [(prod[w::workers], orde[w::workers]) for w in range(max(1, workers))]
+    info: dict[str, Any] = {"normaliser": {"producer": pm.norm.fit(norm["producer"]),
+                                           "orderer": om.norm.fit(norm["orderer"])}}
     t0 = time.perf_counter()
     if workers <= 1:
-        curve = _epochs(pm, om, prod, orde, epochs, batch, lr, seed, log, clip)
+        curve = _epochs(pm, om, *_shard(srcs[0]), epochs, batch, lr, seed, log, clip)
     elif mode == "sync":
-        curve = _sync_fit(pm, om, prod, orde, epochs, batch, lr, seed, workers, clip, log)
+        curve = _sync_fit(pm, om, srcs, counts, epochs, batch, lr, seed, workers, clip, log)
     else:
-        curve = _hogwild_fit(pm, om, prod, orde, epochs, batch, lr, seed, workers, clip, log)
+        curve = _hogwild_fit(pm, om, srcs, epochs, batch, lr, seed, workers, clip, log)
     info["train_seconds"] = round(time.perf_counter() - t0, 3)
     return pm, om, curve, info
 
 
-def _hogwild_fit(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list, epochs: int,
-                 batch: int, lr: float, seed: int, workers: int, clip: float | None, log: Any
+def _hogwild_fit(pm: g.ProducerGNN, om: g.OrdererGNN, srcs: list, epochs: int, batch: int,
+                 lr: float, seed: int, workers: int, clip: float | None, log: Any
                  ) -> list[dict]:
     pm.share_memory()
     om.share_memory()
     ctx = torch.multiprocessing.get_context("fork")
-    shards = [(pm, om, prod[i::workers], orde[i::workers], epochs, batch, lr, seed + i, clip)
-              for i in range(workers)]
+    shards = [(pm, om, srcs[i], epochs, batch, lr, seed + i, clip) for i in range(workers)]
     with ctx.Pool(workers) as pool:
         curves = pool.map(_hogwild, shards)
     curve = [{"epoch": e + 1,
@@ -580,7 +639,7 @@ def _hogwild_fit(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list, ep
     return curve
 
 
-def choose_mode(samples: dict, workers: int, seed: int, log: Any = print) -> dict:
+def choose_mode(samples: dict | Shards, workers: int, seed: int, log: Any = print) -> dict:
     """MODE_RULE: one epoch of each mode (hogwild, then sync), timed without the normaliser fit."""
     t = {}
     for m in ("hogwild", "sync"):
@@ -798,16 +857,31 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
     out.mkdir(parents=True, exist_ok=True)
     with (c / "samples_train.pkl").open("rb") as fh:
         tr = pickle.load(fh)
+    data: dict | Shards = tr
+    shard_dir = out / "_shards"
+    if workers > 1:  # each worker loads only its own shard file (EXP-0105's out-of-memory)
+        data = write_shards(tr, workers, shard_dir, FIT["norm_decisions"])
+        del tr
+        release_memory()
+    try:
+        probe = choose_mode(data, workers, seed) if mode == "auto" else None
+        ran = probe["mode"] if probe else mode
+        t0 = time.perf_counter()
+        pm, om, curve, info = fit(data, epochs, batch=FIT["batch"], lr=FIT["lr"], seed=seed,
+                                  workers=workers, mode=ran, clip=FIT["clip_grad_norm"],
+                                  norm_decisions=FIT["norm_decisions"])
+        fit_s = time.perf_counter() - t0
+    finally:
+        if shard_dir.exists():  # never pulled back: GBs of copies of the samples
+            import shutil
+
+            shutil.rmtree(shard_dir)
+    save_models(pm, om, out / "models.pt")
+    if workers > 1:
+        with (c / "samples_train.pkl").open("rb") as fh:
+            tr = pickle.load(fh)
     with (c / "samples_monitor.pkl").open("rb") as fh:
         mo = pickle.load(fh)
-    probe = choose_mode(tr, workers, seed) if mode == "auto" else None
-    ran = probe["mode"] if probe else mode
-    t0 = time.perf_counter()
-    pm, om, curve, info = fit(tr, epochs, batch=FIT["batch"], lr=FIT["lr"], seed=seed,
-                              workers=workers, mode=ran, clip=FIT["clip_grad_norm"],
-                              norm_decisions=FIT["norm_decisions"])
-    fit_s = time.perf_counter() - t0
-    save_models(pm, om, out / "models.pt")
     from ..eval.provenance import sha256_file
 
     spec = {"fit_mode": ran, "mode_probe": probe, "requested_mode": mode, "fit": FIT,
