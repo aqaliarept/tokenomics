@@ -384,3 +384,36 @@ def test_v7_theta_e_stays_zero_through_training(runs: dict[str, Path], tmp_path:
     assert members and all(not np.asarray(pe.load_checkpoint(c)["theta"])[18:].any()
                            for c in (out / "checkpoints").glob("gen-*.json"))
 
+
+EXP0090 = REPO / "experiments/EXP-0090-k5rf5-bar-noise"
+
+
+@pytest.mark.skipif(not (EXP0090 / "noise_floor/noise_episodes.csv").exists(), reason="EXP-0090 absent")
+def test_rundown_weight_recomputes_from_exp0090_and_the_term_is_base_relative() -> None:
+    """v8: lambda = sigma_u / sigma_rho from EXP-0090's re-keys (the pinned files); a member equal
+    to the base scores units only; a lower end ratio than the base lowers the fitness by lambda x
+    the gap."""
+    import math
+
+    from tokenomics.eval.provenance import sha256_file
+
+    assert sha256_file(str(EXP0090 / "noise_floor/noise_episodes.csv")) == pe.RUNDOWN_SOURCES[
+        "noise_episodes_sha256"]
+    bar, base, _ = pe.load_bar(EXP0090 / "bar")
+    cal = pe.calibrate_rundown_weight(pe.read_csv(EXP0090 / "noise_floor/noise_episodes.csv"), bar)
+    assert math.isclose(cal["lambda"], pe.RUNDOWN_LAMBDA)
+    assert {k: cal[k] for k in pe.RUNDOWN_CALIBRATION} == pytest.approx(pe.RUNDOWN_CALIBRATION)
+    margin, _ = pe.load_margin(EXP0090 / "noise_floor/margins.json")
+    fref, _ = pe.load_flag_reference(EXP0090 / "noise_floor/margins.json", bar, base, margin)
+    from tokenomics.train.order_es import a0_values
+
+    refs = {k: v[0] for k, v in a0_values(base).items()}
+    rows = base[:24]
+    lam = pe.RUNDOWN_LAMBDA
+    same = pe.score_member_v4(rows, bar, margin, refs, fref, rundown_weight=lam)
+    assert same.fitness == pytest.approx(pe.score_member_v4(rows, bar, margin, refs, fref).fitness)
+    lower = [{**r, "r_end": str(float(r["r_end"]) - 0.1 * float(r["r_start"]))} for r in rows]
+    a = pe.score_member_v4(lower, bar, margin, refs, fref, rundown_weight=lam).fitness
+    b = pe.score_member_v4(lower, bar, margin, refs, fref).fitness
+    assert a == pytest.approx(b - 0.1 * lam)
+

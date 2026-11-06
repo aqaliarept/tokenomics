@@ -124,13 +124,17 @@ PREREG_V6_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v6
 PREREG_V6_SHA256 = "5cd0e302b233746e707059e49156e4f906d0ac9588e593d744b9c463b81143c1"
 # v7 (supervisor decision 2026-11-05, after EXP-0093's `kill`, DIAGNOSTICS 30): v6 with theta_e fixed
 # at 0 (the learner perturbs and updates theta_k and theta_b only); base, jobs and L1 constants as v6.
-PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v7.json"
-# v7, frozen 2026-11-05 (after EXP-0093; constants as v6)
-PREREG_SHA256: str | None = "986a8191f343423397571189b46a65e03c0f214d627be6d921bb3d9b41df60ff"
+PREREG_V7_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v7.json"
+PREREG_V7_SHA256 = "986a8191f343423397571189b46a65e03c0f214d627be6d921bb3d9b41df60ff"
+# v8 (user decision 2026-11-06 "train on run-down", after EXP-0095's `plateau`): v7 plus a run-down
+# term in the fitness, relative to the base on the same episode; its weight from EXP-0090 only.
+PREREG_PATH = Path(__file__).resolve().parent / "registry" / "es_prereg_m5_v8.json"
+# v8, frozen 2026-11-06 (lambda from EXP-0090)
+PREREG_SHA256: str | None = "9ce8e3bd2cf552b0fdfa55744b80acc5d0df88646e600c71b04f4bde43dfa666"
 
 
 PREREG_FORMAT = "m5-es-prereg-v1"
-PREREG_VERSION = 7
+PREREG_VERSION = 8
 TRAINING_PINS = {  # M4's pinned ES training set (EXP-0058 bar/), design D7
     "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
     "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38"}
@@ -450,7 +454,67 @@ def registered_prereg(version: int = PREREG_VERSION) -> dict[str, Any]:
             "EXP-0093's validation worlds informed this design (the death and the theta_e = 0 replay "
             "were found there), so the v7 L5 read is not a clean one; the L5 rules are unchanged and "
             "L6 on the held-out worlds is the clean read")
+    if version >= 8:
+        doc["version"] = 8
+        doc["changes"] = {
+            "from": {"file": PREREG_V7_PATH.name, "sha256": PREREG_V7_SHA256,
+                     "note": "v1..v7 are never edited; v8 is a new file"},
+            "changed": ["fitness.rundown"],
+            "why": "EXP-0095 (v7 L5 `plateau`): both candidates clear the units floor at 12 with 0 "
+                   "deaths but fail L5's run-down clause (share 0.743 / 0.736 vs the base's 0.681; "
+                   "paired r_end -0.011, SE 0.004). User decision 2026-11-06 'train on run-down'; "
+                   "design approved by the supervisor before any number",
+            "unchanged": "every other rule of v7 (theta_e fixed at 0, flag-count guard T = 5/3, "
+                         "penalised death, sigma, minibatch, monitor, L1 constants from EXP-0090) and "
+                         "every L5 / L6 rule (the bar is not loosened)"}
+        doc["fitness"]["rundown"] = {
+            "formula": "per episode: units / B_we (- 1 for a penalised death) + lambda (rho_m - rho_b); "
+                       "rho = r_end / r_start, rho_b = k5_rf5's on the same world-episode at r0 (the "
+                       "bar row; relative to the base like the units term)",
+            "weight_rule": "lambda = sigma_u / sigma_rho: the pooled within-world-episode SDs of "
+                           "units / B_we and of rho across k5_rf5's re-keys r1..r4 (training set only; "
+                           "a one-noise-SD change in rho counts as much as one in units); fixed before "
+                           "the number was computed",
+            "lambda": RUNDOWN_LAMBDA, **RUNDOWN_CALIBRATION,
+            "sources": {"run": "EXP-0090 (noise_floor/noise_episodes.csv, bar/bar.csv)",
+                        **RUNDOWN_SOURCES},
+            "applies_to": "probe and train member scores; the monitor, its g_tr and the L5 / L6 "
+                          "reads are unchanged"}
     return doc
+
+
+# v8's run-down weight (calibrate_rundown_weight on EXP-0090's re-keyed rows, 2026-11-06)
+RUNDOWN_LAMBDA = 0.04747716456597789 / 0.033961268413163805
+RUNDOWN_CALIBRATION: dict[str, Any] = {"sigma_u": 0.04747716456597789,
+                                       "sigma_rho": 0.033961268413163805, "df": 384,
+                                       "episodes": 512, "world_episodes": 128}
+RUNDOWN_SOURCES = {
+    "noise_episodes_sha256": "a7d598882d7010ce9e5e18994cc9616730071369bbe22f1e849c3efa42bc2280",
+    "bar_csv_sha256": "de67a546c0cb2904b268bb77ba77637ae7262702468074f99f763b3f3ebd5227"}
+
+
+def calibrate_rundown_weight(noise_rows: Sequence[Mapping[str, str]], bar: Mapping) -> dict:
+    """v8's weight rule: lambda = sigma_u / sigma_rho, the pooled within-world-episode SDs over the
+    base's re-keys (replicates >= 1) of units / B_we and of rho = r_end / r_start."""
+    from .order_es import _pooled_sd
+
+    u: dict = {}
+    p: dict = {}
+    for r in noise_rows:
+        if int(r["replicate"]) < 1:
+            continue
+        k = (r["world"], int(r["episode"]))
+        u.setdefault(k, []).append(float(r["units"]) / bar[k].bar)
+        p.setdefault(k, []).append(float(r["r_end"]) / float(r["r_start"]))
+    su, df = _pooled_sd(list(u.values()))
+    sp, _ = _pooled_sd(list(p.values()))
+    return {"lambda": su / sp, "sigma_u": su, "sigma_rho": sp, "df": df,
+            "episodes": sum(map(len, u.values())), "world_episodes": len(u)}
+
+
+def active_rundown_weight() -> float:
+    """v8 on: lambda; before v8: 0 (units-only fitness)."""
+    return RUNDOWN_LAMBDA if PREREG_VERSION >= 8 else 0.0
 
 
 def frozen_mask() -> np.ndarray:
@@ -624,9 +688,13 @@ def job_id(kind: str, generation: object, member: str, world: str, episode: int,
 
 
 def frozen_pins() -> dict:
-    """v7: the fixed dimensions, pinned (a v6 run does not resume under v7); nothing before v7."""
+    """v7: the fixed dimensions; v8: also the run-down weight (an earlier version's run does not
+    resume under a later one); nothing before v7."""
     m = frozen_mask()
-    return {} if m.all() else {"frozen_dims": [int(i) for i in np.flatnonzero(m == 0)]}
+    pins = {} if m.all() else {"frozen_dims": [int(i) for i in np.flatnonzero(m == 0)]}
+    if active_rundown_weight():  # v8: the fitness's run-down weight is a pin too
+        pins["rundown_lambda"] = active_rundown_weight()
+    return pins
 
 
 def check_residual_base(jobs: Sequence[Job]) -> None:
@@ -1289,7 +1357,8 @@ DEATH_RULE = "death-penalty-v1"
 
 
 def score_member_v4(rows: Sequence[Mapping[str, str]], bar: Mapping, margin: Any, refs: Mapping,
-                    fref: FlagReference, threshold: float = FLAG_THRESHOLD) -> Any:
+                    fref: FlagReference, threshold: float = FLAG_THRESHOLD,
+                    rundown_weight: float = 0.0) -> Any:
     """Pre-registration v4: v3's flag-count rule, with a death where rf3 dies at no key scored as
     (units - P) / B_we, P = B_we (rf3's r0 units), instead of disqualifying the member."""
     from .order_es import MemberScore, _bool, we_fitness
@@ -1299,7 +1368,7 @@ def score_member_v4(rows: Sequence[Mapping[str, str]], bar: Mapping, margin: Any
     wes = [(r["world"], int(r["episode"])) for r in rows]
     penalised = [_bool(r["dead"]) and k not in fref.dead for r, k in zip(rows, wes)]
     fs = [we_fitness(r, bar[k], 0.0) - (1.0 if pen else 0.0)
-          for r, k, pen in zip(rows, wes, penalised)]
+          + rundown_weight * _rho_gap(r, refs[k]) for r, k, pen in zip(rows, wes, penalised)]
     flags = sum(row_flagged(r, bar[k], margin, refs[k]) for r, k in zip(rows, wes))
     excess = flags - fref.expected(wes)
     reasons = [f"flags:{flags}-{excess:+.2f}"] if excess > threshold + 1e-9 else []
@@ -1307,11 +1376,20 @@ def score_member_v4(rows: Sequence[Mapping[str, str]], bar: Mapping, margin: Any
     return MemberScore(fmean(fs), bool(reasons), tuple(reasons) + notes, False)
 
 
+def _rho_gap(row: Mapping[str, str], ref: Any) -> float:
+    """rho_member - rho_base on the same world-episode (v8); 0 where either is undefined."""
+    rs, re_ = row.get("r_start"), row.get("r_end")
+    if ref is None or ref.ratio is None or rs in (None, "", "0", "0.0") or re_ in (None, ""):
+        return 0.0
+    return float(re_) / float(rs) - float(ref.ratio)
+
+
 def _scores(rows_by_member: Mapping[str, Sequence[Mapping[str, str]]], bar: Mapping,
             margin: Any, refs: Mapping, fref: FlagReference) -> dict:
-    """Units-only fitness with v4's death penalty; disqualification by v3's flag-count rule."""
-    threshold = active_flag()[0]
-    return {lab: score_member_v4(rs, bar, margin, refs, fref, threshold)
+    """Fitness with v4's death penalty and v8's run-down term; disqualification by v3's
+    flag-count rule."""
+    threshold, lam = active_flag()[0], active_rundown_weight()
+    return {lab: score_member_v4(rs, bar, margin, refs, fref, threshold, lam)
             for lab, rs in rows_by_member.items()}
 
 

@@ -299,10 +299,13 @@ def test_prereg_v6_untouched_on_k5_rf5() -> None:
 
 def test_prereg_v7_is_v6_with_theta_e_fixed() -> None:
     """After EXP-0093 (DIAGNOSTICS 30): v7 = v6 with theta_e fixed at 0; base, L1 constants and the
-    readings' rules unchanged; L6 is recorded as the clean read."""
-    assert pe.PREREG_PATH.name == "es_prereg_m5_v7.json" and pe.prereg_problems() == []
+    readings' rules unchanged; L6 is recorded as the clean read. Never edited."""
+    from tokenomics.eval.provenance import sha256_file
+
+    assert sha256_file(str(pe.PREREG_V7_PATH)) == pe.PREREG_V7_SHA256
+    assert json.loads(pe.PREREG_V7_PATH.read_text()) == pe.registered_prereg(7)
     assert pe.BASE_PRODUCER == pe.K5_RF5_PRODUCER and rd.BASE == "k5_rf5"
-    v7, v6 = json.loads(pe.PREREG_PATH.read_text()), json.loads(pe.PREREG_V6_PATH.read_text())
+    v7, v6 = json.loads(pe.PREREG_V7_PATH.read_text()), json.loads(pe.PREREG_V6_PATH.read_text())
     assert v7["version"] == 7 and v7["changes"]["from"]["sha256"] == pe.PREREG_V6_SHA256
     assert sorted(k for k in set(v7) | set(v6) if v7.get(k) != v6.get(k)) == [
         "changes", "es", "readings", "version"]
@@ -313,3 +316,17 @@ def test_prereg_v7_is_v6_with_theta_e_fixed() -> None:
             } == {"clean_read"}
     assert v7["guard"] == v6["guard"] and v7["base"] == v6["base"]
     assert list(pe.frozen_mask()) == [1.0] * 18 + [0.0] * 5
+
+
+def test_prereg_v8_is_v7_with_the_rundown_term() -> None:
+    """v8 (user decision 2026-11-06): v7 + a run-down term in the fitness; only `fitness.rundown`
+    (and version / changes) differ; every reading unchanged; lambda pinned from EXP-0090."""
+    assert pe.PREREG_PATH.name == "es_prereg_m5_v8.json" and pe.prereg_problems() == []
+    v8, v7 = json.loads(pe.PREREG_PATH.read_text()), json.loads(pe.PREREG_V7_PATH.read_text())
+    assert v8["version"] == 8 and v8["changes"]["from"]["sha256"] == pe.PREREG_V7_SHA256
+    assert sorted(k for k in set(v8) | set(v7) if v8.get(k) != v7.get(k)) == [
+        "changes", "fitness", "version"]
+    assert {k for k in v8["fitness"] if v8["fitness"][k] != v7["fitness"].get(k)} == {"rundown"}
+    assert v8["readings"] == v7["readings"] and v8["es"] == v7["es"]
+    assert v8["fitness"]["rundown"]["lambda"] == pe.RUNDOWN_LAMBDA == pe.active_rundown_weight()
+
