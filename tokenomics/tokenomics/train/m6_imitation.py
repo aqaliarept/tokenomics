@@ -51,6 +51,7 @@ FIDELITY_METRICS = ("exact_command", "gate_accuracy", "replenish_mae_units", "or
                     "orderer_top1")
 REGISTERED_ATLAS_HASH = "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23"
 PREREG_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v1.json"
+SOURCE_COMMIT = ""  # set by `main` (--source-commit); recorded in every output
 # frozen 2026-11-06 before EXP-0099; real collect / fit / check refuse any other file
 PREREG_SHA256: str | None = "38db5c0c96cfd2a7fa14eae1e3bf2832092738d1d13ce2fdcade25ac245c26f6"
 
@@ -412,7 +413,7 @@ def run_collect(training_dir: str, out_dir: str, workers: int, horizon: int,
               f"producer and {len(samples['orderer'])} orderer decisions", flush=True)
     (out / "collect.json").write_text(json.dumps(
         {"training_pins": ts.pins, "horizon": horizon, "train": len(sets["train"]),
-         "dry_run": dry_run, "prereg": PREREG_SHA256,
+         "dry_run": dry_run, "prereg": PREREG_SHA256, "source_commit": SOURCE_COMMIT,
          "monitor": len(sets["monitor"]), "base": [BASE_PRODUCER, BASE_ORDERER]}, indent=1) + "\n")
     return 0
 
@@ -437,6 +438,7 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
 
     doc = {"epochs": epochs, "seed": seed, "workers": workers, "curve": curve, "dry_run": dry_run,
            "prereg": PREREG_SHA256, "models_sha256": sha256_file(str(out / "models.pt")),
+           "source_commit": SOURCE_COMMIT,
            "train_agreement": agreement(pm, om, tr["producer"], tr["orderer"]),
            "monitor_agreement": agreement(pm, om, mo["producer"], mo["orderer"])}
     (out / "fit.json").write_text(json.dumps(doc, indent=1) + "\n")
@@ -470,6 +472,7 @@ def run_check(training_dir: str, atlas: str, models: str, out_dir: str, workers:
                and deaths["monitor"] <= deaths["monitor_base"] else "short")
     doc = {"rule": IMIT_RULE, "reading": reading, "g_imit": g_imit, "F_imit": f_imit,
            "dry_run": dry_run, "prereg": PREREG_SHA256, "models_sha256": sha256_file(models),
+           "source_commit": SOURCE_COMMIT,
            "deaths": deaths, "world_episodes": len(mon), "horizon": horizon,
            "units_mean": {k: fmean(float(x["units"]) for x in rows if x["kind"] == k)
                           for k in ("monitor", "monitor_base")}}
@@ -528,6 +531,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", required=True, choices=("timing", "collect", "fit", "check", "freeze"))
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--source-commit", default="", help="recorded in every output (provenance)")
     p.add_argument("--training-dir")
     p.add_argument("--collect-dir")
     p.add_argument("--models")
@@ -540,6 +544,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--max-world-episodes", type=int)
     p.add_argument("--worlds", default="ws-atlas-v1-12-0111,ws-atlas-v1-42-0000")
     a = p.parse_args(argv)
+    global SOURCE_COMMIT
+    SOURCE_COMMIT = a.source_commit
+    if not a.dry_run and a.mode in ("collect", "fit", "check") and len(SOURCE_COMMIT) != 40:
+        p.error("a real run needs a 40-hex --source-commit")
     if a.mode == "freeze":
         status, sha = freeze_prereg()
         print(f"[m6_imitation] pre-registration {status} {sha}")
