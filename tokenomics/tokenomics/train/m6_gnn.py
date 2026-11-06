@@ -231,6 +231,24 @@ class ProducerGNN(nn.Module):
 
     def forward(self, f: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor]:
         """(3 toggle logits, a replenish fraction in (0, 1) per input row)."""
+        gates, logit = self.heads(f)
+        return gates, torch.sigmoid(logit)
+
+    def embed(self, f: dict[str, Any]) -> torch.Tensor:
+        """The pooled view embedding (4 x hidden): the CTDE critic's per-producer input."""
+        return self._trunk(f)[1]
+
+    def heads(self, f: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor]:
+        """(3 toggle logits, the replenish pre-sigmoid logit per input row): the RL policy's
+        distribution parameters (m6_mappo); `forward` = the same with the sigmoid applied."""
+        h, pooled = self._trunk(f)
+        gates = self.gates(pooled)
+        n_in = h["input"].shape[0]
+        logit = (self.replenish(torch.cat([h["input"], pooled.unsqueeze(0).expand(n_in, -1)], 1)
+                                ).squeeze(-1) if n_in else torch.zeros(0))
+        return gates, logit
+
+    def _trunk(self, f: dict[str, Any]) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
         t = {k: self.norm(k, f[k]) for k in ("global", "capacity", "product", "input")}
         h = {k: (self.enc[k](v) if v.shape[0] else torch.zeros((0, self.hidden)))
              for k, v in t.items()}
@@ -249,12 +267,7 @@ class ProducerGNN(nn.Module):
                                         if h["input"].shape[0] else 0)}
         pooled = torch.cat([h["global"][0], *[_mean(h[k], self.hidden)
                                                for k in ("capacity", "product", "input")]])
-        gates = self.gates(pooled)
-        n_in = h["input"].shape[0]
-        rep = (torch.sigmoid(self.replenish(torch.cat(
-            [h["input"], pooled.unsqueeze(0).expand(n_in, -1)], 1)).squeeze(-1))
-            if n_in else torch.zeros(0))
-        return gates, rep
+        return h, pooled
 
 
 class OrdererGNN(nn.Module):
@@ -279,6 +292,23 @@ class OrdererGNN(nn.Module):
 
     def forward(self, f: dict[str, Any]) -> list[torch.Tensor]:
         """Per slot, logits over its eligible producers (in `f["elig"][k]` order)."""
+        g, hp, ho = self._trunk(f)
+        out = []
+        for k, el in enumerate(f["elig"]):
+            if not el:
+                out.append(torch.zeros(0))
+                continue
+            x = torch.cat([ho[k].unsqueeze(0).expand(len(el), -1), hp[el],
+                           g.unsqueeze(0).expand(len(el), -1)], 1)
+            out.append(self.out(torch.relu(self.score(x))).squeeze(-1))
+        return out
+
+    def embed(self, f: dict[str, Any]) -> torch.Tensor:
+        """The pooled stream-view embedding (3 x hidden): the CTDE critic's per-stream input."""
+        g, hp, ho = self._trunk(f)
+        return torch.cat([g, _mean(hp, self.hidden), _mean(ho, self.hidden)])
+
+    def _trunk(self, f: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         g = self.enc["global"](self.norm("global", f["global"]))[0]
         hp = self.enc["producer"](self.norm("producer", f["producer"])) if len(f["pids"]) else \
             torch.zeros((0, self.hidden))
@@ -293,15 +323,7 @@ class OrdererGNN(nn.Module):
                        if ho.shape[0] else 0)
             hp = hp + (layer["producer"](torch.cat([hp, pc, gp.expand(hp.shape[0], -1)], 1))
                        if hp.shape[0] else 0)
-        out = []
-        for k, el in enumerate(f["elig"]):
-            if not el:
-                out.append(torch.zeros(0))
-                continue
-            x = torch.cat([ho[k].unsqueeze(0).expand(len(el), -1), hp[el],
-                           g.unsqueeze(0).expand(len(el), -1)], 1)
-            out.append(self.out(torch.relu(self.score(x))).squeeze(-1))
-        return out
+        return g, hp, ho
 
 
 def _mean(h: torch.Tensor, hidden: int) -> torch.Tensor:
