@@ -176,6 +176,7 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   - Done 2026-11-05 (EXP-0086): **`signal`** (0.967 / 0.947), step `heterogeneity` (pilot at σ); 0 member deaths. Pilot (5.1) licensed. ≈ 1.3 vCPU-h, M5-P ≈ 8.3 / 80.
 - [x] R-4 [experiment][remote:cpu16] v7 ladder (θ_e fixed at 0, DIAGNOSTICS 30): EXP-0094 L3 `feasible` (+192.2 vs 155.9) + L4 both seeds to 40; EXP-0095 L5 **`plateau`** (12: +139.9 / +105.9 clear the floors, 0 deaths, but the run-down share 0.743 / 0.736 > the base's 0.681). Stop, to the supervisor / user. ≈ 19.1 vCPU-h, M5-P ≈ 47.9 / 80.
 - [x] R-5 [experiment][remote:cpu16] v8 ladder (run-down term λ = 1.398 from EXP-0090; user decision 2026-11-06): EXP-0096 L3 `feasible` (+135.8 vs 117.2) + L4 both seeds; EXP-0097 L5 **`plateau`** (12: +130.3 / +90.2 clear; run-down share 0.715 / 0.708 vs 0.681; paired r_end −0.009). Stop, to the supervisor / user. ≈ 17.3 vCPU-h, M5-P ≈ 65.2 / 80.
+- **Closed 2026-11-06 (user decision):** M5 producer learning ends at `plateau`. The learned correction is not promoted; L6 is not licensed; the next arc is open with the user. Final M5-P ≈ 65.2 / 80.
 - [x] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
   - Done 2026-11-05 (EXP-0091, on k5_rf5 under v6): **`feasible`** (g_tr +467.5 vs F_tr 125.6); held stock 1.77× (stock_heavy), investment rejection 0.10 → 0.33; centre − k6_rf5 +402 (reported). ≈ 5.0 vCPU-h, M5-P ≈ 13.3 / 80.
@@ -183,15 +184,16 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   40 generations (≈ 7 + 13.5, stops 14 / 27; sizing.md). Verify: g_tr recomputes; checkpoints and pins
   recorded.
   - Done 2026-11-05 (EXP-0092, k5_rf5, v6): both seeds to 40; g_tr +569.2 / +573.7 vs F_tr ≈ 223; 0 monitor deaths; stock ≈ 1.8×, rejection ≈ 3×. ≈ 14.0 vCPU-h, M5-P ≈ 27.3 / 80.
-- [ ] 5.3 [experiment][remote:cpu16] EXP-0083: L5 validation at 12 and 42 (`success` / `plateau` /
+- [x] 5.3 [experiment][remote:cpu16] EXP-0083: L5 validation at 12 and 42 (`success` / `plateau` /
   `kill` / `transfer_failure`). Stop branches → DIAGNOSTICS + user. ≈ 3.5, stop 7 (sizing.md).
   - Ran 2026-11-05 (EXP-0093, k5_rf5, v6): **`kill`** (1 extra death: cand-s0 on 12-0109); gains +413 / +383 at 12, +579 / +557 at 42; stock_heavy 1.58×. DIAGNOSTICS 30 (expansion orders dilute the fund; sole maker's restoration unfunded). Stop branch, to the supervisor / user. ≈ 1.5 vCPU-h, M5-P ≈ 28.8 / 80.
 
 ## 6. Held-out confirmation (experiment). Gated: EXP-0083 `success`
 
-- [ ] 6.1 [experiment][remote:cpu16] EXP-0084: L6 held-out read (ledger pending entry committed
+- [-] 6.1 [experiment][remote:cpu16] EXP-0084: L6 held-out read (ledger pending entry committed
   before launch, closed after). `confirmed` → the user decides the roster and phase 2;
   `not_confirmed` → DIAGNOSTICS, user. ≈ 3.5, stop 7 (sizing.md).
+  - **Not licensed** (2026-11-06): L5 never read `success` (v6 `kill`, v7 / v8 `plateau`). User decision: accept `plateau`, close M5 producer learning; k5_rf5 stays the producer.
 
 ## 7. Records (code)
 

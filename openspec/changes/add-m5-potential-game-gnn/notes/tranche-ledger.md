@@ -22,3 +22,5 @@
 | 2026-11-06 | EXP-0096 (v8 L3 pilot + L4 seed 0) | `2mnkag1dvyv70b`, secure 16 vCPU, EUR-IS-1, 06:36–07:04 UTC | 10 | ≈ 7.6 | ≈ 55.5 / 80 |
 | 2026-11-06 | EXP-0096 (v8 L4 seed 1) | `pk83zzeyacr8c6`, secure 16 vCPU, EUR-IS-1, 06:51–07:20 UTC | 11 | ≈ 7.9 | ≈ 63.4 / 80 |
 | 2026-11-06 | EXP-0097 (v8 L5) | `agriqq956h8oe9`, secure 16 vCPU, EUR-IS-1, 07:21–07:28 UTC | 3 | ≈ 1.8 | ≈ 65.2 / 80 |
+
+**Final (2026-11-06, M5 producer learning closed): M5-P ≈ 65.2 / 80 vCPU-h billed.**

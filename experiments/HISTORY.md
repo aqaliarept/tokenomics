@@ -1435,3 +1435,33 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   producers it gives ≈ 3,703 (MWWk) / 3,842 (RR) consumer units, against 2,096 (MWWk) for
   `entity_planner`. M5 re-bases on it, and it belongs in the next roster draft.
 - **Cost.** ≈ 1.9 vCPU-h for EXP-0089 and EXP-0088 together; M5-P ≈ 6.1 of 80.
+
+### Learning a producer correction on k5_rf5, closed at `plateau` (EXP-0090 → EXP-0097)
+
+- **The question.** Can ES learn a residual on the final producer `entity_planner_buyahead_k5_rf5` that beats it
+  on unseen worlds? The residual corrects three decisions: buffer θ_k, extra buying θ_b, expansion trigger θ_e.
+  The success test is L5's rule: a unit gain beyond the floor at 12 producers for both seeds, no extra deaths,
+  and run-down / starvation shares no worse than the base's.
+- **What happened, by pre-registration:**
+  - **Before the base was final.** Probes on rf3 read `no_signal` (EXP-0081..0083). The cause was the base's
+    upgrade trap (DIAGNOSTICS 29) plus the original any-episode disqualification rule, not a flat landscape.
+    On k5_rf5 the probe reads `signal`, cosine 0.97 (EXP-0086).
+  - **v6, all three corrections (EXP-0091..0093).** L5 `kill`: one extra death on 12-0109, with units
+    +383 / +413 at 12. The learned expansion trigger θ_e put more producers into the investment-fund split, and
+    the sole maker of a product got 0 and could not restore (DIAGNOSTICS 30). The θ_e = 0 replay removed the
+    death.
+  - **v7, θ_e fixed at 0 (EXP-0094, EXP-0095).** L5 `plateau`: units +140 / +106 at 12 with 0 deaths, but the
+    run-down share was 0.743 / 0.736 against the base's 0.681. The paired end-capacity shift was −0.011, on a
+    threshold crowded with near-line episodes.
+  - **v8, a run-down term in the fitness (EXP-0096, EXP-0097).** λ = 1.398 from training re-keys. L5 `plateau`:
+    units +130 / +90 at 12, run-down 0.715 / 0.708. It halved the extra run-down rows (+9 / +8 → +5 / +4) but
+    did not close the gap; the shift was still −0.009.
+  - **Why the term was weak is a hypothesis, not a diagnosis:** end-of-episode ρ is a noisy signal (re-key SD
+    0.034) against a 0.01 shift, so the ES ranks barely see it.
+- **Net.** The learned correction gives about +2–4% consumer units at 12 producers and +3–4% at 42 on validation
+  worlds, beyond the floor, with no deaths and modest extra stock (≈ 1.15×). It never met the run-down clause.
+- **Decision (user, 2026-11-06).** Accept `plateau` and close M5 producer learning.
+  - The correction is not promoted and k5_rf5 stays the producer.
+  - L6 (held-out) is not licensed.
+  - The next arc is open with the user.
+- **Cost.** M5-P ≈ 65.2 of 80 vCPU-h.
