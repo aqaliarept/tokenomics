@@ -12,6 +12,8 @@
 | M5 v6, θ_e expansion trigger (EXP-0093 `kill`) | fund dilution: extra investment orders put more producers in the fund split, and a sole maker's restoration went unfunded (DIAGNOSTICS 30) | fund state is a feature, deaths and run-down are charged in the potential, and expansion is a gated head (D2); the pilot reports investment rejection |
 | M5 v7 / v8 (EXP-0095, EXP-0097 `plateau`) | the run-down share stayed above the base. The term's weakness is a **hypothesis, not a diagnosis**: end-of-episode ρ is noisy (SD 0.034) against a 0.01 shift | the potential uses a per-cycle capacity term, not the end snapshot (D1). If L5 plateaus on run-down again, first a diagnostic that compares per-cycle and end-ρ signal-to-noise |
 | Learned acceptance, hand-written A1 (EXP-0098 `harmful`) | **undiagnosed** (the first explanation was a counter artifact, corrected) | learned acceptance is gated behind a diagnostic (D2, risks) |
+| Imitation by the scorers (EXP-0034 / 0035 fidelity wall) | multi-task optimisation interference: one scorer across many topologies, too few epochs, averaged away per-task behaviour (EXP-0035, fixed at 2000 epochs) | Stage I imitates **actions per agent** (each producer's command, each order's routing distribution) on M4's pinned training worlds; it trains to a fidelity criterion, not a fixed epoch count; the check is behavioural (D4) |
+| GNN imitation of a search label (EXP-0039 / 0040) | the label was unstable: continuation-averaged, so future-sensitive (`SEARCH_ONLY`) | the label is the **deterministic** hand-written action given the agent's view (k5_rf5's command; MWW's weights before the keyed draw), verified by a determinism test (same view, same label); features are ADR-0058-only, verified by leak tests (a policy reading anything else raises) |
 
 **Supporting work:**
 - the earlier MPG + GNN draft (add-m5 at 980c307: networked potential, GNN, PG ladder);
@@ -30,13 +32,16 @@
   al.), which is the probe's second arm.
 - **Readings:** units and L5 / L6's side-effect clauses, unchanged.
 
-**D2. Action heads.**
-- **Producer, per producer node:**
-  - investment logits (restore / upgrade / expand);
-  - per-input buffer and extra-buy offsets on k5_rf5's planner. The upgrade cap stays as a domain-legality
-    filter.
-- **Orderer, per order:** logits over its eligible producers, added to MWW's log-weights. One keyed draw, the
-  order routed whole.
+**D2. Action heads, fully learned (user decision 2026-11-06).** The GNN outputs the actions itself; no
+hand-written planner runs at deployment.
+- **Producer, per producer:**
+  - three investment logits (restore / upgrade / expand);
+  - per input row, a replenish fraction in [0, 1] of the producer's `max_replenish`, which the env's decode
+    turns into units.
+  - The upgrade cap is not a filter: the learner must learn it, and Stage I imitates k5_rf5's capped
+    decisions.
+- **Orderer, per order slot:** logits over the producers; masked to the eligible ones; one keyed draw (MWWk's
+  key); the order routed whole (ADR-0059).
 - **Acceptance:** default **off** in the first ladder; the default auction stays. A gated later stage adds an
   accept head per routed sub-order through the ADR-0061 hook, made an AEC turn (the slot action deferred from
   ADR-0061). Gate: the A1 diagnostic (risks).
@@ -60,10 +65,27 @@
     own-order and next-cycle-outcome information ADR-0061 added.
   - No IDs; ADR-0058 holds (no same-cycle routing or bids).
 - **Trunk:** typed message passing, 2 rounds, hidden 32. The parameter count is independent of N.
+- **As built (task 2.1):** each actor's graph is its own ADR-0058 view: the producer's entity view (capacity,
+  product and input rows with recipe relations), and the stream agent's view (producer rows with last cycle's
+  outcomes, order slots with remaining lifetime, the product). The global producers + products + orders +
+  supply-links graph is for the CTDE critic only (task 2.3).
 
-**D4. Initialisation.** Zero-initialised residual heads, so θ = 0 is exactly k5_rf5 + MWWk, tested byte for
-byte as in M5. Training starts at the bar. A BC pre-train of the trunk is an option, not the default
-(EXP-0035's fidelity wall).
+**D4. Initialisation by imitation (Stage I; user decision 2026-11-06).**
+- **Behaviour cloning** of k5_rf5 + MWWk on M4's pinned training worlds (EXP-0058 `bar/`), excluding the 16
+  monitor world-episodes.
+- **Labels, per agent decision:**
+  - producer: k5_rf5's command (BCE on the 3 gates; Huber on the replenish fractions);
+  - orderer: MWW's normalised weights over the eligible producers, as a soft label (KL);
+  - all deterministic given the view (tested).
+- **Fidelity metrics, reported:**
+  - producer: exact-command agreement, gate accuracy, replenish MAE;
+  - orderer: mean KL and top-1 agreement.
+- **The imitation check (pre-registered, deciding).** The imitated policy (the GNN alone) is played on the 16
+  monitor world-episodes at replicates 0 / 1, against k5_rf5 + MWWk's bar rows at the same keys.
+  - g_imit = the equal-weight mean of (imitated − bar) units; F_imit = M5's floors rule.
+  - **`faithful`** if g_imit ≥ −F_imit, with no extra deaths. Otherwise **`short`** (stop: the user hears it
+    before any RL), with the agreement metrics locating the shortfall.
+- **Then MAPPO** from the imitated weights (D5).
 
 **D5. Learner.**
 - **Default: MAPPO under CTDE.** Shared actor per role; a centralised GNN critic on the global graph (training
@@ -81,13 +103,13 @@ byte as in M5. Training starts at the bar. A BC pre-train of the trunk is an opt
 | **L2:** gradient probe, PPO advantage-weighted gradient cosine on two disjoint minibatches (identical vs networked arms) | `signal` / `weak` / `no_signal` |
 | **L3:** pilot, seed 0 | `feasible` (g_tr > F_tr) / `unresolved` |
 | **L4:** seeds 0 and 1 to full length | — |
-| **L5:** validation at 12 (deciding) and 42 | success / plateau / kill / transfer_failure, M5 rules, against both orderers' bars |
+| **L0b:** Stage I imitation + **the imitation check** (D4) | `faithful` / `short` → the user |
+| **L5:** validation at 12 (deciding) and 42 | **pre-registered parity rule** (user decision): `success` if for both seeds the candidate − k5_rf5 + MWWk ≥ −F_val at 12, with no extra deaths and run-down / starvation shares ≤ the base's; `kill` if below −F_val or extra deaths; `transfer_failure` if success at 12 and below −F_val at 42 |
 | **L6:** held-out, one shot (ledger) | confirmed / not_confirmed |
 | **(gated) LA:** learned acceptance, after its diagnostic | — |
 
-Success is L6 `confirmed` against **both** k5_rf5 + MWWk and k5_rf5 + RR. The default is M5's rule: beyond the
-floor, with no extra deaths and no worse side-effect shares. **User decision:** whether parity counts, i.e.
-within the floor and not below it (the goal says "the same or better").
+Success is L6 `confirmed`: the parity rule above, on held-out worlds, against k5_rf5 + MWWk (and RR reported).
+**Parity counts** (user decision 2026-11-06).
 
 **D7. Gate.** M6 does not change the gate. `confirmed` makes a gate candidate. The roster v3 draft carries k5_rf5
 (carry-forward note); a gate run is a human gate.

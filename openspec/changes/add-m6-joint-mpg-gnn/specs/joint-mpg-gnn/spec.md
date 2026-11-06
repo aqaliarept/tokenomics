@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
-### Requirement: Joint learning starts at the hand-written bar
-The joint producer and orderer policy SHALL equal `entity_planner_buyahead_k5_rf5` with MWWk action for action at zero parameters.
+### Requirement: Imitation before reinforcement learning
+The fully learned policy SHALL first imitate k5_rf5 + MWWk per agent decision, and a pre-registered imitation check SHALL decide whether reinforcement learning starts.
 
-#### Scenario: Zero residual equals the bar
-- **WHEN** both heads' parameters are zero
-- **THEN** every producing and ordering action equals k5_rf5 + MWWk's on the same episode and keys
+#### Scenario: Imitation check
+- **WHEN** the imitated policy plays the monitor world-episodes against the bar at the same keys
+- **THEN** it reads `faithful` (not below the bar beyond the floor, no extra deaths) or `short`, and `short` stops before any RL
 
 ### Requirement: Topology-agnostic graph policy
 The policy SHALL use one parameter set at 12 and 42 producers and on unseen topology families, with ADR-0058's information set.
@@ -15,7 +15,7 @@ The policy SHALL use one parameter set at 12 and 42 producers and on unseen topo
 - **THEN** every command is legal and there are zero contract failures
 
 ### Requirement: Success against the best hand-written stack
-Success SHALL be a held-out confirmation that consumer units exceed the k5_rf5 + MWWk and k5_rf5 + RR bars beyond their floors (default; parity within the floor is a user decision), with no extra deaths and side-effect shares no worse.
+Success SHALL be a held-out confirmation that consumer units are not below the k5_rf5 + MWWk bar beyond its floor (parity counts), with no extra deaths and side-effect shares no worse.
 
 #### Scenario: Held-out read
 - **WHEN** the L6 read runs once on held-out worlds at 12 and 42
