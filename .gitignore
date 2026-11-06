@@ -26,3 +26,4 @@ tokenomics/_pod_ckpts/
 
 # crash debris (qemu/runpodctl core dumps)
 core
+experiments/EXP-0110-m6-stage0/artifacts/local/

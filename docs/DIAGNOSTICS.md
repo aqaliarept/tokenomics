@@ -1497,3 +1497,34 @@ located (early growth), but not yet split between upgrades, expansions and input
 - Upgrade asks in cycles 0–49: 0.176 vs 0.198 (12), 0.239 vs 0.287 (42).
 - Capacity in cycles 0–49: −7% / −13%.
 - `b2_lost_ttl` +14% / +28%.
+
+## 35. A same-seed policy-gradient check reads `no_signal`: absent signal or an underpowered test?
+
+_Status: open (2026-11-06, EXP-0110); the two branches are not yet separated._
+
+**Problem (plain English):**
+- The critic-free Stage 0 asks whether the policy gradient estimated on half the seeds agrees with the other
+  half's better than chance.
+- Two different things give "no": the gradient may be absent (the start policy barely explores, so siblings
+  differ by little). Or the test may be too small: when the gradient noise lives in few directions, two
+  independent halves agree by chance at cosine 0.4–0.7, and a modest real signal cannot clear that bar.
+
+**Discriminating checks:**
+1. The permutation null's 95th percentile. Above about 0.3 suggests low-dimensional noise
+   (effective dimension ≈ 1.645² / q95²).
+2. **Power calibration on the recorded rows:** add a known gradient of growing size to the rewards, along a
+   fixed score direction. Find the size D0.3 detects at the current and at doubled / quadrupled seed counts.
+3. **Exploration:** the start policy's flip probability per gate and its orderer entropy (offline), and the
+   sibling correlation of Φ_t over cycles (D0.2).
+
+**Outcome branches:**
+- **Detectable at more seeds with a plausible effect size:** underpowered. Re-register with more seeds per
+  estimate (cost from D0.5).
+- **Not detectable, and the policy is near-deterministic:** absent. More exploration (a temperature on the
+  gates) is a design decision for the user / supervisor.
+
+**Evidence (EXP-0110):**
+- Null q95 0.40–0.70.
+- Producer gate flips 0.047 per decision; orderer entropy 0.91 nats.
+- Sibling correlation of Φ_t ≥ 0.72 at 12.
+- D0.1 0.98 / 0.97.
