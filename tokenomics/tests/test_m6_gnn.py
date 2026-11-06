@@ -228,6 +228,7 @@ def test_shard_files_give_the_same_fit_as_in_memory(tmp_path: Path) -> None:
     b = im.fit(sh, 2, batch=16, workers=2, mode="sync", log=lambda s: None)
     for x, y in zip(a[1].state_dict().values(), b[1].state_dict().values()):
         assert torch.equal(x, y)
+    assert torch.multiprocessing.get_sharing_strategy() == im.SHARING_STRATEGY  # set by the fit
     h = im.fit(sh, 1, batch=16, workers=2, mode="hogwild", log=lambda s: None)
     assert np.isfinite(h[2][-1]["orderer_loss"])
     with pytest.raises(ValueError, match="shard count"):

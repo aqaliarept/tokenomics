@@ -354,6 +354,7 @@ def _shard_worker(w: int, mods: Mapping[str, nn.Module], dec: list, cri: list, c
                   steps: int, epoch_seed: int, gbuf: torch.Tensor, sbuf: torch.Tensor,
                   ready: Any, done: Any) -> None:
     torch.set_num_threads(1)
+    im.set_sharing()
     params = [p for m in mods.values() for p in m.parameters()]
     for ep in range(cfg.ppo_epochs):
         rng = np.random.default_rng([epoch_seed, ep, w])
@@ -400,6 +401,7 @@ def _sync_steps(mods: Mapping[str, nn.Module], opt: torch.optim.Optimizer, dec: 
                 for k in STAT_KEYS:
                     tot[k] += stats[k]
         return {k: v / (steps * cfg.ppo_epochs) for k, v in tot.items()}
+    im.set_sharing()  # before any share_memory() (m6_imitation.set_sharing)
     for m in mods.values():
         m.share_memory()
     gbuf = torch.zeros(workers, sum(sizes)).share_memory_()

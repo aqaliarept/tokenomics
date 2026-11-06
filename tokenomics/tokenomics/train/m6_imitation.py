@@ -484,6 +484,26 @@ def _shard(src: Any) -> tuple[list, list]:
     return src
 
 
+SHARING_STRATEGY = "file_system"
+
+
+def set_sharing() -> None:
+    """Shared tensors through `/dev/shm` files, not file descriptors: with the default
+    `file_descriptor` strategy, 16 workers x every shared storage exhausted the pod's open-file limit
+    (EXP-0105 relaunch: `Too many open files` in `resource_sharer`). Also lifts the soft open-file
+    limit to the hard one. Called in the parent before any `share_memory()` and in every worker."""
+    import resource
+
+    torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    want = hard if hard != resource.RLIM_INFINITY else 65536
+    if soft != resource.RLIM_INFINITY and soft < want:
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+        except (ValueError, OSError):
+            pass
+
+
 def release_memory() -> None:
     """gc, then return freed heap to the OS (glibc), before forking the fit workers."""
     import ctypes
@@ -497,6 +517,7 @@ def release_memory() -> None:
 
 
 def _hogwild(args: tuple) -> list[dict]:
+    set_sharing()
     pm, om, src, epochs, batch, lr, seed, clip = args
     prod, orde = _shard(src)
     return _epochs(pm, om, prod, orde, epochs, batch, lr, seed, lambda s: None, clip)
@@ -507,6 +528,8 @@ def _sync_worker(w: int, pm: g.ProducerGNN, om: g.OrdererGNN, src: Any,
                  lbuf: torch.Tensor, ready: Any, done: Any) -> None:
     """One shard of the synchronous fit: per step its shard-mean gradient into `gbuf[w]`."""
     torch.set_num_threads(1)
+    set_sharing()
+    assert torch.multiprocessing.get_sharing_strategy() == SHARING_STRATEGY
     prod, orde = _shard(src)
     params = [*pm.parameters(), *om.parameters()]
     for ep in range(epochs):
@@ -598,6 +621,8 @@ def fit(samples: dict | Shards, epochs: int, batch: int = 64, lr: float = 3e-3, 
     the models, the loss curve and {"normaliser": its record, "train_seconds": the training
     wall time without the normaliser fit}."""
     torch.manual_seed(seed)
+    if workers > 1:
+        set_sharing()
     pm, om = g.ProducerGNN(), g.OrdererGNN()
     if isinstance(samples, Shards):
         if len(samples.paths) != workers:
