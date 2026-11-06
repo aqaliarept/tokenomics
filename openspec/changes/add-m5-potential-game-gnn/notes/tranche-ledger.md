@@ -16,3 +16,6 @@
 | 2026-11-05 | EXP-0092 (5.2, L4 seed 0 resume) | `t3rz3girkclaih`, secure 8 vCPU, EUR-IS-1, 22:29–23:07 UTC | 14 | ≈ 4.9 | ≈ 18.2 / 80 |
 | 2026-11-05 | EXP-0092 (5.2, L4 seed 1) | `ktmtqah2dz6pz4`, secure 16 vCPU, EUR-IS-1, 22:29–23:04 UTC | 27 | ≈ 9.1 | ≈ 27.3 / 80 |
 | 2026-11-05 | EXP-0093 (5.3, L5 validation on k5_rf5) | `y2z5jxvyntpl8f`, secure 16 vCPU, EUR-IS-1, 23:08–23:14 UTC | 7 | ≈ 1.5 | ≈ 28.8 / 80 |
+| 2026-11-05 | EXP-0094 (v7 L3 pilot + L4 seed 0) | `fyglmetpdcu512`, secure 16 vCPU, EUR-IS-1, 23:25–23:55 UTC | 28 | ≈ 8.1 | ≈ 36.9 / 80 |
+| 2026-11-06 | EXP-0094 (v7 L4 seed 1) | `hhofuqj2skyppj`, secure 16 vCPU, EUR-IS-1, 23:41–00:17 UTC | 27 | ≈ 9.5 | ≈ 46.4 / 80 |
+| 2026-11-06 | EXP-0095 (v7 L5) | `59kjrf7qr7t3uf`, secure 16 vCPU, EUR-IS-1, 00:18–00:24 UTC | 7 | ≈ 1.5 | ≈ 47.9 / 80 |

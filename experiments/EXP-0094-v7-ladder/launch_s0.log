@@ -1,0 +1,72 @@
+[run_pod] verified clean source commit 487dfeea0f59d42e16d285449d0e1e217b58a4f4 (synced tree + launcher); injected into --train
+[run_pod] creating pod: POST /v1/pods {"name": "exp0094a-x", "imageName": "runpod/base:0.7.0-ubuntu2004", "computeType": "CPU", "containerDiskInGb": 30, "volumeMountPath": "/workspace", "cloudType": "SECURE", "ports": ["22/tcp"], "vcpuCount": 16, "cpuFlavorIds": ["cpu5c"], "dataCenterIds": ["EUR-IS-1"]}
+[run_pod] created pod fyglmetpdcu512
+[run_pod] pod fyglmetpdcu512 status: RUNNING
+[run_pod] pod already running
+[run_pod] waiting for pod to become reachable (timeout 600s)...
+[run_pod] SSH up at 185.226.156.236:51866
+[run_pod] pod image runpod/base:0.7.0-ubuntu2004; exported as EXP0039_POD_IMAGE into the run
+[run_pod] syncing /srv/research/wt-exp0094a/tokenomics -> 185.226.156.236:/workspace/tokenomics
+
+sent 2,368,473 bytes  received 4,597 bytes  949,228.00 bytes/sec
+total size is 7,600,373  speedup is 3.20
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.15.0+cpu cuda False
+[run_pod] launching detached: -u -c "import sys; from tokenomics.train.producer_es import main; from tokenomics.train.producer_read import run_pilot; P='/workspace/tokenomics/_pod_ckpts/exp0094/'; O='/workspace/tokenomics/runs/exp0094/s0'; C=['--mode','train','--training-dir',P+'training','--bar-dir',P+'bar','--margins',P+'noise_floor/margins.json','--opt-seed','0','--workers','16','--source-commit','487dfeea0f59d42e16d285449d0e1e217b58a4f4','--out-dir',O]; r=main(C+['--generations','20']); d=run_pilot(run_dir=O, training_dir=P+'training', atlas_path=P+'atlas_v2.json', generation=20, out_path=O+'/pilot_g20.json') if r == 0 else {}; print('[ladder] L3 reading', d.get('reading'), flush=True); sys.exit(r or (main(C+['--generations','40']) if d.get('reading') == 'feasible' else 0))"
+[run_pod] launch ssh did not return within 60s; the job is detached (own session) — proceeding to monitor via pid/exit files
+[run_pod] launched (survives disconnect). Reattach any time: python run_pod_training.py --pod-id fyglmetpdcu512 --attach --remote-log /workspace/train.log --cpu
+[run_pod] mirroring remote log -> train.live.log (tail -f); status -> train.status
+[producer_es] generation 1: fitness 0.9969, disqualified 0, |grad| 6.5897
+[producer_es] generation 2: fitness 0.9949, disqualified 0, |grad| 8.0056
+[producer_es] generation 3: fitness 1.0055, disqualified 0, |grad| 6.7813
+[producer_es] generation 4: fitness 1.0278, disqualified 0, |grad| 9.9425
+[producer_es] generation 5: fitness 1.0166, disqualified 0, |grad| 8.5829
+[producer_es] generation 6: fitness 0.9703, disqualified 0, |grad| 5.5455
+[producer_es] generation 7: fitness 1.0277, disqualified 0, |grad| 7.6961
+[producer_es] generation 8: fitness 1.0331, disqualified 0, |grad| 7.1548
+[producer_es] generation 9: fitness 1.0408, disqualified 0, |grad| 6.7098
+[producer_es] generation 10: fitness 1.0398, disqualified 1, |grad| 6.2705
+[producer_es] generation 11: fitness 1.0314, disqualified 0, |grad| 7.8594
+[producer_es] generation 12: fitness 1.0319, disqualified 0, |grad| 6.3362
+[producer_es] generation 13: fitness 1.0491, disqualified 0, |grad| 5.9305
+[producer_es] generation 14: fitness 1.0666, disqualified 0, |grad| 8.8216
+[producer_es] generation 15: fitness 1.0275, disqualified 0, |grad| 4.9976
+[producer_es] generation 16: fitness 1.0313, disqualified 0, |grad| 3.8002
+[producer_es] generation 17: fitness 1.0585, disqualified 0, |grad| 7.2633
+[producer_es] generation 18: fitness 1.0530, disqualified 0, |grad| 6.1064
+[producer_es] generation 19: fitness 1.0647, disqualified 1, |grad| 4.8082
+[producer_es] generation 20: fitness 1.0587, disqualified 0, |grad| 6.8849
+[producer_es] train complete
+[producer_read] L3 at generation 20: feasible (g_tr 192.1875, F_tr 155.85243170624577)
+[ladder] L3 reading feasible
+[producer_es] resuming /workspace/tokenomics/runs/exp0094/s0 (train)
+[producer_es] generation 21: fitness 1.0326, disqualified 3, |grad| 5.2652
+[producer_es] generation 22: fitness 1.0679, disqualified 0, |grad| 6.2840
+[producer_es] generation 23: fitness 1.0524, disqualified 0, |grad| 5.5474
+[producer_es] generation 24: fitness 1.0584, disqualified 0, |grad| 9.6582
+[producer_es] generation 25: fitness 1.0394, disqualified 0, |grad| 5.3240
+[producer_es] generation 26: fitness 1.0497, disqualified 1, |grad| 3.6711
+[producer_es] generation 27: fitness 1.0597, disqualified 0, |grad| 7.5433
+[producer_es] generation 28: fitness 1.0335, disqualified 0, |grad| 5.6879
+[producer_es] generation 29: fitness 1.0423, disqualified 1, |grad| 5.9294
+[producer_es] generation 30: fitness 1.0686, disqualified 0, |grad| 4.6636
+[producer_es] generation 31: fitness 1.0463, disqualified 0, |grad| 4.9707
+[producer_es] generation 32: fitness 1.0457, disqualified 1, |grad| 4.2306
+[producer_es] generation 33: fitness 1.0502, disqualified 0, |grad| 6.1029
+[producer_es] generation 34: fitness 1.0634, disqualified 0, |grad| 8.2097
+[producer_es] generation 35: fitness 1.0250, disqualified 0, |grad| 4.9297
+[producer_es] generation 36: fitness 1.0726, disqualified 0, |grad| 7.2286
+[producer_es] generation 37: fitness 1.0545, disqualified 0, |grad| 5.0135
+[producer_es] generation 38: fitness 1.0347, disqualified 0, |grad| 6.7447
+[producer_es] generation 39: fitness 1.0070, disqualified 1, |grad| 4.4057
+[producer_es] generation 40: fitness 1.0336, disqualified 1, |grad| 5.3787
+[producer_es] train complete
+[run_pod] detached run finished (exit 0); pulling results
+[run_pod] pulling /workspace/tokenomics/runs/exp0094/s0/ -> ./experiments/EXP-0094-v7-ladder/s0/
+[run_pod] stopping pod fyglmetpdcu512...
+[run_pod] pod stopped
+[run_pod] terminating pod fyglmetpdcu512 (removing)...
+[run_pod] pod terminated

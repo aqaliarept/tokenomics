@@ -1,0 +1,68 @@
+[run_pod] verified clean source commit 487dfeea0f59d42e16d285449d0e1e217b58a4f4 (synced tree + launcher); injected into --train
+[run_pod] creating pod: POST /v1/pods {"name": "exp0094b-x", "imageName": "runpod/base:0.7.0-ubuntu2004", "computeType": "CPU", "containerDiskInGb": 30, "volumeMountPath": "/workspace", "cloudType": "SECURE", "ports": ["22/tcp"], "vcpuCount": 16, "cpuFlavorIds": ["cpu5c"], "dataCenterIds": ["EUR-IS-1"]}
+[run_pod] created pod hhofuqj2skyppj
+[run_pod] pod hhofuqj2skyppj status: RUNNING
+[run_pod] pod already running
+[run_pod] waiting for pod to become reachable (timeout 600s)...
+[run_pod] SSH up at 157.157.221.30:26182
+[run_pod] pod image runpod/base:0.7.0-ubuntu2004; exported as EXP0039_POD_IMAGE into the run
+[run_pod] syncing /srv/research/wt-exp0094b/tokenomics -> 157.157.221.30:/workspace/tokenomics
+
+sent 2,336,400 bytes  received 4,570 bytes  1,560,646.67 bytes/sec
+total size is 7,408,180  speedup is 3.16
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.15.0+cpu cuda False
+[run_pod] launching detached: -u -m tokenomics.train.producer_es --mode train --training-dir /workspace/tokenomics/_pod_ckpts/exp0094/training --bar-dir /workspace/tokenomics/_pod_ckpts/exp0094/bar --margins /workspace/tokenomics/_pod_ckpts/exp0094/noise_floor/margins.json --generations 40 --opt-seed 1 --workers 16 --source-commit 487dfeea0f59d42e16d285449d0e1e217b58a4f4 --out-dir /workspace/tokenomics/runs/exp0094/s1
+[run_pod] launch ssh did not return within 60s; the job is detached (own session) — proceeding to monitor via pid/exit files
+[run_pod] launched (survives disconnect). Reattach any time: python run_pod_training.py --pod-id hhofuqj2skyppj --attach --remote-log /workspace/train.log --cpu
+[run_pod] mirroring remote log -> train.live.log (tail -f); status -> train.status
+[producer_es] generation 1: fitness 0.9967, disqualified 0, |grad| 9.5579
+[producer_es] generation 2: fitness 1.0100, disqualified 0, |grad| 9.6156
+[producer_es] generation 3: fitness 1.0135, disqualified 0, |grad| 8.7997
+[producer_es] generation 4: fitness 0.9615, disqualified 0, |grad| 5.5433
+[producer_es] generation 5: fitness 1.0306, disqualified 0, |grad| 8.5469
+[producer_es] generation 6: fitness 1.0114, disqualified 0, |grad| 10.4414
+[producer_es] generation 7: fitness 1.0160, disqualified 0, |grad| 3.9941
+[producer_es] generation 8: fitness 1.0343, disqualified 0, |grad| 4.1961
+[producer_es] generation 9: fitness 1.0318, disqualified 0, |grad| 8.1246
+[producer_es] generation 10: fitness 1.0418, disqualified 1, |grad| 4.8329
+[producer_es] generation 11: fitness 1.0478, disqualified 0, |grad| 7.7427
+[producer_es] generation 12: fitness 1.0436, disqualified 0, |grad| 6.1414
+[producer_es] generation 13: fitness 1.0323, disqualified 0, |grad| 7.7471
+[producer_es] generation 14: fitness 1.0491, disqualified 0, |grad| 3.6870
+[producer_es] generation 15: fitness 1.0359, disqualified 0, |grad| 7.3814
+[producer_es] generation 16: fitness 1.0612, disqualified 0, |grad| 6.1870
+[producer_es] generation 17: fitness 1.0396, disqualified 0, |grad| 6.7936
+[producer_es] generation 18: fitness 1.0347, disqualified 0, |grad| 6.1291
+[producer_es] generation 19: fitness 1.0860, disqualified 2, |grad| 7.1373
+[producer_es] generation 20: fitness 1.0542, disqualified 0, |grad| 3.9798
+[producer_es] generation 21: fitness 1.0249, disqualified 1, |grad| 7.1333
+[producer_es] generation 22: fitness 1.0266, disqualified 4, |grad| 5.1524
+[producer_es] generation 23: fitness 1.0616, disqualified 0, |grad| 6.3822
+[producer_es] generation 24: fitness 1.0566, disqualified 0, |grad| 4.0131
+[producer_es] generation 25: fitness 1.0401, disqualified 0, |grad| 5.0825
+[producer_es] generation 26: fitness 1.0388, disqualified 1, |grad| 7.6368
+[producer_es] generation 27: fitness 1.0572, disqualified 0, |grad| 5.9436
+[producer_es] generation 28: fitness 1.0465, disqualified 2, |grad| 5.2353
+[producer_es] generation 29: fitness 1.0522, disqualified 0, |grad| 5.8036
+[producer_es] generation 30: fitness 1.0446, disqualified 0, |grad| 5.8677
+[producer_es] generation 31: fitness 1.0040, disqualified 2, |grad| 6.7993
+[producer_es] generation 32: fitness 1.0591, disqualified 0, |grad| 6.4610
+[producer_es] generation 33: fitness 1.0485, disqualified 0, |grad| 5.1815
+[producer_es] generation 34: fitness 1.0309, disqualified 0, |grad| 5.1537
+[producer_es] generation 35: fitness 1.0395, disqualified 0, |grad| 5.8907
+[producer_es] generation 36: fitness 1.0228, disqualified 1, |grad| 3.2285
+[producer_es] generation 37: fitness 1.0269, disqualified 0, |grad| 7.0072
+[producer_es] generation 38: fitness 1.0523, disqualified 0, |grad| 5.8202
+[producer_es] generation 39: fitness 1.0455, disqualified 0, |grad| 4.1565
+[producer_es] generation 40: fitness 1.0451, disqualified 0, |grad| 6.6418
+[producer_es] train complete
+[run_pod] detached run finished (exit 0); pulling results
+[run_pod] pulling /workspace/tokenomics/runs/exp0094/s1/ -> ./experiments/EXP-0094-v7-ladder/s1/
+[run_pod] stopping pod hhofuqj2skyppj...
+[run_pod] pod stopped
+[run_pod] terminating pod hhofuqj2skyppj (removing)...
+[run_pod] pod terminated

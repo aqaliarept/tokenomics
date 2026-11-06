@@ -1,0 +1,19 @@
+{
+ "F_tr": 155.85243170624577,
+ "comparison": {
+  "a": "center",
+  "atlas_floor": 54.753057179718525,
+  "b": "k5_rf5",
+  "df": 16,
+  "diff": 192.1875,
+  "floor": 155.85243170624577,
+  "own3se": 155.85243170624577,
+  "worlds": 16
+ },
+ "g_tr": 192.1875,
+ "generation": 20,
+ "monitor_csv_g_tr": 192.1875,
+ "reading": "feasible",
+ "run": "/workspace/tokenomics/runs/exp0094/s0",
+ "world_episodes": 16
+}

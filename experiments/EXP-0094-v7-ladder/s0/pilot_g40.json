@@ -1,0 +1,19 @@
+{
+ "F_tr": 96.00352471556707,
+ "comparison": {
+  "a": "center",
+  "atlas_floor": 54.753057179718525,
+  "b": "k5_rf5",
+  "df": 16,
+  "diff": 174.96875,
+  "floor": 96.00352471556707,
+  "own3se": 96.00352471556707,
+  "worlds": 16
+ },
+ "g_tr": 174.96875,
+ "generation": 40,
+ "monitor_csv_g_tr": 174.96875,
+ "reading": "feasible",
+ "run": "../experiments/EXP-0094-v7-ladder/s0",
+ "world_episodes": 16
+}

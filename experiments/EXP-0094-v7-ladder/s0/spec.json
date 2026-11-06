@@ -1,0 +1,62 @@
+{
+ "acceptance_read": false,
+ "driver": "tokenomics.train.producer_es",
+ "mode": "train",
+ "pins": {
+  "bar_csv_sha256": "de67a546c0cb2904b268bb77ba77637ae7262702468074f99f763b3f3ebd5227",
+  "bar_spec_pins_sha256": "c2319eb11457cefa5d324e7ad49bf96b968e38d9ae055a61fcb38b7c358e13e6",
+  "driver": "tokenomics.train.producer_es",
+  "dry_run": false,
+  "flag_rule": "flag-count-v1",
+  "flag_threshold": 1.6666666666666667,
+  "frozen_dims": [
+   18,
+   19,
+   20,
+   21,
+   22
+  ],
+  "horizon": 100,
+  "lr": 0.02,
+  "margins_sha256": "79c2ddaef4ba37a5be9e315bd36887b51395007abdd95b8ab8f907b10119eb00",
+  "mode": "train",
+  "monitor_every": 10,
+  "monitor_replicates": [
+   0,
+   1
+  ],
+  "noise_episodes_sha256": "a7d598882d7010ce9e5e18994cc9616730071369bbe22f1e849c3efa42bc2280",
+  "normaliser_sha256": "387a152bad2677b63aae34e3b6888aa3b21f67289ccb6d084d8003c3ccafd9a4",
+  "opt_seed": 0,
+  "pairs": 12,
+  "prereg": "986a8191f343423397571189b46a65e03c0f214d627be6d921bb3d9b41df60ff",
+  "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+  "sigma": 0.05,
+  "size": 24,
+  "source": {
+   "commit": "487dfeea0f59d42e16d285449d0e1e217b58a4f4",
+   "n_files": 81,
+   "tree_sha256": "3d3050e99ad4d1d8e4fa3705f75ff9b91a6032be76d95ccefbcc152115a2f234"
+  },
+  "theta_dim": 23,
+  "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9"
+ },
+ "result": {
+  "contract_failures": 0,
+  "expected_rows": 11520,
+  "generation": 40,
+  "problems": [],
+  "rows": 11520,
+  "status": "complete",
+  "theta_sha256": "5f442f1e92bfbae8862bc95ee65bcf10b98ebbb3371fd09688a96cc24bb162c2"
+ },
+ "resumes": [
+  {
+   "at": 1793922058.694199,
+   "workers": 16
+  }
+ ],
+ "started": 1793921159.5630183,
+ "status": "complete",
+ "workers": 16
+}

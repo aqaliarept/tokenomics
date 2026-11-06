@@ -1,0 +1,281 @@
+{
+ "dry_run": false,
+ "mode": "validate",
+ "per_size": {
+  "12": {
+   "comparisons": {
+    "cand-s0": {
+     "a": "cand-s0",
+     "atlas_floor": 33.15270833333334,
+     "b": "k5_rf5",
+     "below": false,
+     "clears": true,
+     "df": 135,
+     "diff": 139.90972222222223,
+     "floor": 36.988184346490975,
+     "own3se": 36.988184346490975,
+     "worlds": 9
+    },
+    "cand-s1": {
+     "a": "cand-s1",
+     "atlas_floor": 33.15270833333334,
+     "b": "k5_rf5",
+     "below": false,
+     "clears": true,
+     "df": 135,
+     "diff": 105.92361111111111,
+     "floor": 42.70317956708714,
+     "own3se": 42.70317956708714,
+     "worlds": 9
+    },
+    "ep": {
+     "a": "ep",
+     "atlas_floor": 33.15270833333334,
+     "b": "k5_rf5",
+     "below": true,
+     "clears": false,
+     "df": 135,
+     "diff": -1429.6666666666667,
+     "floor": 39.44987223023011,
+     "own3se": 39.44987223023011,
+     "worlds": 9
+    },
+    "k4": {
+     "a": "k4",
+     "atlas_floor": 33.15270833333334,
+     "b": "k5_rf5",
+     "below": true,
+     "clears": false,
+     "df": 135,
+     "diff": -521.6875,
+     "floor": 53.52158967503294,
+     "own3se": 53.52158967503294,
+     "worlds": 9
+    }
+   },
+   "flags": {
+    "cand-s0": {
+     "deaths": 0,
+     "holding_units_per_cycle": 345.9284722222222,
+     "loss_classes": {
+      "capacity": 30380.0,
+      "contention": 120860.0,
+      "input_died_upstream": 57202.0,
+      "input_late": 123737.0,
+      "outbid": 28146.0
+     },
+     "rows": 144,
+     "rundown_share": 0.7430555555555556,
+     "starvation_share": 0.7638888888888888
+    },
+    "cand-s1": {
+     "deaths": 0,
+     "holding_units_per_cycle": 355.8646527777778,
+     "loss_classes": {
+      "capacity": 30705.0,
+      "contention": 116872.0,
+      "input_died_upstream": 58521.0,
+      "input_late": 123802.0,
+      "outbid": 28970.0
+     },
+     "rows": 144,
+     "rundown_share": 0.7361111111111112,
+     "starvation_share": 0.7708333333333334
+    },
+    "ep": {
+     "deaths": 0,
+     "holding_units_per_cycle": 126.76506944444444,
+     "loss_classes": {
+      "capacity": 48183.0,
+      "contention": 105622.0,
+      "input_died_upstream": 166935.0,
+      "input_late": 172100.0,
+      "outbid": 61269.0
+     },
+     "rows": 144,
+     "rundown_share": 0.7083333333333334,
+     "starvation_share": 1.0
+    },
+    "k4": {
+     "deaths": 1,
+     "holding_units_per_cycle": 242.4891123188406,
+     "loss_classes": {
+      "capacity": 41855.0,
+      "contention": 113942.0,
+      "input_died_upstream": 75892.0,
+      "input_late": 152803.0,
+      "outbid": 56029.0
+     },
+     "rows": 144,
+     "rundown_share": 0.7152777777777778,
+     "starvation_share": 0.7777777777777778
+    },
+    "k5_rf5": {
+     "deaths": 0,
+     "holding_units_per_cycle": 282.9213888888889,
+     "loss_classes": {
+      "capacity": 30227.0,
+      "contention": 120988.0,
+      "input_died_upstream": 65496.0,
+      "input_late": 126979.0,
+      "outbid": 28866.0
+     },
+     "rows": 144,
+     "rundown_share": 0.6805555555555556,
+     "starvation_share": 0.7777777777777778
+    }
+   },
+   "worlds": [
+    "ws-atlas-v1-12-0050",
+    "ws-atlas-v1-12-0089",
+    "ws-atlas-v1-12-0092",
+    "ws-atlas-v1-12-0109",
+    "ws-atlas-v1-12-0330",
+    "ws-atlas-v1-12-0350",
+    "ws-atlas-v1-12-0384",
+    "ws-atlas-v1-12-0464",
+    "ws-atlas-v1-12-0494"
+   ]
+  },
+  "42": {
+   "comparisons": {
+    "cand-s0": {
+     "a": "cand-s0",
+     "atlas_floor": 113.78187234949539,
+     "b": "k5_rf5",
+     "below": false,
+     "clears": true,
+     "df": 45,
+     "diff": 420.9375,
+     "floor": 117.76902601950708,
+     "own3se": 117.76902601950708,
+     "worlds": 3
+    },
+    "cand-s1": {
+     "a": "cand-s1",
+     "atlas_floor": 113.78187234949539,
+     "b": "k5_rf5",
+     "below": false,
+     "clears": true,
+     "df": 45,
+     "diff": 244.54166666666666,
+     "floor": 121.3826100429272,
+     "own3se": 121.3826100429272,
+     "worlds": 3
+    },
+    "ep": {
+     "a": "ep",
+     "atlas_floor": 113.78187234949539,
+     "b": "k5_rf5",
+     "below": true,
+     "clears": false,
+     "df": 45,
+     "diff": -2409.8333333333335,
+     "floor": 134.16410194236013,
+     "own3se": 134.16410194236013,
+     "worlds": 3
+    },
+    "k4": {
+     "a": "k4",
+     "atlas_floor": 113.78187234949539,
+     "b": "k5_rf5",
+     "below": true,
+     "clears": false,
+     "df": 45,
+     "diff": -849.1458333333334,
+     "floor": 113.78187234949539,
+     "own3se": 91.98586423331578,
+     "worlds": 3
+    }
+   },
+   "flags": {
+    "cand-s0": {
+     "deaths": 0,
+     "holding_units_per_cycle": 1759.3927083333335,
+     "loss_classes": {
+      "capacity": 1256.0,
+      "contention": 9181.0,
+      "input_died_upstream": 106916.0,
+      "input_late": 116915.0,
+      "outbid": 1807.0
+     },
+     "rows": 48,
+     "rundown_share": 0.9583333333333334,
+     "starvation_share": 1.0
+    },
+    "cand-s1": {
+     "deaths": 0,
+     "holding_units_per_cycle": 1725.0358333333334,
+     "loss_classes": {
+      "capacity": 1420.0,
+      "contention": 10591.0,
+      "input_died_upstream": 109963.0,
+      "input_late": 119661.0,
+      "outbid": 1885.0
+     },
+     "rows": 48,
+     "rundown_share": 0.9791666666666666,
+     "starvation_share": 1.0
+    },
+    "ep": {
+     "deaths": 0,
+     "holding_units_per_cycle": 896.6689583333333,
+     "loss_classes": {
+      "capacity": 6426.0,
+      "contention": 14800.0,
+      "input_died_upstream": 164392.0,
+      "input_late": 159043.0,
+      "outbid": 3525.0
+     },
+     "rows": 48,
+     "rundown_share": 0.875,
+     "starvation_share": 1.0
+    },
+    "k4": {
+     "deaths": 0,
+     "holding_units_per_cycle": 1279.8866666666665,
+     "loss_classes": {
+      "capacity": 5966.0,
+      "contention": 11282.0,
+      "input_died_upstream": 110830.0,
+      "input_late": 159487.0,
+      "outbid": 2887.0
+     },
+     "rows": 48,
+     "rundown_share": 0.9791666666666666,
+     "starvation_share": 1.0
+    },
+    "k5_rf5": {
+     "deaths": 0,
+     "holding_units_per_cycle": 1561.03125,
+     "loss_classes": {
+      "capacity": 1199.0,
+      "contention": 10927.0,
+      "input_died_upstream": 116680.0,
+      "input_late": 122775.0,
+      "outbid": 1437.0
+     },
+     "rows": 48,
+     "rundown_share": 0.9583333333333334,
+     "starvation_share": 1.0
+    }
+   },
+   "worlds": [
+    "ws-atlas-v1-42-0066",
+    "ws-atlas-v1-42-0072",
+    "ws-atlas-v1-42-0102"
+   ]
+  }
+ },
+ "prereg": "986a8191f343423397571189b46a65e03c0f214d627be6d921bb3d9b41df60ff",
+ "reading": "plateau",
+ "selected": "cand-s0",
+ "selection_rule": "larger 12-producer candidate - rf3 world mean; seed 0 on a tie",
+ "stock_heavy": {
+  "base_holding": 602.4488541666666,
+  "flag": false,
+  "ratio": 1.1607533592495491,
+  "role": "reported only, never deciding",
+  "selected_holding": 699.29453125
+ }
+}
