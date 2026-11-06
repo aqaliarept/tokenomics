@@ -1,0 +1,128 @@
+{
+ "base": {
+  "orderer": "mww_keyed",
+  "producer": "entity_planner_buyahead_k5_rf5"
+ },
+ "change": "add-m6-joint-mpg-gnn",
+ "check": {
+  "comparison": "the GNN stack vs k5_rf5 + MWWk at the same DrawKeys",
+  "floor": "M5's floors rule (producer_read.pilot_reading: max(the atlas-spread floor at the read's counts, own 3 SE), the n = 1 rule); atlas spreads from the registered atlas v2",
+  "floor_source": {
+   "atlas_content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23"
+  },
+  "monitor_set": "schedule.json `monitor` (16 world-episodes)",
+  "replicates": [
+   0,
+   1
+  ],
+  "reported_only_arms": {
+   "swap_gnn_orderer": {
+    "orderer": "gnn",
+    "producer": "base"
+   },
+   "swap_gnn_producer": {
+    "orderer": "base",
+    "producer": "gnn"
+   }
+  },
+  "rule": "faithful if g_imit >= -F_imit (M5's floors rule on the 16 monitor world-episodes at replicates 0 / 1) and the imitated stack has no more deaths than k5_rf5 + MWWk; else short (stop: the user hears it before any RL)",
+  "swap_reading": "each swap arm - k5_rf5 + MWWk with the same floor rule; deaths; reported, never gating"
+ },
+ "data": {
+  "horizon": 100,
+  "labels": {
+   "orderer": "MWW's normalised makeable weights over the eligible producers per order slot; slots with one eligible producer dropped",
+   "producer": "k5_rf5's raw action: 3 toggles (raw > 0) and per input row the replenish fraction raw / BOUND"
+  },
+  "order_ttl": 2,
+  "samples": {
+   "reuse": "EXP-0099's collected samples (v1 collect), only at these SHA-256s; else a v2 collect",
+   "sha256": {
+    "samples_monitor.pkl": "0cbfa88646d25a99a4af895f314311cd4349feb4a62f734429f0ef2a68132abb",
+    "samples_train.pkl": "5c404d4e3fba082fde1762b221bb965360440bc421d98b38c7c817bb867dc10b"
+   }
+  },
+  "training": {
+   "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+   "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
+   "world_episodes": "the 128 training world-episodes minus the 16 monitor ones (112), replicate 0"
+  }
+ },
+ "decisions": "notes/user-decisions.md (2026-11-06): fully learned, from imitation; the user hears a `short` reading before any RL",
+ "fit": {
+  "batch": 64,
+  "clip_grad_norm": 1.0,
+  "epochs": 20,
+  "hogwild": "v1's fit (shared weights, a shard and an Adam per process) plus per-step clipping; not bit-reproducible",
+  "lr": 0.003,
+  "mode": "auto",
+  "mode_rule": "auto: before the fit, one epoch of each mode on the full training samples (hogwild first, then sync; fresh models, the same seed); sync if its epoch costs <= sync_max_cost x hogwild's, else hogwild (with clipping); the mode and both times recorded in spec.json",
+  "norm_decisions": 50000,
+  "seed": 0,
+  "stopping_rule": "fixed 20 epochs (no early stopping); the checkpoint SHA-256 is the pinned artifact",
+  "sync": "synchronous data parallel: per step each worker's shard-mean gradient, averaged in worker order, clipped to the global norm, one Adam step; deterministic",
+  "sync_max_cost": 1.5,
+  "workers": 16
+ },
+ "format": "m6-prereg-v2",
+ "model": {
+  "hidden": 32,
+  "losses": "BCE (toggles) + Huber delta 0.1 (replenish fractions, masked) + KL (orderer slots)",
+  "normaliser": {
+   "centre_scale": "median; IQR, IQR = 0 -> std, std = 0 -> 1",
+   "clip": 5.0,
+   "fitted_on": "every k-th training decision per actor, k = ceil(n / norm_decisions); stored in the checkpoint",
+   "format": "m6-median-iqr-slog1p-v1",
+   "orderer_log1p": {
+    "global": [
+     0,
+     1,
+     2,
+     3,
+     6,
+     8
+    ],
+    "producer": [
+     0,
+     1,
+     2,
+     5,
+     6,
+     7,
+     8,
+     9,
+     17,
+     18,
+     19,
+     24,
+     25,
+     26,
+     28,
+     29,
+     30
+    ]
+   },
+   "producer_log1p": {},
+   "transform": "signed log1p on the registered count columns"
+  },
+  "rounds": 2
+ },
+ "reported": {
+  "also": "units of both stacks and deaths",
+  "fidelity_metrics": [
+   "exact_command",
+   "gate_accuracy",
+   "replenish_mae_units",
+   "orderer_kl",
+   "orderer_top1",
+   "producer_heads"
+  ],
+  "on": "the training and the monitor episodes' labels"
+ },
+ "stage": "I (imitation), D4",
+ "status": "frozen before EXP-0100's data; real collect / fit / check refuse any other file",
+ "supersedes": {
+  "m6_prereg_v1.json": "38db5c0c96cfd2a7fa14eae1e3bf2832092738d1d13ce2fdcade25ac245c26f6",
+  "why": "EXP-0099 `short`; the orderer fit diverged on unscaled features (DIAGNOSTICS 31)"
+ }
+}

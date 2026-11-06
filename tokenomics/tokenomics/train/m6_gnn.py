@@ -122,6 +122,76 @@ def _arr(rows: list[list[float]], width: int | None = None) -> np.ndarray:
     return np.nan_to_num(a, nan=0.0, posinf=20.0, neginf=-20.0)
 
 
+# --- normaliser (DIAGNOSTICS 31; M4's median / IQR style, per_order_scorer.FeatureNormaliser) ---
+
+NORM_FORMAT = "m6-median-iqr-slog1p-v1"
+NORM_CLIP = 5.0  # normalised values clipped to +-NORM_CLIP (as M4)
+# Count / unit / token columns, signed-log1p'd before the median / IQR (raw orderer counts reached
+# 5,966 in EXP-0099). The producer's quantities are log1p'd at feature build (psc._qty), and the
+# orderer's order-slot and outcome columns too (`_q`), so those blocks transform nothing.
+_ORD_PRODUCT_LOG1P = ("open_demand_quantity", "open_demand_tokens", "recent_average_cycle_demand",
+                      "recent_rejected_quantity", "recipe_input_units", "eligible_producer_count")
+_ORD_ROW_LOG1P = ("total_current_capacity", "total_max_capacity", "capacity_headroom",
+                  "requested_load", "reserved_load", "total_load", "cut_off_price",
+                  "outstanding_inbound_units", "accept_qty_now", "complete_qty_now",
+                  "makeable_qty_now", "recent_routed_qty", "recent_completed_qty",
+                  "recent_rejected_qty", "recent_throughput", "recent_completion_latency",
+                  "recent_failure_latency")
+ORDERER_LOG1P: dict[str, tuple[int, ...]] = {
+    "global": tuple(osc._ORDERER_PRODUCT_FEATURES.index(n) for n in _ORD_PRODUCT_LOG1P),
+    "producer": tuple(osc._ORDERER_PRODUCER_ROW_FEATURES.index(n) for n in _ORD_ROW_LOG1P)}
+PRODUCER_LOG1P: dict[str, tuple[int, ...]] = {}
+
+
+def slog1p(x: np.ndarray) -> np.ndarray:
+    return np.sign(x) * np.log1p(np.abs(x))
+
+
+class FeatureNorm(nn.Module):
+    """Per block and column: z = clip((T(x) - median) / scale, +-NORM_CLIP), T = signed log1p on
+    the registered count columns. Scale = IQR; IQR = 0 -> std; std = 0 -> 1 (M4's zero-spread
+    rule). Buffers, so the fitted values live in the checkpoint; identity until `fit`."""
+
+    def __init__(self, dims: dict[str, int], log1p: dict[str, tuple[int, ...]]) -> None:
+        super().__init__()
+        self.blocks = tuple(dims)
+        self.clip: float | None = NORM_CLIP  # None: a pre-normaliser checkpoint (EXP-0099)
+        self.log1p = {k: tuple(log1p.get(k, ())) for k in dims}
+        for k, d in dims.items():
+            self.register_buffer(f"c_{k}", torch.zeros(d))
+            self.register_buffer(f"s_{k}", torch.ones(d))
+
+    def transform(self, block: str, x: np.ndarray) -> np.ndarray:
+        cols = list(self.log1p[block])
+        if cols and x.shape[0]:
+            x = x.copy()
+            x[:, cols] = slog1p(x[:, cols])
+        return x
+
+    def forward(self, block: str, x: np.ndarray) -> torch.Tensor:
+        z = (torch.from_numpy(self.transform(block, x)) - getattr(self, f"c_{block}")) / getattr(
+            self, f"s_{block}")
+        return z if self.clip is None else z.clamp(-self.clip, self.clip)
+
+    def fit(self, feats: Sequence[dict[str, Any]]) -> dict[str, Any]:
+        """Median / scale per column over the transformed rows of `feats` (the training
+        samples, or a fixed stride of them); returns the record for the fit report."""
+        rec = {}
+        for k in self.blocks:
+            rows = [f[k] for f in feats if f[k].shape[0]]
+            if not rows:
+                continue
+            x = self.transform(k, np.concatenate(rows, 0)).astype(np.float64)
+            q25, q50, q75 = np.percentile(x, [25.0, 50.0, 75.0], axis=0)
+            iqr = q75 - q25
+            sd = np.where(np.ptp(x, axis=0) == 0, 0.0, x.std(axis=0))
+            scale = np.where(iqr > 0, iqr, np.where(sd > 0, sd, 1.0))
+            getattr(self, f"c_{k}").copy_(torch.from_numpy(q50.astype(np.float32)))
+            getattr(self, f"s_{k}").copy_(torch.from_numpy(scale.astype(np.float32)))
+            rec[k] = {"rows": int(x.shape[0]), "median": q50.tolist(), "scale": scale.tolist()}
+        return rec
+
+
 # --- models ---
 
 
@@ -151,6 +221,8 @@ class ProducerGNN(nn.Module):
         self.hidden, self.rounds = hidden, rounds
         self.enc = nn.ModuleDict({"global": _mlp(13, hidden), "capacity": _mlp(16, hidden),
                                   "product": _mlp(18, hidden), "input": _mlp(6, hidden)})
+        self.norm = FeatureNorm({"global": 13, "capacity": 16, "product": 18, "input": 6},
+                                PRODUCER_LOG1P)
         self.upd = nn.ModuleList([nn.ModuleDict({
             "product": _mlp(3 * hidden, hidden), "capacity": _mlp(2 * hidden, hidden),
             "input": _mlp(2 * hidden, hidden)}) for _ in range(rounds)])
@@ -159,7 +231,7 @@ class ProducerGNN(nn.Module):
 
     def forward(self, f: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor]:
         """(3 toggle logits, a replenish fraction in (0, 1) per input row)."""
-        t = {k: torch.from_numpy(f[k]) for k in ("global", "capacity", "product", "input")}
+        t = {k: self.norm(k, f[k]) for k in ("global", "capacity", "product", "input")}
         h = {k: (self.enc[k](v) if v.shape[0] else torch.zeros((0, self.hidden)))
              for k, v in t.items()}
         for layer in self.upd:
@@ -196,6 +268,9 @@ class OrdererGNN(nn.Module):
                                   "producer": _mlp(osc._PRODUCER_ROW_DIM + len(OUTCOME_KINDS),
                                                    hidden),
                                   "order": _mlp(7, hidden)})
+        self.norm = FeatureNorm({"global": osc._PRODUCT_DIM,
+                                 "producer": osc._PRODUCER_ROW_DIM + len(OUTCOME_KINDS),
+                                 "order": 7}, ORDERER_LOG1P)
         self.upd = nn.ModuleList([nn.ModuleDict({"producer": _mlp(3 * hidden, hidden),
                                                  "order": _mlp(3 * hidden, hidden)})
                                   for _ in range(rounds)])
@@ -204,10 +279,10 @@ class OrdererGNN(nn.Module):
 
     def forward(self, f: dict[str, Any]) -> list[torch.Tensor]:
         """Per slot, logits over its eligible producers (in `f["elig"][k]` order)."""
-        g = self.enc["global"](torch.from_numpy(f["global"]))[0]
-        hp = self.enc["producer"](torch.from_numpy(f["producer"])) if len(f["pids"]) else \
+        g = self.enc["global"](self.norm("global", f["global"]))[0]
+        hp = self.enc["producer"](self.norm("producer", f["producer"])) if len(f["pids"]) else \
             torch.zeros((0, self.hidden))
-        ho = self.enc["order"](torch.from_numpy(f["order"])) if len(f["elig"]) else \
+        ho = self.enc["order"](self.norm("order", f["order"])) if len(f["elig"]) else \
             torch.zeros((0, self.hidden))
         edges = [(k, j) for k, el in enumerate(f["elig"]) for j in el]  # (order, producer)
         for layer in self.upd:

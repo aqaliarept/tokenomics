@@ -5,6 +5,8 @@
 - **Topology-agnostic:** permuting producer rows permutes the orderer's logits, and one model runs at 12 and
   42 producers and on an unseen topology with zero contract failures (legal commands).
 - **Stage I dry chain:** collect → fit → check runs and reports the agreement metrics.
+- **Fit (v2, DIAGNOSTICS 31):** the orderer loss stays finite and falls on raw counts; the sync fit is
+  deterministic.
 """
 
 from __future__ import annotations
@@ -159,8 +161,58 @@ def test_stage_one_dry_chain(tmp_path: Path) -> None:
         assert key in doc["train_agreement"] and key in doc["monitor_agreement"]
     assert im.run_check(str(TRAINING), str(ATLAS_V2), str(f / "models.pt"), str(k), 1, 6, 1,
                         dry_run=True) == 0
+    assert set(doc["monitor_agreement"]["producer_heads"]["toggles"]) == set(im.TOGGLES)
+    spec = json.loads((f / "spec.json").read_text())
+    assert spec["fit_mode"] in ("sync", "hogwild")
     chk = json.loads((k / "imitation_check.json").read_text())
     assert chk["reading"] in ("faithful", "short") and chk["rule"] == im.IMIT_RULE
+    assert set(chk["swap_arms_reported_only"]) == set(im.SWAP_ARMS)
+    assert set(chk["units_mean"]) == set(im.ARMS)
+
+
+def _raw_orderer_samples(n: int, seed: int = 0) -> list:
+    """Orderer samples with EXP-0099-scale raw counts (thousands) and a learnable soft label:
+    the MWW-like weights follow the makeable-units column."""
+    rng = np.random.default_rng(seed)
+    width = g.osc._PRODUCER_ROW_DIM + len(g.OUTCOME_KINDS)
+    mk = g.osc._ORDERER_PRODUCER_ROW_FEATURES.index("makeable_qty_now")
+    out = []
+    for _ in range(n):
+        k = int(rng.integers(2, 6))
+        rows = rng.uniform(0, 1, size=(k, width)).astype(np.float32)
+        rows[:, list(g.ORDERER_LOG1P["producer"])] *= rng.uniform(100, 6000)
+        glob = rng.uniform(0, 6000, size=(1, g.osc._PRODUCT_DIM)).astype(np.float32)
+        y = rows[:, mk] / rows[:, mk].sum()
+        f = {"global": glob, "producer": rows, "order": rng.uniform(0, 3, (1, 7)).astype(
+            np.float32), "elig": [list(range(k))], "pids": [f"p{i}" for i in range(k)]}
+        out.append((f, [y.astype(np.float32)]))
+    return out
+
+
+def test_orderer_fit_loss_stays_finite_and_falls_on_raw_counts() -> None:
+    """DIAGNOSTICS 31: on raw counts up to ~6,000 the v2 fit (normaliser + clipping) keeps the
+    orderer's loss finite and falling, and its weights bounded."""
+    samples = {"producer": [], "orderer": _raw_orderer_samples(256)}
+    _pm, om, curve, info = im.fit(samples, 12, batch=32, lr=3e-3, log=lambda s: None)
+    losses = [c["orderer_loss"] for c in curve]
+    assert all(np.isfinite(losses)) and losses[-1] < 0.9 * losses[0]
+    assert max(float(p.detach().abs().max()) for p in om.parameters()) < 50
+    assert info["normaliser"]["orderer"]["producer"]["rows"] > 0
+    f = samples["orderer"][0][0]  # the fitted normaliser bounds raw counts in the thousands
+    for block in ("global", "producer", "order"):
+        z = om.norm(block, f[block])
+        assert float(z.abs().max()) <= g.NORM_CLIP and torch.isfinite(z).all()
+    assert float(np.abs(f["producer"]).max()) > 100
+
+
+def test_sync_fit_is_deterministic() -> None:
+    """Two synchronous data-parallel fits (2 workers) give the same weights bit for bit."""
+    samples = {"producer": [], "orderer": _raw_orderer_samples(96, seed=1)}
+    a = im.fit(samples, 2, batch=16, workers=2, mode="sync", log=lambda s: None)
+    b = im.fit(samples, 2, batch=16, workers=2, mode="sync", log=lambda s: None)
+    assert all(np.isfinite([c["orderer_loss"] for c in a[2]]))
+    for x, y in zip(a[1].state_dict().values(), b[1].state_dict().values()):
+        assert torch.equal(x, y)
 
 
 def test_real_stage_one_runs_need_the_pinned_preregistration(tmp_path: Path) -> None:
