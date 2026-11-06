@@ -299,15 +299,69 @@ def freeze_prereg_v6(path: Path = PREREG_V6_PATH) -> tuple[str, str]:
     return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
 
 
-def prereg_problems(path: Path = PREREG_V6_PATH) -> list[str]:
-    """Real fit / gate / check runs are Stage I v4's: the pinned v6 (v5 governed EXP-0105)."""
+# --- EXP-0108 (supervisor decision 2026-11-06): attribution after EXP-0107; pre-registration v7 ---
+
+PREREG_V7_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v7.json"
+PREREG_V7_SHA256: str | None = "970fa4aa24f3398b50d1d82a5e40a29be157d5ff8074de69d4338a0f25758275"  # frozen before EXP-0108's data
+EXP0107_MODELS_SHA = "83a0e8571d5e2c6a0cab2d1792ee8082f0caeda9b3371a3b8e42e951af8da64d"
+# label: (monitor kind, 42 arm, model source: "cand" = v4 producer + EXP-0100 orderer, "v4", "prev")
+ATTRIBUTION_ARMS = {
+    "C": ("monitor", "gnn", "cand"),
+    "base": ("monitor_base", "k5_rf5", None),
+    "v4p_mwwk": ("swap_gnn_producer", "gnn_p", "v4"),
+    "k5_v4o": ("swap_gnn_orderer", "gnn_o", "v4"),
+    "k5_o100": ("swap_gnn_orderer", "gnn_o", "prev")}
+REPORTED_ARMS = ("v4p_mwwk", "k5_v4o", "k5_o100")
+V7_RULE = ("the candidate C = the v4 producer (EXP-0107) + the EXP-0100 orderer, on EXP-0107's check sets, "
+           "EXP-0105's three clauses unchanged (V3_RULE; (c) against the EXP-0100 stack): faithful or "
+           "short naming the clauses. Reported only, never deciding: v4 producer + MWWk, k5_rf5 + v4 "
+           "orderer, k5_rf5 + EXP-0100 orderer, each vs k5_rf5 + MWWk with the same floors (12: M5's "
+           "floors on the monitor set; 42: L5's mean_comp floor), deaths and past-ceiling counts")
+
+
+def registered_prereg_v7() -> dict:
+    return {
+        "format": "m6-prereg-v7", "change": "add-m6-joint-mpg-gnn",
+        "stage": "EXP-0108: attribution of EXP-0107's shortfall; the composite candidate",
+        "status": "frozen before EXP-0108's data; the real run refuses any other file",
+        "keeps": {"m6_prereg_v6.json": PREREG_V6_SHA256,
+                  "note": "v1..v6 stay frozen; the critic-free Stage 0 becomes v8"},
+        "decision": "supervisor 2026-11-06 after EXP-0107 (offline gate passed; the v4 orderer "
+                    "diverged at epochs 14-15, a DIAGNOSTICS 31 recurrence)",
+        "candidate": {"producer": {"from": "EXP-0107 fit/models.pt", "sha256": EXP0107_MODELS_SHA},
+                      "orderer": {"from": "EXP-0100 fit/models.pt", "sha256": EXP0100_MODELS_SHA},
+                      "rationale": "the v4 orderer is a failed fit; EXP-0100's orderer is a faithful "
+                                   "imitation of the same teacher (MWW), never diverged"},
+        "arms": {k: {"monitor_kind": v[0], "arm_42": v[1], "models": v[2]}
+                 for k, v in ATTRIBUTION_ARMS.items()},
+        "reported_arms": list(REPORTED_ARMS),
+        "rule": V7_RULE,
+        "sets": {"monitor": "the 16 monitor world-episodes x replicates 0 / 1, horizon 100",
+                 "check_42_worlds": list(CHECK_42_WORLDS),
+                 "check_42": {**CHECK_42, "replicates": list(CHECK_42["replicates"])}},
+        "phases": "deciding arms (C, base, the EXP-0100 stack) first and written; then the reported "
+                  "arms"}
+
+
+def freeze_prereg_v7(path: Path = PREREG_V7_PATH) -> tuple[str, str]:
     from ..eval.provenance import sha256_file
 
-    if PREREG_V6_SHA256 is None:
-        return ["no pinned Stage I v4 pre-registration (m6_prereg_v6.json; `--mode freeze-v6`)"]
-    if not path.exists() or sha256_file(str(path)) != PREREG_V6_SHA256:
-        return [f"{path.name} does not match the pinned SHA-256 {PREREG_V6_SHA256[:12]}"]
-    if json.loads(path.read_text()) != registered_prereg_v6():
+    doc = registered_prereg_v7()
+    if not path.exists():
+        path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+        return "FROZEN", sha256_file(str(path))
+    return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
+
+
+def prereg_problems(path: Path = PREREG_V7_PATH) -> list[str]:
+    """Real runs are EXP-0108's: the pinned v7 (v6 governed EXP-0107, v5 EXP-0105)."""
+    from ..eval.provenance import sha256_file
+
+    if PREREG_V7_SHA256 is None:
+        return ["no pinned EXP-0108 pre-registration (m6_prereg_v7.json; `--mode freeze-v7`)"]
+    if not path.exists() or sha256_file(str(path)) != PREREG_V7_SHA256:
+        return [f"{path.name} does not match the pinned SHA-256 {PREREG_V7_SHA256[:12]}"]
+    if json.loads(path.read_text()) != registered_prereg_v7():
         return ["the pre-registration differs from the code"]
     return []
 
@@ -1126,7 +1180,8 @@ def run_gate(collect_dir: str, models: str, prev_models: str, out_dir: str,
 
 
 def check_42_jobs(atlas: Mapping, models: str, max_worlds: int | None = None,
-                  episodes: int | None = None, horizon: int | None = None) -> list[dict]:
+                  episodes: int | None = None, horizon: int | None = None,
+                  arms: Sequence[tuple[str, str | None, str]] | None = None) -> list[dict]:
     """Clause (b): the v3 GNN stack and k5_rf5 + MWWk on CHECK_42_WORLDS (EXP-0104's keys)."""
     from ..eval.teacher_audit import world_view
     from .order_es_worlds import X_RUNDOWN
@@ -1138,12 +1193,13 @@ def check_42_jobs(atlas: Mapping, models: str, max_worlds: int | None = None,
         e = entry_for(views[w], episodes or CHECK_42["episodes"], CHECK_42["stage"])
         for ep in e.episode_seeds:
             for r in CHECK_42["replicates"]:
-                for arm in ("gnn", "k5_rf5"):
+                for arm, mdl, label in arms or (("gnn", models, "gnn"), ("k5_rf5", None, "k5_rf5")):
                     jobs.append({"world": e.id, "size": e.size, "regime": e.regime,
                                  "world_seed": e.world_seed, "generator": e.generator,
                                  "episode": int(ep), "replicate": r,
                                  "horizon": horizon or CHECK_42["horizon"], "arm": arm,
-                                 "set": "check42", "models": models, "x": float(X_RUNDOWN)})
+                                 "label": label, "set": "check42", "models": mdl,
+                                 "x": float(X_RUNDOWN)})
     return sorted(jobs, key=lambda j: j["arm"] == "k5_rf5")
 
 
@@ -1186,6 +1242,111 @@ def check_v3_reading(mon_rows: Sequence[dict], prev_rows: Sequence[dict], rows42
                      "deaths": {arm: sum(bool(r["dead"]) for r in rows42 if r["arm"] == arm)
                                 for arm in ("gnn", "k5_rf5")}, "per_world": per_world},
             "c_vs_exp0100": {"g": c.get("g_tr"), "F": c.get("F_tr")}}
+
+
+def compose_candidate(v4: str, prev: str, out: Path) -> str:
+    """C = the v4 producer + the EXP-0100 orderer, as one deployable checkpoint."""
+    pm, _om = load_models(v4)
+    _pm, om = load_models(prev)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    save_models(pm, om, out)
+    return str(out)
+
+
+def run_attribution(training_dir: str, atlas: str, v4: str, prev: str, out_dir: str, workers: int,
+                    horizon: int, max_world_episodes: int | None, dry_run: bool = False,
+                    episodes_42: int | None = None, horizon_42: int | None = None) -> int:
+    """EXP-0108 (V7_RULE): the deciding candidate C and the EXP-0100 stack against k5_rf5 + MWWk,
+    written first; then the reported attribution arms."""
+    from ..eval.provenance import sha256_file
+    from ..eval.teacher_audit import load_atlas, world_view
+    from .m6_drain import drain_job
+    from .order_es_validate import mean_comp, monitor_cells, world_cells, world_mean
+    from .producer_read import _units, pilot_reading
+
+    ts, _train, mon = _training(training_dir)
+    at = load_atlas(atlas)
+    if not dry_run:
+        _refuse(real_problems(horizon=horizon, max_world_episodes=max_world_episodes, ts=ts,
+                              atlas=at)
+                + ([] if sha256_file(v4) == EXP0107_MODELS_SHA else ["--models is not EXP-0107's"])
+                + ([] if sha256_file(prev) == EXP0100_MODELS_SHA else
+                   ["--prev-models is not EXP-0100's"])
+                + ([] if episodes_42 is None and horizon_42 is None else
+                   ["--episodes-42 / --horizon-42 is set"]))
+    if max_world_episodes:
+        mon = mon[:max_world_episodes]
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    cand = compose_candidate(v4, prev, out / "candidate_models.pt")
+    src = {"cand": cand, "v4": v4, "prev": prev, None: None}
+    mcells = monitor_cells(ts.training, at["spreads"])
+    nw = 1 if max_world_episodes else None
+
+    def play(labels: Sequence[str]) -> tuple[dict, dict]:
+        mj = {lb: _jobs(ts, mon, ATTRIBUTION_ARMS[lb][0], MONITOR_REPLICATES, horizon,
+                        src[ATTRIBUTION_ARMS[lb][2]]) for lb in labels}
+        flat = [j for lb in labels for j in mj[lb]]
+        rows = _pool(play_job, flat, workers)
+        mr, i = {}, 0
+        for lb in labels:
+            mr[lb] = rows[i:i + len(mj[lb])]
+            i += len(mj[lb])
+        arms42 = [(ATTRIBUTION_ARMS[lb][1], src[ATTRIBUTION_ARMS[lb][2]], lb) for lb in labels]
+        r42 = _pool(drain_job, check_42_jobs(at, cand, nw, episodes_42, horizon_42, arms42),
+                    workers)
+        by = {lb: [] for lb in labels}
+        for r, j in zip(r42, check_42_jobs(at, cand, nw, episodes_42, horizon_42, arms42)):
+            by[j["label"]].append({**r, "arm": "gnn" if j["label"] != "base" else "k5_rf5"})
+        return mr, by
+
+    views = [dict(world_view(e), rho=float(e["record"]["coordinates"]["rho"]))
+             for e in at["worlds"] if world_view(e)["world"] in CHECK_42_WORLDS]
+    cells42 = world_cells(views, at["spreads"])
+    # phase 1: deciding (C, base) on both sets, the EXP-0100 stack on the monitor (clause c)
+    mr, by = play(("C", "base"))
+    prev_rows = _pool(play_job, _jobs(ts, mon, "monitor", MONITOR_REPLICATES, horizon, prev),
+                      workers)
+    dec = check_v3_reading(mr["C"] + mr["base"], prev_rows, by["C"] + by["base"], mcells, cells42)
+    doc = {**dec, "rule": V7_RULE, "dry_run": dry_run, "prereg": PREREG_V7_SHA256,
+           "candidate_models_sha256": sha256_file(cand), "v4_sha256": sha256_file(v4),
+           "prev_sha256": sha256_file(prev), "source_commit": SOURCE_COMMIT,
+           "units_mean": {"C": fmean(float(x["units"]) for x in mr["C"]),
+                          "base": fmean(float(x["units"]) for x in mr["base"]),
+                          "exp0100": fmean(float(x["units"]) for x in prev_rows)}}
+    (out / "reading.json").write_text(json.dumps(doc, indent=1, default=str) + "\n")
+    print(f"[m6_imitation] EXP-0108 candidate: {doc['reading']} {doc['failed']} a {doc['a_12']} b "
+          f"{dict((k, doc['b_42'][k]) for k in ('over_ceiling', 'diff', 'floor'))} c "
+          f"{doc['c_vs_exp0100']}", flush=True)
+    # phase 2: the reported attribution arms, each vs the base rows of phase 1
+    mr2, by2 = play(REPORTED_ARMS)
+    att = {}
+    for lb in REPORTED_ARMS:
+        a = pilot_reading([{**x, "kind": "monitor"} for x in mr2[lb]] + mr["base"], mcells, 0)
+        rows42 = [{**r, "arm": "gnn"} for r in by2[lb]] + by["base"]
+        u = _units([{**r, "units": str(r["units"])} for r in rows42], lambda d: d["world"])
+        ws = sorted(w for w in u if "gnn" in u[w] and "k5_rf5" in u[w])
+        comp = mean_comp(u, cells42, "gnn", "k5_rf5", {"gnn": 2, "k5_rf5": 2},
+                         {w: world_mean(u[w]["k5_rf5"]) for w in ws}, ws) if ws else None
+        att[lb] = {"12": {"g": a.get("g_tr"), "F": a.get("F_tr"),
+                          "units": fmean(float(x["units"]) for x in mr2[lb]),
+                          "deaths": sum(x["dead"] == "true" for x in mr2[lb])},
+                   "42": {"diff": None if comp is None else comp.diff,
+                          "floor": None if comp is None else comp.floor,
+                          "over_ceiling": sum(int(r["over_ceiling"]) for r in by2[lb]),
+                          "deaths": sum(bool(r["dead"]) for r in by2[lb])}}
+    (out / "attribution.json").write_text(json.dumps(
+        {"reported_only": True, "arms": att, "base_units_12": doc["units_mean"]["base"]},
+        indent=1, default=str) + "\n")
+    with (out / "check42.jsonl").open("w") as fh:
+        for lb, rs in {**by, **by2}.items():
+            for r in rs:
+                fh.write(json.dumps({"label": lb, **{k: v for k, v in r.items()
+                                                     if k not in ("cap_trace", "units_trace")}})
+                         + "\n")
+    print(f"[m6_imitation] EXP-0108 attribution (reported): {json.dumps(att, default=str)}",
+          flush=True)
+    return 0
 
 
 def run_check(training_dir: str, atlas: str, models: str, out_dir: str, workers: int,
@@ -1676,8 +1837,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", required=True,
                    choices=("timing", "collect", "fit", "check", "side-effects", "validate",
-                            "heldout", "gate", "freeze", "freeze-v3", "freeze-v4", "freeze-v5",
-                            "freeze-v6"))
+                            "heldout", "gate", "attribution", "freeze", "freeze-v3", "freeze-v4",
+                            "freeze-v5", "freeze-v6", "freeze-v7"))
     p.add_argument("--prev-models", help="check: the EXP-0100 models (clause c)")
     p.add_argument("--episodes-42", type=int, help="dry run: 42 check episodes per world")
     p.add_argument("--horizon-42", type=int, help="dry run: the 42 collect / check horizon")
@@ -1702,7 +1863,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     global SOURCE_COMMIT
     SOURCE_COMMIT = a.source_commit
     if not a.dry_run and a.mode in ("collect", "fit", "check", "side-effects", "validate",
-                                    "heldout", "gate") and \
+                                    "heldout", "gate", "attribution") and \
             len(SOURCE_COMMIT) != 40:
         p.error("a real run needs a 40-hex --source-commit")
     if a.mode == "freeze":
@@ -1715,6 +1876,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if a.mode == "collect":
         return run_collect(a.training_dir, a.out_dir, a.workers, a.horizon, a.max_world_episodes,
                            a.dry_run, a.atlas, a.horizon_42)
+    if a.mode == "freeze-v7":
+        status, sha = freeze_prereg_v7()
+        print(f"[m6_imitation] pre-registration v7 {status} {sha}")
+        return 0 if status in ("FROZEN", "MATCH") else 2
+    if a.mode == "attribution":
+        return run_attribution(a.training_dir, a.atlas, a.models, a.prev_models, a.out_dir,
+                               a.workers, a.horizon, a.max_world_episodes, a.dry_run,
+                               a.episodes_42, a.horizon_42)
     if a.mode == "freeze-v6":
         status, sha = freeze_prereg_v6()
         print(f"[m6_imitation] pre-registration v6 {status} {sha}")

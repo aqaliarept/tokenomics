@@ -158,7 +158,7 @@ def drain_job(job: dict) -> dict:
     tr = DrainTracer(job["x"])
     tr.attach(env)
     who_p, who_o = im.ARMS[{"gnn": "monitor", "gnn_p": "swap_gnn_producer",
-                            "k5_rf5": "monitor_base"}[job["arm"]]]
+                            "gnn_o": "swap_gnn_orderer", "k5_rf5": "monitor_base"}[job["arm"]]]
     pm, om = im.load_models(job["models"]) if "gnn" in (who_p, who_o) else (None, None)
     p = g.gnn_producing_policy(pm) if who_p == "gnn" else producing_policy(im.BASE_PRODUCER)
     o = g.gnn_ordering_policy(om) if who_o == "gnn" else ordering_policy(im.BASE_ORDERER)

@@ -238,7 +238,8 @@ def test_shard_files_give_the_same_fit_as_in_memory(tmp_path: Path) -> None:
 def test_real_stage_one_runs_need_the_pinned_preregistration(tmp_path: Path) -> None:
     """A real collect / fit / check refuses without the pin (v5, Stage I v3), a changed file, other
     settings; the frozen v2 still matches its code."""
-    assert im.prereg_problems() == [] and im.freeze_prereg_v6()[0] == "MATCH"
+    assert im.prereg_problems() == [] and im.freeze_prereg_v7()[0] == "MATCH"
+    assert im.freeze_prereg_v6()[0] == "MATCH"
     assert im.freeze_prereg_v5()[0] == "MATCH"
     assert im.freeze_prereg()[0] == "MATCH"
     with pytest.raises(ValueError, match="horizon 6"):
@@ -247,12 +248,12 @@ def test_real_stage_one_runs_need_the_pinned_preregistration(tmp_path: Path) -> 
                                                            epochs=3))
     import tokenomics.train.m6_imitation as mod
 
-    old = mod.PREREG_V6_SHA256
+    old = mod.PREREG_V7_SHA256
     try:
-        mod.PREREG_V6_SHA256 = "0" * 64
+        mod.PREREG_V7_SHA256 = "0" * 64
         assert "does not match the pinned" in mod.prereg_problems()[0]
     finally:
-        mod.PREREG_V6_SHA256 = old
+        mod.PREREG_V7_SHA256 = old
 
 
 def test_ceiling_margin_is_signed_and_scale_free() -> None:
@@ -333,3 +334,25 @@ def test_v4_dry_chain_from_a_v3_collect(tmp_path: Path, monkeypatch: pytest.Monk
     assert im.run_gate(str(c), str(f / "models.pt"), str(PREV), str(k), dry_run=True) in (0, 3)
     gate = json.loads((k / "gate.json").read_text())
     assert gate["reading"] in ("gate_pass", "gate_fail") and gate["rule"] == im.V4_RULE
+
+
+V4M = REPO / "experiments/EXP-0107-m6-imitation-v4/artifacts/fit/models.pt"
+
+
+@needs
+def test_attribution_dry_run(tmp_path: Path) -> None:
+    """EXP-0108 (prereg v7): the composite candidate (v4 producer + EXP-0100 orderer) is one
+    deployable checkpoint; the deciding reading is written, then the reported attribution arms."""
+    if not (_lfs(V4M) and _lfs(PREV)):
+        pytest.skip("models absent")
+    assert im.run_attribution(str(TRAINING), str(ATLAS_V2), str(V4M), str(PREV), str(tmp_path), 1, 6,
+                              1, dry_run=True, episodes_42=1, horizon_42=6) == 0
+    pm, om = im.load_models(tmp_path / "candidate_models.pt")
+    _p, o_prev = im.load_models(PREV)
+    assert pm.features == g.FEATURES_V4
+    assert all(torch.equal(a, b) for a, b in zip(om.state_dict().values(),
+                                                 o_prev.state_dict().values()))
+    r = json.loads((tmp_path / "reading.json").read_text())
+    assert r["rule"] == im.V7_RULE and r["reading"] in ("faithful", "short")
+    att = json.loads((tmp_path / "attribution.json").read_text())
+    assert set(att["arms"]) == set(im.REPORTED_ARMS)

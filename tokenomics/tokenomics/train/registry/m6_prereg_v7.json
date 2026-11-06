@@ -1,0 +1,78 @@
+{
+ "arms": {
+  "C": {
+   "arm_42": "gnn",
+   "models": "cand",
+   "monitor_kind": "monitor"
+  },
+  "base": {
+   "arm_42": "k5_rf5",
+   "models": null,
+   "monitor_kind": "monitor_base"
+  },
+  "k5_o100": {
+   "arm_42": "gnn_o",
+   "models": "prev",
+   "monitor_kind": "swap_gnn_orderer"
+  },
+  "k5_v4o": {
+   "arm_42": "gnn_o",
+   "models": "v4",
+   "monitor_kind": "swap_gnn_orderer"
+  },
+  "v4p_mwwk": {
+   "arm_42": "gnn_p",
+   "models": "v4",
+   "monitor_kind": "swap_gnn_producer"
+  }
+ },
+ "candidate": {
+  "orderer": {
+   "from": "EXP-0100 fit/models.pt",
+   "sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+  },
+  "producer": {
+   "from": "EXP-0107 fit/models.pt",
+   "sha256": "83a0e8571d5e2c6a0cab2d1792ee8082f0caeda9b3371a3b8e42e951af8da64d"
+  },
+  "rationale": "the v4 orderer is a failed fit; EXP-0100's orderer is a faithful imitation of the same teacher (MWW), never diverged"
+ },
+ "change": "add-m6-joint-mpg-gnn",
+ "decision": "supervisor 2026-11-06 after EXP-0107 (offline gate passed; the v4 orderer diverged at epochs 14-15, a DIAGNOSTICS 31 recurrence)",
+ "format": "m6-prereg-v7",
+ "keeps": {
+  "m6_prereg_v6.json": "1bd23f29e657215365e84048e7e3e148c8c3c58dc18766a586aeb17841355db2",
+  "note": "v1..v6 stay frozen; the critic-free Stage 0 becomes v8"
+ },
+ "phases": "deciding arms (C, base, the EXP-0100 stack) first and written; then the reported arms",
+ "reported_arms": [
+  "v4p_mwwk",
+  "k5_v4o",
+  "k5_o100"
+ ],
+ "rule": "the candidate C = the v4 producer (EXP-0107) + the EXP-0100 orderer, on EXP-0107's check sets, EXP-0105's three clauses unchanged (V3_RULE; (c) against the EXP-0100 stack): faithful or short naming the clauses. Reported only, never deciding: v4 producer + MWWk, k5_rf5 + v4 orderer, k5_rf5 + EXP-0100 orderer, each vs k5_rf5 + MWWk with the same floors (12: M5's floors on the monitor set; 42: L5's mean_comp floor), deaths and past-ceiling counts",
+ "sets": {
+  "check_42": {
+   "episodes": 4,
+   "horizon": 200,
+   "replicates": [
+    0,
+    1
+   ],
+   "stage": "m6-drain"
+  },
+  "check_42_worlds": [
+   "ws-atlas-v1-42-0000",
+   "ws-atlas-v1-42-0013",
+   "ws-atlas-v1-42-0039",
+   "ws-atlas-v1-42-0043",
+   "ws-atlas-v1-42-0066",
+   "ws-atlas-v1-42-0076",
+   "ws-atlas-v1-42-0081",
+   "ws-atlas-v1-42-0126"
+  ],
+  "monitor": "the 16 monitor world-episodes x replicates 0 / 1, horizon 100"
+ },
+ "stage": "EXP-0108: attribution of EXP-0107's shortfall; the composite candidate",
+ "status": "frozen before EXP-0108's data; the real run refuses any other file"
+}
