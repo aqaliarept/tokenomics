@@ -1046,7 +1046,7 @@ def validation_reading(dicts: Sequence[dict], cells: Mapping) -> dict:
 def run_validate(atlas_path: str, models: str, out_dir: str, workers: int,
                  dry_run: bool = False, max_worlds: int | None = None,
                  episodes: int | None = None, horizon: int = pe.HORIZON,
-                 split: str = "validate") -> int:
+                 split: str = "validate", ledger: str | None = None) -> int:
     """EXP-0102 (`validate`): VALIDATE_ARMS on the loaded atlas v2 validation worlds (L5's set);
     EXP-0103 (`heldout`): every held-out world played, the loaded ones gating (M5's L6 set)."""
     import csv
@@ -1067,8 +1067,8 @@ def run_validate(atlas_path: str, models: str, out_dir: str, workers: int,
             p.append(f"{path.name} is not the pinned file")
         elif json.loads(path.read_text()) != reg(atlas):
             p.append(f"the {path.name} pre-registration differs from the code / atlas")
-        if held:
-            p += heldout_ledger_problems()
+        if held:  # the pod syncs only the package dir: the ledger is staged and passed in
+            p += heldout_ledger_problems(Path(ledger) if ledger else HELDOUT_LEDGER)
         if atlas.get("content_hash") != REGISTERED_ATLAS_HASH:
             p.append("not the registered atlas v2")
         if sha256_file(models) != EXP0100_MODELS_SHA256:
@@ -1158,6 +1158,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                    choices=("timing", "collect", "fit", "check", "side-effects", "validate",
                             "heldout", "freeze", "freeze-v3", "freeze-v4"))
     p.add_argument("--episodes", type=int)
+    p.add_argument("--ledger", help="heldout: the held-out ledger (a staged copy on the pod)")
     p.add_argument("--horizons", default=",".join(str(h) for h in SIDE_ARMS))
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--source-commit", default="", help="recorded in every output (provenance)")
@@ -1204,7 +1205,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if status in ("FROZEN", "MATCH") else 2
     if a.mode in ("validate", "heldout"):
         return run_validate(a.atlas, a.models, a.out_dir, a.workers, a.dry_run,
-                            a.max_world_episodes, a.episodes, a.horizon, a.mode)
+                            a.max_world_episodes, a.episodes, a.horizon, a.mode, a.ledger)
     if a.mode == "side-effects":
         return run_side_effects(a.training_dir, a.models, a.out_dir, a.workers,
                                 a.max_world_episodes, a.dry_run,
