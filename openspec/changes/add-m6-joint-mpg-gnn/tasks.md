@@ -67,6 +67,8 @@ rule).
   42 check at replicates 0 / 1).
   - Done 2026-11-06: **`short` on (a), (b), (c)**: the v3 producer passes the ceiling more (381 vs 0 at 42) and loses units at 12
     (−274 vs base, −470 vs EXP-0100); cause undiagnosed; ≈ 16.2 vCPU-h over 3 attempts.
+- [x] 2.12 [experiment][remote:cpu8] EXP-0106: the v3 upgrade gate, diagnosed offline: the margin feature is used but the
+  boundary is learned smoothly under joint-scale training (DIAGNOSTICS 33); ≈ 0.6 vCPU-h.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

@@ -1416,3 +1416,46 @@ _Status: diagnosed (2026-11-06, EXP-0104) on held-out 42-0125 (counterfactual) a
 - 42-0076 / 42-0126: 8 / 9 past the ceiling (k5_rf5: 0 / 0).
 - Pod run: restorations unfunded 0 and rejected 0 on 42-0125, with completed restorations about equal to the
   base's.
+
+## 33. An imitated gate leaks through a hard, irreversible constraint (the boundary is learned smoothly)
+
+_Status: diagnosed (2026-11-06, EXP-0106) for the M6 producer's upgrade gate against the sustainable ceiling
+(entries 29 / 32)._
+
+**Problem (plain English):**
+- The teacher never upgrades past the ceiling: a hard rule, error rate 0. Imitation learns that rule as a
+  smooth classifier. Even with the exact margin as a feature, it fires on a share of the decisions just past
+  the boundary.
+- Each such upgrade is irreversible: max capacity only grows, so the producer stays past the ceiling.
+- Over a 100–200-cycle closed loop, a small per-decision rate compounds into many trapped producers. A lower BC
+  loss on average can come with more of these rare, irreversible errors.
+
+**Discriminating checks (offline, on recorded teacher decisions):**
+1. The fire rate where the teacher's label is 0 by rule (here margin < 0), against the rest, per model and size.
+2. **Ablation:** set the constraint feature to its normaliser median. If the boundary firing rises, the feature
+   is used. If firing at the boundary stays high with the true feature, the boundary is learned smoothly.
+3. The logit's slope against the margin, and whether it changes sharply at 0.
+4. Exclude underfitting (BC loss per size), label imbalance (label rates per size) and row dilution (rows per
+   decision).
+
+**Outcome branches:**
+- **Feature ignored:** the ablation changes nothing. Check the normaliser and the feature's path.
+- **Feature used but smooth** (this case): a smooth classifier cannot hold a zero-error rule. Responses, each a
+  decision:
+  - a step input (the margin's sign);
+  - boundary-weighted or hard-negative BC;
+  - an action mask, which is a hand-written rule;
+  - RL that sees the drain (horizon or bootstrap).
+- **Interference** (a size-specific boundary lost in a joint fit): compare against a fit on one size with the
+  feature.
+
+**Evidence (EXP-0106):** upgrade firing at margin < 0, where the label is always 0:
+| set | v2 | v3 | v3 ablated |
+|---|---|---|---|
+| 12 monitor | 0.024 | 0.356 | 0.712 |
+| 12 train | 0.045 | 0.395 | 0.684 |
+| 42 train | 0.304 | 0.095 | 0.699 |
+
+- v3's BC loss is lower at every size.
+- One capacity row per decision.
+- Label rates are similar at both sizes.
