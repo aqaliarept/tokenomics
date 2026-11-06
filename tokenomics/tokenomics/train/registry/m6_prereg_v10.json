@@ -1,0 +1,54 @@
+{
+ "change": "add-m6-joint-mpg-gnn",
+ "config": {
+  "batch": 256,
+  "clip": 0.2,
+  "gamma": 0.99,
+  "gate_iterations": [
+   5,
+   10
+  ],
+  "grad_clip": 1.0,
+  "horizon": 100,
+  "iterations": 10,
+  "kl_coef": 0.04,
+  "lr": 0.0003,
+  "replicate_base": 1000,
+  "seed": 0,
+  "seeds_per_iter": 96,
+  "siblings": 4,
+  "steps": 100
+ },
+ "continuation": "only on gain (or hold with a rising curve, the user's call), a later decision",
+ "decision": "user 2026-11-06 (via the supervisor): a capped pilot; overrides v9's absent because the power check found n80 = 48 seeds per half for E3 at 12 (inside 96) and D0.3 at 12 per half was underpowered by construction",
+ "estimator": "E3: per-cycle leave-one-out over the G siblings on the gamma-discounted return-to-go of the normalised potential (EXP-0110 calibration), no std division",
+ "format": "m6-prereg-v10",
+ "gate": {
+  "floor": "M5's floors rule (producer_read.pilot_reading)",
+  "iterations": [
+   5,
+   10
+  ],
+  "rule": "gate at iterations 5 and 10: greedy (deployed) candidate vs the EXP-0100 stack on the 12 monitor world-episodes x replicates 0 / 1, M5's floors rule (g, F); early stop at 5 if g < -F, more deaths, or a higher run-down share; reading at 10: gain if g > F and deaths, run-down and starvation shares no worse; hold if |g| <= F; worse otherwise. Reported only: the training-return curve, KL to the start, the gate flip rates",
+  "set": "the 16 monitor world-episodes x replicates 0 / 1, horizon 100, greedy decode",
+  "side_effects": "deaths; run-down share (r_end < X r_start); starvation share (fill < Y)"
+ },
+ "keeps": {
+  "m6_prereg_v9.json": "660a7597ab19b0cdffe3e962fe552afc975a51e1cb1c6184ad9406a059fedc45",
+  "note": "v1..v9 stay frozen"
+ },
+ "learns": "the producer only; the orderer frozen at EXP-0100's weights; replenish frozen at the start's deterministic output; the gates tempered (v9 TEMPS) in training rollouts only",
+ "seeds": "per iteration, SEEDS_PER_ITER of M4's 112 training world-episodes (monitor excluded), sampled without replacement by numpy default_rng([seed, 11, iteration])",
+ "stage": "EXP-0113: the capped critic-free Stage 1 training pilot (producer only, 12 producers)",
+ "start": {
+  "models": "EXP-0110 start_models.pt (EXP-0100 + zero-weight v4 inputs)",
+  "reference_models_sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+ },
+ "status": "frozen before EXP-0113's data; the real run refuses any other file",
+ "temps": {
+  "expand": 2.4004,
+  "restore": 3.4522,
+  "upgrade": 2.5629
+ },
+ "update": "PPO-clip on the tempered-gate log-probability per producer decision + kl_coef * KL(pi_theta || pi_start) on the same states; STEPS synchronous steps per iteration, each the mean of the workers' minibatch gradients (BATCH decisions each, from their own seeds); the per-agent Stepper (Adam, clip) with the step log"
+}

@@ -35,3 +35,16 @@
   - The same power check as EXP-0111.
   - `signal` needs a producer estimator to beat its null at 12, with ≤ 96 seeds per half for 80% power; 42 is
     reported.
+- 2026-11-06 (user, via the supervisor), after EXP-0112: **a capped Stage 1 training pilot** (EXP-0113, pinned m6_prereg_v10).
+  - **It overrides v9's `absent`, deliberately:**
+    - The power check found a real producer gradient at 12 (|∇J|² 95% CI above 0), with n80 = 48 seeds per half
+      for E3, inside the rule's 96.
+    - D0.3 at Stage 0's 12 seeds per half was underpowered by construction, so its miss is not evidence of no
+      signal.
+  - **Pilot design:**
+    - the producer learns at 12 producers; the orderer is frozen at EXP-0100's weights; input buying frozen; gates
+      tempered (training only);
+    - E3 at 48 seeds per half (96 per iteration); PPO-clip + KL anchor; the per-agent Stepper with step logs;
+    - 10 iterations, a greedy gate at 5 and 10 against the EXP-0100 stack on the monitor set;
+    - early stop on a loss, death or worse run-down at 5; reading `gain` / `hold` / `worse` at 10.
+  - **Continuation** only on `gain` (or `hold` with a rising curve, the user's call), as a later decision.
