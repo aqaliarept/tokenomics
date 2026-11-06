@@ -383,7 +383,8 @@ def _pool(fn: Any, jobs: Sequence[dict], workers: int, path: Path) -> list[dict]
 
 
 def run(rows_path: str, exp0110: str, training_dir: str, atlas: str, monitor_pkl: str,
-        out_dir: str, workers: int, dry_run: bool = False, sub: int | None = None) -> int:
+        out_dir: str, workers: int, dry_run: bool = False, sub: int | None = None,
+        note: str | None = None) -> int:
     import pickle
 
     from ..eval.provenance import sha256_file
@@ -391,7 +392,7 @@ def run(rows_path: str, exp0110: str, training_dir: str, atlas: str, monitor_pkl
 
     if not dry_run:
         p = []
-        if sha256_file(str(NOTE)) != NOTE_SHA256:
+        if sha256_file(note or str(NOTE)) != NOTE_SHA256:  # the pod gets a staged copy
             p.append("the pre-registration note is not the pinned one")
         if not sha256_file(rows_path).startswith(ROWS_SHA256):
             p.append("the rows are not EXP-0110's")
@@ -513,12 +514,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--sub", type=int)
+    p.add_argument("--note", help="the pre-registration note (a staged copy on the pod)")
     p.add_argument("--source-commit", default="")
     a = p.parse_args(argv)
     im.SOURCE_COMMIT = a.source_commit
     torch.set_num_threads(1)
     return run(a.rows, a.exp0110, a.training_dir, a.atlas, a.monitor_samples, a.out_dir,
-               a.workers, a.dry_run, a.sub)
+               a.workers, a.dry_run, a.sub, a.note)
 
 
 if __name__ == "__main__":
