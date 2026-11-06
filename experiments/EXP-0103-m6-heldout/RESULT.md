@@ -48,3 +48,6 @@ but the run-down clause fails, on world 42-0125:
   not be read as a 42-producer confirmation. It is a known side effect to carry into MAPPO: the potential's
   per-cycle run-down term, and a 42 clause in the RL pre-registration.
 - MAPPO's later held-out read on this set is a second comparison (pre-registered in v4).
+
+## Addendum (2026-11-06, EXP-0104)
+The 42-producer run-down on 42-0125 is diagnosed: the imitated producer upgrades past the sustainable ceiling at 42-producer scale (DIAGNOSTICS 32, the upgrade trap of entry 29, reached by imitation). Vetoing those upgrades removes the drain. The 42 read stays reported only; the 12-producer reading is unaffected.

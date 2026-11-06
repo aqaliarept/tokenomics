@@ -87,12 +87,24 @@ hand-written planner runs at deployment.
     before any RL), with the agreement metrics locating the shortfall.
 - **Then MAPPO** from the imitated weights (D5).
 
-**D5. Learner.**
-- **Default: MAPPO under CTDE.** Shared actor per role; a centralised GNN critic on the global graph (training
-  only); per-decision credit through log-probabilities.
-- **Why not ES:** ES needed 40 generations for 18–23 parameters (M5) and scales poorly to thousands.
-- **Compute:** CPU pods, batch-1 Python rollouts on one process per core, torch 1 thread per worker; updates on
-  the pod CPU. The GNN forward cost is measured in L0.
+**D5. Learner (user decision 2026-11-06: critic-free; supersedes the MAPPO default).** Source:
+docs/research/critic-free-team-learning.md, "Recommendation".
+- **Group-relative, same-seed policy gradient.** Each training world-seed is played G = 4 times by the current
+  team, the copies differing only in their policy draw keys. Copy i's advantage at cycle t is
+  A_t^i = G_t^i − mean_{j≠i} G_t^j, where G_t is the (γ-discounted) return-to-go of the per-cycle, per-world
+  normalised potential Φ_t (D1). It is mean-centred with no std division (Dr. GRPO / RLOO). Every decision of
+  cycle t carries its copy's A_t. γ comes from Stage 0's decorrelation horizon.
+- **No learned critic in training.** `CentralCritic` stays only for Stage 0's offline audit (reported). Two
+  earlier critics failed across topologies; nothing learned has to transfer.
+- **Update:** PPO-clip with a KL penalty to the imitation policy (EXP-0100), using the sharded synchronous
+  update (deterministic).
+- **Champion gate:** the frozen EXP-0100 team, used only for promotion, by a one-sided paired t-test on fresh
+  train-split seeds, with no extra deaths and run-down no worse. Promoting a project champion stays a human
+  gate.
+- **Fork credit on investment decisions** only if Stage 0's D0.4 shows the team signal misses the upgrade trap
+  (DIAGNOSTICS 32), on non-held-out worlds only.
+- **Compute:** CPU pods, batch-1 rollouts, one process per core, torch 1 thread per worker. Stage 0 measures
+  the 42-producer GNN episode cost.
 
 **D6. Ladder** (pre-registered per step in a frozen `prereg_m6_v<n>.json`; M5 rules and floors):
 

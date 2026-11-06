@@ -17,3 +17,10 @@
     pre-registered in `m6_prereg_v4`; MAPPO's later held-out read is a second comparison on the same set.
   - Then the RL pre-registration (task 2.5b), frozen before any MAPPO data. MAPPO succeeds only if it beats the
     imitated stack beyond the floor with no side effect worse; otherwise the imitated stack stays the result.
+- 2026-11-06 (user, via the supervisor): **the RL stage is critic-free** (source: docs/research/critic-free-team-learning.md,
+  8ef3425, "Recommendation"). Each world-seed is played G = 4 times by the current team. Each copy's per-cycle
+  return-to-go is scored against the mean of its siblings at that cycle (leave-one-out, no std division). No learned
+  critic in training. PPO-clip with a KL anchor to the imitation policy. A frozen champion team (the EXP-0100
+  models) is used only for the promotion gate: a paired test on the same seeds. The potential penalties stay in the
+  per-cycle reward, normalised per world. A Stage 0 diagnostic (pinned m6_prereg_v5) decides whether and how
+  Stage 1 runs; the critic code is kept only for Stage 0's offline audit.

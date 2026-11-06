@@ -2,7 +2,11 @@
 
 Per played cycle t:
 
-    Φ_t = units_t − λ · Σ_p max(0, X − ρ_p,t) − μ · starving_t − ν · death_t
+    Φ_t = s · units_t − λ · Σ_p max(0, X − ρ_p,t) − μ · starving_t − ν · death_t
+
+with s the world-episode's unit scale (the RL stage's normalisation, supervisor decision 2026-11-06:
+s = H / B_we, B_we = the base's episode units on that world-episode, so a base cycle earns ≈ 1 and ν = H
+charges a death one base episode, M5 v4's penalised death); s = 1 gives raw units.
 
 - `units_t`: consumer units completed in cycle t (`CycleResult.consumer_completed_units`);
 - `ρ_p,t`: producer p's capacity ratio after cycle t (mean over owned types of current / max), read from
@@ -52,8 +56,9 @@ class PotentialTerms:
     starving: int
     death: int
 
-    def phi(self, w: PotentialWeights) -> float:
-        return self.units - w.lam * self.rundown - w.mu * self.starving - w.nu * self.death
+    def phi(self, w: PotentialWeights, unit_scale: float = 1.0) -> float:
+        return (unit_scale * self.units - w.lam * self.rundown - w.mu * self.starving
+                - w.nu * self.death)
 
 
 def producer_ratio(capacities: dict, max_capacities: dict) -> float | None:
@@ -114,9 +119,9 @@ class PotentialTracker:
         self.terms.append(PotentialTerms(float(result.consumer_completed_units), rundown, starving,
                                          int(dead)))
 
-    def rewards(self) -> list[float]:
-        """Φ_t per played cycle (the identical-interest team reward)."""
-        return [t.phi(self.weights) for t in self.terms]
+    def rewards(self, unit_scale: float = 1.0) -> list[float]:
+        """Φ_t per played cycle (the identical-interest team reward), units scaled by `unit_scale`."""
+        return [t.phi(self.weights, unit_scale) for t in self.terms]
 
     def totals(self) -> dict[str, float]:
         """Episode sums of each raw term (the calibration input of λ / μ)."""

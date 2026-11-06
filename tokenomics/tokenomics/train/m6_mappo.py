@@ -15,8 +15,11 @@
   and every stream view acting in that cycle, embedded by its own producer / orderer trunks (initialised from
   the imitated actors), mean- and max-pooled, plus the cycle fraction t / H. It is the CTDE critic of D5; the
   supply-link edges of D3's global graph are not yet in it (reported in the diff).
-- **Reward:** the identical-interest team reward Φ_t (`env/potential.py`), scaled by `reward_scale`; every
-  decision of cycle t gets that cycle's GAE advantage (an exact potential game: one shared Φ).
+- **Reward:** the identical-interest team reward Φ_t (`env/potential.py`), normalised per world-episode
+  (supervisor decision 2026-11-06): units scaled by s = H / B_we, B_we = k5_rf5 + MWWk's mean episode units on
+  that world-episode (`calibrate`), so a base cycle earns ≈ 1; ν = H (a death costs one base episode, M5 v4);
+  λ / μ noise-scaled on the normalised units. Every decision of cycle t gets that cycle's GAE advantage (an
+  exact potential game: one shared Φ).
 - **Update:** PPO clip on the joint log-probability of each decision, value loss on the cycles' returns,
   entropy bonus, global gradient clipping; synchronous data parallel (`_sync_steps`: the workers' shard
   gradients averaged in worker order, one Adam step; deterministic, as Stage I v2's fit).
@@ -79,7 +82,7 @@ class MappoConfig:
     vf_coef: float = 0.5
     grad_clip: float = 1.0
     init_log_std: float = -1.5
-    reward_scale: float = 1.0 / 40.0  # ≈ 1 / base units per cycle at 12 producers
+    dry_unit_scale: float = 1.0 / 40.0  # a dry run without a calibration: ≈ 1 / base units per cycle
     seed: int = 0
     workers: int = 16
     monitor_every: int = 5
@@ -265,7 +268,7 @@ def rollout_job(job: dict) -> dict:
                                  int(job["episode"]) % (1 << 31), int(job["replicate"])])
     pol = RecordingPolicies(pm, om, ex, rng)
     run_episode(env, pol.producing, pol.ordering, seed=job["episode"], action_seed=None)
-    rewards = [r * job["reward_scale"] for r in tracker.rewards()]
+    rewards = tracker.rewards(float(job["unit_scale"]))
     cycles = sorted(pol.cycle_inputs)
     h = int(job["horizon"])
     with torch.no_grad():
@@ -464,8 +467,20 @@ def _open(out: Path, pins: dict) -> int:
 # --- modes ---
 
 
+def unit_scale(calibration: Mapping | None, world: str, episode: int, cfg: MappoConfig) -> float:
+    """s = H / B_we from the calibration's per-world-episode base units; a dry run without one
+    uses `dry_unit_scale`. A real run refuses a world-episode the calibration lacks."""
+    if calibration is None:
+        return cfg.dry_unit_scale
+    b = calibration["bar"].get(f"{world}|{int(episode)}")
+    if not b:
+        raise ValueError(f"the calibration holds no base units for {world} / {episode}")
+    return cfg.horizon / float(b)
+
+
 def iteration_jobs(ts: Any, train: Sequence, cfg: MappoConfig, it: int, snapshot: str,
-                   weights: PotentialWeights, n: int | None = None) -> list[dict]:
+                   weights: PotentialWeights, n: int | None = None,
+                   calibration: Mapping | None = None) -> list[dict]:
     rng = np.random.default_rng([cfg.seed, it, 7])
     k = min(n or cfg.episodes_per_iter, len(train))
     pick = [train[i] for i in sorted(rng.choice(len(train), size=k, replace=False))]
@@ -473,22 +488,37 @@ def iteration_jobs(ts: Any, train: Sequence, cfg: MappoConfig, it: int, snapshot
                            generation=it, member="mappo", world=w, episode=e,
                            replicate=TRAIN_REPLICATE_BASE + it, horizon=cfg.horizon),
              "snapshot": snapshot, "weights": asdict(weights), "seed": cfg.seed,
-             "iteration": it, "reward_scale": cfg.reward_scale} for w, e in pick]
+             "iteration": it, "unit_scale": unit_scale(calibration, w, e, cfg)} for w, e in pick]
 
 
 def run_train(*, training_dir: str, atlas: str, init_models: str, out_dir: str,
               cfg: MappoConfig, weights: PotentialWeights, dry_run: bool,
-              max_world_episodes: int | None = None, log: Callable[[str], None] = print) -> int:
+              max_world_episodes: int | None = None, log: Callable[[str], None] = print,
+              calibration: str | None = None) -> int:
+    """`calibration` (calibration.json of a real `calibrate` run) sets the unit scales and, in a real
+    run, the weights: λ, μ, ν from it, X / Y from the side-effect params; `weights` is used only by
+    a dry run without one."""
     from ..eval.provenance import sha256_file
+
+    cal = None if calibration is None else json.loads(Path(calibration).read_text())
+    if cal is not None:
+        weights = PotentialWeights(float(cal["lambda"]), float(cal["mu"]), float(cal["nu"]),
+                                   weights.x, weights.y)
 
     if not dry_run:
         p = []
-        if RL_PREREG_SHA256 is None:
-            p.append("no frozen RL pre-registration (task 2.5b)")
+        if RL_PREREG_SHA256 is None or not RL_PREREG_PATH.exists() or \
+                sha256_file(str(RL_PREREG_PATH)) != RL_PREREG_SHA256:
+            p.append("no frozen, pinned RL pre-registration (task 2.5b, m6_prereg_v5.json)")
+        elif calibration is None or json.loads(RL_PREREG_PATH.read_text()) != registered_rl_prereg(
+                json.loads(Path(calibration).read_text()), sha256_file(calibration)):
+            p.append("the RL pre-registration differs from the code / calibration")
         if sha256_file(init_models) != im.EXP0100_MODELS_SHA256:
             p.append("the init models are not EXP-0100's")
         if max_world_episodes:
             p.append("--max-world-episodes is set")
+        if cal is None or cal.get("dry_run") or int(cal.get("horizon", -1)) != cfg.horizon:
+            p.append("a real run needs a real calibration at the run's horizon")
         im._refuse(p)
     torch.manual_seed(cfg.seed)
     ts, train, mon = im._training(training_dir)
@@ -503,6 +533,7 @@ def run_train(*, training_dir: str, atlas: str, init_models: str, out_dir: str,
     out = Path(out_dir)
     pins = {"config": asdict(cfg), "weights": asdict(weights),
             "init_models_sha256": sha256_file(init_models), "rl_prereg": RL_PREREG_SHA256,
+            "calibration_sha256": None if calibration is None else sha256_file(calibration),
             "source_commit": im.SOURCE_COMMIT, "dry_run": dry_run,
             "max_world_episodes": max_world_episodes}
     start = _open(out, pins)
@@ -511,13 +542,12 @@ def run_train(*, training_dir: str, atlas: str, init_models: str, out_dir: str,
         for k, m in mods.items():
             m.load_state_dict(ck[k])
         opt.load_state_dict(ck["optimizer"])
-    cells = None
-    base_rows: list[dict] = []
+    cache: dict = {}
     for it in range(start, cfg.iterations):
         t0 = time.perf_counter()
         snap = out / "snapshot.pt"
         torch.save(_state(mods), snap)
-        jobs = iteration_jobs(ts, train, cfg, it, str(snap), weights, max_world_episodes)
+        jobs = iteration_jobs(ts, train, cfg, it, str(snap), weights, max_world_episodes, cal)
         trajs = im._pool(rollout_job, jobs, cfg.workers)
         dec, cri = build_batch(trajs, cfg)
         stats = _sync_steps(mods, opt, dec, cri, cfg, epoch_seed=cfg.seed * 1000 + it,
@@ -532,9 +562,8 @@ def run_train(*, training_dir: str, atlas: str, init_models: str, out_dir: str,
             mdir = out / f"monitor_{it:03d}"
             mdir.mkdir(exist_ok=True)
             im.save_models(pm, om, mdir / "models.pt")
-            rec["monitor"], cells, base_rows = monitor_read(
-                ts, mon, atlas, str(mdir / "models.pt"), cfg, cells, base_rows,
-                max_world_episodes)
+            rec["monitor"] = monitor_read(ts, mon, atlas, str(mdir / "models.pt"), init_models,
+                                          cfg, cache, max_world_episodes)
         save_checkpoint(out / "latest.pt", mods, opt, it)
         with (out / "curve.jsonl").open("a") as fh:
             fh.write(json.dumps(rec, default=float) + "\n")
@@ -546,26 +575,98 @@ def run_train(*, training_dir: str, atlas: str, init_models: str, out_dir: str,
     return 0
 
 
-def monitor_read(ts: Any, mon: Sequence, atlas: str, models: str, cfg: MappoConfig,
-                 cells: Any, base_rows: list[dict], max_world_episodes: int | None
-                 ) -> tuple[dict, Any, list[dict]]:
-    """The deployed GNN stack vs k5_rf5 + MWWk on the monitor world-episodes (Stage I's check)."""
+def monitor_read(ts: Any, mon: Sequence, atlas: str, models: str, init_models: str,
+                 cfg: MappoConfig, cache: dict, max_world_episodes: int | None) -> dict:
+    """The deployed candidate on the monitor world-episodes against the imitated stack (the start,
+    the pilot's deciding comparison) and k5_rf5 + MWWk (reported), M5's floors; the two
+    references' rows are played once and cached."""
     from ..eval.teacher_audit import load_atlas
     from .order_es_validate import monitor_cells
     from .producer_read import pilot_reading
 
     wes = mon[:max_world_episodes] if max_world_episodes else mon
-    if cells is None:
-        cells = monitor_cells(ts.training, load_atlas(atlas)["spreads"])
-    if not base_rows:
-        base_rows = im._pool(im.play_job, im._jobs(ts, wes, "monitor_base", im.MONITOR_REPLICATES,
-                                                   cfg.horizon), cfg.workers)
+    if "cells" not in cache:
+        cache["cells"] = monitor_cells(ts.training, load_atlas(atlas)["spreads"])
+        cache["base"] = im._pool(im.play_job, im._jobs(ts, wes, "monitor_base",
+                                                       im.MONITOR_REPLICATES, cfg.horizon),
+                                 cfg.workers)
+        cache["imitated"] = [{**x, "kind": "monitor_base"} for x in im._pool(
+            im.play_job, im._jobs(ts, wes, "monitor", im.MONITOR_REPLICATES, cfg.horizon,
+                                  init_models), cfg.workers)]
     rows = im._pool(im.play_job, im._jobs(ts, wes, "monitor", im.MONITOR_REPLICATES, cfg.horizon,
                                           models), cfg.workers)
-    r = pilot_reading(rows + base_rows, cells, 0)
-    return ({"g_tr": r.get("g_tr"), "F_tr": r.get("F_tr"),
-             "deaths": sum(x["dead"] == "true" for x in rows),
-             "base_deaths": sum(x["dead"] == "true" for x in base_rows)}, cells, base_rows)
+    out = {"deaths": sum(x["dead"] == "true" for x in rows)}
+    for ref in ("imitated", "base"):
+        r = pilot_reading(rows + cache[ref], cache["cells"], 0)
+        out[ref] = {"g": r.get("g_tr"), "F": r.get("F_tr"),
+                    "deaths": sum(x["dead"] == "true" for x in cache[ref])}
+    out["g_tr"], out["F_tr"] = out["imitated"]["g"], out["imitated"]["F"]
+    return out
+
+
+# --- the RL pre-registration (task 2.5b; frozen after L1's calibration, before any MAPPO data) ---
+
+RL_PREREG_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v5.json"
+LADDER = {"pilot": {"seed": 0, "iterations": 20}, "full": {"seeds": [0, 1], "iterations": 40}}
+PILOT_RULE = ("feasible if, at the pilot's last monitor (iteration 20), the candidate - the imitated "
+              "stack (EXP-0100 models) on the 16 monitor world-episodes x replicates 0 / 1 is > F_tr "
+              "(M5's floors rule) with no more deaths; else unresolved (stop: the user hears it)")
+VALIDATION_RULE = (
+    "L5 on EXP-0102's validation worlds (m6_prereg_v3: 9 at 12, 3 at 42; 8 episodes, replicates 0 / 1, "
+    "horizon 100, L5's floors), arms cand-s0, cand-s1, imitated (EXP-0100), k5_rf5 + MWWk. "
+    "success: for both seeds, cand - imitated > floor at 12, no more deaths than the imitated stack, "
+    "run-down and starvation shares at 12 <= the imitated stack's, and the 42-producer run-down share "
+    "<= the imitated stack's (supervisor decision 2026-11-06, after EXP-0103 / EXP-0104); kill: either "
+    "seed below -floor vs the imitated stack at 12, or with extra deaths; transfer_failure: success at "
+    "12 and either seed below -floor at 42; plateau: anything else. Deaths and starvation at 42 as L5 "
+    "(reported); every comparison vs k5_rf5 + MWWk reported. Selection: the seed with the larger "
+    "12-producer cand - imitated. Fallback (any reading but success): the imitated stack stays the "
+    "result.")
+
+
+def registered_rl_prereg(calibration: Mapping, calibration_sha256: str) -> dict:
+    cfg = MappoConfig()
+    return {
+        "format": "m6-prereg-v5", "change": "add-m6-joint-mpg-gnn", "stage": "RL (MAPPO), task 2.5b",
+        "status": "frozen after L1's calibration, before any MAPPO data; real train runs refuse "
+                  "any other file",
+        "keeps": {"m6_prereg_v4.json": im.PREREG_V4_SHA256, "note": "v1..v4 stay frozen"},
+        "decisions": ["user 2026-11-06: held-out now, then MAPPO; MAPPO succeeds only by beating "
+                      "the imitated stack, else the imitated stack stays the result",
+                      "supervisor 2026-11-06: normalised reward (s = H / B_we, nu = H, lambda / mu "
+                      "noise-scaled on normalised units, training data only); a 42-producer "
+                      "run-down clause vs the imitated stack"],
+        "start": {"models_sha256": im.EXP0100_MODELS_SHA256, "from": "EXP-0100 fit/models.pt",
+                  "validated": "EXP-0102 better, EXP-0103 better at 12 (held-out, one shot)"},
+        "potential": {"formula": "Phi_t = s units_t - lambda sum_p max(0, X - rho_p,t) - mu "
+                                 "starving_t - nu death_t (env/potential.py)",
+                      "x_y": "side-effect params v2", "lambda": calibration["lambda"],
+                      "mu": calibration["mu"], "nu": calibration["nu"],
+                      "unit_scale": "s = H / B_we, B_we from the calibration's bar",
+                      "calibration_sha256": calibration_sha256,
+                      "calibration_rule": "k5_rf5 + MWWk on M4's 112 training world-episodes at "
+                                          "re-keys r1..r4 (never the monitor's r0 / r1 keys on the "
+                                          "monitor set: the monitor set is excluded)"},
+        "learner": {**asdict(cfg), "workers": 16,
+                    "rollouts": "32 training world-episodes per iteration, sampled per iteration "
+                                "(seed, iteration); DrawKey replicate 10 + iteration",
+                    "monitor": "every 5 iterations: the deployed candidate vs the imitated stack "
+                               "(deciding at the pilot) and k5_rf5 + MWWk (reported)"},
+        "ladder": LADDER, "pilot_rule": PILOT_RULE, "validation_rule": VALIDATION_RULE,
+        "heldout": "only after an L5 success, one shot under a new ledger key held-out/m6-mappo: "
+                   "a second comparison on EXP-0103's set (m6_prereg_v4 'multiplicity'), reported "
+                   "as such",
+        "budget": "tranche M6 (150 vCPU-h), per-run stops in sizing.md"}
+
+
+def freeze_rl_prereg(calibration: str, path: Path = RL_PREREG_PATH) -> tuple[str, str]:
+    from ..eval.provenance import sha256_file
+
+    doc = registered_rl_prereg(json.loads(Path(calibration).read_text()), sha256_file(calibration))
+    if not path.exists():
+        path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+        return "FROZEN", sha256_file(str(path))
+    return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
 
 
 # --- L1: the potential weights (M5's noise-scaled rule) ---
@@ -587,9 +688,11 @@ def calibration_job(job: dict) -> dict:
             **tr.totals()}
 
 
-def calibrate_weights(rows: Sequence[Mapping]) -> dict:
-    """λ = σ_units / σ_rundown, μ = σ_units / σ_starving: pooled within-world-episode SDs of the
-    episode totals across the base's re-keys (training rows only)."""
+def calibrate_weights(rows: Sequence[Mapping], horizon: int) -> dict:
+    """The normalised potential's constants from the base's re-keys (training rows only):
+    B_we = the mean episode units per world-episode (the `bar`, s = H / B_we); with u = units · s,
+    λ = σ_u / σ_rundown and μ = σ_u / σ_starving, pooled within-world-episode SDs of the episode
+    totals; ν = H (a death costs one base episode)."""
     from .order_es import _pooled_sd
 
     groups: dict[tuple, dict[str, list[float]]] = {}
@@ -597,13 +700,17 @@ def calibrate_weights(rows: Sequence[Mapping]) -> dict:
         k = (r["world"], int(r["episode"]))
         for t in ("units", "rundown", "starving"):
             groups.setdefault(k, {}).setdefault(t, []).append(float(r[t]))
-    sd = {t: _pooled_sd([v[t] for v in groups.values()]) for t in ("units", "rundown", "starving")}
-    su = sd["units"][0]
-    return {"lambda": su / sd["rundown"][0] if sd["rundown"][0] > 0 else None,
-            "mu": su / sd["starving"][0] if sd["starving"][0] > 0 else None,
-            "sigma": {t: v[0] for t, v in sd.items()}, "df": sd["units"][1],
-            "world_episodes": len(groups), "episodes": len(rows),
-            "base_units_mean": fmean(float(r["units"]) for r in rows)}
+    bar = {k: fmean(v["units"]) for k, v in groups.items()}
+    if any(b <= 0 for b in bar.values()):
+        raise ValueError("a world-episode with 0 base units has no unit scale")
+    norm = [[u * horizon / bar[k] for u in v["units"]] for k, v in groups.items()]
+    su, df = _pooled_sd(norm)
+    sr, _ = _pooled_sd([v["rundown"] for v in groups.values()])
+    ss, _ = _pooled_sd([v["starving"] for v in groups.values()])
+    return {"lambda": su / sr if sr > 0 else None, "mu": su / ss if ss > 0 else None,
+            "nu": float(horizon), "sigma": {"units_normalised": su, "rundown": sr, "starving": ss},
+            "df": df, "world_episodes": len(groups), "episodes": len(rows),
+            "bar": {f"{w}|{e}": b for (w, e), b in sorted(bar.items())}}
 
 
 def run_calibrate(*, training_dir: str, out_dir: str, workers: int, horizon: int,
@@ -614,9 +721,11 @@ def run_calibrate(*, training_dir: str, out_dir: str, workers: int, horizon: int
     jobs = [{**j, "weights": asdict(probe)} for r in CALIBRATION_REPLICATES
             for j in im._jobs(ts, wes, "calibrate", (r,), horizon)]
     rows = im._pool(calibration_job, jobs, workers)
-    doc = {**calibrate_weights(rows), "x": x, "y": y, "dry_run": dry_run, "horizon": horizon,
-           "replicates": list(CALIBRATION_REPLICATES), "source_commit": im.SOURCE_COMMIT,
-           "nu_rule": "ν ≈ the base's mean episode units (a death costs about an episode)"}
+    doc = {**calibrate_weights(rows, horizon), "x": x, "y": y, "dry_run": dry_run,
+           "horizon": horizon, "replicates": list(CALIBRATION_REPLICATES),
+           "source_commit": im.SOURCE_COMMIT,
+           "rule": "s = H / B_we per world-episode; lambda / mu = sigma(normalised units) / "
+                   "sigma(term), pooled within world-episode over r1..r4; nu = H"}
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "calibration.json").write_text(json.dumps(doc, indent=1, default=str) + "\n")
@@ -635,7 +744,7 @@ def side_effect_xy() -> tuple[float, float]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--mode", required=True, choices=("calibrate", "train"))
+    p.add_argument("--mode", required=True, choices=("calibrate", "train", "freeze-rl"))
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--source-commit", default="")
     p.add_argument("--training-dir", required=True)
@@ -648,6 +757,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--episodes-per-iter", type=int)
     p.add_argument("--monitor-every", type=int)
     p.add_argument("--max-world-episodes", type=int)
+    p.add_argument("--calibration", help="train: a calibrate run's calibration.json")
     p.add_argument("--lam", type=float, default=0.0)
     p.add_argument("--mu", type=float, default=0.0)
     p.add_argument("--nu", type=float, default=0.0)
@@ -656,6 +766,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not a.dry_run and len(a.source_commit) != 40:
         p.error("a real run needs a 40-hex --source-commit")
     x, y = side_effect_xy()
+    if a.mode == "freeze-rl":
+        status, sha = freeze_rl_prereg(a.calibration)
+        print(f"[m6_mappo] RL pre-registration {status} {sha}")
+        return 0 if status in ("FROZEN", "MATCH") else 2
     if a.mode == "calibrate":
         return run_calibrate(training_dir=a.training_dir, out_dir=a.out_dir, workers=a.workers,
                              horizon=a.horizon, x=x, y=y,
@@ -667,7 +781,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                          **over})
     return run_train(training_dir=a.training_dir, atlas=a.atlas, init_models=a.init_models,
                      out_dir=a.out_dir, cfg=cfg, weights=PotentialWeights(a.lam, a.mu, a.nu, x, y),
-                     dry_run=a.dry_run, max_world_episodes=a.max_world_episodes)
+                     dry_run=a.dry_run, max_world_episodes=a.max_world_episodes,
+                     calibration=a.calibration)
 
 
 if __name__ == "__main__":

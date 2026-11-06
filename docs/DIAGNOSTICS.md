@@ -1381,3 +1381,38 @@ scores became so extreme that the copying is meaningless.
 - Logit |max| has a median of 9e31.
 - Slot loss: median 1.39, mean 1.3e24.
 - The fit was Hogwild × 16 at lr 3e-3. The producer GNN, with scaled features in the same fit, converged.
+
+## 32. An imitated producer misses its teacher's sustainable-upgrade cap at larger scale (upgrade trap, entry 29, by imitation)
+
+_Status: diagnosed (2026-11-06, EXP-0104) on held-out 42-0125 (counterfactual) and two atlas train worlds
+(signature)._
+
+**Problem (plain English):**
+- A behaviour-cloned producer learns k5_rf5's upgrade decisions, including its exact sustainable-upgrade cap
+  (entry 29). It learns them on 12-producer worlds only.
+- At 42 producers, maxes are several times larger. The learned gate fires past the ceiling `restores /
+  degradation %`, so a producer's degradation beats even a restoration every cycle.
+- Capacity drains from mid-episode. Restorations are all funded and completed (not entry 30), and the units
+  lost show only after about cycle 100, which a horizon-100 read hides.
+
+**Discriminating checks:**
+1. Count producers past the ceiling at the end of a horizon-200 episode (`degradation_for(t) > restores` on the
+   restoration type), for the learned stack against the teacher (EXP-0104 `artifacts/drain_0125.py`).
+2. **Counterfactual:** veto the learned producer's upgrades past the ceiling. Does the drain disappear and the
+   second-half units return?
+3. Restoration fates (`train/m6_drain.py`): unfunded / rejected / never ordered, to exclude entry 30 and
+   restoration rejection.
+
+**Outcome branches:**
+- **Past the ceiling and the veto recovers:** the learned producer's upgrade gate is the cause. The responses
+  are design decisions: make the drain visible to the learner (horizon / bootstrap, a signed ceiling feature,
+  larger training worlds); a veto mask is a hand-written rule.
+- **Not past the ceiling:** trace restoration funding (entry 30) and the restoration product's auctions.
+
+**Evidence (EXP-0104):**
+- 42-0125: 12 producers past the ceiling (k5_rf5: 0).
+  - Units over 200 cycles: 51,458 for the GNN stack, 60,754 with the veto, 60,618 for k5_rf5.
+  - End capacity: 464 for the GNN stack, 834 with the veto.
+- 42-0076 / 42-0126: 8 / 9 past the ceiling (k5_rf5: 0 / 0).
+- Pod run: restorations unfunded 0 and rejected 0 on 42-0125, with completed restorations about equal to the
+  base's.

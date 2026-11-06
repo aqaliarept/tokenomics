@@ -58,6 +58,9 @@ rule).
   MAPPO's later held-out read is a second comparison on this set. Pinned EUR-IS-1, stop ≤ 8.
   - Done 2026-11-06: **`better` at 12** (+184.4 vs floor 82.2, deaths 1 vs 2, run-down 0.758 vs 0.867); 42 reported `short`
     on run-down (1.000 vs 0.500; capacity drain on 42-0125, undiagnosed); ≈ 2.2 vCPU-h.
+- [x] 2.10 [experiment][remote:cpu16 + local probe] EXP-0104: the 42-0125 drain, diagnosed (supervisor decision 2026-11-06):
+  the upgrade trap by imitation (DIAGNOSTICS 32); veto counterfactual recovers 60,754 vs 51,458 units at h200; same
+  signature on train 42-0076 / 42-0126; ≈ 1.9 vCPU-h.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop
