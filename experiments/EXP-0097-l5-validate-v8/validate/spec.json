@@ -1,0 +1,190 @@
+{
+ "acceptance_read": false,
+ "driver": "tokenomics.train.producer_es",
+ "mode": "validate",
+ "pins": {
+  "arms": {
+   "cand-s0": {
+    "generation": 40,
+    "normaliser": {
+     "clip": 5.0,
+     "format": "m5-normaliser-v1",
+     "input_features": [
+      "stock_cover",
+      "inbound_cover",
+      "blocked_cover",
+      "log_use",
+      "headroom_frac",
+      "shortfall_ema_cover",
+      "latency",
+      "depth"
+     ],
+     "input_median": [
+      3.0,
+      0.0,
+      0.0,
+      0.8652876015932752,
+      0.37254901960784315,
+      0.0027307077517303704,
+      0.07117063910431212,
+      0.5
+     ],
+     "input_scale": [
+      4.272870467178276,
+      0.9694231115824162,
+      0.38143301612641844,
+      1.4925595662195614,
+      0.2741876597298284,
+      0.20385959836830372,
+      0.24247978044559543,
+      0.3333333333333333
+     ],
+     "producer_features": [
+      "headroom_frac",
+      "shortfall_cover",
+      "shortfall_ema_cover",
+      "fill_frac"
+     ],
+     "producer_median": [
+      0.25333333333333335,
+      0.0,
+      0.002216133845930515,
+      0.29156197654941374
+     ],
+     "producer_scale": [
+      0.4594594594594595,
+      1.9297699159725574,
+      0.27698850485108417,
+      0.55
+     ]
+    },
+    "normaliser_sha256": "387a152bad2677b63aae34e3b6888aa3b21f67289ccb6d084d8003c3ccafd9a4",
+    "opt_seed": 0,
+    "producing": "m5_residual",
+    "residual_base": "entity_planner_buyahead_k5_rf5",
+    "run": "/workspace/tokenomics/_pod_ckpts/exp0097/s0",
+    "theta_sha256": "1e16ada9ce0bc4cb138f43842809d7d73d83878d1d3b69df8d1c606fa20ad1b4"
+   },
+   "cand-s1": {
+    "generation": 40,
+    "normaliser": {
+     "clip": 5.0,
+     "format": "m5-normaliser-v1",
+     "input_features": [
+      "stock_cover",
+      "inbound_cover",
+      "blocked_cover",
+      "log_use",
+      "headroom_frac",
+      "shortfall_ema_cover",
+      "latency",
+      "depth"
+     ],
+     "input_median": [
+      3.0,
+      0.0,
+      0.0,
+      0.8652876015932752,
+      0.37254901960784315,
+      0.0027307077517303704,
+      0.07117063910431212,
+      0.5
+     ],
+     "input_scale": [
+      4.272870467178276,
+      0.9694231115824162,
+      0.38143301612641844,
+      1.4925595662195614,
+      0.2741876597298284,
+      0.20385959836830372,
+      0.24247978044559543,
+      0.3333333333333333
+     ],
+     "producer_features": [
+      "headroom_frac",
+      "shortfall_cover",
+      "shortfall_ema_cover",
+      "fill_frac"
+     ],
+     "producer_median": [
+      0.25333333333333335,
+      0.0,
+      0.002216133845930515,
+      0.29156197654941374
+     ],
+     "producer_scale": [
+      0.4594594594594595,
+      1.9297699159725574,
+      0.27698850485108417,
+      0.55
+     ]
+    },
+    "normaliser_sha256": "387a152bad2677b63aae34e3b6888aa3b21f67289ccb6d084d8003c3ccafd9a4",
+    "opt_seed": 1,
+    "producing": "m5_residual",
+    "residual_base": "entity_planner_buyahead_k5_rf5",
+    "run": "/workspace/tokenomics/_pod_ckpts/exp0097/s1",
+    "theta_sha256": "ed0d0f6fe562375eadd7e698798f46fbdd0df0af45fdeb492564c6063af548fa"
+   },
+   "ep": {
+    "producing": "entity_planner"
+   },
+   "k4": {
+    "producing": "entity_planner_buyahead_k4"
+   },
+   "k5_rf5": {
+    "producing": "entity_planner_buyahead_k5_rf5"
+   }
+  },
+  "atlas_content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+  "atlas_path": "/workspace/tokenomics/_pod_ckpts/exp0097/atlas_v2.json",
+  "atlas_sha256": "7517314f297ac39e1c00da3fb734bb40fcfecc9492ee2e67936fc910f8cf9568",
+  "driver": "tokenomics.train.producer_read",
+  "dry_run": false,
+  "episodes": 8,
+  "horizon": 100,
+  "mode": "validate",
+  "prereg": "9ce8e3bd2cf552b0fdfa55744b80acc5d0df88646e600c71b04f4bde43dfa666",
+  "replicates": [
+   0,
+   1
+  ],
+  "runs": [
+   "/workspace/tokenomics/_pod_ckpts/exp0097/s0",
+   "/workspace/tokenomics/_pod_ckpts/exp0097/s1"
+  ],
+  "source": {
+   "commit": "69b438d171c98cce1e5191c27630dbc0acacc044",
+   "n_files": 81,
+   "tree_sha256": "0b83736a2a33817fe4e61d1bd30cb6ee8108c499a639c2b1264541e9f05df47a"
+  },
+  "stage": "m4-es-validate",
+  "validation": null,
+  "worlds": [
+   "ws-atlas-v1-12-0050",
+   "ws-atlas-v1-12-0089",
+   "ws-atlas-v1-12-0092",
+   "ws-atlas-v1-12-0109",
+   "ws-atlas-v1-12-0330",
+   "ws-atlas-v1-12-0350",
+   "ws-atlas-v1-12-0384",
+   "ws-atlas-v1-12-0464",
+   "ws-atlas-v1-12-0494",
+   "ws-atlas-v1-42-0066",
+   "ws-atlas-v1-42-0072",
+   "ws-atlas-v1-42-0102"
+  ]
+ },
+ "result": {
+  "contract_failures": 0,
+  "expected_rows": 960,
+  "problems": [],
+  "reading": "plateau",
+  "rows": 960,
+  "selected": "cand-s0",
+  "status": "complete"
+ },
+ "started": 1793949734.0066094,
+ "status": "complete",
+ "workers": 16
+}

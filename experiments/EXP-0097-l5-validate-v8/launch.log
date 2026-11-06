@@ -1,0 +1,28 @@
+[run_pod] verified clean source commit 69b438d171c98cce1e5191c27630dbc0acacc044 (synced tree + launcher); injected into --train
+[run_pod] creating pod: POST /v1/pods {"name": "exp0097-x", "imageName": "runpod/base:0.7.0-ubuntu2004", "computeType": "CPU", "containerDiskInGb": 30, "volumeMountPath": "/workspace", "cloudType": "SECURE", "ports": ["22/tcp"], "vcpuCount": 16, "cpuFlavorIds": ["cpu5c"], "dataCenterIds": ["EUR-IS-1"]}
+[run_pod] created pod agriqq956h8oe9
+[run_pod] pod agriqq956h8oe9 status: RUNNING
+[run_pod] pod already running
+[run_pod] waiting for pod to become reachable (timeout 600s)...
+[run_pod] SSH up at 157.157.221.30:27192
+[run_pod] pod image runpod/base:0.7.0-ubuntu2004; exported as EXP0039_POD_IMAGE into the run
+[run_pod] syncing /srv/research/wt-exp0097/tokenomics -> 157.157.221.30:/workspace/tokenomics
+
+sent 2,181,539 bytes  received 5,848 bytes  1,458,258.00 bytes/sec
+total size is 6,607,453  speedup is 3.02
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.15.0+cpu cuda False
+[run_pod] launching detached: -u -m tokenomics.train.producer_read --mode validate --runs /workspace/tokenomics/_pod_ckpts/exp0097/s0 /workspace/tokenomics/_pod_ckpts/exp0097/s1 --bar-dir /workspace/tokenomics/_pod_ckpts/exp0097/bar --atlas /workspace/tokenomics/_pod_ckpts/exp0097/atlas_v2.json --workers 16 --source-commit 69b438d171c98cce1e5191c27630dbc0acacc044 --out-dir /workspace/tokenomics/runs/exp0097/validate
+[run_pod] launch ssh did not return within 60s; the job is detached (own session) — proceeding to monitor via pid/exit files
+[run_pod] launched (survives disconnect). Reattach any time: python run_pod_training.py --pod-id agriqq956h8oe9 --attach --remote-log /workspace/train.log --cpu
+[run_pod] mirroring remote log -> train.live.log (tail -f); status -> train.status
+[producer_es] validate complete
+[run_pod] detached run finished (exit 0); pulling results
+[run_pod] pulling /workspace/tokenomics/runs/exp0097/ -> ./experiments/EXP-0097-l5-validate-v8/
+[run_pod] stopping pod agriqq956h8oe9...
+[run_pod] pod stopped
+[run_pod] terminating pod agriqq956h8oe9 (removing)...
+[run_pod] pod terminated

@@ -175,6 +175,7 @@ Budget (design D9): tranche **M5-P, ≈ 80 vCPU-h, requested (user approval pend
   `weak` → the L3 pilot (stop 14); else stop. ≈ 2, stop 4.
   - Done 2026-11-05 (EXP-0086): **`signal`** (0.967 / 0.947), step `heterogeneity` (pilot at σ); 0 member deaths. Pilot (5.1) licensed. ≈ 1.3 vCPU-h, M5-P ≈ 8.3 / 80.
 - [x] R-4 [experiment][remote:cpu16] v7 ladder (θ_e fixed at 0, DIAGNOSTICS 30): EXP-0094 L3 `feasible` (+192.2 vs 155.9) + L4 both seeds to 40; EXP-0095 L5 **`plateau`** (12: +139.9 / +105.9 clear the floors, 0 deaths, but the run-down share 0.743 / 0.736 > the base's 0.681). Stop, to the supervisor / user. ≈ 19.1 vCPU-h, M5-P ≈ 47.9 / 80.
+- [x] R-5 [experiment][remote:cpu16] v8 ladder (run-down term λ = 1.398 from EXP-0090; user decision 2026-11-06): EXP-0096 L3 `feasible` (+135.8 vs 117.2) + L4 both seeds; EXP-0097 L5 **`plateau`** (12: +130.3 / +90.2 clear; run-down share 0.715 / 0.708 vs 0.681; paired r_end −0.009). Stop, to the supervisor / user. ≈ 17.3 vCPU-h, M5-P ≈ 65.2 / 80.
 - [x] 5.1 [experiment][remote:cpu16] EXP-0082: L3 pilot, 20 generations, seed 0. `feasible` if
   g_tr > F_tr; else `unresolved` → DIAGNOSTICS 27's checks first. ≈ 7, stop 14 (sizing.md).
   - Done 2026-11-05 (EXP-0091, on k5_rf5 under v6): **`feasible`** (g_tr +467.5 vs F_tr 125.6); held stock 1.77× (stock_heavy), investment rejection 0.10 → 0.33; centre − k6_rf5 +402 (reported). ≈ 5.0 vCPU-h, M5-P ≈ 13.3 / 80.
