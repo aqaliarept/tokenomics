@@ -50,6 +50,12 @@ rule).
   0 / 1, horizon 100, L5's floors. `parity` if g ≥ −floor with no extra deaths and run-down / starvation shares ≤ the
   base's; `better` if parity and g > floor; else `short`. Held-out set untouched. Pinned EUR-IS-1, stop ≤ 8.
   - Done 2026-11-06: **`better`** (12: +95.9 vs floor 35.0; 42: +196.1 vs 160.0; deaths 0; run-down ≤ base); ≈ 1.9 vCPU-h.
+- [ ] 2.9 [experiment][remote:cpu16] EXP-0103: held-out read of the imitated stack (user decision 2026-11-06: held-out
+  now, then MAPPO). Pre-registered in `train/registry/m6_prereg_v4.json` (SHA `f06fdf0c…`), one shot with a pending
+  entry in `experiments/m6_heldout_ledger.json` committed before the launch. M5's L6 set: every atlas v2 held-out
+  world played (12 at 12, 4 at 42), the loaded ones gating (8 / 2), 8 episodes (stage m5-heldout) × replicates 0 / 1,
+  horizon 100; EXP-0102's rule (`parity` / `better` / `short`, side-effect clauses), 12 deciding, 42 reported.
+  MAPPO's later held-out read is a second comparison on this set. Pinned EUR-IS-1, stop ≤ 8.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

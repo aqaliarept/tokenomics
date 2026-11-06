@@ -1,0 +1,81 @@
+{
+ "arms": {
+  "gnn": "GNN producer + GNN orderer",
+  "gnn_p": "GNN producer + MWWk (reported)",
+  "k5_rf5": "k5_rf5 + MWWk (the base)"
+ },
+ "change": "add-m6-joint-mpg-gnn",
+ "clauses": "deaths, run-down share (r_end < X r_start), starvation share (any consumer fill < Y), X / Y = side-effect params v2",
+ "decision": "user 2026-11-06 (via the supervisor): held-out now, then MAPPO",
+ "floor": "L5 / L6's (producer_read._comparisons: order_es_validate.mean_comp, equal-weight world mean over the loaded worlds, max(atlas floor, own 3 SE), both arms with 2 replicates)",
+ "format": "m6-prereg-v4",
+ "keeps": {
+  "m6_prereg_v2.json": "2460cd07755930225837f996450f359e10480d495e3fc3e5be540d597a76d4a3",
+  "m6_prereg_v3.json": "409643f205aadce1fc504b07282f7fec295b3d1960d9f5268dcba3df095e2267",
+  "note": "v1, v2 and v3 stay frozen, unedited"
+ },
+ "models": {
+  "from": "EXP-0100 fit/models.pt",
+  "sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+ },
+ "multiplicity": "MAPPO's later held-out read (if any) is a second comparison on this same set; it will be reported as such, never as a fresh one-shot read",
+ "reported": [
+  "the 42-producer reading",
+  "the GNN producer + MWWk arm",
+  "holding, investment rejection, min capacity ratio per arm"
+ ],
+ "rule": "at 12 producers (deciding), GNN + GNN vs k5_rf5 + MWWk on the loaded atlas v2 held-out worlds (L5's set and floors): parity if g >= -floor, no extra deaths, and run-down and starvation shares <= the base's; better if parity and g > floor; else short. 42 producers and the GNN producer + MWWk arm: the same rule, reported only",
+ "stage": "held-out read of the imitated stack (EXP-0103), before MAPPO",
+ "status": "frozen before EXP-0103's data; the real read refuses any other file; one shot, with a pending ledger entry committed before the launch",
+ "worlds": {
+  "atlas_content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+  "episodes": 8,
+  "gating": "the loaded ones (rho > 0.28, not collapse), as L5 / L6",
+  "horizon": 100,
+  "ids": {
+   "12": [
+    "ws-atlas-v1-12-0016",
+    "ws-atlas-v1-12-0033",
+    "ws-atlas-v1-12-0091",
+    "ws-atlas-v1-12-0172",
+    "ws-atlas-v1-12-0239",
+    "ws-atlas-v1-12-0273",
+    "ws-atlas-v1-12-0278",
+    "ws-atlas-v1-12-0368",
+    "ws-atlas-v1-12-0413",
+    "ws-atlas-v1-12-0459",
+    "ws-atlas-v1-12-0490",
+    "ws-atlas-v1-12-0504"
+   ],
+   "42": [
+    "ws-atlas-v1-42-0005",
+    "ws-atlas-v1-42-0007",
+    "ws-atlas-v1-42-0008",
+    "ws-atlas-v1-42-0125"
+   ]
+  },
+  "loaded_ids": {
+   "12": [
+    "ws-atlas-v1-12-0016",
+    "ws-atlas-v1-12-0033",
+    "ws-atlas-v1-12-0172",
+    "ws-atlas-v1-12-0239",
+    "ws-atlas-v1-12-0273",
+    "ws-atlas-v1-12-0278",
+    "ws-atlas-v1-12-0368",
+    "ws-atlas-v1-12-0413"
+   ],
+   "42": [
+    "ws-atlas-v1-42-0005",
+    "ws-atlas-v1-42-0125"
+   ]
+  },
+  "played": "every held-out world at 12 and 42",
+  "replicates": [
+   0,
+   1
+  ],
+  "split": "atlas v2 held-out (M5's L6 set; never read before: no M5 held-out ledger entry exists)",
+  "stage": "m5-heldout"
+ }
+}

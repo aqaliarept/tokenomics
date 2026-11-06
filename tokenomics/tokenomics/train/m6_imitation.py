@@ -942,6 +942,82 @@ def freeze_prereg_v3(atlas: Mapping, path: Path = PREREG_V3_PATH) -> tuple[str, 
     return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
 
 
+# held-out (EXP-0103; pre-registration v4, frozen before its data; one shot, ledgered)
+PREREG_V4_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v4.json"
+PREREG_V4_SHA256: str | None = "f06fdf0c1a76c13e1a8137f02057510692bd5dd4b8cf60e6951b1fe04f349b6d"  # frozen before EXP-0103
+HELDOUT_LEDGER = Path(__file__).resolve().parents[3] / "experiments" / "m6_heldout_ledger.json"
+HELDOUT_KEY = "held-out/m6-imitated"
+
+
+def heldout_worlds(atlas: Mapping) -> list[dict]:
+    from .producer_read import HELDOUT, read_views
+
+    return read_views(atlas, HELDOUT, None, None)
+
+
+def registered_prereg_v4(atlas: Mapping) -> dict:
+    from .producer_read import HELDOUT_STAGE, READ_EPISODES, READ_REPLICATES, RHO_LOADED
+
+    views = heldout_worlds(atlas)
+    loaded = [v["world"] for v in views if v["rho"] > RHO_LOADED and v["class"] != "collapse"]
+    return {
+        "format": "m6-prereg-v4", "change": "add-m6-joint-mpg-gnn",
+        "stage": "held-out read of the imitated stack (EXP-0103), before MAPPO",
+        "status": "frozen before EXP-0103's data; the real read refuses any other file; one shot, "
+                  "with a pending ledger entry committed before the launch",
+        "keeps": {"m6_prereg_v3.json": PREREG_V3_SHA256, "m6_prereg_v2.json": PREREG_SHA256,
+                  "note": "v1, v2 and v3 stay frozen, unedited"},
+        "decision": "user 2026-11-06 (via the supervisor): held-out now, then MAPPO",
+        "models": {"sha256": EXP0100_MODELS_SHA256, "from": "EXP-0100 fit/models.pt"},
+        "arms": {"gnn": "GNN producer + GNN orderer", "gnn_p": "GNN producer + MWWk (reported)",
+                 "k5_rf5": "k5_rf5 + MWWk (the base)"},
+        "worlds": {"split": "atlas v2 held-out (M5's L6 set; never read before: no M5 held-out "
+                            "ledger entry exists)",
+                   "played": "every held-out world at 12 and 42",
+                   "gating": f"the loaded ones (rho > {RHO_LOADED}, not collapse), as L5 / L6",
+                   "atlas_content_hash": REGISTERED_ATLAS_HASH,
+                   "ids": {str(sz): [v["world"] for v in views if v["size"] == sz]
+                           for sz in (12, 42)},
+                   "loaded_ids": {str(sz): [w for w in loaded if f"-{sz}-" in w]
+                                  for sz in (12, 42)},
+                   "episodes": READ_EPISODES, "stage": HELDOUT_STAGE,
+                   "replicates": list(READ_REPLICATES), "horizon": pe.HORIZON},
+        "rule": VALIDATE_RULE.replace("validation worlds", "held-out worlds"),
+        "floor": "L5 / L6's (producer_read._comparisons: order_es_validate.mean_comp, equal-weight "
+                 "world mean over the loaded worlds, max(atlas floor, own 3 SE), both arms with 2 "
+                 "replicates)",
+        "clauses": "deaths, run-down share (r_end < X r_start), starvation share (any consumer "
+                   "fill < Y), X / Y = side-effect params v2",
+        "multiplicity": "MAPPO's later held-out read (if any) is a second comparison on this same "
+                        "set; it will be reported as such, never as a fresh one-shot read",
+        "reported": ["the 42-producer reading", "the GNN producer + MWWk arm", "holding, "
+                     "investment rejection, min capacity ratio per arm"]}
+
+
+def freeze_prereg_v4(atlas: Mapping, path: Path = PREREG_V4_PATH) -> tuple[str, str]:
+    from ..eval.provenance import sha256_file
+
+    doc = registered_prereg_v4(atlas)
+    if not path.exists():
+        path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+        return "FROZEN", sha256_file(str(path))
+    return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
+
+
+def heldout_ledger_problems(path: Path = HELDOUT_LEDGER) -> list[str]:
+    """One shot: exactly one pending entry for these models and v4, and no closed one."""
+    if not path.exists():
+        return [f"no held-out ledger {path.name} (commit a pending entry before the launch)"]
+    es = [e for e in json.loads(path.read_text()).get("entries", []) if e.get("key") == HELDOUT_KEY]
+    pend = [e for e in es if e.get("status") == "pending"
+            and e.get("models_sha256") == EXP0100_MODELS_SHA256
+            and e.get("prereg") == PREREG_V4_SHA256]
+    if len(pend) != 1 or any(e.get("status") != "pending" for e in es):
+        return ["the held-out ledger does not hold exactly one pending entry (and none closed) "
+                f"for {HELDOUT_KEY}"]
+    return []
+
+
 def validate_job(job: dict) -> dict[str, str]:
     row = side_effect_job({**job, "kind": VALIDATE_ARMS[job["arm"]]})
     row["arm"] = job["arm"]
@@ -969,24 +1045,30 @@ def validation_reading(dicts: Sequence[dict], cells: Mapping) -> dict:
 
 def run_validate(atlas_path: str, models: str, out_dir: str, workers: int,
                  dry_run: bool = False, max_worlds: int | None = None,
-                 episodes: int | None = None, horizon: int = pe.HORIZON) -> int:
-    """EXP-0102: VALIDATE_ARMS on the loaded atlas v2 validation worlds (L5's set)."""
+                 episodes: int | None = None, horizon: int = pe.HORIZON,
+                 split: str = "validate") -> int:
+    """EXP-0102 (`validate`): VALIDATE_ARMS on the loaded atlas v2 validation worlds (L5's set);
+    EXP-0103 (`heldout`): every held-out world played, the loaded ones gating (M5's L6 set)."""
     import csv
 
     from ..eval.provenance import sha256_file
     from ..eval.teacher_audit import load_atlas
     from .order_es_validate import VALIDATION_STAGE
-    from .producer_read import READ_EPISODES, READ_REPLICATES, _cells, entry_for
+    from .producer_read import HELDOUT_STAGE, READ_EPISODES, READ_REPLICATES, _cells, entry_for
 
     atlas = load_atlas(atlas_path)
     eps = episodes or READ_EPISODES
+    held = split == "heldout"
+    path, pin, reg = ((PREREG_V4_PATH, PREREG_V4_SHA256, registered_prereg_v4) if held
+                      else (PREREG_V3_PATH, PREREG_V3_SHA256, registered_prereg_v3))
     if not dry_run:
         p = []
-        if PREREG_V3_SHA256 is None or not PREREG_V3_PATH.exists() or \
-                sha256_file(str(PREREG_V3_PATH)) != PREREG_V3_SHA256:
-            p.append("m6_prereg_v3.json is not the pinned file")
-        elif json.loads(PREREG_V3_PATH.read_text()) != registered_prereg_v3(atlas):
-            p.append("the v3 pre-registration differs from the code / atlas")
+        if pin is None or not path.exists() or sha256_file(str(path)) != pin:
+            p.append(f"{path.name} is not the pinned file")
+        elif json.loads(path.read_text()) != reg(atlas):
+            p.append(f"the {path.name} pre-registration differs from the code / atlas")
+        if held:
+            p += heldout_ledger_problems()
         if atlas.get("content_hash") != REGISTERED_ATLAS_HASH:
             p.append("not the registered atlas v2")
         if sha256_file(models) != EXP0100_MODELS_SHA256:
@@ -994,13 +1076,13 @@ def run_validate(atlas_path: str, models: str, out_dir: str, workers: int,
         if max_worlds or episodes or horizon != pe.HORIZON:
             p.append("a filter is set (--max-world-episodes / --episodes / --horizon)")
         _refuse(p)
-    views = validation_worlds(atlas)
+    views = heldout_worlds(atlas) if held else validation_worlds(atlas)
     if max_worlds:
         views = [v for sz in (12, 42) for v in [x for x in views if x["size"] == sz][:max_worlds]]
     cells = _cells(views, atlas)
     jobs = []
     for v in views:
-        e = entry_for(v, eps, VALIDATION_STAGE)
+        e = entry_for(v, eps, HELDOUT_STAGE if held else VALIDATION_STAGE)
         for ep in e.episode_seeds:
             for r in READ_REPLICATES:
                 for arm in VALIDATE_ARMS:
@@ -1010,8 +1092,8 @@ def run_validate(atlas_path: str, models: str, out_dir: str, workers: int,
                                  "horizon": horizon, "models": models, "generation": "0"})
     jobs.sort(key=lambda j: (-j["size"], j["arm"] == "k5_rf5"))  # longest first
     rows = _pool(validate_job, jobs, workers)
-    doc = {**validation_reading(rows, cells), "dry_run": dry_run,
-           "prereg": PREREG_V3_SHA256, "models_sha256": sha256_file(models),
+    doc = {**validation_reading(rows, cells), "dry_run": dry_run, "split": split,
+           "prereg": pin, "models_sha256": sha256_file(models),
            "source_commit": SOURCE_COMMIT, "worlds": [v["world"] for v in views],
            "episodes": eps, "horizon": horizon, "rows": len(rows), "jobs": len(jobs)}
     out = Path(out_dir)
@@ -1023,7 +1105,7 @@ def run_validate(atlas_path: str, models: str, out_dir: str, workers: int,
         w.writeheader()
         for r in sorted(rows, key=lambda r: (r["arm"], r["world"], r["episode"], r["replicate"])):
             w.writerow(r)
-    print(f"[m6_imitation] validation: {doc['reading']} {doc['readings']}", flush=True)
+    print(f"[m6_imitation] {split}: {doc['reading']} {doc['readings']}", flush=True)
     return 0 if len(rows) == len(jobs) else 2
 
 
@@ -1074,7 +1156,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", required=True,
                    choices=("timing", "collect", "fit", "check", "side-effects", "validate",
-                            "freeze", "freeze-v3"))
+                            "heldout", "freeze", "freeze-v3", "freeze-v4"))
     p.add_argument("--episodes", type=int)
     p.add_argument("--horizons", default=",".join(str(h) for h in SIDE_ARMS))
     p.add_argument("--dry-run", action="store_true")
@@ -1094,7 +1176,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     a = p.parse_args(argv)
     global SOURCE_COMMIT
     SOURCE_COMMIT = a.source_commit
-    if not a.dry_run and a.mode in ("collect", "fit", "check", "side-effects", "validate") and \
+    if not a.dry_run and a.mode in ("collect", "fit", "check", "side-effects", "validate",
+                                    "heldout") and \
             len(SOURCE_COMMIT) != 40:
         p.error("a real run needs a 40-hex --source-commit")
     if a.mode == "freeze":
@@ -1113,9 +1196,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         status, sha = freeze_prereg_v3(load_atlas(a.atlas))
         print(f"[m6_imitation] pre-registration v3 {status} {sha}")
         return 0 if status in ("FROZEN", "MATCH") else 2
-    if a.mode == "validate":
+    if a.mode == "freeze-v4":
+        from ..eval.teacher_audit import load_atlas
+
+        status, sha = freeze_prereg_v4(load_atlas(a.atlas))
+        print(f"[m6_imitation] pre-registration v4 {status} {sha}")
+        return 0 if status in ("FROZEN", "MATCH") else 2
+    if a.mode in ("validate", "heldout"):
         return run_validate(a.atlas, a.models, a.out_dir, a.workers, a.dry_run,
-                            a.max_world_episodes, a.episodes, a.horizon)
+                            a.max_world_episodes, a.episodes, a.horizon, a.mode)
     if a.mode == "side-effects":
         return run_side_effects(a.training_dir, a.models, a.out_dir, a.workers,
                                 a.max_world_episodes, a.dry_run,
