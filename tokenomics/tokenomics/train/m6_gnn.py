@@ -252,11 +252,18 @@ class ProducerGNN(nn.Module):
     """Typed message passing over a producer's own entity view (D3); heads per D2."""
 
     def __init__(self, hidden: int = HIDDEN, rounds: int = ROUNDS,
-                 features: str = LATEST_FEATURES) -> None:
+                 features: str = LATEST_FEATURES, capacity_extra: int = 0) -> None:
+        """`capacity_extra` > 0: the last `capacity_extra` capacity columns enter through their own
+        bias-free layer added to the first layer of a narrower encoder (`extend_to_v4`: EXP-0100's
+        16-column layer kept as it is, the v4 columns at zero weight, so the start is bit-identical;
+        a widened layer would re-order the float sums)."""
         super().__init__()
         self.hidden, self.rounds, self.features = hidden, rounds, features
+        self.capacity_extra = capacity_extra
         cap = CAPACITY_DIM[features]
-        self.enc = nn.ModuleDict({"global": _mlp(13, hidden), "capacity": _mlp(cap, hidden),
+        self.cap_extra = nn.Linear(capacity_extra, hidden, bias=False) if capacity_extra else None
+        self.enc = nn.ModuleDict({"global": _mlp(13, hidden),
+                                  "capacity": _mlp(cap - capacity_extra, hidden),
                                   "product": _mlp(18, hidden), "input": _mlp(6, hidden)})
         self.norm = FeatureNorm({"global": 13, "capacity": cap, "product": 18, "input": 6},
                                 PRODUCER_LOG1P)
@@ -285,10 +292,18 @@ class ProducerGNN(nn.Module):
                                 ).squeeze(-1) if n_in else torch.zeros(0))
         return gates, logit
 
+    def _encode(self, k: str, v: torch.Tensor) -> torch.Tensor:
+        if not v.shape[0]:
+            return torch.zeros((0, self.hidden))
+        if k != "capacity" or self.cap_extra is None:
+            return self.enc[k](v)
+        n = v.shape[1] - self.capacity_extra
+        first, act, second = self.enc[k]
+        return second(act(first(v[:, :n]) + self.cap_extra(v[:, n:])))
+
     def _trunk(self, f: dict[str, Any]) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
         t = {k: self.norm(k, f[k]) for k in ("global", "capacity", "product", "input")}
-        h = {k: (self.enc[k](v) if v.shape[0] else torch.zeros((0, self.hidden)))
-             for k, v in t.items()}
+        h = {k: self._encode(k, v) for k, v in t.items()}
         for layer in self.upd:
             n_p = h["product"].shape[0]
             pc = _mean_ctx(f["prod_cap"], n_p, h["capacity"], True)

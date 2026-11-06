@@ -999,13 +999,14 @@ def agreement(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list) -> di
 def save_models(pm: g.ProducerGNN, om: g.OrdererGNN, path: Path) -> None:
     torch.save({"producer": pm.state_dict(), "orderer": om.state_dict(),
                 "hidden": g.HIDDEN, "rounds": g.ROUNDS, "norm_format": g.NORM_FORMAT,
-                "producer_features": pm.features}, path)
+                "producer_features": pm.features, "capacity_extra": pm.capacity_extra}, path)
 
 
 def load_models(path: str | Path) -> tuple[g.ProducerGNN, g.OrdererGNN]:
     d = torch.load(path, weights_only=True)
     # a checkpoint without `producer_features` predates v3 (EXP-0099 / EXP-0100): v2 features
-    pm = g.ProducerGNN(d["hidden"], d["rounds"], d.get("producer_features", g.FEATURES_V2))
+    pm = g.ProducerGNN(d["hidden"], d["rounds"], d.get("producer_features", g.FEATURES_V2),
+                       int(d.get("capacity_extra", 0)))
     om = g.OrdererGNN(d["hidden"], d["rounds"])
     # a pre-normaliser checkpoint (EXP-0099) loads with the identity normaliser
     strict = d.get("norm_format") == g.NORM_FORMAT

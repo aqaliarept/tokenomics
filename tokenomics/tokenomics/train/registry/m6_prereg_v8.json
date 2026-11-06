@@ -1,0 +1,80 @@
+{
+ "calibration": {
+  "policy": "k5_rf5 + MWWk",
+  "replicates": [
+   1,
+   2,
+   3,
+   4
+  ],
+  "rule": "per size: s = H / B_we; lambda / mu = sigma(normalised units) / sigma(term), pooled within world-episode; nu = H"
+ },
+ "change": "add-m6-joint-mpg-gnn",
+ "decisions": [
+  "user 2026-11-06: the RL stage is critic-free (docs/research/critic-free-team-learning.md)",
+  "supervisor 2026-11-06: stop tuning imitation; Stage 0 from the EXP-0100 stack with the v4 inputs at zero weight; D0.4 dropped"
+ ],
+ "format": "m6-prereg-v8",
+ "keeps": {
+  "m6_prereg_v7.json": "970fa4aa24f3398b50d1d82a5e40a29be157d5ff8074de69d4338a0f25758275",
+  "note": "v1..v7 stay frozen"
+ },
+ "stage": "critic-free RL: Stage 0 (diagnostic) and the Stage 1 design",
+ "stage0": {
+  "null_draws": 200,
+  "projection": {
+   "k": 256,
+   "note": "Johnson-Lindenstrauss; cosines to about +-0.06",
+   "seed": 20261106
+  },
+  "replicate_base": 100,
+  "rule": "D0.3: per role (producer, orderer) and size, the split-half cosine of the policy gradient for E1 (unpaired batch-mean baseline, episode return), E2 (same-seed leave-one-out, episode return), E3 (same-seed leave-one-out, per-cycle return-to-go at gamma from D0.2), each against a permutation null (advantages shuffled across seeds, 200 draws, 95th percentile). Stage 1 uses the estimator with the highest mean cosine over the two roles at 12, and runs only if that estimator's cosine exceeds its null's 95th percentile at 12 for both roles (reading `signal`). Else `signal_42_only` if it does at 42 for both roles, else `no_signal` (stop, record). D0.1, D0.2 (gamma = 1 - 1/t*, clipped to [0.9, 0.99]) and D0.5 are reported and set gamma and the Stage 1 budget",
+  "seeds": {
+   "12": 24,
+   "42": 8
+  },
+  "siblings": 4
+ },
+ "stage1_design": {
+  "data": "fresh training-split seeds every iteration; zero-spread groups dropped and counted",
+  "gate": "every 15 iterations: candidate vs the frozen EXP-0100 stack, one-sided paired t-test alpha 0.05 on fresh train-split seeds, no extra deaths, run-down share no worse",
+  "learner": "critic-free: G = 4 same-seed siblings; Stage 0's estimator (leave-one-out baseline, no std division); PPO-clip 0.2; KL penalty to the start policy, coefficient 0.04; one Stepper per agent (Adam, clip 1.0) with per-step logs; 1 epoch per iteration",
+  "pinned_before_stage1": "learning rates, iterations and seeds per iteration (sized from D0.5), in a further pre-registration"
+ },
+ "start": {
+  "extension": "producer capacity encoder + 2 zero-weight input columns (margin, sign); bit-identical outputs (tests/test_m6_stage0.py)",
+  "models_sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126",
+  "replenish_log_std": -1.5
+ },
+ "status": "frozen before Stage 0's data; the real run refuses any other file",
+ "worlds": {
+  "12": "M4's training world-episodes (monitor excluded), horizon 100",
+  "42": {
+   "episodes": 2,
+   "horizon": 200,
+   "stage": "m6-collect-42",
+   "worlds": [
+    "ws-atlas-v1-42-0000",
+    "ws-atlas-v1-42-0013",
+    "ws-atlas-v1-42-0031",
+    "ws-atlas-v1-42-0034",
+    "ws-atlas-v1-42-0037",
+    "ws-atlas-v1-42-0039",
+    "ws-atlas-v1-42-0040",
+    "ws-atlas-v1-42-0041",
+    "ws-atlas-v1-42-0043",
+    "ws-atlas-v1-42-0052",
+    "ws-atlas-v1-42-0054",
+    "ws-atlas-v1-42-0073",
+    "ws-atlas-v1-42-0076",
+    "ws-atlas-v1-42-0081",
+    "ws-atlas-v1-42-0093",
+    "ws-atlas-v1-42-0113",
+    "ws-atlas-v1-42-0119",
+    "ws-atlas-v1-42-0122",
+    "ws-atlas-v1-42-0126"
+   ]
+  },
+  "excluded": "every held-out and validation world (42-0125 included)"
+ }
+}
