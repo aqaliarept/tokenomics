@@ -741,6 +741,149 @@ def run_check(training_dir: str, atlas: str, models: str, out_dir: str, workers:
     return 0
 
 
+# --- side effects (task 2.7, EXP-0101; pre-registered in tasks.md before its data) ---
+
+EXP0100_MODELS_SHA256 = "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+SIDE_ARMS: dict[int, tuple[str, ...]] = {100: ("monitor", "swap_gnn_producer", "monitor_base"),
+                                         200: ("monitor", "monitor_base")}
+
+
+
+def side_arms(h: int, horizons: Sequence[int]) -> tuple[str, ...]:
+    """The first horizon carries the deciding set (3 arms), later ones the reported pair (a dry
+    run's small horizons map the same way)."""
+    return SIDE_ARMS[100] if h == horizons[0] else SIDE_ARMS[200]
+SIDE_RULE = ("clean if the GNN + GNN stack at horizon 100 is no worse than k5_rf5 + MWWk on any of L5's "
+             "side-effect clauses (a) deaths, (b) run-down share r_end < X r_start, (c) starvation "
+             "share any consumer fill < Y; else side_effect naming the clause(s). The swap arm and "
+             "the horizon-200 pair: the same clauses, reported only")
+
+
+def side_effect_job(job: dict) -> dict[str, str]:
+    """One keyed episode of arm `job["kind"]` at `job["horizon"]` with the routing tracer and the
+    contract monitor: the gate row, trace cells, fund shares and per-head toggle firing."""
+    from ..eval.baselines import producing_policy
+    from ..eval.contract import ContractMonitor
+    from ..eval.gate import row_from_stats, row_to_dict
+    from ..eval.routing_audit import ordering_policy, trace_cells
+    from ..eval.routing_trace import RoutingTracer
+    from ..eval.runner import run_episode
+
+    torch.set_num_threads(1)
+    env = _episode_env(job)
+    tracer = RoutingTracer()
+    tracer.attach(env)
+    monitor = ContractMonitor(env)
+    who_p, who_o = ARMS[job["kind"]]
+    pm, om = load_models(job["models"]) if "gnn" in (who_p, who_o) else (None, None)
+    p = g.gnn_producing_policy(pm) if who_p == "gnn" else producing_policy(BASE_PRODUCER)
+    o = g.gnn_ordering_policy(om) if who_o == "gnn" else ordering_policy(BASE_ORDERER)
+    fired = np.zeros(3)
+    n_dec = [0]
+
+    def counted(e: Any, agent: str) -> np.ndarray:
+        a = p(e, agent)
+        k = e.spec_.num_inputs
+        fired[:] += np.asarray(a[k:k + 3]) > 0
+        n_dec[0] += 1
+        return a
+
+    run_episode(env, counted, o, seed=job["episode"], action_seed=None, monitor=monitor)
+    st = env.episode_stats
+    monitor.verify(dead=bool(st["dead"]), cycles=st["cycles"], horizon=job["horizon"])
+    row = row_to_dict(row_from_stats(job["world"], job["size"], job["regime"], job["episode"],
+                                     f"{job['kind']}@h{job['horizon']}", job["replicate"], st))
+    row.update(trace_cells(tracer))
+    row.update({"arm": job["kind"], "horizon": str(job["horizon"]),
+                "units": repr(float(st["consumer_completed_units"])),
+                "fund_shares": json.dumps(tracer.fund_shares(), sort_keys=True),
+                **{f"fire_{t}": repr(float(fired[i] / max(1, n_dec[0])))
+                   for i, t in enumerate(TOGGLES)}})
+    return row
+
+
+def side_effect_reading(rows: Sequence[dict], horizons: Sequence[int] = tuple(SIDE_ARMS)) -> dict:
+    """SIDE_RULE over the rows: per (arm, horizon) the clause flags and the reported measures;
+    deciding = GNN + GNN at the first horizon."""
+    from .order_es_validate import row_flags
+    from .producer_read import STOCK_HEAVY
+
+    def summary(rs: list) -> dict:
+        f = [row_flags(d) for d in rs]
+        n = len(rs)
+        ratio = [float(d["r_end"]) / float(d["r_start"]) for d in rs
+                 if d["r_start"] not in ("", "None") and d["r_end"] not in ("", "None")
+                 and float(d["r_start"]) > 0]
+        num = lambda k: fmean(float(d[k]) for d in rs if d.get(k) not in ("", "None", None))  # noqa: E731
+        return {"rows": n, "deaths": sum(x[0] for x in f),
+                "rundown_share": sum(x[1] for x in f) / n, "starvation_share": sum(x[2] for x in f) / n,
+                "r_end_over_r_start": fmean(ratio) if ratio else None,
+                "min_capacity_ratio": num("min_capacity_ratio"),
+                "holding_units_per_cycle": num("holding_units_per_cycle"),
+                "investment_rejection_rate": num("investment_rejection_rate"),
+                "units": num("units"),
+                "fire": {t: num(f"fire_{t}") for t in TOGGLES}}
+
+    out: dict[str, Any] = {"rule": SIDE_RULE, "per_horizon": {}}
+    for h in horizons:
+        arms = side_arms(h, horizons)
+        per = {a: summary([d for d in rows if d["arm"] == a and d["horizon"] == str(h)])
+               for a in arms}
+        base = per["monitor_base"]
+        for a in arms:
+            if a == "monitor_base" or not per[a]["rows"]:
+                continue
+            worse = [c for c, k in (("a_deaths", "deaths"), ("b_rundown", "rundown_share"),
+                                    ("c_starvation", "starvation_share"))
+                     if per[a][k] > base[k]]
+            per[a]["clauses_worse"] = worse
+            hb = base["holding_units_per_cycle"]
+            per[a]["stock_heavy"] = bool(hb and per[a]["holding_units_per_cycle"] > STOCK_HEAVY * hb)
+        out["per_horizon"][str(h)] = per
+    dec = out["per_horizon"][str(horizons[0])]["monitor"]
+    out["reading"] = "clean" if not dec["clauses_worse"] else "side_effect"
+    out["clauses"] = dec["clauses_worse"]
+    return out
+
+
+def run_side_effects(training_dir: str, models: str, out_dir: str, workers: int,
+                     max_world_episodes: int | None, dry_run: bool = False,
+                     horizons: Sequence[int] = tuple(SIDE_ARMS)) -> int:
+    """EXP-0101 (task 2.7): SIDE_ARMS on the monitor world-episodes x MONITOR_REPLICATES."""
+    from ..eval.provenance import sha256_file
+
+    ts, _train, mon = _training(training_dir)
+    if not dry_run:
+        _refuse(real_problems(horizon=pe.HORIZON, max_world_episodes=max_world_episodes, ts=ts)
+                + ([] if sha256_file(models) == EXP0100_MODELS_SHA256 else
+                   ["the models are not EXP-0100's (5acf8b82...)"])
+                + ([] if tuple(horizons) == tuple(SIDE_ARMS) else ["--horizons is set"]))
+    if max_world_episodes:
+        mon = mon[:max_world_episodes]
+    jobs = [j for h in horizons for arm in side_arms(h, horizons)
+            for j in _jobs(ts, mon, arm, MONITOR_REPLICATES, h, models)]
+    jobs.sort(key=lambda j: -j["horizon"])  # longest first
+    rows = _pool(side_effect_job, jobs, workers)
+    doc = {**side_effect_reading(rows, horizons), "dry_run": dry_run, "models_sha256": sha256_file(models),
+           "prereg": "openspec/changes/add-m6-joint-mpg-gnn/tasks.md 2.7 (2026-11-06)",
+           "source_commit": SOURCE_COMMIT, "world_episodes": len(mon),
+           "replicates": list(MONITOR_REPLICATES)}
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "side_effects.json").write_text(json.dumps(doc, indent=1, default=str) + "\n")
+    cols = list(dict.fromkeys(k for r in rows for k in r))
+    with (out / "episodes.csv").open("w", newline="") as fh:
+        import csv
+
+        w = csv.DictWriter(fh, cols)
+        w.writeheader()
+        for r in sorted(rows, key=lambda r: (r["arm"], r["horizon"], r["world"], r["episode"],
+                                             r["replicate"])):
+            w.writerow(r)
+    print(f"[m6_imitation] side effects: {doc['reading']} {doc['clauses']}", flush=True)
+    return 0
+
+
 def run_timing(atlas: str, horizon: int, worlds: Sequence[str]) -> dict:
     """L0 timing probe: seconds per decision (GNN vs k5_rf5 / MWWk) and per horizon-H episode."""
     from ..eval.baselines import producing_policy
@@ -786,7 +929,9 @@ def run_timing(atlas: str, horizon: int, worlds: Sequence[str]) -> dict:
 
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--mode", required=True, choices=("timing", "collect", "fit", "check", "freeze"))
+    p.add_argument("--mode", required=True,
+                   choices=("timing", "collect", "fit", "check", "side-effects", "freeze"))
+    p.add_argument("--horizons", default=",".join(str(h) for h in SIDE_ARMS))
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--source-commit", default="", help="recorded in every output (provenance)")
     p.add_argument("--training-dir")
@@ -804,7 +949,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     a = p.parse_args(argv)
     global SOURCE_COMMIT
     SOURCE_COMMIT = a.source_commit
-    if not a.dry_run and a.mode in ("collect", "fit", "check") and len(SOURCE_COMMIT) != 40:
+    if not a.dry_run and a.mode in ("collect", "fit", "check", "side-effects") and \
+            len(SOURCE_COMMIT) != 40:
         p.error("a real run needs a 40-hex --source-commit")
     if a.mode == "freeze":
         status, sha = freeze_prereg()
@@ -816,6 +962,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if a.mode == "collect":
         return run_collect(a.training_dir, a.out_dir, a.workers, a.horizon, a.max_world_episodes,
                            a.dry_run)
+    if a.mode == "side-effects":
+        return run_side_effects(a.training_dir, a.models, a.out_dir, a.workers,
+                                a.max_world_episodes, a.dry_run,
+                                tuple(int(h) for h in a.horizons.split(",")))
     if a.mode == "fit":
         return run_fit(a.collect_dir, a.out_dir, a.epochs, a.seed, a.workers, a.dry_run,
                        a.fit_mode)

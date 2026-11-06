@@ -23,6 +23,25 @@ rule).
     diverged (unscaled features); ≈ 5.0 vCPU-h. Stop before RL; user decision pending.
   - Rerun 2026-11-06 as EXP-0100 (prereg v2, normaliser + clip + sync): **`faithful`** (+196.1 vs floor 90.5, 0 deaths);
     role swap: the GNN producer carries the gain (+207), the GNN orderer is neutral (+5.7); ≈ 7.2 vCPU-h.
+- [ ] 2.7 [experiment][remote:cpu16] EXP-0101: side effects of the imitated stack (deciding check before
+  MAPPO). Pre-registered 2026-11-06, before any data:
+  - **Arms**, the EXP-0100 models (SHA `5acf8b82…`), on the 16 monitor world-episodes × replicates 0 / 1, at
+    the same DrawKeys:
+    - horizon 100: GNN + GNN, GNN producer + MWWk, k5_rf5 + MWWk (base);
+    - horizon 200, reported only: GNN + GNN and the base.
+  - **Clauses** (L5's side-effect clauses as in M5, `producer_read._guard_ok`; X / Y = the registered v2
+    side-effect params). Each is per arm, against the base at the same horizon:
+    - (a) deaths ≤ the base's;
+    - (b) run-down share (rows with r_end < X·r_start) ≤ the base's;
+    - (c) starvation share (rows with any consumer fill < Y) ≤ the base's.
+  - **Reading** (deciding arm GNN + GNN at horizon 100): **`clean`** if no clause is worse than the base, else
+    **`side_effect`**, naming the clause(s). GNN producer + MWWk (the swap) and the horizon-200 pair take the
+    same clauses, reported only.
+  - **Reported, never deciding:** per arm, mean r_end / r_start, min capacity ratio, holding units per cycle
+    (M5's stock-heavy flag: > 1.5× the base), investment rejection rate, per-producer fund shares (the
+    routing tracer), per-head toggle firing rates; per world, 12-0121 in detail (units, fills, investments,
+    capacity, fund).
+  - Pinned EUR-IS-1, 16 vCPU, watchdog, stop ≤ 8 vCPU-h.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop
