@@ -1385,7 +1385,7 @@ scores became so extreme that the copying is meaningless.
 **Recurrence (EXP-0107, 2026-11-06):** with the scaled features and gradient clipping (global norm 1.0), the
 orderer sat at its label-entropy floor (1.3196) for epochs 1–16, then diverged at epoch 17 (5.3e9, then 1.5e11 at
 epoch 20; final logit spread ≈ 5e11, max |w| 9.7). The producer's loss jumped in the same epoch (0.049 → 0.38).
-This is the "features scaled but still diverging" branch. The cause is undiagnosed (shared Adam and global clip
+This is the "features scaled but still diverging" branch. Correction: the divergence began at epoch 14 (loss 23.4) and exploded at 15. Evidence (EXP-0107 addendum): the inputs are unchanged and clipped at ±5; every orderer layer grew 15–70× in weight norm, compounding to logits of about 1e19; the actors are coupled only through the shared global gradient clip (Adam's state is per parameter); 29.6% of label slots carry a zero-weight entry, an unbounded optimum. Next check: per-step, per-actor gradient and weight-norm logging in the next fit. The cause is undiagnosed (shared Adam and global clip
 across both actors, constant learning rate, a long stay at the loss floor). It had not happened in EXP-0100 or
 EXP-0105 with the same orderer samples and settings.
 

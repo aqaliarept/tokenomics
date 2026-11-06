@@ -72,3 +72,32 @@ stack then pass EXP-0105's three-clause check?
     belong to the orderer?
   - **(2)** the divergence: the orderer's loss per step around epoch 17, and the same fit with separate
     optimisers and clip per actor, or the orderer frozen at its EXP-0105 weights.
+
+## Addendum (2026-11-06): divergence evidence (local, offline; EXP-0108 report)
+- **Correction:** the orderer began diverging at **epoch 14** (loss 23.4), not epoch 17. It exploded at epoch 15
+  (4.6e7), and then rose 9.4e8 → 5.3e9 → 2.3e10 → 5.8e10 → 1.5e11. The producer loss jumped 0.051 → 0.385 at epoch
+  15, then stayed flat (0.3849 → 0.3815) to the end. Epoch time rose from about 115 s to about 200 s.
+- **No per-step logs:** the fit logs no per-step or per-actor gradient norms, so the trigger cannot be located
+  inside an epoch.
+- **Inputs are not the cause:** the v4 orderer's normaliser equals v3's (same orderer samples), and the share of
+  normalised inputs at the ±5 clip is the same (global ≤ 0.14, producer rows ≤ 0.03, orders 0). By construction
+  no input exceeds ±5 after normalisation, so a few extreme raw rows cannot drive it.
+- **All layers grew:** every orderer Linear grew 15–70× in Frobenius norm against v3 (e.g. enc.order.2 3.8 → 221;
+  upd.1.order.0 4.6 → 265; out 0.68 → 19). Activations compound through depth: per-layer max |activation| rises
+  from about 20 at the first encoder to 1.5e19 at the output. Optimiser dynamics, not one feature or one layer.
+- **Coupling between the actors:**
+  - not through Adam's state, which is per parameter;
+  - through the shared global gradient clip (`clip_grad_norm_` over both actors' parameters), which scales the
+    producer's gradient by 1 / ‖g_total‖ once the orderer's gradient explodes. That fits the producer loss
+    freezing from epoch 15, but does not explain its jump at epoch 15.
+- **An unbounded optimum exists:** 29.6% of the orderer's label slots (monitor sample) give an eligible producer
+  zero weight (MWW's makeable weight 0). The soft cross-entropy's optimum for those logits is −∞, a persistent
+  direction Adam follows at a step of about lr whatever the gradient's size. This is a necessary-looking
+  condition, not a proven trigger: EXP-0100 and EXP-0105 had the same labels and settings and did not diverge in
+  20 epochs.
+- **Supported:** weight growth across all orderer layers driven by the optimiser, with a shared clip coupling
+  the producer.
+- **Not supported yet:** a specific trigger.
+- **Candidate fit fixes, for after a diagnosis, and relevant to RL:** a per-actor optimiser and clip;
+  per-step gradient and weight-norm logging; early stop on the monitor loss; bounding the soft labels (an ε
+  floor) or weight decay.
