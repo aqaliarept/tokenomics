@@ -21,6 +21,8 @@ rule).
 - [x] 2.6 [experiment][remote:cpu16] EXP-0099: Stage I (collect → fit → check), pinned EUR-IS-1, stop 16.
   - Done 2026-11-06: **`short`** (3,360.8 vs 3,871.4 units, g_imit −510.6, floor 158.0, deaths 0 / 0); orderer BC
     diverged (unscaled features); ≈ 5.0 vCPU-h. Stop before RL; user decision pending.
+  - Rerun 2026-11-06 as EXP-0100 (prereg v2, normaliser + clip + sync): **`faithful`** (+196.1 vs floor 90.5, 0 deaths);
+    role swap: the GNN producer carries the gain (+207), the GNN orderer is neutral (+5.7); ≈ 7.2 vCPU-h.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop
