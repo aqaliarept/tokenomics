@@ -157,7 +157,7 @@ def test_stage_one_dry_chain(tmp_path: Path) -> None:
     assert im.run_collect(str(TRAINING), str(c), 1, 6, 2, dry_run=True, atlas_path=str(ATLAS_V2),
                           horizon_42=6) == 0
     meta = json.loads((c / "collect.json").read_text())
-    assert meta["features"] == g.FEATURES_V3 and meta["counts"]["train"]["producer_42"] > 0
+    assert meta["features"] == g.LATEST_FEATURES and meta["counts"]["train"]["producer_42"] > 0
     assert im.run_fit(str(c), str(f), 1, 0, dry_run=True) == 0
     doc = json.loads((f / "fit.json").read_text())
     for key in ("exact_command", "gate_accuracy", "replenish_mae_units", "orderer_kl",
@@ -238,7 +238,8 @@ def test_shard_files_give_the_same_fit_as_in_memory(tmp_path: Path) -> None:
 def test_real_stage_one_runs_need_the_pinned_preregistration(tmp_path: Path) -> None:
     """A real collect / fit / check refuses without the pin (v5, Stage I v3), a changed file, other
     settings; the frozen v2 still matches its code."""
-    assert im.prereg_problems() == [] and im.freeze_prereg_v5()[0] == "MATCH"
+    assert im.prereg_problems() == [] and im.freeze_prereg_v6()[0] == "MATCH"
+    assert im.freeze_prereg_v5()[0] == "MATCH"
     assert im.freeze_prereg()[0] == "MATCH"
     with pytest.raises(ValueError, match="horizon 6"):
         im.run_collect(str(TRAINING), str(tmp_path / "c"), 1, 6, None)
@@ -246,12 +247,12 @@ def test_real_stage_one_runs_need_the_pinned_preregistration(tmp_path: Path) -> 
                                                            epochs=3))
     import tokenomics.train.m6_imitation as mod
 
-    old = mod.PREREG_V5_SHA256
+    old = mod.PREREG_V6_SHA256
     try:
-        mod.PREREG_V5_SHA256 = "0" * 64
+        mod.PREREG_V6_SHA256 = "0" * 64
         assert "does not match the pinned" in mod.prereg_problems()[0]
     finally:
-        mod.PREREG_V5_SHA256 = old
+        mod.PREREG_V6_SHA256 = old
 
 
 def test_ceiling_margin_is_signed_and_scale_free() -> None:
@@ -269,8 +270,66 @@ def test_ceiling_margin_is_signed_and_scale_free() -> None:
     assert g.ceiling_margin(idle) == 0.0
     ok = SimpleNamespace(degradation_rate=6, max=150, upgrade_effect=16, restore_effect=12)
     assert g.ceiling_margin(ok) > 0
-    assert g.CAPACITY_DIM == {g.FEATURES_V2: 16, g.FEATURES_V3: 17}
+    assert g.CAPACITY_DIM == {g.FEATURES_V2: 16, g.FEATURES_V3: 17, g.FEATURES_V4: 18}
     if _lfs(PREV):
         pm, _om = im.load_models(PREV)
         assert pm.features == g.FEATURES_V2 and pm.enc["capacity"][0].in_features == 16
 
+
+
+def test_v4_sign_feature_and_boundary_weights() -> None:
+    """DIAGNOSTICS 33 / prereg v6: v3 -> v4 appends 1[margin < 0]; the boundary weight equalises, per
+    size, above-zero upgrades with below-zero no-upgrades, on the upgrade gate's term only."""
+    cap = np.zeros((1, 17), np.float32)
+    cap[0, 12] = 2.0  # the upgrade row (log1p upgrade_effect > 0)
+
+    def sample(margin: float, up: int) -> tuple:
+        c = cap.copy()
+        c[0, g.MARGIN_COL] = margin
+        return ({"capacity": c}, {"toggles": np.asarray([0, up, 0], np.float32)})
+
+    f4 = g.v3_to_v4(sample(-0.1, 0)[0])
+    assert f4["capacity"].shape == (1, 18) and f4["capacity"][0, g.SIGN_COL] == 1.0
+    assert g.v3_to_v4(sample(0.3, 0)[0])["capacity"][0, g.SIGN_COL] == 0.0
+    samples = [sample(0.5, 1)] * 6 + [sample(0.5, 0)] * 10 + [sample(-0.05, 0)] * 3
+    out, info = im.boundary_weights(samples)
+    assert info == {"above_zero_upgrades": 6, "below_zero_no_upgrades": 3, "w": 2.0}
+    ws = [y.get("gate_weight") for _f, y in out]
+    assert all(w is None for w in ws[:16]) and all(list(w) == [1.0, 2.0, 1.0] for w in ws[16:])
+
+
+def test_v4_gate_reading() -> None:
+    """V4_RULE step 1 (pure): fire at margin < 0 <= 1% at both sizes, the 12 above-zero upgrade
+    accuracy within 2 points of v2's, restore / expand no worse than v2's."""
+    def st(fire: float, acc_ge: float, restore: float, expand: float) -> dict:
+        return {"upgrade_margin_response": {"margin_lt_0": {"fire_rate": fire},
+                                            "margin_ge_0": {"accuracy": acc_ge}},
+                "heads": {"restore": {"accuracy": restore}, "expand": {"accuracy": expand}}}
+
+    ok = {"12_monitor": {"v4": st(0.005, 0.90, 0.93, 0.93), "v2": st(0.02, 0.91, 0.83, 0.92)},
+          "42_gate": {"v4": st(0.01, 0.9, 0.94, 0.95), "v2": st(0.3, 0.9, 0.87, 0.95)}}
+    assert im.gate_v4_reading(ok)["reading"] == "gate_pass"
+    bad = {**ok, "42_gate": {**ok["42_gate"], "v4": st(0.02, 0.9, 0.94, 0.94)}}
+    r = im.gate_v4_reading(bad)
+    assert r["reading"] == "gate_fail" and set(r["failed"]) == {"below_zero_fire_42_gate",
+                                                                 "expand_accuracy_42_gate"}
+
+
+@needs
+def test_v4_dry_chain_from_a_v3_collect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A v3-feature collect (as EXP-0105's) -> a v4 fit (split, boundary weights, sign column) ->
+    the offline gate, end to end."""
+    c, f, k = tmp_path / "c", tmp_path / "f", tmp_path / "k"
+    monkeypatch.setattr(g, "LATEST_FEATURES", g.FEATURES_V3)
+    assert im.run_collect(str(TRAINING), str(c), 1, 6, 2, dry_run=True, atlas_path=str(ATLAS_V2),
+                          horizon_42=6) == 0
+    monkeypatch.setattr(g, "LATEST_FEATURES", g.FEATURES_V4)
+    assert json.loads((c / "collect.json").read_text())["features"] == g.FEATURES_V3
+    assert im.run_fit(str(c), str(f), 1, 0, dry_run=True) == 0
+    doc = json.loads((f / "fit.json").read_text())
+    assert set(doc["v4"]["weights"]) == {"42", "12"}
+    pm, _om = im.load_models(f / "models.pt")
+    assert pm.features == g.FEATURES_V4 and pm.enc["capacity"][0].in_features == 18
+    assert im.run_gate(str(c), str(f / "models.pt"), str(PREV), str(k), dry_run=True) in (0, 3)
+    gate = json.loads((k / "gate.json").read_text())
+    assert gate["reading"] in ("gate_pass", "gate_fail") and gate["rule"] == im.V4_RULE

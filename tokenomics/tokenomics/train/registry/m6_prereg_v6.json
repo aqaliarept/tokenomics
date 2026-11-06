@@ -1,0 +1,89 @@
+{
+ "change": "add-m6-joint-mpg-gnn",
+ "check": {
+  "check_42": {
+   "episodes": 4,
+   "horizon": 200,
+   "replicates": [
+    0,
+    1
+   ],
+   "stage": "m6-drain"
+  },
+  "check_42_worlds": [
+   "ws-atlas-v1-42-0000",
+   "ws-atlas-v1-42-0013",
+   "ws-atlas-v1-42-0039",
+   "ws-atlas-v1-42-0043",
+   "ws-atlas-v1-42-0066",
+   "ws-atlas-v1-42-0076",
+   "ws-atlas-v1-42-0081",
+   "ws-atlas-v1-42-0126"
+  ],
+  "overlap": "as v5: the check worlds include collect worlds and validation 42-0066",
+  "rule": "faithful iff (a) at 12: the v3 GNN stack vs k5_rf5 + MWWk on the 16 monitor world-episodes x replicates 0 / 1, g >= -F (M5's floors) and no more deaths (Stage I's rule); (b) at 42: on CHECK_42_WORLDS at horizon 200 (4 episodes, stage m6-drain, replicates 0 / 1), the producers past the sustainable ceiling at episode end, summed, are no more than the base's, and the units are not below the base's beyond the floor (L5's mean_comp floor); (c) the v3 stack vs the EXP-0100 stack on the monitor set, g >= -F. Else short, naming the clauses"
+ },
+ "data": {
+  "held_out_of_fit": {
+   "orderer": "orderer samples kept whole (the gate is the producer's)",
+   "producer_42_worlds": [
+    "ws-atlas-v1-42-0000",
+    "ws-atlas-v1-42-0040",
+    "ws-atlas-v1-42-0076",
+    "ws-atlas-v1-42-0126"
+   ],
+   "rule": "COLLECT_42_WORLDS[::6], both episodes (blocks of 2 x 4200 decisions in world order)"
+  },
+  "reuse": "EXP-0105's collect, only at these SHA-256s",
+  "sha256": {
+   "collect.json": "fb3303f4fd691bf3b727e8bb6168f93d2542713a88d602c322f5a31a2d699e9d",
+   "samples_monitor.pkl": "42322622542b76de533988d31bec038600f2ea9482820ada86cc31aa29ab581e",
+   "samples_train.pkl": "6339c8c884d717f8a07893ea0b7385eee9873972b4c70ff1d0d323b57883cb9c"
+  }
+ },
+ "decision": "supervisor 2026-11-06 after EXP-0106 (DIAGNOSTICS 33: the gate learns the ceiling smoothly; a non-zero boundary rate compounds into irreversible upgrades)",
+ "feature": {
+  "added": "1[margin < 0] next to the v3 margin (m6_gnn.v3_to_v4 on recorded v3 features)",
+  "version": "v4"
+ },
+ "fit": {
+  "batch": 64,
+  "clip_grad_norm": 1.0,
+  "epochs": 20,
+  "lr": 0.003,
+  "mode": "auto",
+  "mode_rule": "auto: before the fit, one epoch of each mode on the full training samples (hogwild first, then sync; fresh models, the same seed); sync if its epoch costs <= sync_max_cost x hogwild's, else hogwild (with clipping); the mode and both times recorded in spec.json",
+  "norm_decisions": 50000,
+  "seed": 0,
+  "stopping_rule": "fixed 20 epochs",
+  "sync_max_cost": 1.5,
+  "workers": 16
+ },
+ "format": "m6-prereg-v6",
+ "gate": {
+  "above_zero_agreement_slack": 0.02,
+  "below_zero_fire_max": 0.01,
+  "heads_no_worse": [
+   "restore",
+   "expand"
+  ],
+  "measured_by": "m6_gate_probe.model_stats (fire / accuracy at margin < 0 and >= 0, per-head accuracy)",
+  "reference_models_sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+ },
+ "keeps": {
+  "m6_prereg_v5.json": "4fdf45ef0ed44c6f899af606eb8b5073f6dddf750f2b2cb6c5b8ab1d2f0526c9",
+  "note": "v1..v5 stay frozen; the critic-free Stage 0 becomes v7"
+ },
+ "loss": {
+  "boundary_weight_rule": "per size s, w_s = #(decisions with upgrade-row margin >= 0 and upgrade label 1) / #(decisions with margin < 0 and upgrade label 0) on the v4 training samples of size s; the upgrade gate's BCE term of each margin < 0, label-0 decision is weighted w_s, every other term 1. It equalises per size the total weight of the two error types the gate must separate (firing at margin < 0, missing a legitimate upgrade), with no free constant",
+  "otherwise": "as v2 / v3"
+ },
+ "model": {
+  "hidden": 32,
+  "producer_features": "v4",
+  "rounds": 2
+ },
+ "rule": "step 1 (offline gate, on recorded k5_rf5 decisions: the 12-producer monitor set and the 42-producer GATE_42_WORLDS held out of the fit): pass iff the v4 upgrade fire rate at margin < 0 is <= 1% at both sizes, the upgrade accuracy at margin >= 0 on the 12 monitor set is >= v2's (EXP-0100) - 0.02, and the restore and expand accuracies are >= v2's at both sizes; else gate_fail (stop, no closed-loop run). step 2 (only after a pass): EXP-0105's three-clause check (V3_RULE) unchanged with the v4 models: faithful or short naming the clauses",
+ "stage": "Stage I v4: the margin's sign as a step input, a boundary-weighted upgrade gate",
+ "status": "frozen before Stage I v4's data; real fit / gate / check refuse any other file"
+}

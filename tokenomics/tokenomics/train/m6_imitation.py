@@ -232,17 +232,129 @@ def freeze_prereg_v5(path: Path = PREREG_V5_PATH) -> tuple[str, str]:
     return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
 
 
-def prereg_problems(path: Path = PREREG_V5_PATH) -> list[str]:
-    """Real collect / fit / check runs are Stage I v3's: the pinned v5 (v2 governed EXP-0100)."""
+# --- Stage I v4 (supervisor decision 2026-11-06, DIAGNOSTICS 33): the margin's sign as a step input, a
+# boundary weight on the upgrade gate, an offline gate before the closed-loop check; pre-registration v6 ---
+
+PREREG_V6_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v6.json"
+PREREG_V6_SHA256: str | None = "1bd23f29e657215365e84048e7e3e148c8c3c58dc18766a586aeb17841355db2"  # frozen before Stage I v4's data
+EXP0105_COLLECT = {
+    "samples_train.pkl": "6339c8c884d717f8a07893ea0b7385eee9873972b4c70ff1d0d323b57883cb9c",
+    "samples_monitor.pkl": "42322622542b76de533988d31bec038600f2ea9482820ada86cc31aa29ab581e",
+    "collect.json": "fb3303f4fd691bf3b727e8bb6168f93d2542713a88d602c322f5a31a2d699e9d"}
+GATE_42_WORLDS = COLLECT_42_WORLDS[::6]  # held out of the v4 fit: the 42 gate set
+DECISIONS_PER_42_EPISODE = 4200  # 42 producers x 100 recorded cycles (every 2nd of 200), no deaths
+V4_GATE = {"below_zero_fire_max": 0.01, "above_zero_agreement_slack": 0.02,
+           "heads_no_worse": ["restore", "expand"]}
+BOUNDARY_WEIGHT_RULE = (
+    "per size s, w_s = #(decisions with upgrade-row margin >= 0 and upgrade label 1) / #(decisions "
+    "with margin < 0 and upgrade label 0) on the v4 training samples of size s; the upgrade gate's "
+    "BCE term of each margin < 0, label-0 decision is weighted w_s, every other term 1. It equalises "
+    "per size the total weight of the two error types the gate must separate (firing at margin < 0, "
+    "missing a legitimate upgrade), with no free constant")
+V4_RULE = (
+    "step 1 (offline gate, on recorded k5_rf5 decisions: the 12-producer monitor set and the "
+    "42-producer GATE_42_WORLDS held out of the fit): pass iff the v4 upgrade fire rate at margin < 0 "
+    "is <= 1% at both sizes, the upgrade accuracy at margin >= 0 on the 12 monitor set is >= v2's "
+    "(EXP-0100) - 0.02, and the restore and expand accuracies are >= v2's at both sizes; else "
+    "gate_fail (stop, no closed-loop run). step 2 (only after a pass): EXP-0105's three-clause check "
+    "(V3_RULE) unchanged with the v4 models: faithful or short naming the clauses")
+
+
+def registered_prereg_v6() -> dict:
+    return {
+        "format": "m6-prereg-v6", "change": "add-m6-joint-mpg-gnn",
+        "stage": "Stage I v4: the margin's sign as a step input, a boundary-weighted upgrade gate",
+        "status": "frozen before Stage I v4's data; real fit / gate / check refuse any other file",
+        "keeps": {"m6_prereg_v5.json": PREREG_V5_SHA256,
+                  "note": "v1..v5 stay frozen; the critic-free Stage 0 becomes v7"},
+        "decision": "supervisor 2026-11-06 after EXP-0106 (DIAGNOSTICS 33: the gate learns the ceiling "
+                    "smoothly; a non-zero boundary rate compounds into irreversible upgrades)",
+        "feature": {"version": g.FEATURES_V4, "added": "1[margin < 0] next to the v3 margin "
+                                                       "(m6_gnn.v3_to_v4 on recorded v3 features)"},
+        "data": {"reuse": "EXP-0105's collect, only at these SHA-256s", "sha256": EXP0105_COLLECT,
+                 "held_out_of_fit": {"producer_42_worlds": list(GATE_42_WORLDS),
+                                     "rule": "COLLECT_42_WORLDS[::6], both episodes (blocks of 2 x "
+                                             f"{DECISIONS_PER_42_EPISODE} decisions in world order)",
+                                     "orderer": "orderer samples kept whole (the gate is the "
+                                                "producer's)"}},
+        "loss": {"boundary_weight_rule": BOUNDARY_WEIGHT_RULE, "otherwise": "as v2 / v3"},
+        "model": {"hidden": g.HIDDEN, "rounds": g.ROUNDS, "producer_features": g.FEATURES_V4},
+        "fit": {**FIT, "mode_rule": MODE_RULE, "stopping_rule": f"fixed {FIT['epochs']} epochs"},
+        "gate": {**V4_GATE, "reference_models_sha256": EXP0100_MODELS_SHA,
+                 "measured_by": "m6_gate_probe.model_stats (fire / accuracy at margin < 0 and >= 0, "
+                                "per-head accuracy)"},
+        "rule": V4_RULE,
+        "check": {"rule": V3_RULE, "check_42_worlds": list(CHECK_42_WORLDS),
+                  "check_42": {**CHECK_42, "replicates": list(CHECK_42["replicates"])},
+                  "overlap": "as v5: the check worlds include collect worlds and validation 42-0066"}}
+
+
+def freeze_prereg_v6(path: Path = PREREG_V6_PATH) -> tuple[str, str]:
     from ..eval.provenance import sha256_file
 
-    if PREREG_V5_SHA256 is None:
-        return ["no pinned Stage I v3 pre-registration (m6_prereg_v5.json; `--mode freeze-v5`)"]
-    if not path.exists() or sha256_file(str(path)) != PREREG_V5_SHA256:
-        return [f"{path.name} does not match the pinned SHA-256 {PREREG_V5_SHA256[:12]}"]
-    if json.loads(path.read_text()) != registered_prereg_v5():
+    doc = registered_prereg_v6()
+    if not path.exists():
+        path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+        return "FROZEN", sha256_file(str(path))
+    return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
+
+
+def prereg_problems(path: Path = PREREG_V6_PATH) -> list[str]:
+    """Real fit / gate / check runs are Stage I v4's: the pinned v6 (v5 governed EXP-0105)."""
+    from ..eval.provenance import sha256_file
+
+    if PREREG_V6_SHA256 is None:
+        return ["no pinned Stage I v4 pre-registration (m6_prereg_v6.json; `--mode freeze-v6`)"]
+    if not path.exists() or sha256_file(str(path)) != PREREG_V6_SHA256:
+        return [f"{path.name} does not match the pinned SHA-256 {PREREG_V6_SHA256[:12]}"]
+    if json.loads(path.read_text()) != registered_prereg_v6():
         return ["the pre-registration differs from the code"]
     return []
+
+
+def upgrade_margin(f: dict) -> float | None:
+    """The upgrade type's row margin (the row with upgrade_effect > 0), else None."""
+    cap = f["capacity"]
+    rows = np.nonzero(cap[:, 12] > 0)[0] if cap.shape[0] else []
+    return float(cap[rows[0], g.MARGIN_COL]) if len(rows) else None
+
+
+def split_v4(producer: list, n42: int, dry_run: bool = False) -> tuple[list, list, list]:
+    """EXP-0105's recorded producer samples -> (42 train, 12 train, 42 gate), v4 features. The 42
+    block is in COLLECT_42_WORLDS order, 2 episodes x DECISIONS_PER_42_EPISODE per world."""
+    per_world = 2 * DECISIONS_PER_42_EPISODE
+    if n42 != per_world * len(COLLECT_42_WORLDS):
+        if not dry_run:
+            raise ValueError(f"the 42 block ({n42}) is not {len(COLLECT_42_WORLDS)} worlds x "
+                             f"{per_world} decisions")
+        per_world = max(1, n42 // len(COLLECT_42_WORLDS))
+    conv = [(g.v3_to_v4(f), y) for f, y in producer]
+    tr42, gate42 = [], []
+    for i, w in enumerate(COLLECT_42_WORLDS):
+        block = conv[i * per_world:(i + 1) * per_world]
+        (gate42 if w in GATE_42_WORLDS else tr42).extend(block)
+    return tr42, conv[n42:], gate42
+
+
+def boundary_weights(samples: list) -> tuple[list, dict]:
+    """BOUNDARY_WEIGHT_RULE on one size's samples: (weighted samples, the counts and w)."""
+    pos = neg = 0
+    for f, y in samples:
+        m = upgrade_margin(f)
+        if m is None:
+            continue
+        if m >= 0 and y["toggles"][1] == 1:
+            pos += 1
+        elif m < 0 and y["toggles"][1] == 0:
+            neg += 1
+    w = pos / neg if neg else 1.0
+    out = []
+    for f, y in samples:
+        m = upgrade_margin(f)
+        if m is not None and m < 0 and y["toggles"][1] == 0:
+            y = {**y, "gate_weight": np.asarray([1.0, w, 1.0], dtype=np.float32)}
+        out.append((f, y))
+    return out, {"above_zero_upgrades": pos, "below_zero_no_upgrades": neg, "w": w}
 
 
 def real_problems(*, horizon: int, max_world_episodes: int | None, ts: Any = None,
@@ -405,8 +517,10 @@ def bc_losses(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list
     lp = torch.zeros(())
     for f, y in prod:
         gates, rep = pm(f)
+        w = y.get("gate_weight")  # Stage I v4's boundary weight on the upgrade gate (prereg v6)
         lp = lp + torch.nn.functional.binary_cross_entropy_with_logits(
-            gates, torch.from_numpy(y["toggles"]), reduction="sum")
+            gates, torch.from_numpy(y["toggles"]), reduction="sum",
+            weight=None if w is None else torch.from_numpy(w))
         if rep.shape[0]:
             m = torch.from_numpy(y["mask"])
             lp = lp + (torch.nn.functional.huber_loss(rep, torch.from_numpy(y["replenish"]),
@@ -843,7 +957,7 @@ def run_collect(training_dir: str, out_dir: str, workers: int, horizon: int,
               f"producer and {len(samples['orderer'])} orderer decisions", flush=True)
     (out / "collect.json").write_text(json.dumps(
         {"training_pins": ts.pins, "horizon": horizon, "train": len(sets["train"]),
-         "dry_run": dry_run, "prereg": PREREG_V5_SHA256, "source_commit": SOURCE_COMMIT,
+         "dry_run": dry_run, "prereg": PREREG_V6_SHA256, "source_commit": SOURCE_COMMIT,
          "monitor": len(sets["monitor"]), "base": [BASE_PRODUCER, BASE_ORDERER],
          "features": g.LATEST_FEATURES, "collect_42": None if atlas is None else {
              **COLLECT_42, "worlds": list(COLLECT_42_WORLDS)}, "counts": counts},
@@ -857,10 +971,11 @@ def sample_problems(collect_dir: Path, meta: dict) -> list[str]:
 
     if meta.get("dry_run"):
         return ["the collect run was a dry run"]
-    if meta.get("prereg") == PREREG_V5_SHA256 and meta.get("features") == g.LATEST_FEATURES:
-        return []
+    if meta.get("prereg") == PREREG_V5_SHA256 and meta.get("features") == g.FEATURES_V3:
+        return [f"{n} does not match EXP-0105's pinned SHA-256" for n, h in EXP0105_COLLECT.items()
+                if sha256_file(str(collect_dir / n)) != h]
     if PREREG_V5_SHA256 is not None:
-        return ["a Stage I v3 fit reads a real v3 (v5-pinned) collect only"]
+        return ["a Stage I v4 fit reads EXP-0105's (v5) collect only"]
     if meta.get("prereg") == PREREG_SHA256:
         return []
     if meta.get("prereg") != PREREG_V1_SHA256:
@@ -882,6 +997,17 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
     out.mkdir(parents=True, exist_ok=True)
     with (c / "samples_train.pkl").open("rb") as fh:
         tr = pickle.load(fh)
+    v4 = None
+    if meta.get("features") == g.FEATURES_V3:  # Stage I v4 on EXP-0105's recorded v3 samples
+        n42 = int(meta["counts"]["train"]["producer_42"])
+        tr42, tr12, gate42 = split_v4(tr["producer"], n42, dry_run)
+        tr42, w42 = boundary_weights(tr42)
+        tr12, w12 = boundary_weights(tr12)
+        tr = {"producer": tr42 + tr12, "orderer": tr["orderer"]}
+        v4 = {"weights": {"42": w42, "12": w12}, "producer_42_train": len(tr42),
+              "producer_12_train": len(tr12), "producer_42_gate_held_out": len(gate42),
+              "rule": BOUNDARY_WEIGHT_RULE}
+        del tr42, tr12, gate42
     data: dict | Shards = tr
     shard_dir = out / "_shards"
     if workers > 1:  # each worker loads only its own shard file (EXP-0105's out-of-memory)
@@ -905,29 +1031,98 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
     if workers > 1:
         with (c / "samples_train.pkl").open("rb") as fh:
             tr = pickle.load(fh)
+        if v4 is not None:
+            tr = {"producer": [(g.v3_to_v4(f), y) for f, y in tr["producer"]],
+                  "orderer": tr["orderer"]}
     with (c / "samples_monitor.pkl").open("rb") as fh:
         mo = pickle.load(fh)
+    if v4 is not None:
+        mo = {"producer": [(g.v3_to_v4(f), y) for f, y in mo["producer"]], "orderer": mo["orderer"]}
     from ..eval.provenance import sha256_file
 
-    spec = {"fit_mode": ran, "mode_probe": probe, "requested_mode": mode, "fit": FIT,
+    spec = {"fit_mode": ran, "mode_probe": probe, "requested_mode": mode, "fit": FIT, "v4": v4,
             "epochs": epochs, "seed": seed, "workers": workers, "dry_run": dry_run,
-            "prereg": PREREG_V5_SHA256, "source_commit": SOURCE_COMMIT,
+            "prereg": PREREG_V6_SHA256, "source_commit": SOURCE_COMMIT,
             "samples_from": {"prereg": meta.get("prereg"), "source_commit":
                              meta.get("source_commit")}}
     (out / "spec.json").write_text(json.dumps(spec, indent=1) + "\n")
     doc = {"epochs": epochs, "seed": seed, "workers": workers, "mode": ran, "mode_probe": probe,
            "curve": curve, "fit_seconds": round(fit_s, 1),
            "train_seconds": info["train_seconds"], "dry_run": dry_run,
-           "normaliser": info["normaliser"],
+           "normaliser": info["normaliser"], "v4": v4,
            "samples_from": {"prereg": meta.get("prereg"), "source_commit":
                             meta.get("source_commit")},
-           "prereg": PREREG_V5_SHA256, "models_sha256": sha256_file(str(out / "models.pt")),
+           "prereg": PREREG_V6_SHA256, "models_sha256": sha256_file(str(out / "models.pt")),
            "source_commit": SOURCE_COMMIT,
            "train_agreement": agreement(pm, om, tr["producer"], tr["orderer"]),
            "monitor_agreement": agreement(pm, om, mo["producer"], mo["orderer"])}
     (out / "fit.json").write_text(json.dumps(doc, indent=1) + "\n")
     print(json.dumps({k: doc[k] for k in ("train_agreement", "monitor_agreement")}), flush=True)
     return 0
+
+
+def gate_v4_reading(stats: Mapping) -> dict:
+    """V4_RULE step 1 over m6_gate_probe.model_stats results {set: {model: stats}} (pure)."""
+    def below(st: Mapping) -> float:
+        r = st["upgrade_margin_response"]["margin_lt_0"]
+        return r["fire_rate"] if r["fire_rate"] is not None else 0.0
+
+    failed = []
+    for k in ("12_monitor", "42_gate"):
+        if below(stats[k]["v4"]) > V4_GATE["below_zero_fire_max"]:
+            failed.append(f"below_zero_fire_{k}")
+        for h in V4_GATE["heads_no_worse"]:
+            if stats[k]["v4"]["heads"][h]["accuracy"] < stats[k]["v2"]["heads"][h]["accuracy"]:
+                failed.append(f"{h}_accuracy_{k}")
+    a4 = stats["12_monitor"]["v4"]["upgrade_margin_response"]["margin_ge_0"]["accuracy"]
+    a2 = stats["12_monitor"]["v2"]["upgrade_margin_response"]["margin_ge_0"]["accuracy"]
+    if a4 < a2 - V4_GATE["above_zero_agreement_slack"]:
+        failed.append("above_zero_upgrade_accuracy_12")
+    return {"reading": "gate_pass" if not failed else "gate_fail", "failed": failed,
+            "below_zero_fire": {k: {m: below(stats[k][m]) for m in stats[k]} for k in stats},
+            "above_zero_upgrade_accuracy_12": {"v4": a4, "v2": a2}}
+
+
+def run_gate(collect_dir: str, models: str, prev_models: str, out_dir: str,
+             dry_run: bool = False) -> int:
+    """V4_RULE step 1: the offline gate. Exit 0 on a pass, 3 on gate_fail (the chained check
+    then does not run)."""
+    from ..eval.provenance import sha256_file
+    from .m6_gate_probe import model_stats
+
+    c = Path(collect_dir)
+    meta = json.loads((c / "collect.json").read_text())
+    if not dry_run:
+        _refuse(prereg_problems() + sample_problems(c, meta)
+                + ([] if sha256_file(prev_models) == EXP0100_MODELS_SHA else
+                   ["--prev-models is not EXP-0100's models"]))
+    with (c / "samples_train.pkl").open("rb") as fh:
+        tr = pickle.load(fh)
+    _a, _b, gate42 = split_v4(tr["producer"], int(meta["counts"]["train"]["producer_42"]), dry_run)
+    del tr, _a, _b
+    release_memory()
+    with (c / "samples_monitor.pkl").open("rb") as fh:
+        mon = [(g.v3_to_v4(f), y) for f, y in pickle.load(fh)["producer"]]
+    p4, _ = load_models(models)
+    p2, _ = load_models(prev_models)
+    if p4.features != g.FEATURES_V4 or p2.features != g.FEATURES_V2:
+        raise ValueError("--models / --prev-models are not v4 / v2 producer checkpoints")
+
+    def strip(f: dict) -> dict:
+        return {**f, "capacity": f["capacity"][:, :g.CAPACITY_DIM[g.FEATURES_V2]]}
+
+    stats = {k: {"v4": model_stats(p4, v, lambda f: f), "v2": model_stats(p2, v, strip)}
+             for k, v in (("12_monitor", mon), ("42_gate", gate42))}
+    doc = {**gate_v4_reading(stats), "rule": V4_RULE, "gate": V4_GATE, "stats": stats,
+           "decisions": {"12_monitor": len(mon), "42_gate": len(gate42)}, "dry_run": dry_run,
+           "prereg": PREREG_V6_SHA256, "models_sha256": sha256_file(models),
+           "source_commit": SOURCE_COMMIT}
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "gate.json").write_text(json.dumps(doc, indent=1, default=float) + "\n")
+    print(f"[m6_imitation] Stage I v4 gate: {doc['reading']} {doc['failed']} below-zero fire "
+          f"{doc['below_zero_fire']}", flush=True)
+    return 0 if doc["reading"] == "gate_pass" else 3
 
 
 def check_42_jobs(atlas: Mapping, models: str, max_worlds: int | None = None,
@@ -1036,7 +1231,7 @@ def run_check(training_dir: str, atlas: str, models: str, out_dir: str, workers:
     doc = {**check_v3_reading(mon_rows, prev_rows, rows42,
                               monitor_cells(ts.training, at["spreads"]),
                               world_cells(views, at["spreads"])),
-           "dry_run": dry_run, "prereg": PREREG_V5_SHA256, "models_sha256": sha256_file(models),
+           "dry_run": dry_run, "prereg": PREREG_V6_SHA256, "models_sha256": sha256_file(models),
            "prev_models_sha256": None if not prev_models else sha256_file(prev_models),
            "source_commit": SOURCE_COMMIT, "world_episodes": len(mon), "horizon": horizon,
            "units_mean": {"v3": fmean(float(x["units"]) for x in mon_rows if x["kind"] == "monitor"),
@@ -1481,7 +1676,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", required=True,
                    choices=("timing", "collect", "fit", "check", "side-effects", "validate",
-                            "heldout", "freeze", "freeze-v3", "freeze-v4", "freeze-v5"))
+                            "heldout", "gate", "freeze", "freeze-v3", "freeze-v4", "freeze-v5",
+                            "freeze-v6"))
     p.add_argument("--prev-models", help="check: the EXP-0100 models (clause c)")
     p.add_argument("--episodes-42", type=int, help="dry run: 42 check episodes per world")
     p.add_argument("--horizon-42", type=int, help="dry run: the 42 collect / check horizon")
@@ -1506,7 +1702,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     global SOURCE_COMMIT
     SOURCE_COMMIT = a.source_commit
     if not a.dry_run and a.mode in ("collect", "fit", "check", "side-effects", "validate",
-                                    "heldout") and \
+                                    "heldout", "gate") and \
             len(SOURCE_COMMIT) != 40:
         p.error("a real run needs a 40-hex --source-commit")
     if a.mode == "freeze":
@@ -1519,6 +1715,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if a.mode == "collect":
         return run_collect(a.training_dir, a.out_dir, a.workers, a.horizon, a.max_world_episodes,
                            a.dry_run, a.atlas, a.horizon_42)
+    if a.mode == "freeze-v6":
+        status, sha = freeze_prereg_v6()
+        print(f"[m6_imitation] pre-registration v6 {status} {sha}")
+        return 0 if status in ("FROZEN", "MATCH") else 2
+    if a.mode == "gate":
+        return run_gate(a.collect_dir, a.models, a.prev_models, a.out_dir, a.dry_run)
     if a.mode == "freeze-v5":
         status, sha = freeze_prereg_v5()
         print(f"[m6_imitation] pre-registration v5 {status} {sha}")

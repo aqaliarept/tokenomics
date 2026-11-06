@@ -82,6 +82,7 @@ def model_stats(pm: g.ProducerGNN, samples: Sequence, adapt: Any) -> dict:
     for name, sel in (("margin_lt_0", a[:, 0] < 0), ("margin_ge_0", a[:, 0] >= 0)):
         s = a[sel]
         resp[name] = {"decisions": int(len(s)),
+                      "accuracy": float(((s[:, 1] > 0) == (s[:, 2] > 0.5)).mean()) if len(s) else None,
                       "label_rate": float(s[:, 2].mean()) if len(s) else None,
                       "fire_rate": float((s[:, 1] > 0).mean()) if len(s) else None,
                       "mean_logit": float(s[:, 1].mean()) if len(s) else None}

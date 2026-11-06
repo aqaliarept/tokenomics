@@ -70,9 +70,11 @@ def producer_context(env: "TokenomicsAECEnv", pid: str) -> ProducerContext:
 
 # Producer feature versions: v2 = Stage I v1 / v2 (EXP-0099 / 0100; 16 capacity columns); v3 = Stage I v3
 # (supervisor decision 2026-11-06, DIAGNOSTICS 32): + the signed ceiling margin per capacity row.
-FEATURES_V2, FEATURES_V3 = "v2", "v3"
-CAPACITY_DIM = {FEATURES_V2: 16, FEATURES_V3: 17}
-LATEST_FEATURES = FEATURES_V3
+# v4 = Stage I v4 (DIAGNOSTICS 33): + the margin's sign, 1[margin < 0], a step input for the sharp boundary.
+FEATURES_V2, FEATURES_V3, FEATURES_V4 = "v2", "v3", "v4"
+CAPACITY_DIM = {FEATURES_V2: 16, FEATURES_V3: 17, FEATURES_V4: 18}
+LATEST_FEATURES = FEATURES_V4
+MARGIN_COL, SIGN_COL = 16, 17
 
 
 def ceiling_margin(r: Any) -> float:
@@ -85,6 +87,14 @@ def ceiling_margin(r: Any) -> float:
     return (r.restore_effect - after) / max(r.restore_effect, after, 1)
 
 
+def v3_to_v4(f: dict[str, Any]) -> dict[str, Any]:
+    """Recorded v3 producer features -> v4 (append the margin's sign); identical to recording v4."""
+    cap = f["capacity"]
+    sign = (cap[:, MARGIN_COL:MARGIN_COL + 1] < 0).astype(np.float32)
+    return {**f, "capacity": np.concatenate([cap, sign], 1) if cap.shape[0] else
+            np.zeros((0, CAPACITY_DIM[FEATURES_V4]), dtype=np.float32)}
+
+
 def producer_features(view: ProducerEntityView, ctx: ProducerContext,
                       version: str = LATEST_FEATURES) -> dict[str, Any]:
     """Row features and relation edges of one producer decision (pure; numpy). `version` = the
@@ -94,8 +104,13 @@ def producer_features(view: ProducerEntityView, ctx: ProducerContext,
     glob = psc._global_features(view) + [
         _q(ctx.investment_fund), _q(ctx.max_replenish), _q(ctx.replenish_cost_per_unit),
         _q(ctx.expansion_increases), _q(ctx.expansion_cost)]
-    caps = [psc._capacity_features(r) + [float(getattr(r, "degradation_rate", 0)) / 100.0]
-            + ([ceiling_margin(r)] if version == FEATURES_V3 else []) for r in view.capacity_rows]
+    caps = []
+    for r in view.capacity_rows:
+        row = psc._capacity_features(r) + [float(getattr(r, "degradation_rate", 0)) / 100.0]
+        if version in (FEATURES_V3, FEATURES_V4):
+            m = ceiling_margin(r)
+            row += [m] + ([float(m < 0)] if version == FEATURES_V4 else [])
+        caps.append(row)
     prods = [psc._product_features(r) for r in view.product_rows]
     inputs = [psc._input_features(r) + [_q(use.get(r.input_product, 0.0)),
                                          _q(short.get(r.input_product, 0))]
