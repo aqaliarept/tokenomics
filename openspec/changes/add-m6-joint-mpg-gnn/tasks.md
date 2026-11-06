@@ -69,6 +69,9 @@ rule).
     (−274 vs base, −470 vs EXP-0100); cause undiagnosed; ≈ 16.2 vCPU-h over 3 attempts.
 - [x] 2.12 [experiment][remote:cpu8] EXP-0106: the v3 upgrade gate, diagnosed offline: the margin feature is used but the
   boundary is learned smoothly under joint-scale training (DIAGNOSTICS 33); ≈ 0.6 vCPU-h.
+- [x] 2.13 [experiment][remote:cpu16] EXP-0107: Stage I v4 (prereg v6): offline gate `gate_pass` (0 past-ceiling firing at
+  both sizes); check `short` (a, b units, c; 0 past the ceiling at 42) with the orderer diverged at epoch 17 (confound,
+  undiagnosed); ≈ 18.7 vCPU-h.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

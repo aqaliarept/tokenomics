@@ -12,3 +12,4 @@
 | EXP-0105 attempt 2 (fit hung: 'Too many open files', file_descriptor sharing; stopped after 5 min without progress) | 2026-11-06 | pmwe2rrpy4mmsj, 16 vCPU / 32 GB, EUR-IS-1, 14:19–14:27 | 2.1 | 22.2 |
 | EXP-0105 attempt 3 (fit + check, commit 134c267) | 2026-11-06 | 53yvp4v7yj77ub, 16 vCPU / 32 GB, EUR-IS-1, 14:27–15:15 | 12.8 (stop 24) | 35.0 |
 | EXP-0106 upgrade-gate probe (offline, recorded decisions) | 2026-11-06 | ts6iux5ztcn8ek, 8 vCPU / 16 GB, EUR-IS-1, 15:20–15:24 | 0.6 (stop 3) | 35.6 |
+| EXP-0107 Stage I v4 (fit → gate → check, commit 4a8bc0a) | 2026-11-06 | o0ga8nfebym9nc, 16 vCPU / 32 GB, EUR-IS-1, 15:34–16:44 | 18.7 (stop 24) | 54.3 |

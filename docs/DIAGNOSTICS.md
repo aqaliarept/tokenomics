@@ -1382,6 +1382,13 @@ scores became so extreme that the copying is meaningless.
 - Slot loss: median 1.39, mean 1.3e24.
 - The fit was Hogwild × 16 at lr 3e-3. The producer GNN, with scaled features in the same fit, converged.
 
+**Recurrence (EXP-0107, 2026-11-06):** with the scaled features and gradient clipping (global norm 1.0), the
+orderer sat at its label-entropy floor (1.3196) for epochs 1–16, then diverged at epoch 17 (5.3e9, then 1.5e11 at
+epoch 20; final logit spread ≈ 5e11, max |w| 9.7). The producer's loss jumped in the same epoch (0.049 → 0.38).
+This is the "features scaled but still diverging" branch. The cause is undiagnosed (shared Adam and global clip
+across both actors, constant learning rate, a long stay at the loss floor). It had not happened in EXP-0100 or
+EXP-0105 with the same orderer samples and settings.
+
 ## 32. An imitated producer misses its teacher's sustainable-upgrade cap at larger scale (upgrade trap, entry 29, by imitation)
 
 _Status: diagnosed (2026-11-06, EXP-0104) on held-out 42-0125 (counterfactual) and two atlas train worlds
