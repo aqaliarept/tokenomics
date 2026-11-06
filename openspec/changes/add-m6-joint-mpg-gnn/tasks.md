@@ -23,7 +23,7 @@ rule).
     diverged (unscaled features); ≈ 5.0 vCPU-h. Stop before RL; user decision pending.
   - Rerun 2026-11-06 as EXP-0100 (prereg v2, normaliser + clip + sync): **`faithful`** (+196.1 vs floor 90.5, 0 deaths);
     role swap: the GNN producer carries the gain (+207), the GNN orderer is neutral (+5.7); ≈ 7.2 vCPU-h.
-- [ ] 2.7 [experiment][remote:cpu16] EXP-0101: side effects of the imitated stack (deciding check before
+- [x] 2.7 [experiment][remote:cpu16] EXP-0101: side effects of the imitated stack (deciding check before
   MAPPO). Pre-registered 2026-11-06, before any data:
   - **Arms**, the EXP-0100 models (SHA `5acf8b82…`), on the 16 monitor world-episodes × replicates 0 / 1, at
     the same DrawKeys:
@@ -42,6 +42,7 @@ rule).
     routing tracer), per-head toggle firing rates; per world, 12-0121 in detail (units, fills, investments,
     capacity, fund).
   - Pinned EUR-IS-1, 16 vCPU, watchdog, stop ≤ 8 vCPU-h.
+  - Done 2026-11-06: **`clean`** (run-down 0.563 vs 0.781, starvation 0.656 vs 0.750, deaths 0 / 0; h200 clean); ≈ 0.6 vCPU-h.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop
