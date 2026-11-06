@@ -45,6 +45,96 @@ IMIT_RULE = ("faithful if g_imit >= -F_imit (M5's floors rule on the 16 monitor 
              "replicates 0 / 1) and the imitated stack has no more deaths than k5_rf5 + MWWk; else "
              "short (stop: the user hears it before any RL)")
 MONITOR_REPLICATES = (0, 1)
+# the fit's pre-registered stopping rule and settings (EXP-0099)
+FIT = {"epochs": 20, "batch": 64, "lr": 3e-3, "seed": 0, "workers": 16, "hogwild": True}
+FIDELITY_METRICS = ("exact_command", "gate_accuracy", "replenish_mae_units", "orderer_kl",
+                    "orderer_top1")
+REGISTERED_ATLAS_HASH = "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23"
+PREREG_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v1.json"
+# frozen 2026-11-06 before EXP-0099; real collect / fit / check refuse any other file
+PREREG_SHA256: str | None = "38db5c0c96cfd2a7fa14eae1e3bf2832092738d1d13ce2fdcade25ac245c26f6"
+
+
+# --- pre-registration (frozen before Stage I's data) ---
+
+
+def registered_prereg() -> dict:
+    return {
+        "format": "m6-prereg-v1", "change": "add-m6-joint-mpg-gnn", "stage": "I (imitation), D4",
+        "status": "frozen before EXP-0099's data; real collect / fit / check refuse any other file",
+        "decisions": "notes/user-decisions.md (2026-11-06): fully learned, from imitation; the "
+                     "user hears a `short` reading before any RL",
+        "base": {"producer": BASE_PRODUCER, "orderer": BASE_ORDERER},
+        "data": {"training": {**pe.TRAINING_PINS, "world_episodes": "the 128 training world-"
+                              "episodes minus the 16 monitor ones (112), replicate 0"},
+                 "horizon": pe.HORIZON, "order_ttl": 2,
+                 "labels": {"producer": "k5_rf5's raw action: 3 toggles (raw > 0) and per input "
+                                        "row the replenish fraction raw / BOUND",
+                            "orderer": "MWW's normalised makeable weights over the eligible "
+                                       "producers per order slot; slots with one eligible "
+                                       "producer dropped"}},
+        "model": {"hidden": g.HIDDEN, "rounds": g.ROUNDS,
+                  "losses": "BCE (toggles) + Huber delta 0.1 (replenish fractions, masked) + KL "
+                            "(orderer slots)"},
+        "fit": {**FIT, "stopping_rule": f"fixed {FIT['epochs']} epochs (no early stopping); the "
+                                        "checkpoint SHA-256 is the pinned artifact"},
+        "check": {"rule": IMIT_RULE,
+                  "monitor_set": "schedule.json `monitor` (16 world-episodes)",
+                  "replicates": list(MONITOR_REPLICATES),
+                  "comparison": "the GNN stack vs k5_rf5 + MWWk at the same DrawKeys",
+                  "floor": "M5's floors rule (producer_read.pilot_reading: max(the atlas-spread "
+                           "floor at the read's counts, own 3 SE), the n = 1 rule); atlas spreads "
+                           "from the registered atlas v2",
+                  "floor_source": {"atlas_content_hash": REGISTERED_ATLAS_HASH}},
+        "reported": {"fidelity_metrics": list(FIDELITY_METRICS),
+                     "on": "the training and the monitor episodes' labels",
+                     "also": "units of both stacks and deaths"}}
+
+
+def freeze_prereg(path: Path = PREREG_PATH) -> tuple[str, str]:
+    from ..eval.provenance import sha256_file
+
+    text = json.dumps(registered_prereg(), indent=1, sort_keys=True) + "\n"
+    if not path.exists():
+        path.write_text(text)
+        return "FROZEN", sha256_file(str(path))
+    return ("MATCH" if json.loads(path.read_text()) == registered_prereg() else "MISMATCH"), \
+        sha256_file(str(path))
+
+
+def prereg_problems(path: Path = PREREG_PATH) -> list[str]:
+    from ..eval.provenance import sha256_file
+
+    if PREREG_SHA256 is None:
+        return ["no pinned M6 pre-registration (m6_prereg_v1.json; `--mode freeze`)"]
+    if not path.exists() or sha256_file(str(path)) != PREREG_SHA256:
+        return [f"{path.name} does not match the pinned SHA-256 {PREREG_SHA256[:12]}"]
+    if json.loads(path.read_text()) != registered_prereg():
+        return ["the pre-registration differs from the code"]
+    return []
+
+
+def real_problems(*, horizon: int, max_world_episodes: int | None, ts: Any = None,
+                  atlas: Any = None, epochs: int | None = None, workers: int | None = None,
+                  seed: int | None = None) -> list[str]:
+    p = prereg_problems()
+    if horizon != pe.HORIZON:
+        p.append(f"horizon {horizon} != {pe.HORIZON}")
+    if max_world_episodes:
+        p.append("--max-world-episodes is set")
+    if ts is not None and ts.pins != pe.TRAINING_PINS:
+        p.append("the training set is not M4's pinned set")
+    if atlas is not None and atlas.get("content_hash") != REGISTERED_ATLAS_HASH:
+        p.append("the atlas is not the registered atlas v2")
+    for k, v in (("epochs", epochs), ("workers", workers), ("seed", seed)):
+        if v is not None and v != FIT[k]:
+            p.append(f"--{k} {v} != the registered {FIT[k]}")
+    return p
+
+
+def _refuse(problems: list[str]) -> None:
+    if problems:
+        raise ValueError("not a valid real run (" + "; ".join(problems) + "); pass --dry-run")
 
 
 # --- labels (deterministic functions of the agent's view; tested) ---
@@ -304,8 +394,10 @@ def _training(training_dir: str) -> tuple[Any, list, list]:
 
 
 def run_collect(training_dir: str, out_dir: str, workers: int, horizon: int,
-                max_world_episodes: int | None) -> int:
+                max_world_episodes: int | None, dry_run: bool = False) -> int:
     ts, train, mon = _training(training_dir)
+    if not dry_run:
+        _refuse(real_problems(horizon=horizon, max_world_episodes=max_world_episodes, ts=ts))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     sets = {"train": train[:max_world_episodes] if max_world_episodes else train,
@@ -320,12 +412,19 @@ def run_collect(training_dir: str, out_dir: str, workers: int, horizon: int,
               f"producer and {len(samples['orderer'])} orderer decisions", flush=True)
     (out / "collect.json").write_text(json.dumps(
         {"training_pins": ts.pins, "horizon": horizon, "train": len(sets["train"]),
+         "dry_run": dry_run, "prereg": PREREG_SHA256,
          "monitor": len(sets["monitor"]), "base": [BASE_PRODUCER, BASE_ORDERER]}, indent=1) + "\n")
     return 0
 
 
-def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int = 1) -> int:
+def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int = 1,
+            dry_run: bool = False) -> int:
     c = Path(collect_dir)
+    if not dry_run:
+        meta = json.loads((c / "collect.json").read_text())
+        _refuse(real_problems(horizon=meta["horizon"], max_world_episodes=None, epochs=epochs,
+                              workers=workers, seed=seed)
+                + ([] if not meta.get("dry_run") else ["the collect run was a dry run"]))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     with (c / "samples_train.pkl").open("rb") as fh:
@@ -334,7 +433,10 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
         mo = pickle.load(fh)
     pm, om, curve = fit(tr, epochs, seed=seed, workers=workers)
     save_models(pm, om, out / "models.pt")
-    doc = {"epochs": epochs, "seed": seed, "workers": workers, "curve": curve,
+    from ..eval.provenance import sha256_file
+
+    doc = {"epochs": epochs, "seed": seed, "workers": workers, "curve": curve, "dry_run": dry_run,
+           "prereg": PREREG_SHA256, "models_sha256": sha256_file(str(out / "models.pt")),
            "train_agreement": agreement(pm, om, tr["producer"], tr["orderer"]),
            "monitor_agreement": agreement(pm, om, mo["producer"], mo["orderer"])}
     (out / "fit.json").write_text(json.dumps(doc, indent=1) + "\n")
@@ -343,13 +445,17 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
 
 
 def run_check(training_dir: str, atlas: str, models: str, out_dir: str, workers: int,
-              horizon: int, max_world_episodes: int | None) -> int:
+              horizon: int, max_world_episodes: int | None, dry_run: bool = False) -> int:
     """The pre-registered imitation check (D4); reported agreement comes from fit.json."""
+    from ..eval.provenance import sha256_file
     from ..eval.teacher_audit import load_atlas
     from .order_es_validate import monitor_cells
     from .producer_read import pilot_reading
 
     ts, _train, mon = _training(training_dir)
+    if not dry_run:
+        _refuse(real_problems(horizon=horizon, max_world_episodes=max_world_episodes, ts=ts,
+                              atlas=load_atlas(atlas)))
     if max_world_episodes:
         mon = mon[:max_world_episodes]
     jobs = (_jobs(ts, mon, "monitor", MONITOR_REPLICATES, horizon, models)
@@ -363,6 +469,7 @@ def run_check(training_dir: str, atlas: str, models: str, out_dir: str, workers:
     reading = ("faithful" if g_imit is not None and f_imit is not None and g_imit >= -f_imit
                and deaths["monitor"] <= deaths["monitor_base"] else "short")
     doc = {"rule": IMIT_RULE, "reading": reading, "g_imit": g_imit, "F_imit": f_imit,
+           "dry_run": dry_run, "prereg": PREREG_SHA256, "models_sha256": sha256_file(models),
            "deaths": deaths, "world_episodes": len(mon), "horizon": horizon,
            "units_mean": {k: fmean(float(x["units"]) for x in rows if x["kind"] == k)
                           for k in ("monitor", "monitor_base")}}
@@ -419,7 +526,8 @@ def run_timing(atlas: str, horizon: int, worlds: Sequence[str]) -> dict:
 
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--mode", required=True, choices=("timing", "collect", "fit", "check"))
+    p.add_argument("--mode", required=True, choices=("timing", "collect", "fit", "check", "freeze"))
+    p.add_argument("--dry-run", action="store_true")
     p.add_argument("--training-dir")
     p.add_argument("--collect-dir")
     p.add_argument("--models")
@@ -427,20 +535,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--out-dir")
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--horizon", type=int, default=pe.HORIZON)
-    p.add_argument("--epochs", type=int, default=20)
-    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--epochs", type=int, default=FIT["epochs"])
+    p.add_argument("--seed", type=int, default=FIT["seed"])
     p.add_argument("--max-world-episodes", type=int)
     p.add_argument("--worlds", default="ws-atlas-v1-12-0111,ws-atlas-v1-42-0000")
     a = p.parse_args(argv)
+    if a.mode == "freeze":
+        status, sha = freeze_prereg()
+        print(f"[m6_imitation] pre-registration {status} {sha}")
+        return 0 if status in ("FROZEN", "MATCH") else 2
     if a.mode == "timing":
         print(json.dumps(run_timing(a.atlas, a.horizon, a.worlds.split(",")), indent=1))
         return 0
     if a.mode == "collect":
-        return run_collect(a.training_dir, a.out_dir, a.workers, a.horizon, a.max_world_episodes)
+        return run_collect(a.training_dir, a.out_dir, a.workers, a.horizon, a.max_world_episodes,
+                           a.dry_run)
     if a.mode == "fit":
-        return run_fit(a.collect_dir, a.out_dir, a.epochs, a.seed, a.workers)
+        return run_fit(a.collect_dir, a.out_dir, a.epochs, a.seed, a.workers, a.dry_run)
     return run_check(a.training_dir, a.atlas, a.models, a.out_dir, a.workers, a.horizon,
-                     a.max_world_episodes)
+                     a.max_world_episodes, a.dry_run)
 
 
 if __name__ == "__main__":

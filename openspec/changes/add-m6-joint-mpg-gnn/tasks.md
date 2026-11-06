@@ -13,7 +13,12 @@ rule).
 - [ ] 2.3 `train/` GNN trunk, MAPPO (CTDE critic), checkpoints and pins; `train/` reads (as M5).
 - [x] 2.4 L0: the decoding check at 12 / 42 / unseen; ADR-0058 tests; the timing probe re-sizes sizing.md.
   - Done 2026-11-06: tests/test_m6_gnn.py (7); notes/timing.md; sizing re-sized (L0b 8, success path ≈ 86).
-- [ ] 2.5 The pre-registration v1 frozen before L2.
+- [x] 2.5a The Stage I pre-registration `train/registry/m6_prereg_v1.json` (SHA `38db5c0c…`): the imitation
+  rule, the floor rule and its source, the monitor set and replicates, the fit's stopping rule (fixed 20 epochs,
+  Hogwild × 16, seed 0) and the reported fidelity metrics. Frozen before EXP-0099; real runs refuse without
+  the pin.
+- [ ] 2.5b The RL pre-registration, frozen before L2.
+- [ ] 2.6 [experiment][remote:cpu16] EXP-0099: Stage I (collect → fit → check), pinned EUR-IS-1, stop 16.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

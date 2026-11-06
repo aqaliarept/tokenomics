@@ -1,0 +1,62 @@
+{
+ "base": {
+  "orderer": "mww_keyed",
+  "producer": "entity_planner_buyahead_k5_rf5"
+ },
+ "change": "add-m6-joint-mpg-gnn",
+ "check": {
+  "comparison": "the GNN stack vs k5_rf5 + MWWk at the same DrawKeys",
+  "floor": "M5's floors rule (producer_read.pilot_reading: max(the atlas-spread floor at the read's counts, own 3 SE), the n = 1 rule); atlas spreads from the registered atlas v2",
+  "floor_source": {
+   "atlas_content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23"
+  },
+  "monitor_set": "schedule.json `monitor` (16 world-episodes)",
+  "replicates": [
+   0,
+   1
+  ],
+  "rule": "faithful if g_imit >= -F_imit (M5's floors rule on the 16 monitor world-episodes at replicates 0 / 1) and the imitated stack has no more deaths than k5_rf5 + MWWk; else short (stop: the user hears it before any RL)"
+ },
+ "data": {
+  "horizon": 100,
+  "labels": {
+   "orderer": "MWW's normalised makeable weights over the eligible producers per order slot; slots with one eligible producer dropped",
+   "producer": "k5_rf5's raw action: 3 toggles (raw > 0) and per input row the replenish fraction raw / BOUND"
+  },
+  "order_ttl": 2,
+  "training": {
+   "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+   "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
+   "world_episodes": "the 128 training world-episodes minus the 16 monitor ones (112), replicate 0"
+  }
+ },
+ "decisions": "notes/user-decisions.md (2026-11-06): fully learned, from imitation; the user hears a `short` reading before any RL",
+ "fit": {
+  "batch": 64,
+  "epochs": 20,
+  "hogwild": true,
+  "lr": 0.003,
+  "seed": 0,
+  "stopping_rule": "fixed 20 epochs (no early stopping); the checkpoint SHA-256 is the pinned artifact",
+  "workers": 16
+ },
+ "format": "m6-prereg-v1",
+ "model": {
+  "hidden": 32,
+  "losses": "BCE (toggles) + Huber delta 0.1 (replenish fractions, masked) + KL (orderer slots)",
+  "rounds": 2
+ },
+ "reported": {
+  "also": "units of both stacks and deaths",
+  "fidelity_metrics": [
+   "exact_command",
+   "gate_accuracy",
+   "replenish_mae_units",
+   "orderer_kl",
+   "orderer_top1"
+  ],
+  "on": "the training and the monitor episodes' labels"
+ },
+ "stage": "I (imitation), D4",
+ "status": "frozen before EXP-0099's data; real collect / fit / check refuse any other file"
+}

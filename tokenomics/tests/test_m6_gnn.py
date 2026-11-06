@@ -151,12 +151,31 @@ def test_stage_one_dry_chain(tmp_path: Path) -> None:
     """collect (2 training world-episodes, horizon 6) -> fit (1 epoch) -> check (1 monitor
     world-episode): runs end to end; fit reports the agreement metrics; check writes a reading."""
     c, f, k = tmp_path / "c", tmp_path / "f", tmp_path / "k"
-    assert im.run_collect(str(TRAINING), str(c), 1, 6, 2) == 0
-    assert im.run_fit(str(c), str(f), 1, 0) == 0
+    assert im.run_collect(str(TRAINING), str(c), 1, 6, 2, dry_run=True) == 0
+    assert im.run_fit(str(c), str(f), 1, 0, dry_run=True) == 0
     doc = json.loads((f / "fit.json").read_text())
     for key in ("exact_command", "gate_accuracy", "replenish_mae_units", "orderer_kl",
                 "orderer_top1"):
         assert key in doc["train_agreement"] and key in doc["monitor_agreement"]
-    assert im.run_check(str(TRAINING), str(ATLAS_V2), str(f / "models.pt"), str(k), 1, 6, 1) == 0
+    assert im.run_check(str(TRAINING), str(ATLAS_V2), str(f / "models.pt"), str(k), 1, 6, 1,
+                        dry_run=True) == 0
     chk = json.loads((k / "imitation_check.json").read_text())
     assert chk["reading"] in ("faithful", "short") and chk["rule"] == im.IMIT_RULE
+
+
+def test_real_stage_one_runs_need_the_pinned_preregistration(tmp_path: Path) -> None:
+    """A real collect / fit / check refuses without the pin, a changed file, other settings."""
+    assert im.prereg_problems() == [] and im.freeze_prereg()[0] == "MATCH"
+    with pytest.raises(ValueError, match="horizon 6"):
+        im.run_collect(str(TRAINING), str(tmp_path / "c"), 1, 6, None)
+    assert any("--epochs 3" in x for x in im.real_problems(horizon=100, max_world_episodes=None,
+                                                           epochs=3))
+    import tokenomics.train.m6_imitation as mod
+
+    old = mod.PREREG_SHA256
+    try:
+        mod.PREREG_SHA256 = "0" * 64
+        assert "does not match the pinned" in mod.prereg_problems()[0]
+    finally:
+        mod.PREREG_SHA256 = old
+
