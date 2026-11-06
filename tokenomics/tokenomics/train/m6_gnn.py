@@ -68,21 +68,41 @@ def producer_context(env: "TokenomicsAECEnv", pid: str) -> ProducerContext:
                            float(env.system.investment_fund))
 
 
-def producer_features(view: ProducerEntityView, ctx: ProducerContext) -> dict[str, Any]:
-    """Row features and relation edges of one producer decision (pure; numpy)."""
+# Producer feature versions: v2 = Stage I v1 / v2 (EXP-0099 / 0100; 16 capacity columns); v3 = Stage I v3
+# (supervisor decision 2026-11-06, DIAGNOSTICS 32): + the signed ceiling margin per capacity row.
+FEATURES_V2, FEATURES_V3 = "v2", "v3"
+CAPACITY_DIM = {FEATURES_V2: 16, FEATURES_V3: 17}
+LATEST_FEATURES = FEATURES_V3
+
+
+def ceiling_margin(r: Any) -> float:
+    """(restore_effect - deg_after) / max(restore_effect, deg_after, 1), deg_after =
+    ceil(rate (max + upgrade_effect) / 100): after one more upgrade, how far one restoration per
+    cycle stays ahead of degradation (< 0 = past the sustainable ceiling, DIAGNOSTICS 29 / 32). In
+    [-1, 1] at any scale (a row without a restoration reads -1 once it degrades); the producer's own
+    information (its view's rate, max, effects)."""
+    after = math.ceil(float(getattr(r, "degradation_rate", 0)) * (r.max + r.upgrade_effect) / 100)
+    return (r.restore_effect - after) / max(r.restore_effect, after, 1)
+
+
+def producer_features(view: ProducerEntityView, ctx: ProducerContext,
+                      version: str = LATEST_FEATURES) -> dict[str, Any]:
+    """Row features and relation edges of one producer decision (pure; numpy). `version` = the
+    model's feature version (v3 adds `ceiling_margin` per capacity row)."""
     use = recent_input_use(view)
     short = blocked_shortfall(view)
     glob = psc._global_features(view) + [
         _q(ctx.investment_fund), _q(ctx.max_replenish), _q(ctx.replenish_cost_per_unit),
         _q(ctx.expansion_increases), _q(ctx.expansion_cost)]
     caps = [psc._capacity_features(r) + [float(getattr(r, "degradation_rate", 0)) / 100.0]
-            for r in view.capacity_rows]
+            + ([ceiling_margin(r)] if version == FEATURES_V3 else []) for r in view.capacity_rows]
     prods = [psc._product_features(r) for r in view.product_rows]
     inputs = [psc._input_features(r) + [_q(use.get(r.input_product, 0.0)),
                                          _q(short.get(r.input_product, 0))]
               for r in view.input_rows]
     rel = view.relations
-    return {"global": _arr([glob]), "capacity": _arr(caps, 16), "product": _arr(prods, 18),
+    return {"global": _arr([glob]), "capacity": _arr(caps, CAPACITY_DIM[version]),
+            "product": _arr(prods, 18),
             "input": _arr(inputs, 6),
             "prod_cap": sorted(rel.product_capacity_required), "prod_in": sorted(
                 rel.product_input_required),
@@ -216,12 +236,14 @@ def _mean_ctx(edges: Sequence[tuple[int, int]], n_dst: int, src: torch.Tensor, d
 class ProducerGNN(nn.Module):
     """Typed message passing over a producer's own entity view (D3); heads per D2."""
 
-    def __init__(self, hidden: int = HIDDEN, rounds: int = ROUNDS) -> None:
+    def __init__(self, hidden: int = HIDDEN, rounds: int = ROUNDS,
+                 features: str = LATEST_FEATURES) -> None:
         super().__init__()
-        self.hidden, self.rounds = hidden, rounds
-        self.enc = nn.ModuleDict({"global": _mlp(13, hidden), "capacity": _mlp(16, hidden),
+        self.hidden, self.rounds, self.features = hidden, rounds, features
+        cap = CAPACITY_DIM[features]
+        self.enc = nn.ModuleDict({"global": _mlp(13, hidden), "capacity": _mlp(cap, hidden),
                                   "product": _mlp(18, hidden), "input": _mlp(6, hidden)})
-        self.norm = FeatureNorm({"global": 13, "capacity": 16, "product": 18, "input": 6},
+        self.norm = FeatureNorm({"global": 13, "capacity": cap, "product": 18, "input": 6},
                                 PRODUCER_LOG1P)
         self.upd = nn.ModuleList([nn.ModuleDict({
             "product": _mlp(3 * hidden, hidden), "capacity": _mlp(2 * hidden, hidden),
@@ -335,7 +357,7 @@ def _mean(h: torch.Tensor, hidden: int) -> torch.Tensor:
 
 def producer_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str) -> np.ndarray:
     view = env.system.producer_entity_view(pid)
-    f = producer_features(view, producer_context(env, pid))
+    f = producer_features(view, producer_context(env, pid), model.features)
     with torch.no_grad():
         gates, rep = model(f)
     sp = env.spec_

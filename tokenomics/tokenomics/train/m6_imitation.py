@@ -148,14 +148,98 @@ def freeze_prereg(path: Path = PREREG_PATH) -> tuple[str, str]:
         sha256_file(str(path))
 
 
-def prereg_problems(path: Path = PREREG_PATH) -> list[str]:
+# --- Stage I v3 (supervisor decision 2026-11-06, DIAGNOSTICS 32): the ceiling-margin feature, collect at
+# 12 and 42 producers (training split only), a three-clause check; pre-registration v5 ---
+
+PREREG_V5_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v5.json"
+PREREG_V5_SHA256: str | None = "4fdf45ef0ed44c6f899af606eb8b5073f6dddf750f2b2cb6c5b8ab1d2f0526c9"  # re-frozen before Stage I v3's data (pre-data 63d85a94... superseded)
+PREREG_V5_PREDATA_SHA = "63d85a948834ed9a569c71cad870aa7eb1d41f816f12ea946181bdcefbbdb569"
+COLLECT_42 = {"episodes": 2, "stage": "m6-collect-42", "horizon": 200, "replicate": 0,
+              "subsample": {"producer": 2, "orderer": 5}}
+# the atlas v2 train-split 42-producer worlds, collapse excluded (never held-out or validation)
+COLLECT_42_WORLDS = (
+    "ws-atlas-v1-42-0000", "ws-atlas-v1-42-0013", "ws-atlas-v1-42-0031", "ws-atlas-v1-42-0034",
+    "ws-atlas-v1-42-0037", "ws-atlas-v1-42-0039", "ws-atlas-v1-42-0040", "ws-atlas-v1-42-0041",
+    "ws-atlas-v1-42-0043", "ws-atlas-v1-42-0052", "ws-atlas-v1-42-0054", "ws-atlas-v1-42-0073",
+    "ws-atlas-v1-42-0076", "ws-atlas-v1-42-0081", "ws-atlas-v1-42-0093", "ws-atlas-v1-42-0113",
+    "ws-atlas-v1-42-0119", "ws-atlas-v1-42-0122", "ws-atlas-v1-42-0126")
+# EXP-0104's non-held-out 42 set (m6_drain.worlds "other": rho > 0.5, not collapse)
+CHECK_42_WORLDS = (
+    "ws-atlas-v1-42-0000", "ws-atlas-v1-42-0013", "ws-atlas-v1-42-0039", "ws-atlas-v1-42-0043",
+    "ws-atlas-v1-42-0066", "ws-atlas-v1-42-0076", "ws-atlas-v1-42-0081", "ws-atlas-v1-42-0126")
+CHECK_42 = {"episodes": 4, "stage": "m6-drain", "replicates": (0, 1), "horizon": 200}
+EXP0100_MODELS_SHA = "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+V3_RULE = ("faithful iff (a) at 12: the v3 GNN stack vs k5_rf5 + MWWk on the 16 monitor world-episodes "
+           "x replicates 0 / 1, g >= -F (M5's floors) and no more deaths (Stage I's rule); (b) at 42: on "
+           "CHECK_42_WORLDS at horizon 200 (4 episodes, stage m6-drain, replicates 0 / 1), the producers "
+           "past the sustainable ceiling at episode end, summed, are no more than the base's, and the "
+           "units are not below the base's beyond the floor (L5's mean_comp floor); (c) the v3 stack vs "
+           "the EXP-0100 stack on the monitor set, g >= -F. Else short, naming the clauses")
+
+
+def registered_prereg_v5() -> dict:
+    return {
+        "format": "m6-prereg-v5", "change": "add-m6-joint-mpg-gnn",
+        "stage": "Stage I v3: imitation with the ceiling-margin feature, collected at 12 and 42",
+        "status": "frozen before Stage I v3's data; real collect / fit / check refuse any other file",
+        "supersedes_predata": {"sha256": PREREG_V5_PREDATA_SHA,
+                               "why": "review 2026-11-06, before any data: the margin's denominator "
+                                      "max(restore_effect, 1) grew with scale on rows without a "
+                                      "restoration (restore_effect 0: -deg_after); bounded to "
+                                      "max(restore_effect, deg_after, 1)"},
+        "keeps": {"m6_prereg_v2.json": PREREG_SHA256, "m6_prereg_v4.json": PREREG_V4_SHA256,
+                  "note": "v1..v4 stay frozen; the critic-free Stage 0 is pre-registered as v6"},
+        "decision": "supervisor 2026-11-06: fix the diagnosed cause (DIAGNOSTICS 32, EXP-0104) in the "
+                    "imitation stage before RL; 42-0125 and every held-out world excluded",
+        "cause": "EXP-0104: the imitated producer upgrades past the sustainable ceiling at 42; the "
+                 "offline check found no clipping (|z| < 5): the gate misses an exact integer "
+                 "threshold by one unit of degradation",
+        "feature": {"version": g.FEATURES_V3,
+                    "ceiling_margin": "(restore_effect - deg_after) / max(restore_effect, deg_after, "
+                                      "1), deg_after = ceil(rate (max + upgrade_effect) / 100), per "
+                                      "capacity row (m6_gnn.ceiling_margin); in [-1, 1]",
+                    "normaliser": "as v2 (median / IQR, clip 5), fitted on the v3 training samples"},
+        "base": {"producer": BASE_PRODUCER, "orderer": BASE_ORDERER},
+        "data": {"12": {**pe.TRAINING_PINS, "world_episodes": "the 112 training world-episodes "
+                                                              "(monitor excluded), replicate 0",
+                        "horizon": pe.HORIZON},
+                 "42": {**COLLECT_42, "worlds": list(COLLECT_42_WORLDS),
+                        "subsample": "every 2nd cycle's producer decisions, every 5th cycle's "
+                                     "orderer decisions (memory and fit time)"},
+                 "monitor": "the 16 monitor world-episodes at r0 (fidelity metrics only)",
+                 "labels": "as v2", "atlas_content_hash": REGISTERED_ATLAS_HASH},
+        "model": {"hidden": g.HIDDEN, "rounds": g.ROUNDS, "producer_features": g.FEATURES_V3,
+                  "losses": "as v2"},
+        "fit": {**FIT, "mode_rule": MODE_RULE, "stopping_rule": f"fixed {FIT['epochs']} epochs"},
+        "check": {"rule": V3_RULE, "check_42_worlds": list(CHECK_42_WORLDS), "check_42": {
+            **CHECK_42, "replicates": list(CHECK_42["replicates"])},
+            "reference_models_sha256": EXP0100_MODELS_SHA,
+            "ceiling": "degradation_for(t) > restoration.restores on the restoration type",
+            "overlap": "the 42 check worlds include collect worlds (other seeds) and validation "
+                       "42-0066 (already read in EXP-0102)"},
+        "reported": ["fidelity per head at 12 and on the 42 samples", "per-world 42 counts and units",
+                     "the fit curve and the mode probe"]}
+
+
+def freeze_prereg_v5(path: Path = PREREG_V5_PATH) -> tuple[str, str]:
     from ..eval.provenance import sha256_file
 
-    if PREREG_SHA256 is None:
-        return ["no pinned M6 pre-registration (m6_prereg_v2.json; `--mode freeze`)"]
-    if not path.exists() or sha256_file(str(path)) != PREREG_SHA256:
-        return [f"{path.name} does not match the pinned SHA-256 {PREREG_SHA256[:12]}"]
-    if json.loads(path.read_text()) != registered_prereg():
+    doc = registered_prereg_v5()
+    if not path.exists():
+        path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+        return "FROZEN", sha256_file(str(path))
+    return ("MATCH" if json.loads(path.read_text()) == doc else "MISMATCH"), sha256_file(str(path))
+
+
+def prereg_problems(path: Path = PREREG_V5_PATH) -> list[str]:
+    """Real collect / fit / check runs are Stage I v3's: the pinned v5 (v2 governed EXP-0100)."""
+    from ..eval.provenance import sha256_file
+
+    if PREREG_V5_SHA256 is None:
+        return ["no pinned Stage I v3 pre-registration (m6_prereg_v5.json; `--mode freeze-v5`)"]
+    if not path.exists() or sha256_file(str(path)) != PREREG_V5_SHA256:
+        return [f"{path.name} does not match the pinned SHA-256 {PREREG_V5_SHA256[:12]}"]
+    if json.loads(path.read_text()) != registered_prereg_v5():
         return ["the pre-registration differs from the code"]
     return []
 
@@ -248,16 +332,22 @@ def record_job(job: dict) -> dict:
     prod_s: list = []
     ord_s: list = []
 
+    sub = job.get("subsample") or {}
+    kp, ko = int(sub.get("producer", 1)), int(sub.get("orderer", 1))
+
     def rec_p(e: Any, agent: str) -> np.ndarray:
-        pid = e._role[agent][1]
-        f = g.producer_features(e.system.producer_entity_view(pid), g.producer_context(e, pid))
         a = base_p(e, agent)
+        if e.system.cycle_counter % kp:
+            return a
+        pid = e._role[agent][1]
+        f = g.producer_features(e.system.producer_entity_view(pid), g.producer_context(e, pid),
+                                g.LATEST_FEATURES)
         prod_s.append((f, producer_label(e, pid, a, f["inputs"])))
         return a
 
     def rec_o(e: Any, agent: str) -> np.ndarray:
         aid = e._role[agent][1]
-        slots = _slots(e, agent)
+        slots = _slots(e, agent) if e.system.cycle_counter % ko == 0 else []
         if slots:
             f = g.orderer_features(e.system.product_stream_view(aid), slots, e.spec_.producer_ids)
             ys = orderer_labels(e, slots, f)
@@ -579,12 +669,15 @@ def agreement(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list) -> di
 
 def save_models(pm: g.ProducerGNN, om: g.OrdererGNN, path: Path) -> None:
     torch.save({"producer": pm.state_dict(), "orderer": om.state_dict(),
-                "hidden": g.HIDDEN, "rounds": g.ROUNDS, "norm_format": g.NORM_FORMAT}, path)
+                "hidden": g.HIDDEN, "rounds": g.ROUNDS, "norm_format": g.NORM_FORMAT,
+                "producer_features": pm.features}, path)
 
 
 def load_models(path: str | Path) -> tuple[g.ProducerGNN, g.OrdererGNN]:
     d = torch.load(path, weights_only=True)
-    pm, om = g.ProducerGNN(d["hidden"], d["rounds"]), g.OrdererGNN(d["hidden"], d["rounds"])
+    # a checkpoint without `producer_features` predates v3 (EXP-0099 / EXP-0100): v2 features
+    pm = g.ProducerGNN(d["hidden"], d["rounds"], d.get("producer_features", g.FEATURES_V2))
+    om = g.OrdererGNN(d["hidden"], d["rounds"])
     # a pre-normaliser checkpoint (EXP-0099) loads with the identity normaliser
     strict = d.get("norm_format") == g.NORM_FORMAT
     if not strict and "norm_format" in d:
@@ -606,17 +699,58 @@ def _training(training_dir: str) -> tuple[Any, list, list]:
     return ts, train, mon
 
 
+def collect_42_jobs(atlas: Mapping, max_worlds: int | None = None,
+                    horizon: int | None = None) -> list[dict]:
+    """COLLECT_42: k5_rf5 + MWWk on the train-split 42-producer worlds (never held-out, never
+    validation), fresh seeds (stage m6-collect-42), subsampled recording."""
+    from ..eval.teacher_audit import world_view
+    from .producer_read import entry_for
+
+    views = {world_view(e)["world"]: world_view(e) for e in atlas["worlds"]}
+    found = sorted(w for w, v in views.items() if v["size"] == 42 and v["split"] == "train"
+                   and v["class"] != "collapse")
+    if tuple(found) != COLLECT_42_WORLDS:
+        raise ValueError("the atlas's train-split 42 worlds differ from the registered list")
+    jobs = []
+    for w in COLLECT_42_WORLDS[:max_worlds] if max_worlds else COLLECT_42_WORLDS:
+        e = entry_for(views[w], COLLECT_42["episodes"], COLLECT_42["stage"])
+        for ep in e.episode_seeds:
+            jobs.append({"world": e.id, "size": e.size, "regime": e.regime,
+                         "world_seed": e.world_seed, "generator": e.generator, "episode": int(ep),
+                         "replicate": COLLECT_42["replicate"],
+                         "horizon": horizon or COLLECT_42["horizon"],
+                         "subsample": COLLECT_42["subsample"], "kind": "imit_train_42",
+                         "job_id": f"imit42|{e.id}|{ep}"})
+    return jobs
+
+
 def run_collect(training_dir: str, out_dir: str, workers: int, horizon: int,
-                max_world_episodes: int | None, dry_run: bool = False) -> int:
+                max_world_episodes: int | None, dry_run: bool = False,
+                atlas_path: str | None = None, horizon_42: int | None = None) -> int:
+    """Stage I v3: the 12-producer training and monitor world-episodes (as v2) plus, with an atlas,
+    the 42-producer training worlds (COLLECT_42) into the training samples."""
+    from ..eval.teacher_audit import load_atlas
+
     ts, train, mon = _training(training_dir)
+    atlas = None if atlas_path is None else load_atlas(atlas_path)
     if not dry_run:
-        _refuse(real_problems(horizon=horizon, max_world_episodes=max_world_episodes, ts=ts))
+        _refuse(real_problems(horizon=horizon, max_world_episodes=max_world_episodes, ts=ts,
+                              atlas=atlas)
+                + ([] if atlas is not None else ["a v3 collect needs --atlas (the 42 worlds)"])
+                + ([] if horizon_42 is None else ["--horizon-42 is set"]))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     sets = {"train": train[:max_world_episodes] if max_world_episodes else train,
             "monitor": mon[:max(1, max_world_episodes // 4)] if max_world_episodes else mon}
+    counts = {}
     for name, wes in sets.items():
-        res = _pool(record_job, _jobs(ts, wes, f"imit_{name}", (0,), horizon), workers)
+        jobs = _jobs(ts, wes, f"imit_{name}", (0,), horizon)
+        if name == "train" and atlas is not None:
+            jobs = collect_42_jobs(atlas, 1 if max_world_episodes else None, horizon_42) + jobs
+        res = _pool(record_job, jobs, workers)
+        counts[name] = {"world_episodes": len(jobs),
+                        "producer_42": sum(len(r["producer"]) for r, j in zip(res, jobs)
+                                           if j.get("size") == 42)}
         samples = {"producer": [s for r in res for s in r["producer"]],
                    "orderer": [s for r in res for s in r["orderer"]]}
         with (out / f"samples_{name}.pkl").open("wb") as fh:
@@ -625,8 +759,11 @@ def run_collect(training_dir: str, out_dir: str, workers: int, horizon: int,
               f"producer and {len(samples['orderer'])} orderer decisions", flush=True)
     (out / "collect.json").write_text(json.dumps(
         {"training_pins": ts.pins, "horizon": horizon, "train": len(sets["train"]),
-         "dry_run": dry_run, "prereg": PREREG_SHA256, "source_commit": SOURCE_COMMIT,
-         "monitor": len(sets["monitor"]), "base": [BASE_PRODUCER, BASE_ORDERER]}, indent=1) + "\n")
+         "dry_run": dry_run, "prereg": PREREG_V5_SHA256, "source_commit": SOURCE_COMMIT,
+         "monitor": len(sets["monitor"]), "base": [BASE_PRODUCER, BASE_ORDERER],
+         "features": g.LATEST_FEATURES, "collect_42": None if atlas is None else {
+             **COLLECT_42, "worlds": list(COLLECT_42_WORLDS)}, "counts": counts},
+        indent=1) + "\n")
     return 0
 
 
@@ -636,6 +773,10 @@ def sample_problems(collect_dir: Path, meta: dict) -> list[str]:
 
     if meta.get("dry_run"):
         return ["the collect run was a dry run"]
+    if meta.get("prereg") == PREREG_V5_SHA256 and meta.get("features") == g.LATEST_FEATURES:
+        return []
+    if PREREG_V5_SHA256 is not None:
+        return ["a Stage I v3 fit reads a real v3 (v5-pinned) collect only"]
     if meta.get("prereg") == PREREG_SHA256:
         return []
     if meta.get("prereg") != PREREG_V1_SHA256:
@@ -671,7 +812,7 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
 
     spec = {"fit_mode": ran, "mode_probe": probe, "requested_mode": mode, "fit": FIT,
             "epochs": epochs, "seed": seed, "workers": workers, "dry_run": dry_run,
-            "prereg": PREREG_SHA256, "source_commit": SOURCE_COMMIT,
+            "prereg": PREREG_V5_SHA256, "source_commit": SOURCE_COMMIT,
             "samples_from": {"prereg": meta.get("prereg"), "source_commit":
                              meta.get("source_commit")}}
     (out / "spec.json").write_text(json.dumps(spec, indent=1) + "\n")
@@ -681,7 +822,7 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
            "normaliser": info["normaliser"],
            "samples_from": {"prereg": meta.get("prereg"), "source_commit":
                             meta.get("source_commit")},
-           "prereg": PREREG_SHA256, "models_sha256": sha256_file(str(out / "models.pt")),
+           "prereg": PREREG_V5_SHA256, "models_sha256": sha256_file(str(out / "models.pt")),
            "source_commit": SOURCE_COMMIT,
            "train_agreement": agreement(pm, om, tr["producer"], tr["orderer"]),
            "monitor_agreement": agreement(pm, om, mo["producer"], mo["orderer"])}
@@ -690,54 +831,139 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
     return 0
 
 
+def check_42_jobs(atlas: Mapping, models: str, max_worlds: int | None = None,
+                  episodes: int | None = None, horizon: int | None = None) -> list[dict]:
+    """Clause (b): the v3 GNN stack and k5_rf5 + MWWk on CHECK_42_WORLDS (EXP-0104's keys)."""
+    from ..eval.teacher_audit import world_view
+    from .order_es_worlds import X_RUNDOWN
+    from .producer_read import entry_for
+
+    views = {world_view(e)["world"]: world_view(e) for e in atlas["worlds"]}
+    jobs = []
+    for w in CHECK_42_WORLDS[:max_worlds] if max_worlds else CHECK_42_WORLDS:
+        e = entry_for(views[w], episodes or CHECK_42["episodes"], CHECK_42["stage"])
+        for ep in e.episode_seeds:
+            for r in CHECK_42["replicates"]:
+                for arm in ("gnn", "k5_rf5"):
+                    jobs.append({"world": e.id, "size": e.size, "regime": e.regime,
+                                 "world_seed": e.world_seed, "generator": e.generator,
+                                 "episode": int(ep), "replicate": r,
+                                 "horizon": horizon or CHECK_42["horizon"], "arm": arm,
+                                 "set": "check42", "models": models, "x": float(X_RUNDOWN)})
+    return sorted(jobs, key=lambda j: j["arm"] == "k5_rf5")
+
+
+def check_v3_reading(mon_rows: Sequence[dict], prev_rows: Sequence[dict], rows42: Sequence[dict],
+                     mon_cells: Mapping, cells42: Mapping) -> dict:
+    """V3_RULE over the played rows (pure)."""
+    from .order_es_validate import mean_comp, world_mean
+    from .producer_read import _units, pilot_reading
+
+    base = [x for x in mon_rows if x["kind"] == "monitor_base"]
+    cand = [x for x in mon_rows if x["kind"] == "monitor"]
+    a = pilot_reading(cand + base, mon_cells, 0)
+    c = pilot_reading(cand + [{**x, "kind": "monitor_base"} for x in prev_rows], mon_cells, 0)
+    deaths = {"v3": sum(x["dead"] == "true" for x in cand),
+              "base": sum(x["dead"] == "true" for x in base),
+              "exp0100": sum(x["dead"] == "true" for x in prev_rows)}
+    units = _units([{**r, "units": str(r["units"])} for r in rows42], lambda d: d["world"])
+    worlds = sorted(w for w in units if "gnn" in units[w] and "k5_rf5" in units[w])
+    bars = {w: world_mean(units[w]["k5_rf5"]) for w in worlds}
+    comp = mean_comp(units, cells42, "gnn", "k5_rf5", {"gnn": 2, "k5_rf5": 2}, bars, worlds) \
+        if worlds else None
+    over = {arm: sum(int(r["over_ceiling"]) for r in rows42 if r["arm"] == arm)
+            for arm in ("gnn", "k5_rf5")}
+    ok_a = (a.get("g_tr") is not None and a["g_tr"] >= -a["F_tr"]
+            and deaths["v3"] <= deaths["base"])
+    ok_b = (comp is not None and over["gnn"] <= over["k5_rf5"] and comp.diff >= -comp.floor)
+    ok_c = c.get("g_tr") is not None and c["g_tr"] >= -c["F_tr"]
+    failed = [n for n, ok in (("a_12_faithful", ok_a), ("b_42_ceiling_units", ok_b),
+                              ("c_no_regression", ok_c)) if not ok]
+    per_world = {w: {arm: {"over_ceiling": sum(int(r["over_ceiling"]) for r in rows42
+                                               if r["world"] == w and r["arm"] == arm),
+                           "units": world_mean(units[w][arm]),
+                           "deaths": sum(bool(r["dead"]) for r in rows42
+                                         if r["world"] == w and r["arm"] == arm)}
+                     for arm in ("gnn", "k5_rf5")} for w in worlds}
+    return {"rule": V3_RULE, "reading": "faithful" if not failed else "short", "failed": failed,
+            "a_12": {"g": a.get("g_tr"), "F": a.get("F_tr"), "deaths": deaths},
+            "b_42": {"over_ceiling": over, "diff": None if comp is None else comp.diff,
+                     "floor": None if comp is None else comp.floor, "worlds": worlds,
+                     "deaths": {arm: sum(bool(r["dead"]) for r in rows42 if r["arm"] == arm)
+                                for arm in ("gnn", "k5_rf5")}, "per_world": per_world},
+            "c_vs_exp0100": {"g": c.get("g_tr"), "F": c.get("F_tr")}}
+
+
 def run_check(training_dir: str, atlas: str, models: str, out_dir: str, workers: int,
-              horizon: int, max_world_episodes: int | None, dry_run: bool = False) -> int:
-    """The pre-registered imitation check (D4); reported agreement comes from fit.json."""
+              horizon: int, max_world_episodes: int | None, dry_run: bool = False,
+              prev_models: str | None = None, episodes_42: int | None = None,
+              horizon_42: int | None = None) -> int:
+    """Stage I v3's pre-registered check (V3_RULE): (a) 12 monitor vs k5_rf5 + MWWk, (b) the 42
+    ceiling / units clause, (c) no regression vs the EXP-0100 stack."""
+    import csv
+
     from ..eval.provenance import sha256_file
     from ..eval.teacher_audit import load_atlas
-    from .order_es_validate import monitor_cells
-    from .producer_read import pilot_reading
+    from .m6_drain import drain_job
+    from .order_es_validate import monitor_cells, world_cells
 
     ts, _train, mon = _training(training_dir)
+    at = load_atlas(atlas)
     if not dry_run:
         _refuse(real_problems(horizon=horizon, max_world_episodes=max_world_episodes, ts=ts,
-                              atlas=load_atlas(atlas)))
+                              atlas=at)
+                + ([] if prev_models and sha256_file(prev_models) == EXP0100_MODELS_SHA else
+                   ["--prev-models is not EXP-0100's models"])
+                + ([] if episodes_42 is None and horizon_42 is None else
+                   ["--episodes-42 / --horizon-42 is set"]))
     if max_world_episodes:
         mon = mon[:max_world_episodes]
-    jobs = [j for arm in ARMS for j in _jobs(ts, mon, arm, MONITOR_REPLICATES, horizon, models)]
-    rows = _pool(play_job, jobs, workers)
-    cells = monitor_cells(ts.training, load_atlas(atlas)["spreads"])
-    base = [x for x in rows if x["kind"] == "monitor_base"]
-    r = pilot_reading([x for x in rows if x["kind"] == "monitor"] + base, cells, 0)
-    deaths = {k: sum(x["dead"] == "true" for x in rows if x["kind"] == k) for k in ARMS}
-    swaps = {}
-    for arm in SWAP_ARMS:  # reported only (v2): the same floor rule against the base
-        rs = pilot_reading([{**x, "kind": "monitor"} for x in rows if x["kind"] == arm] + base,
-                           cells, 0)
-        swaps[arm] = {"producer": ARMS[arm][0], "orderer": ARMS[arm][1], "g": rs.get("g_tr"),
-                      "F": rs.get("F_tr"), "deaths": deaths[arm],
-                      "within_floor": (rs.get("g_tr") is not None and rs.get("F_tr") is not None
-                                       and rs["g_tr"] >= -rs["F_tr"])}
-    g_imit, f_imit = r.get("g_tr"), r.get("F_tr")
-    reading = ("faithful" if g_imit is not None and f_imit is not None and g_imit >= -f_imit
-               and deaths["monitor"] <= deaths["monitor_base"] else "short")
-    doc = {"rule": IMIT_RULE, "reading": reading, "g_imit": g_imit, "F_imit": f_imit,
-           "dry_run": dry_run, "prereg": PREREG_SHA256, "models_sha256": sha256_file(models),
-           "source_commit": SOURCE_COMMIT,
-           "deaths": deaths, "world_episodes": len(mon), "horizon": horizon,
-           "units_mean": {k: fmean(float(x["units"]) for x in rows if x["kind"] == k)
-                          for k in ARMS},
-           "swap_arms_reported_only": swaps}
+    jobs42 = check_42_jobs(at, models, 1 if max_world_episodes else None, episodes_42, horizon_42)
+    mon_jobs = [j for arm in ("monitor", "monitor_base")
+                for j in _jobs(ts, mon, arm, MONITOR_REPLICATES, horizon, models)]
+    prev_jobs = _jobs(ts, mon, "monitor", MONITOR_REPLICATES, horizon, prev_models) \
+        if prev_models else []
+    rows42 = _pool(drain_job, jobs42, workers)  # the 42 jobs are the longest: first
+    rows = _pool(play_job, mon_jobs + prev_jobs, workers)
+    mon_rows, prev_rows = rows[:len(mon_jobs)], rows[len(mon_jobs):]
+    from ..eval.teacher_audit import world_view
+
+    views = []
+    for e in at["worlds"]:
+        v = world_view(e)
+        if v["world"] in {r["world"] for r in rows42}:
+            v["rho"] = float(e["record"]["coordinates"]["rho"])
+            views.append(v)
+    doc = {**check_v3_reading(mon_rows, prev_rows, rows42,
+                              monitor_cells(ts.training, at["spreads"]),
+                              world_cells(views, at["spreads"])),
+           "dry_run": dry_run, "prereg": PREREG_V5_SHA256, "models_sha256": sha256_file(models),
+           "prev_models_sha256": None if not prev_models else sha256_file(prev_models),
+           "source_commit": SOURCE_COMMIT, "world_episodes": len(mon), "horizon": horizon,
+           "units_mean": {"v3": fmean(float(x["units"]) for x in mon_rows if x["kind"] == "monitor"),
+                          "base": fmean(float(x["units"]) for x in mon_rows
+                                        if x["kind"] == "monitor_base"),
+                          "exp0100": fmean(float(x["units"]) for x in prev_rows) if prev_rows
+                          else None}}
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "imitation_check.json").write_text(json.dumps(doc, indent=1, default=str) + "\n")
-    with (out / "episodes.csv").open("w") as fh:
-        keys = ("kind", "world", "episode", "replicate", "units", "dead")
-        fh.write(",".join(keys) + "\n")
-        for x in sorted(rows, key=lambda x: tuple(str(x[k]) for k in keys[:4])):
-            fh.write(",".join(str(x[k]) for k in keys) + "\n")
-    print(f"[m6_imitation] imitation check: {reading} (g_imit {g_imit}, F_imit {f_imit}, "
-          f"deaths {deaths}); swaps {json.dumps(swaps, default=str)}", flush=True)
+    with (out / "episodes.csv").open("w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(("set", "kind", "world", "episode", "replicate", "units", "dead"))
+        for x in mon_rows:
+            w.writerow(("monitor", x["kind"], x["world"], x["episode"], x["replicate"], x["units"],
+                        x["dead"]))
+        for x in prev_rows:
+            w.writerow(("monitor", "exp0100", x["world"], x["episode"], x["replicate"], x["units"],
+                        x["dead"]))
+    with (out / "check42.jsonl").open("w") as fh:
+        for r in rows42:
+            fh.write(json.dumps({k: v for k, v in r.items() if k not in ("cap_trace", "units_trace")})
+                     + "\n")
+    print(f"[m6_imitation] Stage I v3 check: {doc['reading']} {doc['failed']} a {doc['a_12']} "
+          f"b {dict((k, doc['b_42'][k]) for k in ('over_ceiling', 'diff', 'floor'))} "
+          f"c {doc['c_vs_exp0100']}", flush=True)
     return 0
 
 
@@ -1156,7 +1382,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", required=True,
                    choices=("timing", "collect", "fit", "check", "side-effects", "validate",
-                            "heldout", "freeze", "freeze-v3", "freeze-v4"))
+                            "heldout", "freeze", "freeze-v3", "freeze-v4", "freeze-v5"))
+    p.add_argument("--prev-models", help="check: the EXP-0100 models (clause c)")
+    p.add_argument("--episodes-42", type=int, help="dry run: 42 check episodes per world")
+    p.add_argument("--horizon-42", type=int, help="dry run: the 42 collect / check horizon")
     p.add_argument("--episodes", type=int)
     p.add_argument("--ledger", help="heldout: the held-out ledger (a staged copy on the pod)")
     p.add_argument("--horizons", default=",".join(str(h) for h in SIDE_ARMS))
@@ -1190,7 +1419,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if a.mode == "collect":
         return run_collect(a.training_dir, a.out_dir, a.workers, a.horizon, a.max_world_episodes,
-                           a.dry_run)
+                           a.dry_run, a.atlas, a.horizon_42)
+    if a.mode == "freeze-v5":
+        status, sha = freeze_prereg_v5()
+        print(f"[m6_imitation] pre-registration v5 {status} {sha}")
+        return 0 if status in ("FROZEN", "MATCH") else 2
     if a.mode == "freeze-v3":
         from ..eval.teacher_audit import load_atlas
 
@@ -1214,7 +1447,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_fit(a.collect_dir, a.out_dir, a.epochs, a.seed, a.workers, a.dry_run,
                        a.fit_mode)
     return run_check(a.training_dir, a.atlas, a.models, a.out_dir, a.workers, a.horizon,
-                     a.max_world_episodes, a.dry_run)
+                     a.max_world_episodes, a.dry_run, a.prev_models, a.episodes_42, a.horizon_42)
 
 
 if __name__ == "__main__":

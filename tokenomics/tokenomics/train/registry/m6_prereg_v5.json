@@ -1,0 +1,114 @@
+{
+ "base": {
+  "orderer": "mww_keyed",
+  "producer": "entity_planner_buyahead_k5_rf5"
+ },
+ "cause": "EXP-0104: the imitated producer upgrades past the sustainable ceiling at 42; the offline check found no clipping (|z| < 5): the gate misses an exact integer threshold by one unit of degradation",
+ "change": "add-m6-joint-mpg-gnn",
+ "check": {
+  "ceiling": "degradation_for(t) > restoration.restores on the restoration type",
+  "check_42": {
+   "episodes": 4,
+   "horizon": 200,
+   "replicates": [
+    0,
+    1
+   ],
+   "stage": "m6-drain"
+  },
+  "check_42_worlds": [
+   "ws-atlas-v1-42-0000",
+   "ws-atlas-v1-42-0013",
+   "ws-atlas-v1-42-0039",
+   "ws-atlas-v1-42-0043",
+   "ws-atlas-v1-42-0066",
+   "ws-atlas-v1-42-0076",
+   "ws-atlas-v1-42-0081",
+   "ws-atlas-v1-42-0126"
+  ],
+  "overlap": "the 42 check worlds include collect worlds (other seeds) and validation 42-0066 (already read in EXP-0102)",
+  "reference_models_sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126",
+  "rule": "faithful iff (a) at 12: the v3 GNN stack vs k5_rf5 + MWWk on the 16 monitor world-episodes x replicates 0 / 1, g >= -F (M5's floors) and no more deaths (Stage I's rule); (b) at 42: on CHECK_42_WORLDS at horizon 200 (4 episodes, stage m6-drain, replicates 0 / 1), the producers past the sustainable ceiling at episode end, summed, are no more than the base's, and the units are not below the base's beyond the floor (L5's mean_comp floor); (c) the v3 stack vs the EXP-0100 stack on the monitor set, g >= -F. Else short, naming the clauses"
+ },
+ "data": {
+  "12": {
+   "horizon": 100,
+   "schedule_sha256": "122ebe64f117cc67892336f2e9da47819161b741ec4fd9a6ece143b67c72ca38",
+   "training_worlds_sha256": "02abf7f7e247a4e68cc56460cd6ce9a0c335f2fd5af2454dcbfc0049295109d9",
+   "world_episodes": "the 112 training world-episodes (monitor excluded), replicate 0"
+  },
+  "42": {
+   "episodes": 2,
+   "horizon": 200,
+   "replicate": 0,
+   "stage": "m6-collect-42",
+   "subsample": "every 2nd cycle's producer decisions, every 5th cycle's orderer decisions (memory and fit time)",
+   "worlds": [
+    "ws-atlas-v1-42-0000",
+    "ws-atlas-v1-42-0013",
+    "ws-atlas-v1-42-0031",
+    "ws-atlas-v1-42-0034",
+    "ws-atlas-v1-42-0037",
+    "ws-atlas-v1-42-0039",
+    "ws-atlas-v1-42-0040",
+    "ws-atlas-v1-42-0041",
+    "ws-atlas-v1-42-0043",
+    "ws-atlas-v1-42-0052",
+    "ws-atlas-v1-42-0054",
+    "ws-atlas-v1-42-0073",
+    "ws-atlas-v1-42-0076",
+    "ws-atlas-v1-42-0081",
+    "ws-atlas-v1-42-0093",
+    "ws-atlas-v1-42-0113",
+    "ws-atlas-v1-42-0119",
+    "ws-atlas-v1-42-0122",
+    "ws-atlas-v1-42-0126"
+   ]
+  },
+  "atlas_content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+  "labels": "as v2",
+  "monitor": "the 16 monitor world-episodes at r0 (fidelity metrics only)"
+ },
+ "decision": "supervisor 2026-11-06: fix the diagnosed cause (DIAGNOSTICS 32, EXP-0104) in the imitation stage before RL; 42-0125 and every held-out world excluded",
+ "feature": {
+  "ceiling_margin": "(restore_effect - deg_after) / max(restore_effect, deg_after, 1), deg_after = ceil(rate (max + upgrade_effect) / 100), per capacity row (m6_gnn.ceiling_margin); in [-1, 1]",
+  "normaliser": "as v2 (median / IQR, clip 5), fitted on the v3 training samples",
+  "version": "v3"
+ },
+ "fit": {
+  "batch": 64,
+  "clip_grad_norm": 1.0,
+  "epochs": 20,
+  "lr": 0.003,
+  "mode": "auto",
+  "mode_rule": "auto: before the fit, one epoch of each mode on the full training samples (hogwild first, then sync; fresh models, the same seed); sync if its epoch costs <= sync_max_cost x hogwild's, else hogwild (with clipping); the mode and both times recorded in spec.json",
+  "norm_decisions": 50000,
+  "seed": 0,
+  "stopping_rule": "fixed 20 epochs",
+  "sync_max_cost": 1.5,
+  "workers": 16
+ },
+ "format": "m6-prereg-v5",
+ "keeps": {
+  "m6_prereg_v2.json": "2460cd07755930225837f996450f359e10480d495e3fc3e5be540d597a76d4a3",
+  "m6_prereg_v4.json": "f06fdf0c1a76c13e1a8137f02057510692bd5dd4b8cf60e6951b1fe04f349b6d",
+  "note": "v1..v4 stay frozen; the critic-free Stage 0 is pre-registered as v6"
+ },
+ "model": {
+  "hidden": 32,
+  "losses": "as v2",
+  "producer_features": "v3",
+  "rounds": 2
+ },
+ "reported": [
+  "fidelity per head at 12 and on the 42 samples",
+  "per-world 42 counts and units",
+  "the fit curve and the mode probe"
+ ],
+ "stage": "Stage I v3: imitation with the ceiling-margin feature, collected at 12 and 42",
+ "status": "frozen before Stage I v3's data; real collect / fit / check refuse any other file",
+ "supersedes_predata": {
+  "sha256": "63d85a948834ed9a569c71cad870aa7eb1d41f816f12ea946181bdcefbbdb569",
+  "why": "review 2026-11-06, before any data: the margin's denominator max(restore_effect, 1) grew with scale on rows without a restoration (restore_effect 0: -deg_after); bounded to max(restore_effect, deg_after, 1)"
+ }
+}

@@ -28,6 +28,7 @@ ATLAS_V2 = REPO / "experiments/EXP-0052-headroom-atlas-confirm/reclassified/atla
 ORDERER = REPO / "experiments/EXP-0012-portable-orderer-scorer/artifacts/orderer_scorer.pt"
 TRAINING = REPO / "experiments/EXP-0058-es-gradient-probe/bar"
 PHASE1 = REPO / "tokenomics/tokenomics/config/phase1.json"
+PREV = REPO / "experiments/EXP-0100-m6-imitation-v2/artifacts/fit/models.pt"
 
 
 def _lfs(p: Path) -> bool:
@@ -153,21 +154,23 @@ def test_stage_one_dry_chain(tmp_path: Path) -> None:
     """collect (2 training world-episodes, horizon 6) -> fit (1 epoch) -> check (1 monitor
     world-episode): runs end to end; fit reports the agreement metrics; check writes a reading."""
     c, f, k = tmp_path / "c", tmp_path / "f", tmp_path / "k"
-    assert im.run_collect(str(TRAINING), str(c), 1, 6, 2, dry_run=True) == 0
+    assert im.run_collect(str(TRAINING), str(c), 1, 6, 2, dry_run=True, atlas_path=str(ATLAS_V2),
+                          horizon_42=6) == 0
+    meta = json.loads((c / "collect.json").read_text())
+    assert meta["features"] == g.FEATURES_V3 and meta["counts"]["train"]["producer_42"] > 0
     assert im.run_fit(str(c), str(f), 1, 0, dry_run=True) == 0
     doc = json.loads((f / "fit.json").read_text())
     for key in ("exact_command", "gate_accuracy", "replenish_mae_units", "orderer_kl",
                 "orderer_top1"):
         assert key in doc["train_agreement"] and key in doc["monitor_agreement"]
     assert im.run_check(str(TRAINING), str(ATLAS_V2), str(f / "models.pt"), str(k), 1, 6, 1,
-                        dry_run=True) == 0
+                        dry_run=True, prev_models=str(PREV), episodes_42=1, horizon_42=6) == 0
     assert set(doc["monitor_agreement"]["producer_heads"]["toggles"]) == set(im.TOGGLES)
     spec = json.loads((f / "spec.json").read_text())
     assert spec["fit_mode"] in ("sync", "hogwild")
     chk = json.loads((k / "imitation_check.json").read_text())
-    assert chk["reading"] in ("faithful", "short") and chk["rule"] == im.IMIT_RULE
-    assert set(chk["swap_arms_reported_only"]) == set(im.SWAP_ARMS)
-    assert set(chk["units_mean"]) == set(im.ARMS)
+    assert chk["reading"] in ("faithful", "short") and chk["rule"] == im.V3_RULE
+    assert set(chk["b_42"]["over_ceiling"]) == {"gnn", "k5_rf5"} and chk["c_vs_exp0100"]["F"]
 
 
 def _raw_orderer_samples(n: int, seed: int = 0) -> list:
@@ -216,18 +219,41 @@ def test_sync_fit_is_deterministic() -> None:
 
 
 def test_real_stage_one_runs_need_the_pinned_preregistration(tmp_path: Path) -> None:
-    """A real collect / fit / check refuses without the pin, a changed file, other settings."""
-    assert im.prereg_problems() == [] and im.freeze_prereg()[0] == "MATCH"
+    """A real collect / fit / check refuses without the pin (v5, Stage I v3), a changed file, other
+    settings; the frozen v2 still matches its code."""
+    assert im.prereg_problems() == [] and im.freeze_prereg_v5()[0] == "MATCH"
+    assert im.freeze_prereg()[0] == "MATCH"
     with pytest.raises(ValueError, match="horizon 6"):
         im.run_collect(str(TRAINING), str(tmp_path / "c"), 1, 6, None)
     assert any("--epochs 3" in x for x in im.real_problems(horizon=100, max_world_episodes=None,
                                                            epochs=3))
     import tokenomics.train.m6_imitation as mod
 
-    old = mod.PREREG_SHA256
+    old = mod.PREREG_V5_SHA256
     try:
-        mod.PREREG_SHA256 = "0" * 64
+        mod.PREREG_V5_SHA256 = "0" * 64
         assert "does not match the pinned" in mod.prereg_problems()[0]
     finally:
-        mod.PREREG_SHA256 = old
+        mod.PREREG_V5_SHA256 = old
+
+
+def test_ceiling_margin_is_signed_and_scale_free() -> None:
+    """DIAGNOSTICS 32: < 0 iff one more upgrade puts degradation past one restoration per cycle;
+    bounded in [-1, 1] at any scale (a restore_effect = 0 row reads -1); v3 adds it as the 17th
+    capacity column; a v2 checkpoint keeps 16."""
+    row = SimpleNamespace(degradation_rate=6, max=198, upgrade_effect=16, restore_effect=12)
+    assert g.ceiling_margin(row) == pytest.approx((12 - 13) / 13)  # EXP-0104: 13 vs restores 12
+    big = SimpleNamespace(degradation_rate=6, max=1980, upgrade_effect=160, restore_effect=120)
+    assert g.ceiling_margin(big) == pytest.approx((120 - 129) / 129)
+    for mx in (10, 1000, 100000):  # a row without a restoration: -1 at any scale
+        none = SimpleNamespace(degradation_rate=6, max=mx, upgrade_effect=0, restore_effect=0)
+        assert g.ceiling_margin(none) == -1.0
+    idle = SimpleNamespace(degradation_rate=0, max=50, upgrade_effect=0, restore_effect=0)
+    assert g.ceiling_margin(idle) == 0.0
+    ok = SimpleNamespace(degradation_rate=6, max=150, upgrade_effect=16, restore_effect=12)
+    assert g.ceiling_margin(ok) > 0
+    assert g.CAPACITY_DIM == {g.FEATURES_V2: 16, g.FEATURES_V3: 17}
+    if _lfs(PREV):
+        pm, _om = im.load_models(PREV)
+        assert pm.features == g.FEATURES_V2 and pm.enc["capacity"][0].in_features == 16
 

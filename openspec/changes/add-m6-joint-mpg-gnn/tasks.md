@@ -61,6 +61,10 @@ rule).
 - [x] 2.10 [experiment][remote:cpu16 + local probe] EXP-0104: the 42-0125 drain, diagnosed (supervisor decision 2026-11-06):
   the upgrade trap by imitation (DIAGNOSTICS 32); veto counterfactual recovers 60,754 vs 51,458 units at h200; same
   signature on train 42-0076 / 42-0126; ≈ 1.9 vCPU-h.
+- [ ] 2.11 [experiment][remote:cpu16] EXP-0105: Stage I v3 (supervisor decision 2026-11-06, DIAGNOSTICS 32): the bounded
+  ceiling-margin feature, collect at 12 and 42 (training split only), refit, the three-clause check (`m6_prereg_v5.json`
+  `4fdf45ef…`; the pre-data `63d85a94…` superseded). Pinned EUR-IS-1, stop 24 (raised from 16 by the supervisor to keep the
+  42 check at replicates 0 / 1).
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

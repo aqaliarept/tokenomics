@@ -150,7 +150,8 @@ class RecordingPolicies:
 
     def producing(self, env: Any, agent: str) -> np.ndarray:
         pid = env._role[agent][1]
-        f = g.producer_features(env.system.producer_entity_view(pid), g.producer_context(env, pid))
+        f = g.producer_features(env.system.producer_entity_view(pid), g.producer_context(env, pid),
+                                self.pm.features)
         with torch.no_grad():
             gd, rd = producer_dist(self.pm, self.ex, f)
             p = torch.sigmoid(gd.logits).numpy()
@@ -211,9 +212,10 @@ class RecordingPolicies:
 class CentralCritic(nn.Module):
     """V(cycle) from the global view: all producers' and acting streams' embeddings, pooled."""
 
-    def __init__(self, hidden: int = g.HIDDEN, rounds: int = g.ROUNDS) -> None:
+    def __init__(self, hidden: int = g.HIDDEN, rounds: int = g.ROUNDS,
+                 features: str = g.LATEST_FEATURES) -> None:
         super().__init__()
-        self.p = g.ProducerGNN(hidden, rounds)
+        self.p = g.ProducerGNN(hidden, rounds, features)
         self.o = g.OrdererGNN(hidden, rounds)
         self.dp, self.do = 4 * hidden, 3 * hidden
         self.head = nn.Sequential(nn.Linear(2 * self.dp + 2 * self.do + 1, hidden), nn.ReLU(),
@@ -231,7 +233,7 @@ class CentralCritic(nn.Module):
 
     @classmethod
     def from_actors(cls, pm: g.ProducerGNN, om: g.OrdererGNN) -> "CentralCritic":
-        c = cls(pm.hidden, len(pm.upd))
+        c = cls(pm.hidden, len(pm.upd), pm.features)
         c.p.load_state_dict(pm.state_dict())
         c.o.load_state_dict(om.state_dict())
         return c
@@ -241,12 +243,12 @@ class CentralCritic(nn.Module):
 
 
 def _models_from(state: Mapping) -> tuple[g.ProducerGNN, g.OrdererGNN, ActorExtras, CentralCritic]:
-    pm, om = g.ProducerGNN(), g.OrdererGNN()
+    pm, om = g.ProducerGNN(features=state.get("producer_features", g.LATEST_FEATURES)), g.OrdererGNN()
     pm.load_state_dict(state["producer"])
     om.load_state_dict(state["orderer"])
     ex = ActorExtras(0.0)
     ex.load_state_dict(state["extras"])
-    cr = CentralCritic()
+    cr = CentralCritic(features=pm.features)
     cr.load_state_dict(state["critic"])
     return pm, om, ex, cr
 
@@ -439,7 +441,8 @@ def _sync_steps(mods: Mapping[str, nn.Module], opt: torch.optim.Optimizer, dec: 
 
 
 def _state(mods: Mapping[str, nn.Module]) -> dict:
-    return {k: m.state_dict() for k, m in mods.items()}
+    return {**{k: m.state_dict() for k, m in mods.items()},
+            "producer_features": mods["producer"].features}
 
 
 def save_checkpoint(path: Path, mods: Mapping[str, nn.Module], opt: torch.optim.Optimizer,

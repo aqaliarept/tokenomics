@@ -139,6 +139,14 @@ class DrainTracer:
         return out
 
 
+def over_ceiling(system: Any) -> int:
+    """Producers past the sustainable ceiling: degradation_for(t) > restoration.restores on the
+    restoration type (DIAGNOSTICS 29 / 32; a max only grows, so the end count is the episode's)."""
+    return sum(1 for p in system.producing_agents.values()
+               if p.restoration is not None
+               and p.degradation_for(p.restoration.type) > p.restoration.restores)
+
+
 def drain_job(job: dict) -> dict:
     from ..eval.baselines import producing_policy
     from ..eval.routing_audit import ordering_policy
@@ -163,7 +171,8 @@ def drain_job(job: dict) -> dict:
             "units_halves": [sum(tr.units[:100]), sum(tr.units[100:])],
             "cap_at": {str(c): tr.cap[c] for c in (25, 50, 75, 99, 149, 199) if c < len(tr.cap)},
             "ratio_at": {str(c): r[c] for c in (0, 50, 99, 149, 199) if c < len(r)},
-            "r_start": st["r_start"], **tr.summary(), "cap_trace": tr.cap, "units_trace": tr.units}
+            "r_start": st["r_start"], "over_ceiling": over_ceiling(env.system), **tr.summary(),
+            "cap_trace": tr.cap, "units_trace": tr.units}
 
 
 def worlds(atlas: dict) -> list[tuple[dict, str]]:
