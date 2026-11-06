@@ -2,8 +2,16 @@
  "format": "m6-heldout-ledger-v1",
  "rule": "one shot per subject: a pending entry is committed before the launch; done / invalid entries are final; MAPPO's later read on this set is a second comparison",
  "entries": [
-  {"key": "held-out/m6-imitated", "status": "pending", "subject": "imitated GNN stack (EXP-0100 models)",
+  {
+   "key": "held-out/m6-imitated",
+   "status": "done",
+   "subject": "imitated GNN stack (EXP-0100 models)",
    "models_sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126",
-   "prereg": "f06fdf0c1a76c13e1a8137f02057510692bd5dd4b8cf60e6951b1fe04f349b6d", "opened": "2026-11-06", "exp": "EXP-0103"}
+   "prereg": "f06fdf0c1a76c13e1a8137f02057510692bd5dd4b8cf60e6951b1fe04f349b6d",
+   "opened": "2026-11-06",
+   "exp": "EXP-0103",
+   "closed": "2026-11-06",
+   "reading": "better (12, deciding); 42 reported short (run-down clause)"
+  }
  ]
 }
