@@ -356,8 +356,11 @@ def test_task_722_cells_are_added_and_existing_cells_unchanged(tmp_path: Path) -
     for r in rows:
         old = ref[(r["world"], r["episode"], r["subject"], r["replicate"])]
         assert {c: r[c] for c in old} == old
-        assert set(r) - set(old) == {st.LATE_HB, st.PCX_CELL, st.UPGRADES_BLOCKED}
-        assert r[st.UPGRADES_BLOCKED] == ""  # M5 4.2f: k4 has no cap
+        declined = {c for c in r if "declined" in c}  # ADR-0061 classes / reasons, all zero here
+        assert set(r) - set(old) == {st.LATE_HB, st.PCX_CELL, st.UPGRADES_BLOCKED,
+                                     st.ACCEPTANCE_STATS} | declined
+        assert r[st.UPGRADES_BLOCKED] == "" and r[st.ACCEPTANCE_STATS] == ""  # k4: no cap, no policy
+        assert declined and all(float(r[c] or 0) == 0 for c in declined)
         assert 0 <= float(r[st.LATE_HB]) <= float(r["st_b2_late"])
         x = json.loads(r[st.PCX_CELL])
         assert [q[:2] for q in x] == [q[:2] for q in json.loads(r[st.PC_CELL])]

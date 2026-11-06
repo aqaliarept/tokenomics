@@ -1,6 +1,6 @@
 # ADR-0061: Order acceptance is a producer policy; the domain keeps feasibility and execution
 
-Status: proposed (draft for the user, 2026-11-06; change `add-producer-acceptance-policy`)
+Status: accepted (user decision 2026-11-06; change `add-producer-acceptance-policy`; cut-off stays "lowest accepted this cycle", fund gaming recorded as a risk)
 
 ## Context
 ADR-0025 fixed acceptance as an atomic, single-cycle, price-greedy auction: "a bid that does not fit is rejected,

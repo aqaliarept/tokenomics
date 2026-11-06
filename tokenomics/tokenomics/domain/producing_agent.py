@@ -10,6 +10,7 @@ rejected. Cut-off price stays a single scalar = the lowest accepted bid price.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from .common import (
@@ -39,6 +40,7 @@ REJECT_NO_FIT = "no_fit"  # needs more of some type than the auction-start budge
 REJECT_DISPLACED = "displaced"  # fits the auction-start budget, not what higher bids left
 FAIL_DROPPED = "dropped"  # reservation lost re-validation against degraded capacity
 FAIL_TTL = "ttl"  # reservation (or its order) expired waiting for inputs
+REJECT_DECLINED = "declined"  # the producer's acceptance policy declined it (ADR-0061)
 
 
 @dataclass
@@ -84,10 +86,44 @@ class SubOrder:
 @dataclass
 class _Reservation:
     """A composite bid that cleared the auction and reserved its capacity, waiting
-    for its inputs to arrive in stock (ADR-0025)."""
+    for its inputs to arrive in stock (ADR-0025). Under an acceptance policy (ADR-0061) an
+    accepted bid that does not fit yet is a *pending* claim of the same shape, held in
+    `ProducingAgent.pending` without capacity until it fits; `priority` orders execution."""
 
     bid: Bid
     cycles_waited: int = 0
+    priority: float = 0.0
+
+
+@dataclass(frozen=True)
+class AcceptanceDecision:
+    """One routed bid's acceptance (ADR-0061): accept or decline, an execution priority
+    (higher first; ties by price) and, for a decline, its recorded reason."""
+
+    accept: bool
+    priority: float = 0.0
+    reason: str = REJECT_DECLINED
+
+
+@dataclass(frozen=True)
+class AcceptanceView:
+    """What an acceptance policy sees at the decision point (ADR-0061): the producer's own
+    state only. `bids` are this cycle's routed bids, price-descending (the order decisions
+    are returned in); `available` is the capacity left after carried reservations."""
+
+    producer_id: ProducerId
+    bids: tuple[Bid, ...]
+    available: dict[CapacityType, Capacity]
+    capacities: dict[CapacityType, Capacity]
+    held: tuple[Bid, ...]
+    pending: tuple[Bid, ...]
+    inventory: dict[Product, int]
+    outstanding_inbound: dict[Product, int]
+    ttl: int
+    cut_off_price: CapacityUnitPrice
+
+
+AcceptanceRule = Callable[[AcceptanceView], Sequence[AcceptanceDecision]]
 
 
 @dataclass
@@ -181,6 +217,12 @@ class ProducingAgent:
         self.inventory: dict[Product, int] = {}
         self.inventory_limit: int = config.inventory_limit
         self.reservations: list[_Reservation] = []
+        # ADR-0061: accepted claims not yet holding capacity (empty without an acceptance rule)
+        # and the acceptance rule itself (None = the ADR-0025 auction, unchanged)
+        self.pending: list[_Reservation] = []
+        self.acceptance: AcceptanceRule | None = None
+        # diagnostic counters of the acceptance path (reported, never observed)
+        self.acceptance_stats: dict[str, int] = {}
         # units ordered via replenishment but not yet delivered — claim inventory
         # headroom so the env's joint headroom H stays accurate (ADR-0025).
         self.outstanding_inbound: dict[Product, int] = {}
@@ -381,6 +423,103 @@ class ProducingAgent:
             self.outstanding_inbound.pop(request.product, None)
 
     # --- inventory / assembly helpers ---
+    def _produce_by_policy(self, outage: bool, available: dict[CapacityType, Capacity],
+                           still: list[_Reservation], accepted: list[Bid], completed: list[Bid],
+                           failed: list[Bid], rejected: list[Bid], failure_reasons: list[str],
+                           rejection_reasons: list[str],
+                           cut_off_price: CapacityUnitPrice) -> ProductionResult:
+        """ADR-0061 steps 3b-5: pending claims take capacity in priority order (or age and
+        fail at TTL); the acceptance rule decides this cycle's bids; accepted bids execute in
+        priority order as the budget allows, the rest wait as pending claims. Tokens burn at
+        acceptance; the cut-off is the lowest accepted price this cycle, carried otherwise."""
+        stats = self.acceptance_stats
+
+        def bump(key: str, n: int = 1) -> None:
+            stats[key] = stats.get(key, 0) + n
+
+        def execute(claims: list[_Reservation], keep: list[_Reservation]) -> None:
+            for r in sorted(claims, key=lambda r: (-r.priority, -r.bid.capacity_unit_price())):
+                if not outage and self._fits(available, r.bid.capacities):
+                    self._subtract(available, r.bid.capacities)
+                    if r.bid.is_composite() and not self._has_inputs(r.bid):
+                        still.append(r)
+                    else:
+                        if r.bid.is_composite():
+                            self._consume_inputs(r.bid)
+                        completed.append(r.bid)
+                        bump("completed_late" if r.cycles_waited else "completed_same_cycle")
+                else:
+                    keep.append(r)
+
+        # 3b. claims accepted in earlier cycles (no capacity held yet)
+        waiting: list[_Reservation] = []
+        execute(self.pending, waiting)
+        pending: list[_Reservation] = []
+        for r in waiting:
+            r.cycles_waited += 1
+            if r.cycles_waited >= self.reservation_ttl:
+                failed.append(r.bid)
+                failure_reasons.append(FAIL_TTL)
+                bump("pending_failed_ttl")
+            else:
+                pending.append(r)
+
+        # 4. the acceptance decision over this cycle's bids (price-descending)
+        requested: Capacity = 0
+        requested_by_type: dict[CapacityType, Capacity] = {}
+        self.bids.sort(key=lambda b: b.capacity_unit_price(), reverse=True)
+        for bid in self.bids:
+            requested += bid.total_capacity()
+            for t, c in bid.capacities.items():
+                requested_by_type[t] = requested_by_type.get(t, 0) + c
+        decisions = list(self.acceptance(AcceptanceView(
+            self.id, tuple(self.bids), dict(available), dict(self.capacities),
+            tuple(r.bid for r in still), tuple(r.bid for r in pending), dict(self.inventory),
+            dict(self.outstanding_inbound), self.reservation_ttl, self.cut_off_price)))
+        if len(decisions) != len(self.bids):
+            raise ValueError(f"acceptance returned {len(decisions)} decisions for "
+                             f"{len(self.bids)} bids")
+        funds: Tokens = 0
+        new: list[_Reservation] = []
+        declined: list[Bid] = []
+        lowest: CapacityUnitPrice | None = None
+        for bid, d in zip(self.bids, decisions):
+            if outage or not d.accept:
+                rejected.append(bid)
+                rejection_reasons.append(REJECT_OUTAGE if outage else d.reason)
+                if not outage:
+                    declined.append(bid)
+                continue
+            funds += bid.tokens
+            price = bid.capacity_unit_price()
+            lowest = price if lowest is None or price < lowest else lowest
+            accepted.append(bid)
+            new.append(_Reservation(bid, 0, float(d.priority)))
+        if lowest is not None:
+            cut_off_price = lowest
+        bump("declined", len(declined))
+        bump("declined_below_cutoff",
+             sum(1 for b in declined if lowest is not None and b.capacity_unit_price() < lowest))
+        bump("accepted", len(new))
+        execute(new, pending)
+        bump("accepted_pending", sum(1 for r in pending if r.cycles_waited == 0))
+
+        # 5. commit next state, as the auction path
+        for t in self.capacities:
+            self.capacities[t] = max(0, self.capacities[t] - self.degradation_for(t))
+        self.bids = []
+        self.reservations = still
+        self.pending = pending
+        self.requested_capacity = requested
+        self.requested_capacity_by_type = requested_by_type
+        self.funds = funds
+        self.cut_off_price = cut_off_price
+        self.cmd_handled = False
+        return ProductionResult(
+            accepted, completed, failed, rejected,
+            rejection_reasons=rejection_reasons, failure_reasons=failure_reasons,
+        )
+
     def _has_inputs(self, bid: Bid) -> bool:
         return all(self.inventory.get(p, 0) >= q for p, q in bid.inputs.items())
 
@@ -468,6 +607,11 @@ class ProducingAgent:
                     failure_reasons.append(FAIL_TTL)
                 else:
                     still.append(r)
+
+        if self.acceptance is not None:
+            return self._produce_by_policy(
+                outage, available, still, accepted, completed, failed, rejected,
+                failure_reasons, rejection_reasons, cut_off_price)
 
         # 4. atomic price-greedy auction over the remaining budget. A bid that
         # clears is `accepted` (tokens burnt) this cycle, whether it completes now

@@ -156,6 +156,11 @@ class TokenomicsAECEnv(AECEnv):
 
         self.system = None
         self.current_cycle = 0
+        # ADR-0061 D4: each producer's acceptance rule (None = the ADR-0025 auction, unchanged).
+        # A callable `AcceptanceView -> decisions`, or a factory `producer_id -> rule` marked
+        # with `per_producer = True`; set before `reset`. Not an AEC turn: the domain calls it at
+        # the decision point after routing, so agent order, spaces and policies are unchanged.
+        self.acceptance_rule = None
 
     # --- spaces ---
     def observation_space(self, agent: str) -> spaces.Space:
@@ -243,6 +248,11 @@ class TokenomicsAECEnv(AECEnv):
             product_stream_ordering=self.product_stream_ordering,
             shock_schedule=self._shock_schedule,
         )
+        if self.acceptance_rule is not None:
+            for pid, p in self.system.producing_agents.items():
+                p.acceptance = (self.acceptance_rule(pid)
+                                if getattr(self.acceptance_rule, "per_producer", False)
+                                else self.acceptance_rule)
         self.current_cycle = 0
         self.agents = self.possible_agents[:]
         self.rewards = {a: 0.0 for a in self.agents}

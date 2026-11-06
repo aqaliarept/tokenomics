@@ -107,6 +107,9 @@ class OrdererEconomyView:
     products: dict[Product, ProductStats]
     # per (order_id, producer_id) over the full slot x producer grid.
     producer_products: dict[tuple[OrderId, ProducerId], ProducerProductStats]
+    # ADR-0061 D2: last cycle's outcome of every sub-order this agent routed (additive;
+    # no existing encoder reads it)
+    last_outcomes: tuple["SubOrderOutcome", ...] = ()
 
 
 @dataclass
@@ -123,6 +126,22 @@ class ProductStreamView:
     producers: dict[ProducerId, ProducerStats]
     # per producer, for the stream's fixed product.
     producer_products: dict[ProducerId, ProducerProductStats]
+    # ADR-0061 D2: last cycle's outcome of every sub-order this agent routed (additive)
+    last_outcomes: tuple["SubOrderOutcome", ...] = ()
+
+
+@dataclass(frozen=True)
+class SubOrderOutcome:
+    """One routed sub-order's outcome in the previous cycle (ADR-0061 D2): `outcome` is
+    accepted / declined / completed / failed; `reason` a REJECT_* / FAIL_* constant, None when
+    it would reveal hidden shock state (an outage, ADR-0055) or for accepted / completed."""
+
+    order_id: OrderId
+    producer_id: ProducerId
+    product: Product
+    quantity: int
+    outcome: str
+    reason: str | None
 
 
 @dataclass

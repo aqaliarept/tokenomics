@@ -93,7 +93,7 @@ if TYPE_CHECKING:
 
 CONSUMER = "consumer"
 PRODUCER = "producer"  # replenishment and investment orders
-REJECT_REASONS = ("outage", "no_fit", "displaced")
+REJECT_REASONS = ("outage", "no_fit", "displaced", "declined")  # declined: ADR-0061
 FAIL_REASONS = ("dropped", "ttl", "ttl_outage")
 LOSS_REASONS = REJECT_REASONS + FAIL_REASONS + ("never_bid",)
 FAIL_TTL_OUTAGE = "ttl_outage"

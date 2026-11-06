@@ -78,8 +78,8 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from ..domain.metrics import makeable_qty_now
-from ..domain.producing_agent import FAIL_DROPPED, FAIL_TTL, REJECT_DISPLACED, REJECT_NO_FIT, \
-    REJECT_OUTAGE
+from ..domain.producing_agent import FAIL_DROPPED, FAIL_TTL, REJECT_DECLINED, REJECT_DISPLACED, \
+    REJECT_NO_FIT, REJECT_OUTAGE
 from ..domain.requests import InvestmentType
 from ..domain.system import order_kind
 from .contract import (
@@ -159,11 +159,12 @@ B2_SUBS = ("late", "short", "unfunded", "open",
                                    FAIL_TTL, FAIL_TTL_OUTAGE)))
 B2 = tuple(f"b2_{s}" for s in B2_SUBS)
 C_DISPLACED, D_OUTAGE, D_TTL_OUTAGE = "c_displaced", "d_outage", "d_ttl_outage"
+E_DECLINED = "e_declined"  # ADR-0061: the producer's acceptance policy declined it
 CLASS_REASON: dict[str, str] = {
     A_HELD: REJECT_NO_FIT, A_DEGRADED: REJECT_NO_FIT, A_MAX: REJECT_NO_FIT, A_DROPPED: FAIL_DROPPED,
     B1: FAIL_TTL, B3: FAIL_TTL, B4: FAIL_TTL, **{b: FAIL_TTL for b in B2},
     C_DISPLACED: REJECT_DISPLACED, D_OUTAGE: REJECT_OUTAGE, D_TTL_OUTAGE: FAIL_TTL_OUTAGE,
-    NEVER_BID: NEVER_BID,
+    NEVER_BID: NEVER_BID, E_DECLINED: REJECT_DECLINED,
 }
 CLASSES = tuple(CLASS_REASON)
 # top-level groups (the reading's unit) and the producer decision each one names
@@ -171,7 +172,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "a_capacity": (A_HELD, A_DEGRADED, A_MAX, A_DROPPED),
     "b1_not_ordered": (B1,), "b2_not_delivered": B2, "b3_upstream_unable": (B3,),
     "b4_contention": (B4,), "c_outbid": (C_DISPLACED,), "d_outage": (D_OUTAGE, D_TTL_OUTAGE),
-    NEVER_BID: (NEVER_BID,),
+    NEVER_BID: (NEVER_BID,), "e_declined": (E_DECLINED,),
 }
 DECISION = {
     "a_capacity": "capacity: restoration / upgrade (a_degraded, a_dropped), what to reserve "
@@ -204,7 +205,9 @@ ST_COLUMNS = (*(f"st_{k}" for k in CLASSES), *(f"st_reason_{r}" for r in LOSS_RE
 # M5 task 4.2f: upgrades a capped producer (rf4) blocked in the episode; "" for producers without
 # a cap (every earlier arm)
 UPGRADES_BLOCKED = "upgrades_blocked"
-COLUMNS = EPISODE_COLUMNS + ("arm",) + ST_COLUMNS + (UPGRADES_BLOCKED,)
+# ADR-0061: the acceptance policy's counters summed over producers (JSON); "" without a policy
+ACCEPTANCE_STATS = "acceptance_stats"
+COLUMNS = EPISODE_COLUMNS + ("arm",) + ST_COLUMNS + (UPGRADES_BLOCKED, ACCEPTANCE_STATS)
 _INV_KIND = {InvestmentType.RESTORATION: "restoration", InvestmentType.UPGRADE: "upgrade",
              InvestmentType.INVENTORY_EXPANSION: "expansion"}
 
@@ -383,6 +386,8 @@ class SupplyObserver:
             return D_TTL_OUTAGE
         if reason == REJECT_DISPLACED:
             return C_DISPLACED
+        if reason == REJECT_DECLINED:
+            return E_DECLINED
         if reason == FAIL_DROPPED:
             return A_DROPPED
         snap = self.hist.get(at, {}).get(pid)
@@ -489,6 +494,10 @@ def run_supply_job(job: Job) -> dict[str, str]:
         observer = SupplyObserver()
         observer.attach(env)  # after the tracer: its complete_cycle wrapper is the outer one
         prod, order, _fid = decoder_policies(job)
+        if job.get("acceptance"):  # ADR-0061: the producers' acceptance policy
+            from .acceptance import ACCEPTANCE_POLICIES
+
+            env.acceptance_rule = ACCEPTANCE_POLICIES[job["acceptance"]]
         run_episode(env, prod, order, seed=job["episode"], action_seed=job["action_seed"],
                     monitor=monitor)
         stats = env.episode_stats
@@ -501,6 +510,14 @@ def run_supply_job(job: Job) -> dict[str, str]:
         row.update(observer.cells())
         counts = getattr(prod, "upgrades_blocked", None)
         row[UPGRADES_BLOCKED] = "" if counts is None else str(counts.get(env.system, 0))
+        if job.get("acceptance"):
+            tot: dict[str, int] = {}
+            for p in env.system.producing_agents.values():
+                for k, v in p.acceptance_stats.items():
+                    tot[k] = tot.get(k, 0) + v
+            row[ACCEPTANCE_STATS] = json.dumps(tot, sort_keys=True)
+        else:
+            row[ACCEPTANCE_STATS] = ""
         return row
     except Exception as exc:  # noqa: BLE001 - recorded as the job's failure, never fatal
         return job_failure(job, exc).to_dict()
@@ -638,6 +655,7 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
                      source_commit: str = "", dry_run: bool = False,
                      order_ttl: int | None = None, arms: Sequence[str] | None = None,
                      exp0073_episodes: str | Path | None = None, producer: str = PRODUCER,
+                     acceptance: str | None = None,
                      run_job_fn: Callable[[Job], dict[str, str]] = run_supply_job,
                      log: Callable[[str], None] = print) -> int:
     """Run (or resume) the supply trace into `out_dir`; return 0, or `CONTRACT_INVALID` on
@@ -658,6 +676,8 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
             raise ValueError(f"--producer takes {PRODUCER} or one of {sorted(EXTRA_PRODUCING)}")
         if exp0057_episodes or exp0073_episodes:
             raise ValueError(f"references are {PRODUCER} rows; {producer} takes none")
+    if acceptance is not None and (not sweep or producer == PRODUCER):
+        raise ValueError("--acceptance belongs to the TTL sweep with an EXTRA_PRODUCING producer")
     if sweep:
         chosen_arms = tuple(arms) if arms is not None else SWEEP_ARMS
         if not chosen_arms or set(chosen_arms) - set(SWEEP_ARMS):
@@ -713,6 +733,7 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
         "reference": ({"exp0057_episodes": {"path": str(ref_path), "sha256": ref_sha}}
                       if ref_path is not None else None),
         "producer": producer, "arms": list(chosen_arms),
+        **({"acceptance": acceptance} if acceptance else {}),
         "subjects": {a["arm"]: a["subject"] for a in table},
         "arm_table": table, "shock_profile": shock_profile,
         "sample": [{"world": v["world"], "size": v["size"], "class": v["class"],
@@ -760,6 +781,8 @@ def run_supply_trace(*, atlas_path: str | Path, out_dir: str | Path, orderer_ckp
         j["arm"] = by_subject[j["subject"]]["arm"]
         if sweep:
             j["order_ttl"] = int(order_ttl)  # routing_audit.job_config rebuilds the world
+        if acceptance:
+            j["acceptance"] = acceptance  # ADR-0061
     if {job_key(j["world"], j["episode"], j["subject"], j["replicate"]) for j in jobs} != expected:
         raise AssertionError("job list and pinned grid disagree")  # internal invariant
     episodes = out / "episodes.csv"
@@ -886,6 +909,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--arms", help=f"sweep dry run: arms out of {','.join(SWEEP_ARMS)}")
     p.add_argument("--producer", default=PRODUCER, choices=(PRODUCER, *EXTRA_PRODUCING),
                    help="sweep: the producer of every arm (task 7.18)")
+    p.add_argument("--acceptance", choices=("auction", "ttl_feasible", "ttl_inputs"),
+                   help="sweep: the producers' acceptance policy (ADR-0061); absent = the domain's "
+                        "own auction, unchanged")
     p.add_argument("--exp0073-episodes",
                    help="sweep at TTL 2: EXP-0073's ttl2 episodes.csv (neutrality, both arms)")
     a = p.parse_args(argv)
@@ -896,7 +922,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             exp0057_episodes=a.exp0057_episodes, workers=a.workers, horizon=a.horizon,
             worlds=_csv_strs(a.worlds), max_worlds=a.max_worlds, shock_profile=a.shock_profile,
             source_commit=commit, dry_run=a.dry_run, order_ttl=a.order_ttl,
-            arms=_csv_strs(a.arms), exp0073_episodes=a.exp0073_episodes, producer=a.producer)
+            arms=_csv_strs(a.arms), exp0073_episodes=a.exp0073_episodes, producer=a.producer,
+            acceptance=a.acceptance)
     except (ContractRunError, DigestMismatch):  # recorded in contract_failures.csv
         return CONTRACT_INVALID
 

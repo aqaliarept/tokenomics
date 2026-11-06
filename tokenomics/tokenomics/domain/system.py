@@ -9,7 +9,7 @@ and cut-off price (ADR-0002). Here producer_infos is refreshed each cycle.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import Protocol
 
@@ -48,6 +48,7 @@ from .orderer_view import (
     OrdererEconomyView,
     ProductStreamView,
     StreamViewCache,
+    SubOrderOutcome,
     build_orderer_economy_view,
     build_product_stream_view,
 )
@@ -57,6 +58,7 @@ from .requests import ConsumerRequest, InvestmentType, ReplenishmentRequest
 from .telemetry import EconomyTelemetry
 from .producing_agent import (
     FAIL_TTL,
+    REJECT_OUTAGE,
     Bid,
     ProducerInfo,
     ProducingAgent,
@@ -363,6 +365,8 @@ class System:
         self._stream_view_cache: StreamViewCache | None = None
 
         self.producer_infos: dict[ProducerId, ProducerInfo] = self._snapshot_producer_infos()
+        # ADR-0061 D2: last cycle's sub-order outcomes per routing agent (empty before cycle 1)
+        self.last_sub_order_outcomes: dict[OrderingAgentId, tuple[SubOrderOutcome, ...]] = {}
         # Injected shock schedule (ADR-0055, add-shocks-i-drift D2): the env draws it, the
         # domain only replays it and never mutates it. Private: no view reads it, so agents
         # see a shock only through its consequences.
@@ -485,9 +489,11 @@ class System:
         orders (EXP-0006A). The env layer normalizes this into the observation."""
         agent = must_get(self.ordering_agents, aid)
         incoming = {oid: self.orders[oid] for oid in agent.incoming}
-        return build_orderer_economy_view(
+        view = build_orderer_economy_view(
             incoming, self.producing_agents, self.telemetry, self.process_sheets, self.orders
         )
+        outcomes = self.last_sub_order_outcomes.get(aid, ())
+        return replace(view, last_outcomes=outcomes) if outcomes else view
 
     def product_stream_view(self, aid: OrderingAgentId) -> ProductStreamView:
         """The product-stream feature bundle for one stream ordering agent (ADR-0052).
@@ -495,10 +501,12 @@ class System:
         yields a well-defined view. The env layer normalizes this into the obs."""
         agent = must_get(self.ordering_agents, aid)
         incoming = {oid: self.orders[oid] for oid in agent.incoming}
-        return build_product_stream_view(
+        view = build_product_stream_view(
             self.stream_products[aid], incoming, self.producing_agents,
             self.telemetry, self.process_sheets, self.orders, self._stream_view_cache,
         )
+        outcomes = self.last_sub_order_outcomes.get(aid, ())
+        return replace(view, last_outcomes=outcomes) if outcomes else view
 
     def ordering_agent_action(self, aid: OrderingAgentId, cmd: OrderingAgentCommand) -> None:
         if self.state != SystemState.ORDERING:
@@ -569,6 +577,9 @@ class System:
 
         producer_auctions: list[ProducerAuctionRecord] = []
         bid_outcomes: list[BidOutcome] = []
+        # ADR-0061 D2: the routing agent of every live order, before resolution removes it
+        router = {oid: (o.stream_agent_id() if self.product_stream_ordering else o.agent_id())
+                  for oid, o in self.orders.items() if not o.requires_funding()}
 
         def outcome(pid: ProducerId, bid: Bid, kind: str, reason: str | None) -> BidOutcome:
             return BidOutcome(
@@ -677,6 +688,31 @@ class System:
                     else:
                         survivors.append(r)
                 p.reservations = survivors
+                if p.pending:  # ADR-0061: accepted claims of a removed order fail too
+                    keep: list[_Reservation] = []
+                    for r in p.pending:
+                        if r.bid.order_id in removed:
+                            self._record_production("failed", pid, r.bid)
+                            bid_outcomes.append(BidOutcome(
+                                pid, r.bid.order_id, removed_kinds[r.bid.order_id],
+                                r.bid.product, r.bid.quantity, r.bid.total_capacity(),
+                                "failed", FAIL_TTL, r.bid.routed_cycle,
+                            ))
+                        else:
+                            keep.append(r)
+                    p.pending = keep
+
+        # ADR-0061 D2: every sub-order's outcome, observable by its router next cycle
+        per_agent: dict[OrderingAgentId, list[SubOrderOutcome]] = {}
+        for b in bid_outcomes:
+            aid = router.get(b.order_id)
+            if aid is None:
+                continue
+            kind = "declined" if b.outcome == "rejected" else b.outcome
+            reason = None if b.reason == REJECT_OUTAGE else b.reason
+            per_agent.setdefault(aid, []).append(SubOrderOutcome(
+                b.order_id, b.producer_id, b.product, b.quantity, kind, reason))
+        self.last_sub_order_outcomes = {a: tuple(v) for a, v in per_agent.items()}
 
         # fold this cycle's telemetry accumulators into their EMAs (once per cycle).
         self.telemetry.end_cycle()
