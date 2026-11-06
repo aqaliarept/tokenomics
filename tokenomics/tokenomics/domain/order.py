@@ -88,6 +88,10 @@ class OrderInfo:
     tokens: Tokens
     product: Product
     quantity: int
+    # cycles the order survives after the current one (ttl - cycles played; 0 = its last
+    # cycle), own-order information (add-producer-acceptance-policy, ADR-0061); additive,
+    # read by no existing policy. The orderer view's `OrderSlotStats.ttl_remaining` is the same.
+    remaining_ttl: int | None = None
 
 
 class Order:
@@ -207,8 +211,14 @@ class Order:
     def info(self) -> OrderInfo:
         self._must_be_funded()
         return OrderInfo(
-            self.id, self.available_tokens(), self.product, self.unresolved_quantity()
+            self.id, self.available_tokens(), self.product, self.unresolved_quantity(),
+            self.remaining_ttl(),
         )
+
+    def remaining_ttl(self) -> int:
+        """Cycles this order survives after the current one: it is rejected at the end of the
+        cycle in which `cycle_counter == ttl` (`complete_cycle`), so 0 = this is its last."""
+        return max(0, self.ttl - self.cycle_counter)
 
     def agent_id(self) -> OrderingAgentId:
         self._must_be_funded()

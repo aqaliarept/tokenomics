@@ -1,5 +1,18 @@
 # EXP-0098: producer acceptance policies A1 / A2 vs the k5_rf5 default (add-producer-acceptance-policy 3.1)
 
+> **Correction (2026-11-06, the stabilisation task): the "why A1 loses" mechanism below is WRONG.**
+> - **The counter bug.** A pending claim that ran on its first retry still had `cycles_waited == 0`, so it was
+>   counted as `completed_same_cycle`, not `completed_late`. The "≈ 92% died with the parent order, by
+>   difference" figure is an artifact of that.
+> - **Traced counts.** With the counters fixed (`pending_ran_later`, `pending_failed_ttl`, the new
+>   `pending_failed_parent`), A1 on two of these worlds (k5_rf5 + MWWk, horizon 100, local) gives:
+>   - 12-0111: 198 accepted later; 185 ran later, 3 failed at their own TTL, 10 died with their order;
+>   - 12-0391: 1,243 / 1,117 / 68 / 50.
+> - **So most accepted-later claims do get capacity later** (a claim that runs may still wait for inputs). The
+>   one-future-cycle assumption does **not** bind.
+> - **Why A1 is `harmful` is undiagnosed.** The registered reading stands. No further hand-written acceptance
+>   experiments are run (user redirect, 2026-11-06).
+
 **Question.** Does letting a producer accept work it cannot run this cycle help? EXP-0057's worlds, TTL 2, MWWk
 R = 2 and RR, observer on.
 - **A1 (`ttl_feasible`):** accept also bids that fit the next cycle after the queued claims.

@@ -306,7 +306,7 @@ _Avoid_: Exchange, marketplace, market
 ### Orders
 
 **Order:**
-A demand for a quantity of a product as a whole, backed by tokens. Capacity and input-product requirements scale with the quantity. Can be a consumer order (from a consumer) or an investment order (from a producing agent).
+A demand for a quantity of a product as a whole, backed by tokens. Capacity and input-product requirements scale with the quantity. Can be a consumer order (from a consumer) or an investment order (from a producing agent). Its remaining lifetime (TTL − cycles played; 0 = its last cycle) is visible to agents: the ordering agent sees it on its order rows, and the producer on every routed sub-order (ADR-0061).
 _Avoid_: Request, demand, task
 
 **Demand Drift:**

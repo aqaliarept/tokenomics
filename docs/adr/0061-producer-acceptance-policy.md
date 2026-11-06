@@ -44,3 +44,14 @@ holding penalty) stands.
 - **A new producer acceptance phase in the env** (K slots), plus additive outcome fields in the orderer view.
 - **Existing records stay valid,** behind a goldens gate on the default policy.
 - **Learned acceptance becomes possible** in a later change.
+
+## Addendum (2026-11-06): the order's remaining lifetime is visible
+Each order's remaining lifetime is own-order information:
+- **Definition:** `Order.remaining_ttl()` = ttl − cycles played, the cycles it survives after the current one;
+  0 = its last cycle.
+- **Where it is carried:** on `OrderInfo`, the routed `SubOrder` and the `Bid`, so the producer's
+  `AcceptanceView` sees it per routed bid. The ordering agent's order rows already show it
+  (`OrderSlotStats.ttl_remaining`).
+- **What reads it:** no existing encoder or policy. Its inclusion in observations is part of the M6 design.
+- **The default path stays byte-identical** (goldens, EXP-0088 k5_rf5 replay).
+

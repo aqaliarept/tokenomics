@@ -692,6 +692,9 @@ class System:
                     keep: list[_Reservation] = []
                     for r in p.pending:
                         if r.bid.order_id in removed:
+                            # traced: an accepted claim that never ran and dies with its order
+                            p.acceptance_stats["pending_failed_parent"] = (
+                                p.acceptance_stats.get("pending_failed_parent", 0) + 1)
                             self._record_production("failed", pid, r.bid)
                             bid_outcomes.append(BidOutcome(
                                 pid, r.bid.order_id, removed_kinds[r.bid.order_id],

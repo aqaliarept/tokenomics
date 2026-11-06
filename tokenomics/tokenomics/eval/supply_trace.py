@@ -156,7 +156,7 @@ A_HELD, A_DEGRADED, A_MAX, A_DROPPED = "a_held", "a_degraded", "a_max", "a_dropp
 B1, B3, B4 = "b1_not_ordered", "b3_upstream_unable", "b4_contention"
 B2_SUBS = ("late", "short", "unfunded", "open",
            *(f"lost_{r}" for r in (REJECT_OUTAGE, REJECT_NO_FIT, REJECT_DISPLACED, FAIL_DROPPED,
-                                   FAIL_TTL, FAIL_TTL_OUTAGE)))
+                                   FAIL_TTL, FAIL_TTL_OUTAGE, REJECT_DECLINED)))
 B2 = tuple(f"b2_{s}" for s in B2_SUBS)
 C_DISPLACED, D_OUTAGE, D_TTL_OUTAGE = "c_displaced", "d_outage", "d_ttl_outage"
 E_DECLINED = "e_declined"  # ADR-0061: the producer's acceptance policy declined it

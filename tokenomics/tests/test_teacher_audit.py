@@ -1084,6 +1084,8 @@ def test_role_arms_unchanged_golden() -> None:
         from tokenomics.eval.routing_trace import RoutingTracer
 
         added = {f"trace_{k}" for k in RoutingTracer().agent_summary()}
+        # ... nor the ADR-0061 `declined` reason columns (add-producer-acceptance-policy)
+        added |= {k for k in rows[role] if "declined" in k}
         old = {k: v for k, v in rows[role].items() if k not in added}
         assert len(old) < len(rows[role])
         digest = hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()

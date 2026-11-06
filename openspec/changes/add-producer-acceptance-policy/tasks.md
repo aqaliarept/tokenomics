@@ -37,7 +37,15 @@ goldens are green.
     - whether A1's one-future-cycle assumption binds (pending claims failing at TTL; if so, the sub-order could
       carry its order's remaining TTL as own-order information);
     - deaths, units, held stock, run-down.
-  - Ran 2026-11-06 (EXP-0098): **A1 `harmful`** (12: −208.0 / −146.5 + 1 death; accepted-later claims mostly die with their parent order, so the one-cycle assumption binds); **A2 invalid** (observer: `b2_lost_declined` missing from `B2_SUBS`), fix and rerun pending. ≈ 0.7 vCPU-h.
+  - Ran 2026-11-06 (EXP-0098): **A1 `harmful`** (12: −208.0 / −146.5 + 1 death; cause undiagnosed: the first read's "claims die with their parent order" was a counter artifact, corrected); **A2 invalid** (observer: `b2_lost_declined` missing from `B2_SUBS`), fix and rerun pending. ≈ 0.7 vCPU-h.
+- [x] 3.2 [code][local] Stabilisation (supervisor 2026-11-06, infrastructure only):
+  - the order's remaining lifetime is visible on `OrderInfo`, the routed sub-order and the `Bid`, and so in the
+    `AcceptanceView` (the orderer rows already had `OrderSlotStats.ttl_remaining`);
+  - observer: `b2_lost_declined` registered; `pending_failed_parent` counter;
+  - pending counters fixed (`pending_ran_later` / `ran_same_cycle`), which corrected EXP-0098's mechanism claim;
+  - the full suite green.
+  Default byte-identical (goldens, EXP-0088 replay).
+  - **Closed 2026-11-06 (user redirect: "We shouldnt tweak hand written policy more ... Can we move MPG and GNN?"):** A1' / A2' (remaining-TTL-aware acceptance) and the A2 rerun were **not run**; no code was written for them. The hand-written acceptance line closes with A1 `harmful` (EXP-0098) and the default (today's auction) kept. The ADR-0061 hook stays in the domain: learned acceptance (the next change) can use it.
 
 ## 4. Records
 - [ ] 4.1 [code][local] ADR-0061 accepted; README / HISTORY; DIAGNOSTICS if a new cause appears.

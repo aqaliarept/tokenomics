@@ -109,7 +109,8 @@ class OrderingAgent:
                         f"order [{order_id}] sub-order to ineligible producer [{sub.producer_id}]"
                     )
                 routed = RoutedSubOrder(
-                    order_id=order_id, product=order.product, quantity=sub.quantity, tokens=sub.tokens
+                    order_id=order_id, product=order.product, quantity=sub.quantity, tokens=sub.tokens,
+                    remaining_ttl=order.remaining_ttl,
                 )
                 result.setdefault(sub.producer_id, []).append(routed)
         self.cmd_handled = True

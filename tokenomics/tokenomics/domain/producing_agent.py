@@ -59,6 +59,9 @@ class Bid:
     # telemetry can age completion/failure latency per bid — a same-order remainder
     # re-routed in a later cycle gets its own bid and cannot overwrite this one.
     routed_cycle: int = 0
+    # the parent order's remaining lifetime when routed (SubOrder.remaining_ttl; ADR-0061):
+    # cycles it survives after the routing cycle; read by no existing path
+    remaining_ttl: int | None = None
 
     def is_composite(self) -> bool:
         return bool(self.inputs)
@@ -81,6 +84,9 @@ class SubOrder:
     product: Product
     quantity: int
     tokens: Tokens
+    # the parent order's remaining lifetime at routing (`OrderInfo.remaining_ttl`; ADR-0061),
+    # own-order information the producer may see; additive, None when not set
+    remaining_ttl: int | None = None
 
 
 @dataclass
@@ -289,6 +295,7 @@ class ProducingAgent:
             inputs={p: n * sub.quantity for p, n in ps.inputs.items()},
             quantity=sub.quantity,
             routed_cycle=routed_cycle,
+            remaining_ttl=sub.remaining_ttl,
         )
 
     def inventory_units(self) -> int:
@@ -437,23 +444,25 @@ class ProducingAgent:
         def bump(key: str, n: int = 1) -> None:
             stats[key] = stats.get(key, 0) + n
 
-        def execute(claims: list[_Reservation], keep: list[_Reservation]) -> None:
+        def execute(claims: list[_Reservation], keep: list[_Reservation], ran: str) -> None:
+            """Claims that fit take capacity (complete, or hold it waiting for inputs); `ran`
+            counts them (pending claims from earlier cycles vs this cycle's accepted bids)."""
             for r in sorted(claims, key=lambda r: (-r.priority, -r.bid.capacity_unit_price())):
                 if not outage and self._fits(available, r.bid.capacities):
                     self._subtract(available, r.bid.capacities)
+                    bump(ran)
                     if r.bid.is_composite() and not self._has_inputs(r.bid):
                         still.append(r)
                     else:
                         if r.bid.is_composite():
                             self._consume_inputs(r.bid)
                         completed.append(r.bid)
-                        bump("completed_late" if r.cycles_waited else "completed_same_cycle")
                 else:
                     keep.append(r)
 
         # 3b. claims accepted in earlier cycles (no capacity held yet)
         waiting: list[_Reservation] = []
-        execute(self.pending, waiting)
+        execute(self.pending, waiting, "pending_ran_later")
         pending: list[_Reservation] = []
         for r in waiting:
             r.cycles_waited += 1
@@ -501,8 +510,9 @@ class ProducingAgent:
         bump("declined_below_cutoff",
              sum(1 for b in declined if lowest is not None and b.capacity_unit_price() < lowest))
         bump("accepted", len(new))
-        execute(new, pending)
-        bump("accepted_pending", sum(1 for r in pending if r.cycles_waited == 0))
+        before = len(pending)
+        execute(new, pending, "ran_same_cycle")
+        bump("accepted_pending", len(pending) - before)
 
         # 5. commit next state, as the auction path
         for t in self.capacities:
