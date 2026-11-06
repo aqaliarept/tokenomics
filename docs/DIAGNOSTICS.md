@@ -1531,6 +1531,12 @@ _Status: open (2026-11-06, EXP-0110); the two branches are not yet separated._
 - The branch "near-deterministic gates, exploration spent where the return does not move" holds. More seeds is
   not affordable. Re-shaping exploration (deterministic replenish, gate temperature) is the design decision.
 
+**After reshaping (EXP-0112, 2026-11-06):**
+- With replenish frozen and the gates tempered (3–6% flips; 97% of the producer score), the producer gradient at
+  12 is measurably non-zero: |∇J|² 95% CI 5.7e4 … 8.7e5.
+- E3 needs 48 seeds per half for 80% power. Stage 0's 12 per half misses it, as expected.
+- The orderer and the 42-producer gradients stay undetectable. One exploration death at 42.
+
 **Evidence (EXP-0110):**
 - Null q95 0.40–0.70.
 - Producer gate flips 0.047 per decision; orderer entropy 0.91 nats.
