@@ -74,7 +74,7 @@ rule).
   undiagnosed); ≈ 18.7 vCPU-h.
 - [x] 2.14 [experiment][remote:cpu16] EXP-0108: attribution (prereg v7): candidate C (v4 producer + EXP-0100 orderer) `short`, ≈ the
   EXP-0107 stack → the v4 producer carries the shortfall; reported arms lost to the hard stop; ≈ 12.0 vCPU-h.
-- [ ] 2.15 [experiment][remote:cpu16] EXP-0109: closed-loop diagnosis of the v4 shortfall (supervisor decision 2026-11-06).
+- [x] 2.15 [experiment][remote:cpu16] EXP-0109: closed-loop diagnosis of the v4 shortfall (supervisor decision 2026-11-06).
   Pre-registered before any data (`train/m6_restore_probe.py`, RULE):
   - **Arms:** v4c (the v4 producer + the EXP-0100 orderer), v2 (the EXP-0100 stack), base (k5_rf5 + MWWk),
     and v4c_bias (v4c with the restore-gate bias shifted by b = +7.234, so its restore firing on the 12 monitor
@@ -85,6 +85,8 @@ rule).
     r ≥ 0.5 at both sets; `partial` if r ≥ 0.2 at both or ≥ 0.5 at one; else `other`.
   - **Descriptive:** per-cycle restore / upgrade / expand asks and orders, capacity, losses by class.
   - **Run:** pinned EUR-IS-1, persistent `/workspace` volume, rows streamed as they finish, stop 16.
+  - Done 2026-11-06: **`other`** (r = −0.02 / −0.04): not under-restoration; v4 grows less early (fewer upgrades and expansions,
+    capacity −7% / −13% in cycles 0–49) and loses more inputs to TTL; DIAGNOSTICS 34; ≈ 2.8 vCPU-h.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

@@ -356,3 +356,47 @@ def test_attribution_dry_run(tmp_path: Path) -> None:
     assert r["rule"] == im.V7_RULE and r["reading"] in ("faithful", "short")
     att = json.loads((tmp_path / "attribution.json").read_text())
     assert set(att["arms"]) == set(im.REPORTED_ARMS)
+
+
+def _two_groups(seed: int = 0) -> tuple[torch.nn.Parameter, torch.nn.Parameter]:
+    torch.manual_seed(seed)
+    return torch.nn.Parameter(torch.randn(4)), torch.nn.Parameter(torch.randn(4))
+
+
+def test_stepper_per_agent_isolates_a_diverging_agent(tmp_path: Path) -> None:
+    """DIAGNOSTICS 31 recurrence: with one shared clip, an exploding orderer gradient shrinks the
+    producer's step to ~0 (Adam's eps); per agent, the producer steps as if alone. The per-step log
+    records each agent's gradient norm before clipping and weight norm after the step."""
+    moves = {}
+    for per_agent in (False, True):
+        a, b = _two_groups()
+        a0 = a.detach().clone()
+        st = im.Stepper({"producer": [a], "orderer": [b]}, 1e-2, 1.0, per_agent,
+                        tmp_path / f"log_{per_agent}.jsonl")
+        st.zero_grad()
+        a.grad, b.grad = torch.full((4,), 1e-3), torch.full((4,), 1e10)
+        st.step({"producer_loss": 0.1, "orderer_loss": 1e9}, 1)
+        st.close()
+        moves[per_agent] = float((a.detach() - a0).abs().max())
+    assert moves[True] == pytest.approx(1e-2, rel=1e-3)  # Adam's first step = lr
+    assert moves[False] < 1e-4  # the shared clip froze the producer
+    rec = json.loads((tmp_path / "log_True.jsonl").read_text().splitlines()[0])
+    assert rec["orderer_grad_norm"] == pytest.approx(2e10) and rec["producer_grad_norm"] > 0
+    assert {"producer_weight_norm", "orderer_weight_norm", "producer_loss"} <= set(rec)
+
+
+def test_stepper_shared_mode_is_the_old_step() -> None:
+    """per_agent False, no log: exactly one Adam over both groups and one global clip (v1..v6 fits)."""
+    a, b = _two_groups(1)
+    c, d = _two_groups(1)
+    st = im.Stepper({"producer": [a], "orderer": [b]}, 3e-3, 1.0, False)
+    ref = torch.optim.Adam([c, d], lr=3e-3)
+    for k in range(3):
+        g1, g2 = torch.randn(4) * (k + 1), torch.randn(4) * 10
+        st.zero_grad()
+        ref.zero_grad()
+        a.grad, b.grad, c.grad, d.grad = g1.clone(), g2.clone(), g1.clone(), g2.clone()
+        st.step()
+        torch.nn.utils.clip_grad_norm_([c, d], 1.0)
+        ref.step()
+    assert torch.equal(a, c) and torch.equal(b, d)

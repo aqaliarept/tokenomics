@@ -1466,3 +1466,34 @@ _Status: diagnosed (2026-11-06, EXP-0106) for the M6 producer's upgrade gate aga
 - v3's BC loss is lower at every size.
 - One capacity row per decision.
 - Label rates are similar at both sizes.
+
+## 34. An imitated producer's offline agreement does not predict its closed-loop investment (under-growth, not under-restoration)
+
+_Status: diagnosed in part (2026-11-06, EXP-0109): the cause is excluded (restoration), and the mechanism is
+located (early growth), but not yet split between upgrades, expansions and inputs._
+
+**Problem (plain English):**
+- Offline fidelity is measured on the teacher's own states. In closed loop the learned producer visits its own
+  states, so its rates there can differ.
+- The v4 producer looked under-restoring offline (0.319 vs 0.373). In closed loop it restores at the teacher's
+  rate. What it does differently is grow less early: fewer upgrades and expansions, so less capacity from the
+  first cycles. It also loses more inputs to TTL.
+- The units gap opens in the first 50 cycles.
+
+**Discriminating checks:**
+1. Per-cycle ask, order and completion rates per investment type in closed loop, against the teacher on the
+   same keys (`train/m6_restore_probe.py`).
+2. A bias ablation on the suspected head, calibrated offline to the teacher's rate: does it recover the units?
+   (Restore: no; recovered share −0.02 / −0.04.)
+3. Loss classes (`SupplyObserver`): capacity-side vs input-side (`b2_lost_ttl`, `b2_late`).
+
+**Outcome branches:**
+- **The ablated head recovers ≥ half the gap:** that head.
+- **It does not:** ablate the next head the per-cycle rates point to (here upgrade or expand, in the early
+  cycles), and check the replenishment-side losses.
+
+**Evidence (EXP-0109):**
+- Restore ablation: recovered share −0.020 (12) / −0.035 (42).
+- Upgrade asks in cycles 0–49: 0.176 vs 0.198 (12), 0.239 vs 0.287 (42).
+- Capacity in cycles 0–49: −7% / −13%.
+- `b2_lost_ttl` +14% / +28%.

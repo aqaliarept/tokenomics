@@ -162,7 +162,7 @@ def test_sync_update_is_deterministic(tmp_path: Path) -> None:
         torch.save(mp._state(mods), snap)
         jobs = mp.iteration_jobs(ts, train, cfg, 0, str(snap), W, 1)
         dec, cri = mp.build_batch([mp.rollout_job(j) for j in jobs], cfg)
-        opt = torch.optim.Adam([p for m in mods.values() for p in m.parameters()], lr=1e-3)
+        opt = mp.make_stepper(mods, cfg, None)
         mp._sync_steps(mods, opt, dec, cri, cfg, epoch_seed=0, workers=2)
         out.append([p.detach().clone() for m in mods.values() for p in m.parameters()])
     assert all(torch.equal(a, b) for a, b in zip(*out))

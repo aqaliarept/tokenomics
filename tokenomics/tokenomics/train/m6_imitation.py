@@ -587,11 +587,84 @@ def bc_losses(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list
     return lp / max(1, len(prod)), lo / max(1, len(orde))
 
 
+class Stepper:
+    """The optimiser step of a fit (DIAGNOSTICS 31 recurrence, EXP-0107).
+    - `per_agent` False: one Adam and one global clip over every group's parameters, exactly the v1..v6
+      fits (a diverging orderer's gradient rescales the producer's through the shared clip).
+    - `per_agent` True: one Adam and one clip per group (agent), so no agent's gradient touches
+      another's step.
+    - `log_path`: one JSON line per step with, per group, the gradient norm before clipping and the
+      weight norm after the step, plus the step's losses."""
+
+    def __init__(self, groups: dict[str, list], lr: float | dict[str, float], clip: float | None,
+                 per_agent: bool, log_path: str | Path | None = None) -> None:
+        self.groups = {k: list(v) for k, v in groups.items()}
+        lrs = lr if isinstance(lr, dict) else {k: lr for k in self.groups}
+        if per_agent:
+            self.steps = self.groups
+            self.opts = {k: torch.optim.Adam(ps, lr=lrs[k]) for k, ps in self.groups.items()}
+        else:
+            self.steps = {"all": [p for ps in self.groups.values() for p in ps]}
+            self.opts = {"all": torch.optim.Adam(
+                self.steps["all"] if not isinstance(lr, dict) else
+                [{"params": ps, "lr": lrs[k]} for k, ps in self.groups.items()],
+                lr=lr if not isinstance(lr, dict) else next(iter(lrs.values())))}
+        self.clip, self.per_agent, self.n = clip, per_agent, 0
+        self.fh = None if log_path is None else open(log_path, "a")
+
+    @staticmethod
+    def _norm(ts: list) -> float:
+        ts = [t for t in ts if t is not None]
+        return float(torch.linalg.vector_norm(torch.stack([torch.linalg.vector_norm(t.detach())
+                                                           for t in ts]))) if ts else 0.0
+
+    def zero_grad(self) -> None:
+        for o in self.opts.values():
+            o.zero_grad()
+
+    def step(self, losses: dict[str, float] | None = None, epoch: int | None = None) -> None:
+        rec: dict[str, Any] = {"step": self.n, "epoch": epoch, **(losses or {})}
+        if self.fh is not None:
+            for k, ps in self.groups.items():
+                rec[f"{k}_grad_norm"] = self._norm([p.grad for p in ps])
+        for k, ps in self.steps.items():
+            if self.clip:
+                torch.nn.utils.clip_grad_norm_(ps, self.clip)
+            self.opts[k].step()
+        if self.fh is not None:
+            for k, ps in self.groups.items():
+                rec[f"{k}_weight_norm"] = self._norm(list(ps))
+            self.fh.write(json.dumps(rec) + "\n")
+            self.fh.flush()
+        self.n += 1
+
+    def close(self) -> None:
+        if self.fh is not None:
+            self.fh.close()
+
+    def state_dict(self) -> dict:
+        return {"per_agent": self.per_agent, "n": self.n,
+                "opts": {k: o.state_dict() for k, o in self.opts.items()}}
+
+    def load_state_dict(self, d: dict) -> None:
+        if d.get("per_agent") != self.per_agent:
+            raise ValueError("the checkpoint's optimiser layout differs (per_agent)")
+        self.n = int(d["n"])
+        for k, o in self.opts.items():
+            o.load_state_dict(d["opts"][k])
+
+
+def _stepper(pm: g.ProducerGNN, om: g.OrdererGNN, lr: float, clip: float | None,
+             per_agent: bool, step_log: str | Path | None) -> Stepper:
+    return Stepper({"producer": list(pm.parameters()), "orderer": list(om.parameters())}, lr,
+                   clip, per_agent, step_log)
+
+
 def _epochs(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list, epochs: int, batch: int,
-            lr: float, seed: int, log: Any, clip: float | None = None) -> list[dict]:
+            lr: float, seed: int, log: Any, clip: float | None = None, per_agent: bool = False,
+            step_log: str | Path | None = None) -> list[dict]:
     torch.set_num_threads(1)
-    params = [*pm.parameters(), *om.parameters()]
-    opt = torch.optim.Adam(params, lr=lr)
+    st = _stepper(pm, om, lr, clip, per_agent, step_log)
     rng = np.random.default_rng(seed)
     curve = []
     for ep in range(epochs):
@@ -602,16 +675,16 @@ def _epochs(pm: g.ProducerGNN, om: g.OrdererGNN, prod: list, orde: list, epochs:
             bp = [prod[i] for i in ip[b * batch:(b + 1) * batch]]
             bo = [orde[i] for i in io[b * batch:(b + 1) * batch]]
             lp, lo = bc_losses(pm, om, bp, bo)
-            opt.zero_grad()
+            st.zero_grad()
             if (lp + lo).requires_grad:
                 (lp + lo).backward()
-                if clip:
-                    torch.nn.utils.clip_grad_norm_(params, clip)
-                opt.step()
+                st.step({"producer_loss": float(lp.detach()), "orderer_loss": float(lo.detach())},
+                        ep + 1)
             tot[0] += float(lp.detach())
             tot[1] += float(lo.detach())
         curve.append({"epoch": ep + 1, "producer_loss": tot[0] / n, "orderer_loss": tot[1] / n})
         log(f"[m6_imitation] epoch {ep + 1}: producer {tot[0] / n:.4f} orderer {tot[1] / n:.4f}")
+    st.close()
     return curve
 
 
@@ -719,7 +792,8 @@ def _sync_worker(w: int, pm: g.ProducerGNN, om: g.OrdererGNN, src: Any,
 
 def _sync_fit(pm: g.ProducerGNN, om: g.OrdererGNN, srcs: list, counts: tuple[int, int],
               epochs: int, batch: int, lr: float, seed: int, workers: int, clip: float | None,
-              log: Any) -> list[dict]:
+              log: Any, per_agent: bool = False, step_log: str | Path | None = None
+              ) -> list[dict]:
     """Synchronous data-parallel fit (v2): shard w = samples[w::workers]; per step the workers'
     gradients are averaged in worker order, clipped, and one Adam step is applied to the shared
     weights. Deterministic given the seed (BLAS 1 thread, fixed reduction order)."""
@@ -738,7 +812,7 @@ def _sync_fit(pm: g.ProducerGNN, om: g.OrdererGNN, srcs: list, counts: tuple[int
         for w in range(workers)]
     for pr in procs:
         pr.start()
-    opt = torch.optim.Adam(params, lr=lr)
+    st = _stepper(pm, om, lr, clip, per_agent, step_log)
     curve = []
     try:
         for ep in range(epochs):
@@ -753,9 +827,8 @@ def _sync_fit(pm: g.ProducerGNN, om: g.OrdererGNN, srcs: list, counts: tuple[int
                 grad /= workers
                 for p, chunk in zip(params, torch.split(grad, sizes)):
                     p.grad = chunk.view_as(p).clone()
-                if clip:
-                    torch.nn.utils.clip_grad_norm_(params, clip)
-                opt.step()
+                st.step({"producer_loss": float(lbuf[:, 0].mean()),
+                         "orderer_loss": float(lbuf[:, 1].mean())}, ep + 1)
                 tot[0] += float(lbuf[:, 0].mean())
                 tot[1] += float(lbuf[:, 1].mean())
             curve.append({"epoch": ep + 1, "producer_loss": tot[0] / steps,
@@ -764,6 +837,7 @@ def _sync_fit(pm: g.ProducerGNN, om: g.OrdererGNN, srcs: list, counts: tuple[int
             log(f"[m6_imitation] sync epoch {ep + 1}: producer {tot[0] / steps:.4f} orderer "
                 f"{tot[1] / steps:.4f} ({curve[-1]['seconds']} s)")
     finally:
+        st.close()
         for pr in procs:
             pr.join(timeout=60)
             if pr.is_alive():
@@ -781,7 +855,8 @@ def _norm_feats(samples: list, cap: int) -> list[dict]:
 
 def fit(samples: dict | Shards, epochs: int, batch: int = 64, lr: float = 3e-3, seed: int = 0,
         log: Any = print, workers: int = 1, mode: str = "sync", clip: float | None = 1.0,
-        norm_decisions: int = 50_000
+        norm_decisions: int = 50_000, per_agent: bool = False,
+        step_log: str | Path | None = None
         ) -> tuple[g.ProducerGNN, g.OrdererGNN, list[dict], dict]:
     """Behaviour cloning (v2). The normalisers are fitted first on every k-th training decision
     (DIAGNOSTICS 31). `workers` > 1: `mode` "sync" (deterministic data parallel, `_sync_fit`) or
@@ -806,9 +881,11 @@ def fit(samples: dict | Shards, epochs: int, batch: int = 64, lr: float = 3e-3, 
                                            "orderer": om.norm.fit(norm["orderer"])}}
     t0 = time.perf_counter()
     if workers <= 1:
-        curve = _epochs(pm, om, *_shard(srcs[0]), epochs, batch, lr, seed, log, clip)
+        curve = _epochs(pm, om, *_shard(srcs[0]), epochs, batch, lr, seed, log, clip, per_agent,
+                        step_log)
     elif mode == "sync":
-        curve = _sync_fit(pm, om, srcs, counts, epochs, batch, lr, seed, workers, clip, log)
+        curve = _sync_fit(pm, om, srcs, counts, epochs, batch, lr, seed, workers, clip, log,
+                          per_agent, step_log)
     else:
         curve = _hogwild_fit(pm, om, srcs, epochs, batch, lr, seed, workers, clip, log)
     info["train_seconds"] = round(time.perf_counter() - t0, 3)
@@ -1039,7 +1116,10 @@ def sample_problems(collect_dir: Path, meta: dict) -> list[str]:
 
 
 def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int = 1,
-            dry_run: bool = False, mode: str = FIT["mode"]) -> int:
+            dry_run: bool = False, mode: str = FIT["mode"], per_agent: bool = False) -> int:
+    """A fit always writes `steps.jsonl` (per step, per agent: gradient norm before clipping,
+    weight norm, losses; it changes no computation). `per_agent` (one Adam + clip per agent) is
+    off unless a pre-registration sets it (the v1..v6 fits shared one)."""
     c = Path(collect_dir)
     meta = json.loads((c / "collect.json").read_text())
     if not dry_run:
@@ -1074,7 +1154,8 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
         t0 = time.perf_counter()
         pm, om, curve, info = fit(data, epochs, batch=FIT["batch"], lr=FIT["lr"], seed=seed,
                                   workers=workers, mode=ran, clip=FIT["clip_grad_norm"],
-                                  norm_decisions=FIT["norm_decisions"])
+                                  norm_decisions=FIT["norm_decisions"], per_agent=per_agent,
+                                  step_log=out / "steps.jsonl")
         fit_s = time.perf_counter() - t0
     finally:
         if shard_dir.exists():  # never pulled back: GBs of copies of the samples
@@ -1095,6 +1176,7 @@ def run_fit(collect_dir: str, out_dir: str, epochs: int, seed: int, workers: int
     from ..eval.provenance import sha256_file
 
     spec = {"fit_mode": ran, "mode_probe": probe, "requested_mode": mode, "fit": FIT, "v4": v4,
+            "per_agent": per_agent,
             "epochs": epochs, "seed": seed, "workers": workers, "dry_run": dry_run,
             "prereg": PREREG_V6_SHA256, "source_commit": SOURCE_COMMIT,
             "samples_from": {"prereg": meta.get("prereg"), "source_commit":
@@ -1856,6 +1938,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--horizon", type=int, default=pe.HORIZON)
     p.add_argument("--epochs", type=int, default=FIT["epochs"])
     p.add_argument("--fit-mode", default=FIT["mode"], choices=("auto", "sync", "hogwild"))
+    p.add_argument("--per-agent", action="store_true",
+                   help="fit: one Adam + clip per agent (a pre-registration must set it)")
     p.add_argument("--seed", type=int, default=FIT["seed"])
     p.add_argument("--max-world-episodes", type=int)
     p.add_argument("--worlds", default="ws-atlas-v1-12-0111,ws-atlas-v1-42-0000")
@@ -1915,7 +1999,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 tuple(int(h) for h in a.horizons.split(",")))
     if a.mode == "fit":
         return run_fit(a.collect_dir, a.out_dir, a.epochs, a.seed, a.workers, a.dry_run,
-                       a.fit_mode)
+                       a.fit_mode, a.per_agent)
     return run_check(a.training_dir, a.atlas, a.models, a.out_dir, a.workers, a.horizon,
                      a.max_world_episodes, a.dry_run, a.prev_models, a.episodes_42, a.horizon_42)
 

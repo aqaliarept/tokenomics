@@ -86,6 +86,8 @@ class MappoConfig:
     seed: int = 0
     workers: int = 16
     monitor_every: int = 5
+    per_agent: bool = True  # one Adam + clip per agent (DIAGNOSTICS 31 recurrence, EXP-0107)
+    step_log: bool = True  # per-step, per-agent gradient / weight norms -> steps.jsonl
 
 
 # --- the stochastic actors ---
@@ -376,7 +378,21 @@ def _shard_worker(w: int, mods: Mapping[str, nn.Module], dec: list, cri: list, c
 STAT_KEYS = ("policy", "entropy", "value", "approx_kl", "clip_frac")
 
 
-def _sync_steps(mods: Mapping[str, nn.Module], opt: torch.optim.Optimizer, dec: list, cri: list,
+def agent_groups(mods: Mapping[str, nn.Module]) -> dict[str, list]:
+    """The optimiser groups: the producer (with its replenish log-std), the orderer, the critic."""
+    return {"producer": [*mods["producer"].parameters(), *mods["extras"].parameters()],
+            "orderer": list(mods["orderer"].parameters()),
+            "critic": list(mods["critic"].parameters())}
+
+
+def make_stepper(mods: Mapping[str, nn.Module], cfg: MappoConfig,
+                 log_path: str | Path | None) -> im.Stepper:
+    return im.Stepper(agent_groups(mods), {"producer": cfg.lr_actor, "orderer": cfg.lr_actor,
+                                           "critic": cfg.lr_critic}, cfg.grad_clip, cfg.per_agent,
+                      log_path if cfg.step_log else None)
+
+
+def _sync_steps(mods: Mapping[str, nn.Module], opt: im.Stepper, dec: list, cri: list,
                 cfg: MappoConfig, epoch_seed: int, workers: int) -> dict[str, float]:
     """PPO epochs over (dec, cri): shard w = items[w::workers]; per step the shard gradients are
     averaged in worker order, clipped, and one Adam step updates the shared weights."""
@@ -396,8 +412,7 @@ def _sync_steps(mods: Mapping[str, nn.Module], opt: torch.optim.Optimizer, dec: 
                                        [cri[i] for i in icri[sl]], cfg)
                 if loss.requires_grad:
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(params, cfg.grad_clip)
-                    opt.step()
+                    opt.step(stats, ep)
                 for k in STAT_KEYS:
                     tot[k] += stats[k]
         return {k: v / (steps * cfg.ppo_epochs) for k, v in tot.items()}
@@ -425,8 +440,7 @@ def _sync_steps(mods: Mapping[str, nn.Module], opt: torch.optim.Optimizer, dec: 
                 grad /= workers
                 for p, chunk in zip(params, torch.split(grad, sizes)):
                     p.grad = chunk.view_as(p).clone()
-                torch.nn.utils.clip_grad_norm_(params, cfg.grad_clip)
-                opt.step()
+                opt.step({k: float(sbuf[:, i].mean()) for i, k in enumerate(STAT_KEYS)}, _ep)
                 for i, k in enumerate(STAT_KEYS):
                     tot[k] += float(sbuf[:, i].mean())
     finally:
@@ -447,7 +461,7 @@ def _state(mods: Mapping[str, nn.Module]) -> dict:
             "producer_features": mods["producer"].features}
 
 
-def save_checkpoint(path: Path, mods: Mapping[str, nn.Module], opt: torch.optim.Optimizer,
+def save_checkpoint(path: Path, mods: Mapping[str, nn.Module], opt: im.Stepper,
                     iteration: int) -> None:
     tmp = path.with_suffix(".tmp")
     torch.save({**_state(mods), "optimizer": opt.state_dict(), "iteration": iteration,
@@ -531,11 +545,9 @@ def run_train(*, training_dir: str, atlas: str, init_models: str, out_dir: str,
     mods: dict[str, nn.Module] = {"producer": pm, "orderer": om,
                                   "extras": ActorExtras(cfg.init_log_std),
                                   "critic": CentralCritic.from_actors(pm, om)}
-    opt = torch.optim.Adam([
-        {"params": [*pm.parameters(), *om.parameters(), *mods["extras"].parameters()],
-         "lr": cfg.lr_actor},
-        {"params": list(mods["critic"].parameters()), "lr": cfg.lr_critic}])
     out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    opt = make_stepper(mods, cfg, out / "steps.jsonl")
     pins = {"config": asdict(cfg), "weights": asdict(weights),
             "init_models_sha256": sha256_file(init_models), "rl_prereg": RL_PREREG_SHA256,
             "calibration_sha256": None if calibration is None else sha256_file(calibration),
