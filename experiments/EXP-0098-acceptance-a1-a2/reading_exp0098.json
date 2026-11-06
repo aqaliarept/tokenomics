@@ -1,0 +1,179 @@
+{
+ "cells": [
+  {
+   "size": 12,
+   "orderer": "MWWk",
+   "worlds": 23,
+   "mean_floor": 146.50592278917375,
+   "default": {
+    "units_mean": 3703.1627906976746,
+    "deaths": 0,
+    "rundown_fails": 67,
+    "holding_mean": 273.5782558139535,
+    "lost_b2_late": 153712.0,
+    "lost_e_declined": 0.0,
+    "lost_total": 399176.0
+   },
+   "A1": {
+    "units_mean": 3486.0813953488373,
+    "deaths": 0,
+    "rundown_fails": 61,
+    "holding_mean": 264.65081395348835,
+    "lost_b2_late": 172332.0,
+    "lost_e_declined": 0.0,
+    "lost_total": 417455.0,
+    "acceptance": {
+     "accepted": 225127,
+     "accepted_pending": 46235,
+     "completed_late": 1807,
+     "completed_same_cycle": 139525,
+     "declined": 29251,
+     "declined_below_cutoff": 18363,
+     "pending_failed_ttl": 1667
+    },
+    "mean_diff": -207.9673913043478,
+    "exceeds": false,
+    "below": true,
+    "extra_deaths": false,
+    "rundown_delta": -6,
+    "worlds_beyond": 0,
+    "worlds_below": 7,
+    "fund_share_moved": 0.03267225478581015,
+    "guard": true
+   }
+  },
+  {
+   "size": 12,
+   "orderer": "RR",
+   "worlds": 23,
+   "mean_floor": 146.50592278917375,
+   "default": {
+    "units_mean": 3841.8837209302324,
+    "deaths": 0,
+    "rundown_fails": 32,
+    "holding_mean": 295.53627906976743,
+    "lost_b2_late": 78141.0,
+    "lost_e_declined": 0.0,
+    "lost_total": 193514.0
+   },
+   "A1": {
+    "units_mean": 3717.6511627906975,
+    "deaths": 1,
+    "rundown_fails": 31,
+    "holding_mean": 287.8069493844049,
+    "lost_b2_late": 84902.0,
+    "lost_e_declined": 0.0,
+    "lost_total": 196846.0,
+    "acceptance": {
+     "accepted": 113109,
+     "accepted_pending": 20117,
+     "completed_late": 823,
+     "completed_same_cycle": 69918,
+     "declined": 11824,
+     "declined_below_cutoff": 6498,
+     "pending_failed_ttl": 630
+    },
+    "mean_diff": -146.47826086956522,
+    "exceeds": false,
+    "below": false,
+    "extra_deaths": true,
+    "rundown_delta": -1,
+    "worlds_beyond": 1,
+    "worlds_below": 5,
+    "fund_share_moved": 0.032042483053602466,
+    "guard": false
+   }
+  },
+  {
+   "size": 42,
+   "orderer": "MWWk",
+   "worlds": 14,
+   "mean_floor": 362.18672067841555,
+   "default": {
+    "units_mean": 9325.392857142857,
+    "deaths": 0,
+    "rundown_fails": 50,
+    "holding_mean": 1325.9164285714285,
+    "lost_b2_late": 182255.0,
+    "lost_e_declined": 0.0,
+    "lost_total": 530555.0
+   },
+   "A1": {
+    "units_mean": 8682.089285714286,
+    "deaths": 0,
+    "rundown_fails": 52,
+    "holding_mean": 1231.52375,
+    "lost_b2_late": 194861.0,
+    "lost_e_declined": 0.0,
+    "lost_total": 565423.0,
+    "acceptance": {
+     "accepted": 481968,
+     "accepted_pending": 100012,
+     "completed_late": 4146,
+     "completed_same_cycle": 329578,
+     "declined": 109872,
+     "declined_below_cutoff": 63746,
+     "pending_failed_ttl": 4111
+    },
+    "mean_diff": -643.3035714285714,
+    "exceeds": false,
+    "below": true,
+    "extra_deaths": false,
+    "rundown_delta": 2,
+    "worlds_beyond": 0,
+    "worlds_below": 6,
+    "fund_share_moved": 0.055391058079189384,
+    "guard": true
+   }
+  },
+  {
+   "size": 42,
+   "orderer": "RR",
+   "worlds": 14,
+   "mean_floor": 362.18672067841555,
+   "default": {
+    "units_mean": 9115.17857142857,
+    "deaths": 0,
+    "rundown_fails": 26,
+    "holding_mean": 1433.2407142857144,
+    "lost_b2_late": 89661.0,
+    "lost_e_declined": 0.0,
+    "lost_total": 270930.0
+   },
+   "A1": {
+    "units_mean": 8597.92857142857,
+    "deaths": 0,
+    "rundown_fails": 26,
+    "holding_mean": 1369.9510714285714,
+    "lost_b2_late": 93153.0,
+    "lost_e_declined": 0.0,
+    "lost_total": 285065.0,
+    "acceptance": {
+     "accepted": 246859,
+     "accepted_pending": 50896,
+     "completed_late": 2271,
+     "completed_same_cycle": 162436,
+     "declined": 53530,
+     "declined_below_cutoff": 26902,
+     "pending_failed_ttl": 2086
+    },
+    "mean_diff": -517.25,
+    "exceeds": false,
+    "below": true,
+    "extra_deaths": false,
+    "rundown_delta": 0,
+    "worlds_beyond": 1,
+    "worlds_below": 5,
+    "fund_share_moved": 0.03592951222807472,
+    "guard": true
+   }
+  }
+ ],
+ "readings": {
+  "12/A1": "harmful",
+  "42/A1": "harmful"
+ },
+ "deciding": {
+  "A1": "harmful"
+ }
+}

@@ -1,0 +1,670 @@
+[run_pod] verified clean source commit bedc717c6dacf816928080d49c8f67addb4c0906 (synced tree + launcher); injected into --train
+[run_pod] creating pod: POST /v1/pods {"name": "exp0098-x", "imageName": "runpod/base:0.7.0-ubuntu2004", "computeType": "CPU", "containerDiskInGb": 30, "volumeMountPath": "/workspace", "cloudType": "SECURE", "ports": ["22/tcp"], "vcpuCount": 8, "cpuFlavorIds": ["cpu5c"], "dataCenterIds": ["EUR-IS-1"]}
+[run_pod] created pod nl2uq9fzwhuzrh
+[run_pod] pod nl2uq9fzwhuzrh status: RUNNING
+[run_pod] pod already running
+[run_pod] waiting for pod to become reachable (timeout 600s)...
+[run_pod] SSH up at 185.226.156.234:11785
+[run_pod] pod image runpod/base:0.7.0-ubuntu2004; exported as EXP0039_POD_IMAGE into the run
+[run_pod] syncing /srv/research/wt-exp0098/tokenomics -> 185.226.156.234:/workspace/tokenomics
+
+sent 2,074,625 bytes  received 4,178 bytes  1,385,868.67 bytes/sec
+total size is 6,281,518  speedup is 3.02
+[run_pod] setting up venv + installing package (CPU profile, python3.12)...
+
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: python3.12 -m pip install --upgrade pip
+env ok | torch 2.15.0+cpu cuda False
+[run_pod] launching detached: -u -c "import sys; from tokenomics.eval.supply_trace import main; P='/workspace/tokenomics/_pod_ckpts/exp0098/'; O='/workspace/tokenomics/runs/exp0098/'; C=['--atlas',P+'atlas_v2.json','--orderer-ckpt',P+'orderer_scorer.pt','--order-ttl','2','--workers','8','--source-commit','bedc717c6dacf816928080d49c8f67addb4c0906','--producer','entity_planner_buyahead_k5_rf5']; rs=[main(C+['--acceptance',a,'--out-dir',O+a]) for a in ('ttl_feasible','ttl_inputs')]; sys.exit(max(rs))"
+[run_pod] launch ssh did not return within 60s; the job is detached (own session) — proceeding to monitor via pid/exit files
+[run_pod] launched (survives disconnect). Reattach any time: python run_pod_training.py --pod-id nl2uq9fzwhuzrh --attach --remote-log /workspace/train.log --cpu
+[run_pod] mirroring remote log -> train.live.log (tail -f); status -> train.status
+[routing_audit] 213 jobs, 0 already done, 213 to run
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k5_rf5/round_robin r0 units=4334 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4748 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k5_rf5/round_robin r0 units=4110 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=21039 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4558 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=21202 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4810 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4649 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k5_rf5/round_robin r0 units=22014 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=22358 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k5_rf5/round_robin r0 units=22708 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=22313 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k5_rf5/round_robin r0 units=5110 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=6019 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=6021 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=5747 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3894 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3890 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2639 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2710 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k5_rf5/round_robin r0 units=5063 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5847 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k5_rf5/round_robin r0 units=3561 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3843 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3880 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k5_rf5/round_robin r0 units=3675 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k5_rf5/round_robin r0 units=2567 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2578 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2602 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k5_rf5/round_robin r0 units=2389 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=11060 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=11086 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k5_rf5/round_robin r0 units=10883 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=11056 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=27315 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k5_rf5/round_robin r0 units=29392 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=26951 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=28344 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k5_rf5/round_robin r0 units=29744 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=27501 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=11186 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k5_rf5/round_robin r0 units=10949 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4690 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k5_rf5/round_robin r0 units=4297 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4835 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4459 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4563 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k5_rf5/round_robin r0 units=4374 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=9717 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=10211 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4239 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4055 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k5_rf5/round_robin r0 units=11782 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4172 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k5_rf5/round_robin r0 units=3133 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3879 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k5_rf5/round_robin r0 units=2566 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=10799 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=11010 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k5_rf5/round_robin r0 units=11764 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2721 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k5_rf5/round_robin r0 units=2420 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2527 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k5_rf5/round_robin r0 units=2341 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2811 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2730 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1605 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1611 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k5_rf5/round_robin r0 units=1471 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=17432 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k5_rf5/round_robin r0 units=16366 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=17348 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1594 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k5_rf5/round_robin r0 units=1421 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1586 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=17095 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=17205 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k5_rf5/round_robin r0 units=16380 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1052 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1058 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k5_rf5/round_robin r0 units=1020 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3552 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3404 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k5_rf5/round_robin r0 units=3429 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3503 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3407 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k5_rf5/round_robin r0 units=3390 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3246 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=820 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k5_rf5/round_robin r0 units=793 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=825 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k5_rf5/round_robin r0 units=2574 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=820 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2661 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=803 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k5_rf5/round_robin r0 units=788 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3875 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3675 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=5270 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5377 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=5020 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k5_rf5/round_robin r0 units=5363 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5225 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k5_rf5/round_robin r0 units=5441 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=834 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=10570 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k5_rf5/round_robin r0 units=3354 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k5_rf5/round_robin r0 units=10631 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=10570 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=10062 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=777 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k5_rf5/round_robin r0 units=10729 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=10579 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k5_rf5/round_robin r0 units=735 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k5_rf5/round_robin r0 units=15 dead=true
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=781 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1285 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=814 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1170 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k5_rf5/round_robin r0 units=789 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2612 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2640 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k5_rf5/round_robin r0 units=2507 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1325 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k5_rf5/round_robin r0 units=1580 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1441 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1345 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1404 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k5_rf5/round_robin r0 units=1588 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=6432 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=6295 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k5_rf5/round_robin r0 units=6579 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=6373 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=6375 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k5_rf5/round_robin r0 units=6619 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4943 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=5103 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4794 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5135 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k5_rf5/round_robin r0 units=5148 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4989 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k5_rf5/round_robin r0 units=4997 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k5_rf5/round_robin r0 units=4849 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4825 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4976 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5028 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k5_rf5/round_robin r0 units=4967 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1353 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1363 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k5_rf5/round_robin r0 units=1531 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1374 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1676 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k5_rf5/round_robin r0 units=1564 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2592 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2583 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k5_rf5/round_robin r0 units=2412 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2560 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2513 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k5_rf5/round_robin r0 units=2497 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=6021 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=5517 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k5_rf5/round_robin r0 units=5860 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=5736 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k5_rf5/round_robin r0 units=6189 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5721 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2311 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1251 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2486 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1231 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k5_rf5/round_robin r0 units=3500 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3327 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2607 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k5_rf5/round_robin r0 units=3547 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k5_rf5/round_robin r0 units=1104 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1151 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k5_rf5/round_robin r0 units=1092 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1179 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1825 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1668 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k5_rf5/round_robin r0 units=1705 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1991 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1932 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k5_rf5/round_robin r0 units=1775 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3960 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3961 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k5_rf5/round_robin r0 units=5062 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4683 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4798 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4176 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4296 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k5_rf5/round_robin r0 units=5296 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k5_rf5/round_robin r0 units=5839 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4295 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4195 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k5_rf5/round_robin r0 units=5887 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2404 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5423 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k5_rf5/round_robin r0 units=7323 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=5699 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2263 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=6444 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k5_rf5/round_robin r0 units=2682 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5484 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k5_rf5/round_robin r0 units=7492 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2361 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2239 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k5_rf5/round_robin r0 units=2363 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1930 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1836 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1855 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k5_rf5/round_robin r0 units=1660 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k5_rf5/round_robin r0 units=1522 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1920 dead=false
+[supply_trace] complete, reading None
+[routing_audit] 213 jobs, 0 already done, 213 to run
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3695 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3840 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k5_rf5/round_robin r0 units=3054 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=535939028 entity_planner_buyahead_k5_rf5/round_robin r0 units=3464 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3175 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3854 dead=false
+[routing_audit] ws-atlas-v1-42-0000 ep=1067090871 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3092 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4092 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=126034777 entity_planner_buyahead_k5_rf5/round_robin r0 units=5058 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k5_rf5/round_robin r0 units=2973 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2207 dead=false
+[routing_audit] ws-atlas-v1-42-0013 ep=684102246 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2507 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k5_rf5/round_robin r0 units=2235 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=4006 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=4010 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2740 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=188168481 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2712 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2753 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2688 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2766 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3174 dead=false
+[routing_audit] ws-atlas-v1-42-0031 ep=1956340570 entity_planner_buyahead_k5_rf5/round_robin r0 units=2228 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3973 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=830810322 entity_planner_buyahead_k5_rf5/round_robin r0 units=3607 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3726 dead=false
+[routing_audit] ws-atlas-v1-42-0034 ep=693991194 entity_planner_buyahead_k5_rf5/round_robin r0 units=3444 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1138298054 entity_planner_buyahead_k5_rf5/round_robin r0 units=2623 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2622 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2625 dead=false
+[routing_audit] ws-atlas-v1-42-0037 ep=1881677704 entity_planner_buyahead_k5_rf5/round_robin r0 units=2435 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=6170 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=5893 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2484 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=649489157 entity_planner_buyahead_k5_rf5/round_robin r0 units=7446 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2354 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=2036154428 entity_planner_buyahead_k5_rf5/round_robin r0 units=2158 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=6356 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k5_rf5/round_robin r0 units=4417 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1993 dead=false
+[routing_audit] ws-atlas-v1-42-0039 ep=1801822691 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3643 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k5_rf5/round_robin r0 units=7683 dead=false
+[routing_audit] ws-atlas-v1-42-0040 ep=33433251 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=8139 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2746 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3272 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=832857904 entity_planner_buyahead_k5_rf5/round_robin r0 units=2792 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2615 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k5_rf5/round_robin r0 units=3078 dead=false
+[routing_audit] ws-atlas-v1-42-0043 ep=596659810 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3095 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2924 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1845 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1204 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=822 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1342 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=18344953 entity_planner_buyahead_k5_rf5/round_robin r0 units=156 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1018 dead=false
+[routing_audit] ws-atlas-v1-42-0076 ep=1621765017 entity_planner_buyahead_k5_rf5/round_robin r0 units=134 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=943950126 entity_planner_buyahead_k5_rf5/round_robin r0 units=1715 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2970 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3501 dead=false
+[routing_audit] ws-atlas-v1-42-0081 ep=1800031693 entity_planner_buyahead_k5_rf5/round_robin r0 units=1140 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2697 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k5_rf5/round_robin r0 units=2357 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1706887913 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2564 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k5_rf5/round_robin r0 units=2287 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2805 dead=false
+[routing_audit] ws-atlas-v1-42-0093 ep=1841799353 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2829 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1694 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1681 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k5_rf5/round_robin r0 units=1481 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=285891905 entity_planner_buyahead_k5_rf5/round_robin r0 units=1542 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1651 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=8403 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k5_rf5/round_robin r0 units=9634 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=1050056246 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=8518 dead=false
+[routing_audit] ws-atlas-v1-42-0113 ep=968215995 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1614 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=7051 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=8960 dead=false
+[routing_audit] ws-atlas-v1-42-0119 ep=706983495 entity_planner_buyahead_k5_rf5/round_robin r0 units=8597 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1084 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1078 dead=false
+[routing_audit] ws-atlas-v1-12-0005 ep=1034002112 entity_planner_buyahead_k5_rf5/round_robin r0 units=984 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2449 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k5_rf5/round_robin r0 units=440 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2539 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=1295251592 entity_planner_buyahead_k5_rf5/round_robin r0 units=2368 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2213 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2012 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2870 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2244 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=285624650 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1675 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2510 dead=false
+[routing_audit] ws-atlas-v1-12-0060 ep=7166650 entity_planner_buyahead_k5_rf5/round_robin r0 units=2140 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=832 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=825 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=78410946 entity_planner_buyahead_k5_rf5/round_robin r0 units=766 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=805 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=813 dead=false
+[routing_audit] ws-atlas-v1-12-0094 ep=1885066463 entity_planner_buyahead_k5_rf5/round_robin r0 units=776 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1913 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1726 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=195303600 entity_planner_buyahead_k5_rf5/round_robin r0 units=2250 dead=false
+[routing_audit] ws-atlas-v1-42-0126 ep=252677189 entity_planner_buyahead_k5_rf5/round_robin r0 units=1049 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1329 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k5_rf5/round_robin r0 units=1493 dead=false
+[routing_audit] ws-atlas-v1-12-0111 ep=2030511473 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=894 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=743 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=730 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k5_rf5/round_robin r0 units=0 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=937 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=1758129913 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1143 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2515 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=1649418142 entity_planner_buyahead_k5_rf5/round_robin r0 units=700 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k5_rf5/round_robin r0 units=1456 dead=false
+[routing_audit] ws-atlas-v1-12-0121 ep=698545856 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1482 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k5_rf5/round_robin r0 units=0 dead=true
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=793 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=470 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=796 dead=false
+[routing_audit] ws-atlas-v1-12-0155 ep=533949274 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=800 dead=false
+[routing_audit] ws-atlas-v1-12-0139 ep=96110564 entity_planner_buyahead_k5_rf5/round_robin r0 units=812 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1746 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1640 dead=false
+[routing_audit] ws-atlas-v1-12-0176 ep=232428550 entity_planner_buyahead_k5_rf5/round_robin r0 units=1506 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=524 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k5_rf5/round_robin r0 units=996 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=883543740 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=833 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=436 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=692 dead=false
+[routing_audit] ws-atlas-v1-12-0230 ep=1934666033 entity_planner_buyahead_k5_rf5/round_robin r0 units=1048 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1323 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k5_rf5/round_robin r0 units=930 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=2115056251 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=618 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=800 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k5_rf5/round_robin r0 units=831 dead=false
+[routing_audit] ws-atlas-v1-12-0254 ep=1646377889 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=741 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2880 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1790 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1911 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2979 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=811165134 entity_planner_buyahead_k5_rf5/round_robin r0 units=3402 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3223 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1768789793 entity_planner_buyahead_k5_rf5/round_robin r0 units=935 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=3375 dead=false
+[routing_audit] ws-atlas-v1-12-0302 ep=489786601 entity_planner_buyahead_k5_rf5/round_robin r0 units=2361 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k5_rf5/round_robin r0 units=1693 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1955 dead=false
+[routing_audit] ws-atlas-v1-12-0308 ep=1324323162 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1640 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=924 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=694 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=1577443475 entity_planner_buyahead_k5_rf5/round_robin r0 units=920 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=376 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=457 dead=false
+[routing_audit] ws-atlas-v1-12-0321 ep=2013809044 entity_planner_buyahead_k5_rf5/round_robin r0 units=910 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1742 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1582 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=39812336 entity_planner_buyahead_k5_rf5/round_robin r0 units=1654 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1740 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1738 dead=false
+[routing_audit] ws-atlas-v1-12-0340 ep=981506722 entity_planner_buyahead_k5_rf5/round_robin r0 units=1508 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2403 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=288 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=1680874617 entity_planner_buyahead_k5_rf5/round_robin r0 units=1312 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1016 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=529 dead=false
+[routing_audit] ws-atlas-v1-12-0344 ep=263907294 entity_planner_buyahead_k5_rf5/round_robin r0 units=947 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1001 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=711 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1266 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1272 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=547143209 entity_planner_buyahead_k5_rf5/round_robin r0 units=1062 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1472 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=637 dead=false
+[routing_audit] ws-atlas-v1-12-0352 ep=613180837 entity_planner_buyahead_k5_rf5/round_robin r0 units=1397 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1707798378 entity_planner_buyahead_k5_rf5/round_robin r0 units=1139 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1205 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1227 dead=false
+[routing_audit] ws-atlas-v1-12-0361 ep=1858927482 entity_planner_buyahead_k5_rf5/round_robin r0 units=1137 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1373 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1233 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=910414941 entity_planner_buyahead_k5_rf5/round_robin r0 units=1328 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1264 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1303 dead=false
+[routing_audit] ws-atlas-v1-12-0365 ep=1794806094 entity_planner_buyahead_k5_rf5/round_robin r0 units=1331 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k5_rf5/round_robin r0 units=1660 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1833 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=924519316 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2250 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=2582 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1886 dead=false
+[routing_audit] ws-atlas-v1-12-0391 ep=1977552299 entity_planner_buyahead_k5_rf5/round_robin r0 units=1646 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1685 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1282 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=515039714 entity_planner_buyahead_k5_rf5/round_robin r0 units=2516 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=429 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1561 dead=false
+[routing_audit] ws-atlas-v1-12-0392 ep=678961384 entity_planner_buyahead_k5_rf5/round_robin r0 units=755 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k5_rf5/round_robin r0 units=2998 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=778 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1841 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=620 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=724917058 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=2112 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=3089 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=952577233 entity_planner_buyahead_k5_rf5/round_robin r0 units=849 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=1581 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=1034 dead=false
+[routing_audit] ws-atlas-v1-12-0408 ep=677063316 entity_planner_buyahead_k5_rf5/round_robin r0 units=2462 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k5_rf5/round_robin r0 units=786 dead=false
+[routing_audit] ws-atlas-v1-12-0436 ep=440603155 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=363 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=287 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=964 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1810761330 entity_planner_buyahead_k5_rf5/round_robin r0 units=735 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k5_rf5/mww_keyed r0 units=663 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k5_rf5/round_robin r0 units=706 dead=false
+[routing_audit] ws-atlas-v1-12-0483 ep=1379119214 entity_planner_buyahead_k5_rf5/mww_keyed r1 units=498 dead=false
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0000 episode 535939028 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 889.0 != traced 3250.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0000 episode 535939028 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 915.0 != traced 3115.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0000 episode 1067090871 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1272.0 != traced 3889.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0000 episode 535939028 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1110.0 != traced 3580.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0000 episode 1067090871 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1130.0 != traced 3713.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0013 episode 126034777 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 2954.0 != traced 21850.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0000 episode 1067090871 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1111.0 != traced 3671.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0013 episode 126034777 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 4148.0 != traced 24137.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0013 episode 126034777 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 3998.0 != traced 31018.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0013 episode 684102246 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2960.0 != traced 32124.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0013 episode 684102246 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 2038.0 != traced 23412.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0013 episode 684102246 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 2072.0 != traced 22779.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0031 episode 188168481 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1075.0 != traced 6843.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0034 episode 830810322 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 837.0 != traced 1771.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0034 episode 830810322 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 810.0 != traced 1731.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0031 episode 188168481 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 861.0 != traced 6156.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0031 episode 188168481 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1049.0 != traced 6226.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0031 episode 1956340570 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1043.0 != traced 6344.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0037 episode 1138298054 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 168.0 != traced 268.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0037 episode 1138298054 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 98.0 != traced 193.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0031 episode 1956340570 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1068.0 != traced 5954.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0031 episode 1956340570 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1092.0 != traced 7101.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0034 episode 693991194 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1128.0 != traced 2121.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0034 episode 830810322 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1132.0 != traced 2182.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0034 episode 693991194 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 993.0 != traced 2336.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0034 episode 693991194 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1167.0 != traced 2690.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0037 episode 1138298054 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 207.0 != traced 323.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0037 episode 1881677704 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 122.0 != traced 181.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0037 episode 1881677704 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 122.0 != traced 182.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0037 episode 1881677704 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 208.0 != traced 354.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0040 episode 649489157 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 2001.0 != traced 5288.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0040 episode 649489157 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1620.0 != traced 5754.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0039 episode 2036154428 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1953.0 != traced 26197.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0040 episode 649489157 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1854.0 != traced 4739.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0039 episode 2036154428 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 2998.0 != traced 33451.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0039 episode 2036154428 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2905.0 != traced 47335.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0040 episode 33433251 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1892.0 != traced 5261.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0039 episode 1801822691 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 5047.0 != traced 45858.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0039 episode 1801822691 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 2626.0 != traced 33046.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0039 episode 1801822691 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 4445.0 != traced 33493.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0040 episode 33433251 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2379.0 != traced 4602.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0040 episode 33433251 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1776.0 != traced 3838.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0043 episode 832857904 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1238.0 != traced 3421.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0043 episode 832857904 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1266.0 != traced 3168.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0043 episode 832857904 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1405.0 != traced 3895.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0043 episode 596659810 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1195.0 != traced 3661.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0043 episode 596659810 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1320.0 != traced 3524.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0043 episode 596659810 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1024.0 != traced 3322.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0081 episode 943950126 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 2539.0 != traced 14549.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0081 episode 943950126 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 2035.0 != traced 14935.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0076 episode 18344953 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1167.0 != traced 6887.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0076 episode 18344953 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 820.0 != traced 6833.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0076 episode 1621765017 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1016.0 != traced 7048.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0076 episode 18344953 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 610.0 != traced 6569.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0076 episode 1621765017 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 911.0 != traced 6896.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0076 episode 1621765017 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 453.0 != traced 6037.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0081 episode 943950126 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2137.0 != traced 20211.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0081 episode 1800031693 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 2999.0 != traced 18646.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0081 episode 1800031693 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 3069.0 != traced 19013.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0081 episode 1800031693 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2285.0 != traced 16761.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0093 episode 1706887913 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 263.0 != traced 999.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0093 episode 1706887913 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 304.0 != traced 1336.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0093 episode 1706887913 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 243.0 != traced 1096.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0093 episode 1841799353 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 455.0 != traced 1385.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0093 episode 1841799353 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 219.0 != traced 903.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0093 episode 1841799353 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 266.0 != traced 854.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0113 episode 285891905 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 132.0 != traced 455.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0113 episode 285891905 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 193.0 != traced 497.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0113 episode 968215995 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 259.0 != traced 664.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0113 episode 285891905 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 172.0 != traced 609.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0113 episode 968215995 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 172.0 != traced 494.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0119 episode 1050056246 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 2766.0 != traced 9594.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0119 episode 1050056246 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 3024.0 != traced 10179.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0119 episode 1050056246 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 3306.0 != traced 9592.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0113 episode 968215995 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 205.0 != traced 584.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0119 episode 706983495 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 3312.0 != traced 10077.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0119 episode 706983495 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 2640.0 != traced 8566.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0119 episode 706983495 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2824.0 != traced 10558.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0005 episode 1034002112 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 30.0 != traced 88.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0005 episode 1034002112 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 32.0 != traced 94.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0005 episode 1034002112 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 76.0 != traced 176.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0060 episode 1295251592 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 365.0 != traced 1180.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0126 episode 285624650 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 481.0 != traced 4637.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0060 episode 1295251592 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 275.0 != traced 1087.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0060 episode 1295251592 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 397.0 != traced 1246.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0060 episode 7166650 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 243.0 != traced 1260.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0126 episode 285624650 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1158.0 != traced 5559.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0126 episode 252677189 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 895.0 != traced 4783.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0060 episode 7166650 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 383.0 != traced 1308.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0126 episode 285624650 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 796.0 != traced 5820.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0126 episode 252677189 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 855.0 != traced 4972.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0060 episode 7166650 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 404.0 != traced 1490.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0094 episode 78410946 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 19.0 != traced 36.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0094 episode 78410946 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 17.0 != traced 43.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0094 episode 78410946 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 46.0 != traced 102.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0094 episode 1885066463 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 30.0 != traced 56.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0094 episode 1885066463 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 31.0 != traced 48.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0094 episode 1885066463 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 41.0 != traced 90.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0111 episode 195303600 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 909.0 != traced 4546.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0111 episode 195303600 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 404.0 != traced 4259.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0111 episode 195303600 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 716.0 != traced 4596.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-42-0126 episode 252677189 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 919.0 != traced 5058.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0111 episode 2030511473 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 458.0 != traced 4701.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0111 episode 2030511473 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 584.0 != traced 4905.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0111 episode 2030511473 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 675.0 != traced 4910.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0139 episode 1649418142 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 147.0 != traced 241.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0139 episode 1649418142 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 151.0 != traced 254.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0121 episode 1758129913 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 501.0 != traced 14286.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0121 episode 1758129913 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1044.0 != traced 7414.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0121 episode 1758129913 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1506.0 != traced 8756.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0121 episode 698545856 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 2154.0 != traced 8989.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0139 episode 1649418142 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 202.0 != traced 287.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0121 episode 698545856 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2305.0 != traced 13136.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0121 episode 698545856 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1844.0 != traced 9437.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0155 episode 533949274 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 45.0 != traced 175.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0139 episode 96110564 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 125.0 != traced 160.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0155 episode 533949274 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 150.0 != traced 1495.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0139 episode 96110564 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 119.0 != traced 157.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0155 episode 533949274 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 415.0 != traced 1260.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0139 episode 96110564 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 118.0 != traced 161.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0176 episode 232428550 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 438.0 != traced 1304.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0176 episode 232428550 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 452.0 != traced 1414.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0176 episode 232428550 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 650.0 != traced 1646.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0230 episode 883543740 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 392.0 != traced 1616.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0230 episode 883543740 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 484.0 != traced 1114.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0230 episode 883543740 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 430.0 != traced 1222.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0230 episode 1934666033 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 341.0 != traced 1802.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0230 episode 1934666033 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 426.0 != traced 1587.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0230 episode 1934666033 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 287.0 != traced 1181.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0254 episode 2115056251 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1269.0 != traced 6613.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0254 episode 2115056251 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1103.0 != traced 8115.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0254 episode 2115056251 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 655.0 != traced 7238.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0254 episode 1646377889 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 976.0 != traced 6928.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0254 episode 1646377889 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1051.0 != traced 8179.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0254 episode 1646377889 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 905.0 != traced 7070.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0302 episode 811165134 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 808.0 != traced 2656.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0308 episode 1768789793 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1014.0 != traced 4458.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0308 episode 1768789793 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1095.0 != traced 3850.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0302 episode 811165134 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 822.0 != traced 2718.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0302 episode 811165134 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 728.0 != traced 2669.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0302 episode 489786601 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1043.0 != traced 2620.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0308 episode 1768789793 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 836.0 != traced 5554.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0302 episode 489786601 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 934.0 != traced 2621.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0302 episode 489786601 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1358.0 != traced 3676.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0308 episode 1324323162 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1006.0 != traced 4761.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0308 episode 1324323162 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1529.0 != traced 3939.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0308 episode 1324323162 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1304.0 != traced 4272.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0321 episode 1577443475 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 751.0 != traced 2291.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0321 episode 1577443475 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 635.0 != traced 2172.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0321 episode 1577443475 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 577.0 != traced 2384.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0321 episode 2013809044 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 544.0 != traced 2536.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0321 episode 2013809044 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 464.0 != traced 2694.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0321 episode 2013809044 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 772.0 != traced 2458.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0340 episode 39812336 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 551.0 != traced 1431.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0340 episode 39812336 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 616.0 != traced 1555.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0340 episode 39812336 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 490.0 != traced 1630.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0340 episode 981506722 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 455.0 != traced 1499.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0340 episode 981506722 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 536.0 != traced 1580.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0340 episode 981506722 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 614.0 != traced 1896.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0344 episode 1680874617 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 958.0 != traced 4890.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0344 episode 1680874617 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 454.0 != traced 6503.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0344 episode 1680874617 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 738.0 != traced 6238.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0344 episode 263907294 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 486.0 != traced 6239.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0344 episode 263907294 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 821.0 != traced 5826.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0344 episode 263907294 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 740.0 != traced 6502.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0352 episode 547143209 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 926.0 != traced 4794.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0352 episode 547143209 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 695.0 != traced 4799.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0361 episode 1707798378 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 50.0 != traced 98.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0361 episode 1707798378 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 53.0 != traced 89.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0352 episode 547143209 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2089.0 != traced 8823.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0352 episode 613180837 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 2179.0 != traced 7350.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0352 episode 613180837 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1414.0 != traced 7526.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0352 episode 613180837 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 3279.0 != traced 9442.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0361 episode 1707798378 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 134.0 != traced 225.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0361 episode 1858927482 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 70.0 != traced 139.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0361 episode 1858927482 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 72.0 != traced 119.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0361 episode 1858927482 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 113.0 != traced 207.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0365 episode 910414941 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 324.0 != traced 1210.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0365 episode 910414941 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 359.0 != traced 1305.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0365 episode 910414941 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 591.0 != traced 1250.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0365 episode 1794806094 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 488.0 != traced 1366.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0365 episode 1794806094 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 365.0 != traced 1316.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0365 episode 1794806094 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 554.0 != traced 1284.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0391 episode 924519316 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2148.0 != traced 6498.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0391 episode 924519316 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1377.0 != traced 4706.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0391 episode 924519316 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 2228.0 != traced 4612.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0391 episode 1977552299 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1580.0 != traced 4206.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0391 episode 1977552299 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1571.0 != traced 6056.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0391 episode 1977552299 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2297.0 != traced 6305.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0392 episode 515039714 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1189.0 != traced 7668.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0392 episode 515039714 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1360.0 != traced 5540.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0392 episode 515039714 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1439.0 != traced 7519.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0392 episode 678961384 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 625.0 != traced 6891.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0392 episode 678961384 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1494.0 != traced 6924.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0392 episode 678961384 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 860.0 != traced 9147.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0408 episode 724917058 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 3104.0 != traced 8632.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0436 episode 952577233 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 816.0 != traced 3845.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0408 episode 724917058 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1845.0 != traced 8138.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0436 episode 952577233 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 494.0 != traced 3859.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0408 episode 724917058 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 2100.0 != traced 8356.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0408 episode 677063316 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 3026.0 != traced 7009.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0436 episode 952577233 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 711.0 != traced 3963.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0408 episode 677063316 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1852.0 != traced 7271.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0436 episode 440603155 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 1113.0 != traced 3747.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0408 episode 677063316 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 2423.0 != traced 8513.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0436 episode 440603155 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 985.0 != traced 4347.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0436 episode 440603155 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 541.0 != traced 3983.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0483 episode 1810761330 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 653.0 != traced 5007.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0483 episode 1810761330 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 812.0 != traced 4535.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0483 episode 1810761330 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 1166.0 != traced 4829.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0483 episode 1379119214 entity_planner_buyahead_k5_rf5/mww_keyed r0: ttl: classes 833.0 != traced 4665.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0483 episode 1379119214 entity_planner_buyahead_k5_rf5/round_robin r0: ttl: classes 927.0 != traced 4775.0
+[supply_trace] supply_trace_consistency ws-atlas-v1-12-0483 episode 1379119214 entity_planner_buyahead_k5_rf5/mww_keyed r1: ttl: classes 1040.0 != traced 4847.0
+[supply_trace] INVALID (213 contract failure(s), 0 missing row(s))
+[run_pod] detached run finished (exit 2); pulling results
+[run_pod] pulling /workspace/tokenomics/runs/exp0098/ -> ./experiments/EXP-0098-acceptance-a1-a2/
+[run_pod] stopping pod nl2uq9fzwhuzrh...
+[run_pod] pod stopped
+[run_pod] terminating pod nl2uq9fzwhuzrh (removing)...
+[run_pod] pod terminated
