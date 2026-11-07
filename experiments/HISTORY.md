@@ -1488,3 +1488,6 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
 - **Consequence.** RL does improve the producer (≈ +5.7% units at 12). Every trunk-reading head must be deployed the
   way training played it. This design point gates 4.5's RL of the learned producer turns.
 - **Cost.** EXP-0113 11.2 + EXP-0114 51.9 vCPU-h (M6); EXP-0116 3.1 vCPU-h (M6-A).
+- **Confirmed (EXP-0119).** On fresh seeds, F40 (the trained gates + the start's replenish) is +202.0 units per episode
+  over the EXP-0100 stack (F 52.7, 112 world-episodes; +5.8%). No deaths, and lower run-down. At 42 producers on
+  validation worlds it is +475.9 (F 236.2), untrained at 42. F40 is the M6 start (user decision 2026-11-07).
