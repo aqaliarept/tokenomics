@@ -481,11 +481,13 @@ class TurnHeads(nn.Module):
                                   "claim": nn.Linear(w, 1)})
         # Order-aware accept (user decision 2026-11-07, DIAGNOSTICS 38): an additive recurrent pass over the
         # turn's bids and claims in the order of the head's own (bounded, detached) priority. The state is a
-        # running sum, s <- s + U h(item, s), which can represent the auction's cumulative capacity exactly;
-        # the accept logit of a bid is read from h. No gradient flows through the sort: the same student order
+        # gated running sum, s <- s + σ(a(h)) U h(item, s), which can represent the auction's cumulative
+        # capacity exactly; the accept logit a of a bid is read from h. No gradient flows through the sort: the same student order
         # is used in training and at deploy (DIAGNOSTICS 37: the deployed path is the trained path).
         self.ordered = ordered
         if ordered:
+            # unbounded scores are clipped in `accept_action`, creating ties the pass never saw in training
+            assert bounded, "the ordered accept pass needs bounded priorities"
             self.seq = _mlp(2 * w, w)
             self.inc = nn.Linear(w, w)
             self.seq_out = nn.Linear(w, 1)
@@ -552,13 +554,16 @@ class TurnHeads(nn.Module):
         bp, cp = self._bound(b[:, 1]), self._bound(c)
         if not self.ordered:
             return b[:, 0], bp, cp
-        h = self.ordered_pass(a, torch.cat([tb, tc]), torch.cat([bp, cp]).detach())
-        return self.seq_out(h[:eb.shape[0]]).squeeze(-1), bp, cp
+        # input order [claims (reservations, then pending), bids]: the stable sort then breaks priority ties as
+        # the domain does, (-priority, kind: held < pending < new, -price) (the lists are price-descending)
+        nb = eb.shape[0]
+        h = self.ordered_pass(torch.cat([a[nb:], a[:nb]]), torch.cat([tc, tb]), torch.cat([cp, bp]).detach())
+        return self.seq_out(h[h.shape[0] - nb:]).squeeze(-1), bp, cp
 
     def ordered_pass(self, emb: torch.Tensor, turn: torch.Tensor, priority: torch.Tensor) -> torch.Tensor:
         """Per item, h from (its embedding, the running state of the items ranked above it in its turn);
-        items visited in descending `priority` within each turn (ties: input order). Padded steps leave the
-        state unchanged."""
+        items visited in descending `priority` within each turn (ties: input order, which `accept_out` sets to
+        the domain's kind order). Padded steps leave the state unchanged."""
         if not emb.shape[0]:
             return torch.zeros((0, self.width))
         o1 = torch.argsort(-priority, stable=True)
@@ -575,7 +580,10 @@ class TurnHeads(nn.Module):
         hs = []
         for k in range(length):
             hk = torch.relu(self.seq(torch.cat([pad[:, k], state], 1)))
-            state = state + live[:, k] * self.inc(hk)
+            # gated by the item's own accept probability: an accepted item adds what it uses (an ungated sum
+            # reached 0.985 on the synthetic auction even in the right order; gated 0.995)
+            gate = torch.sigmoid(self.seq_out(hk))
+            state = state + live[:, k] * gate * self.inc(hk)
             hs.append(hk)
         hpad = torch.stack(hs, 1)
         out = torch.empty((emb.shape[0], self.width))

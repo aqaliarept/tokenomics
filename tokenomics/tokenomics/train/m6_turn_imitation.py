@@ -5,8 +5,10 @@ spend order and claim scheduling (pre-registration m6_prereg_v12; notes/4.3-draf
   seeded fresh init.
 - **Labels:** the default turn policies (`default_turn_decision`, `default_fund_scores`):
   - the accept bit per routed bid;
-  - one priority order per accept turn over carried reservations, pending claims and accepted bids (declined
-    bids' priorities never act, so they carry no order label);
+  - one priority order per accept turn over carried reservations, pending claims and bids. The gate's rank metric
+    reads claims + accepted bids (a declined bid's priority never acts in the domain). The order-aware heads also
+    train the declined bids' default ranks, because their priority places them in the ordered accept pass, and the
+    displaced bids near the capacity threshold are the error class it must fix;
   - one order per fund turn over the funding requests.
 - **Losses:** BCE on accept bits; a pairwise logistic loss on every ordered pair within a turn.
 - **Data:** the start stack with the default turns plays the 112 M4 training world-episodes × r0 / r1 (fit) and
@@ -303,8 +305,8 @@ def _pairs(y: np.ndarray, mask: np.ndarray | None, cap: int | None, rng: np.rand
     return out, {**ex, "kept": kept}
 
 
-def turn_targets(recs: Sequence[dict], rng: np.random.Generator | None, cap: int | None
-                 ) -> dict[str, Any]:
+def turn_targets(recs: Sequence[dict], rng: np.random.Generator | None, cap: int | None,
+                 rank_all_bids: bool = False) -> dict[str, Any]:
     """Global indices of the BCE targets and the learnable ordered pairs of a batch of turns, with the
     per-kind counts of kept and excluded pairs."""
     fund = [r for r in recs if r["kind"] == "fund"]
@@ -324,7 +326,7 @@ def turn_targets(recs: Sequence[dict], rng: np.random.Generator | None, cap: int
     for r in acc:
         nb, nc = len(r["acc"]), len(r["y_claim"])
         y = np.concatenate([r["y_bid"], r["y_claim"]])
-        mask = np.concatenate([r["acc"] > 0, np.ones(nc, bool)])
+        mask = np.concatenate([np.ones(nb, bool) if rank_all_bids else r["acc"] > 0, np.ones(nc, bool)])
         # combined vector = [all bids of the batch, then all claims]: map local -> global
         loc = np.concatenate([ob + np.arange(nb), nb_total + oc + np.arange(nc)])
         pr, ex = _pairs(y, mask, cap, rng, node_keys(r, "bid") + node_keys(r, "claim"))
@@ -337,11 +339,14 @@ def turn_targets(recs: Sequence[dict], rng: np.random.Generator | None, cap: int
             "bits": torch.from_numpy(np.concatenate(bits)) if bits else torch.zeros(0)}
 
 
-def _losses(heads: g.TurnHeads, tg: Mapping[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
+def _losses(heads: g.TurnHeads, tg: Mapping[str, Any], rank_only: bool = False
+            ) -> tuple[torch.Tensor, dict[str, Any]]:
+    """`rank_only`: the ranking terms (and the pre-tanh penalty) only, no accept BCE (the ordered heads'
+    warm-up, so the order the accept pass reads is learned first)."""
     loss, out = torch.zeros(()), {}
     heads.pre_bound = []
     try:
-        loss, out = _losses_inner(heads, tg, loss, out)
+        loss, out = _losses_inner(heads, tg, loss, out, rank_only)
         z = [x for x in heads.pre_bound if x.numel()]
         if CFG["z_l2"] and heads.bounded and z:
             loss = loss + CFG["z_l2"] * (torch.cat(z) ** 2).mean()
@@ -350,8 +355,8 @@ def _losses(heads: g.TurnHeads, tg: Mapping[str, Any]) -> tuple[torch.Tensor, di
     return loss, out
 
 
-def _losses_inner(heads: g.TurnHeads, tg: Mapping[str, Any], loss: torch.Tensor, out: dict[str, Any]
-                  ) -> tuple[torch.Tensor, dict[str, Any]]:
+def _losses_inner(heads: g.TurnHeads, tg: Mapping[str, Any], loss: torch.Tensor, out: dict[str, Any],
+                  rank_only: bool = False) -> tuple[torch.Tensor, dict[str, Any]]:
     if tg["fund"]:
         s = batch_fund(heads, _cat(tg["fund"], "fund"))
         out["fund"] = s
@@ -363,7 +368,7 @@ def _losses_inner(heads: g.TurnHeads, tg: Mapping[str, Any], loss: torch.Tensor,
     if tg["accept"]:
         a, bp, c = batch_accept(heads, _cat(tg["accept"], "bid"), _cat(tg["accept"], "claim"))
         out["acc"], out["pri"] = a, torch.cat([bp, c])
-        if a.shape[0]:
+        if a.shape[0] and not rank_only:
             loss = loss + torch.nn.functional.binary_cross_entropy_with_logits(a, tg["bits"])
         if tg["acc_pairs"]:
             i, j = torch.tensor(tg["acc_pairs"]).T
@@ -375,7 +380,7 @@ def _losses_inner(heads: g.TurnHeads, tg: Mapping[str, Any], loss: torch.Tensor,
 
 def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch: int, cap: int,
         seed: int, log: Any = print, heads_cfg: Mapping[str, Any] | None = None,
-        schedule: str | None = None) -> dict[str, Any]:
+        schedule: str | None = None, warmup: int | None = None) -> dict[str, Any]:
     """`heads_cfg` = TurnHeads config (default CFG's set_layers / bounded / width); `schedule`
     "cosine" decays the learning rate to 0 over the epochs (default CFG's, none in v14)."""
     torch.manual_seed(seed)
@@ -389,6 +394,9 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
     blank = {k: np.zeros((0, v), np.float32) for k, v in heads.dims.items()}
     norm = heads.norm.fit([{**blank, **{k: r[k] for k in ("fund", "bid", "claim") if k in r}}
                            for r in train])
+    # ordered heads: the ranking loss alone for the first `warm` epochs (supervisor 2026-11-07), then everything;
+    # the accept pass always reads the student's own order (no teacher-forcing)
+    warm = (warmup if warmup is not None else CFG.get("rank_warmup", 3)) if heads.ordered else 0
     opt = torch.optim.Adam(heads.parameters(), lr=lr)
     sched = (torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs * max(1, math.ceil(len(train) / batch)))
              if schedule == "cosine" else None)
@@ -398,8 +406,8 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
         order = rng.permutation(len(train))
         tot, nb, t0 = 0.0, 0, time.perf_counter()
         for k in range(0, len(order), batch):
-            tg = turn_targets([train[i] for i in order[k:k + batch]], rng, cap)
-            loss, _ = _losses(heads, tg)
+            tg = turn_targets([train[i] for i in order[k:k + batch]], rng, cap, rank_all_bids=heads.ordered)
+            loss, _ = _losses(heads, tg, rank_only=ep < warm)
             opt.zero_grad()
             loss.backward()
             opt.step()

@@ -304,40 +304,83 @@ def test_ordered_pass_is_permutation_invariant_but_for_the_learned_order(layers:
     rng = np.random.default_rng(5)
     torch.manual_seed(2)
     heads = g.TurnHeads(set_layers=layers, bounded=True, ordered=True).eval()
-    r = _ordered_turn(rng)
-    perm = rng.permutation(len(r["acc"]))
-    q = {**r, "bid": r["bid"][perm], "acc": r["acc"][perm], "y_bid": r["y_bid"][perm]}
+    r = _ordered_turn(rng, nb=5, nr=3)
+    perm, cperm = rng.permutation(len(r["acc"])), rng.permutation(3)
+    q = {**r, "bid": r["bid"][perm], "acc": r["acc"][perm], "y_bid": r["y_bid"][perm],
+         "claim": r["claim"][cperm], "y_claim": r["y_claim"][cperm]}
     with torch.no_grad():
         a0, p0, c0 = heads.turn_accept(r, *_trunk_of(r))
         a1, p1, c1 = heads.turn_accept(q, *_trunk_of(q))
     assert torch.allclose(a0[perm], a1, atol=1e-5) and torch.allclose(p0[perm], p1, atol=1e-5)
-    assert torch.allclose(c0, c1, atol=1e-5)
+    assert torch.allclose(c0[cperm], c1, atol=1e-5)
 
 
 def test_ordered_pass_reads_only_the_items_ranked_above() -> None:
-    """Causality of the learned order (no set layers, so nothing else mixes the items): changing the item the
-    head ranks last moves no other item's accept logit, while changing the top item moves the ones below."""
-    rng = np.random.default_rng(6)
+    """Causality of the learned order, on the pass itself with the priorities given: changing the item ranked
+    last (here a claim) moves no other item's state, while changing the top item moves every item below it.
+    Ties break in input order, which `accept_out` sets to (reservations, pending, bids) as the domain does."""
     torch.manual_seed(3)
     heads = g.TurnHeads(set_layers=0, bounded=True, ordered=True).eval()
-    r = _ordered_turn(rng, nb=5, nr=0)
+    emb = torch.randn(7, heads.width)
+    turn = torch.zeros(7, dtype=torch.long)
+    pri = torch.tensor([5.0, -3.0, 4.0, 1.0, 2.0, 0.0, -1.0])  # item 1 last, item 0 first
     with torch.no_grad():
-        a0, p0, _ = heads.turn_accept(r, *_trunk_of(r))
-    order = torch.argsort(-p0).tolist()
-    last, top = order[-1], order[0]
-    q = {**r, "bid": r["bid"].copy()}
-    q["bid"][last] *= 0.5
+        h0 = heads.ordered_pass(emb, turn, pri)
+        e1 = emb.clone()
+        e1[1] += 3.0
+        h1 = heads.ordered_pass(e1, turn, pri)
+        e2 = emb.clone()
+        e2[0] += 3.0
+        h2 = heads.ordered_pass(e2, turn, pri)
+    others = [0, 2, 3, 4, 5, 6]
+    assert torch.allclose(h0[others], h1[others], atol=1e-6)
+    assert all(not torch.allclose(h0[k], h2[k], atol=1e-6) for k in others[1:])
+    tie = torch.tensor([1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0])  # equal priorities: input order decides
     with torch.no_grad():
-        a1, p1, _ = heads.turn_accept(q, *_trunk_of(q))
-    if torch.argsort(-p1).tolist()[:-1] == order[:-1]:  # the change kept it last
-        others = [k for k in range(5) if k != last]
-        assert torch.allclose(a0[others], a1[others], atol=1e-6)
-    q2 = {**r, "bid": r["bid"].copy()}
-    q2["bid"][top] += 2.0
-    with torch.no_grad():
-        a2, p2, _ = heads.turn_accept(q2, *_trunk_of(q2))
-    below = [k for k in order[1:]]
-    assert not torch.allclose(a0[below], a2[below], atol=1e-6)
+        ha = heads.ordered_pass(emb, turn, tie)
+        hb = heads.ordered_pass(emb[[1, 0, 2, 3, 4, 5, 6]], turn, tie)
+    assert not torch.allclose(ha[0], hb[1], atol=1e-6)  # the first in input order is visited first
+
+
+def _auction_turns(rng: np.random.Generator, n: int) -> list[dict]:
+    """Synthetic accept turns: bids with capacity and price, one budget; labels = the greedy auction (price
+    order, accept while the running sum fits); features as v15 (log columns + the linear fractions)."""
+    out = []
+    for _ in range(n):
+        nb = int(rng.integers(3, 9))
+        cap = rng.integers(1, 11, nb).astype(float)
+        price = rng.uniform(0.5, 10, nb)
+        budget = float(rng.integers(5, 31))
+        order = np.argsort(-price, kind="stable")
+        rem, acc = budget, np.zeros(nb, np.float32)
+        for i in order:
+            if cap[i] <= rem:
+                acc[i], rem = 1.0, rem - cap[i]
+        x = np.zeros((nb, g.BID_DIM + 3), np.float32)
+        x[:, 0], x[:, 2], x[:, 6], x[:, 7] = np.log1p(price), np.log1p(cap), cap <= budget, np.log1p(budget)
+        x[:, g.BID_DIM], x[:, g.BID_DIM + 2] = cap / budget, price / price.max()
+        rank = np.empty(nb, np.float32)
+        rank[order] = np.arange(nb, 0, -1)
+        out.append({"kind": "accept", "h_cap": np.zeros((1, g.HIDDEN), np.float32),
+                    "h_in": np.zeros((0, g.HIDDEN), np.float32), "pooled": np.zeros(4 * g.HIDDEN, np.float32),
+                    "bid": x, "bid_cap": [(k, 0) for k in range(nb)], "bid_in": [],
+                    "claim": np.zeros((0, g.CLAIM_DIM + 3), np.float32), "claim_cap": [], "claim_in": [],
+                    "n_res": 0, "acc": acc, "y_bid": rank, "y_claim": np.zeros(0, np.float32)})
+    return out
+
+
+def test_the_ordered_pass_learns_the_auction_and_the_set_encoder_does_not() -> None:
+    """The design's core claim (supervisor 2026-11-07): with no set layers, the ordered pass learns the
+    greedy auction's accept bits to ≥ 0.99 on held-out synthetic turns; the same heads without it cannot."""
+    rng = np.random.default_rng(0)
+    tr, te = _auction_turns(rng, 1200), _auction_turns(rng, 400)
+    acc = {}
+    for ordered in (True, False):
+        pm = g.ProducerGNN()
+        ti.fit(pm, tr, epochs=150, lr=3e-3, batch=64, cap=None, seed=0, log=lambda *a: None, schedule="cosine",
+               heads_cfg={"set_layers": 0, "bounded": True, "ordered": ordered, "linear": True})
+        acc[ordered] = ti.agreement(pm, te, whole=False)["accept"]
+    assert acc[True] >= 0.99 and acc[False] <= 0.9, acc
 
 
 @pytest.mark.skipif(not _lfs(MODELS), reason="records absent")
