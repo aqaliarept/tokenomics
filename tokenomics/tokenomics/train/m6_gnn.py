@@ -434,6 +434,7 @@ class TurnHeads(nn.Module):
     def __init__(self, hidden: int = HIDDEN, set_layers: int = 0, bounded: bool = False) -> None:
         super().__init__()
         self.hidden, self.set_layers, self.bounded = hidden, set_layers, bounded
+        self.pre_bound: list[torch.Tensor] | None = None
         self.enc = nn.ModuleDict({"fund": _mlp(FUND_DIM, hidden), "bid": _mlp(BID_DIM, hidden),
                                   "claim": _mlp(CLAIM_DIM, hidden)})
         self.norm = FeatureNorm({"fund": FUND_DIM, "bid": BID_DIM, "claim": CLAIM_DIM}, {})
@@ -480,6 +481,11 @@ class TurnHeads(nn.Module):
         return out
 
     def _bound(self, x: torch.Tensor) -> torch.Tensor:
+        """B·tanh(x / B). In float32 it rounds to exactly ±B once |x| > ~9B, so saturated scores tie;
+        the fit keeps x small with a penalty on the pre-tanh values, collected in `pre_bound` when
+        that is a list (m6_turn_imitation)."""
+        if self.pre_bound is not None:
+            self.pre_bound.append(x)
         return ACTION_LOGIT_BOUND * torch.tanh(x / ACTION_LOGIT_BOUND) if self.bounded else x
 
     def fund_out(self, emb: torch.Tensor, turn: torch.Tensor) -> torch.Tensor:

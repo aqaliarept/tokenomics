@@ -1,6 +1,6 @@
 {
  "accept_errors": "reported split as DIAGNOSTICS 38: declined no_fit, declined displaced (fits alone), accepted",
- "bounded": "priorities and fund scores are 10\u00b7tanh(\u00b7/10) (never at the \u00b110 clip); no score penalty",
+ "bounded": "priorities and fund scores are 10\u00b7tanh(z/10); float32 rounds to exactly \u00b110 once |z| > ~90, so a penalty 0.0001\u00b7mean(z\u00b2) on the pre-tanh z keeps them apart; tied learnable pairs reported; the metric stays on the bounded scores",
  "change": "add-m6-joint-mpg-gnn",
  "closed_loop": "candidate (greedy GNN turn heads, TurnCache) vs reference (default turns), same start stack, 16 monitor world-episodes \u00d7 r0/r1, M5's floors (g, F); pass iff g \u2265 \u2212F, deaths, run-down and starvation shares no worse; 42 reported (atlas v2 train-split 42 worlds, 8 worlds \u00d7 1 fresh episode \u00d7 r0/r1)",
  "config": {
@@ -26,7 +26,8 @@
   ],
   "score_l2": 0.0,
   "seed": 0,
-  "set_layers": 2
+  "set_layers": 2,
+  "z_l2": 0.0001
  },
  "data": "start stack + default turns: 112 M4 training world-episodes \u00d7 r0/r1 (fit), 16 monitor world-episodes \u00d7 r0/r1 (held out), horizon 100, 12 producers",
  "excluded_pairs": "pairs whose order the head's inputs cannot determine are left out of the loss and the metric: feature-identical pairs (same row features and the same linked capacity / input rows; the domain's tie-break keeps the default order) and, in the fund turn, replenishment vs replenishment (creation order, arbitrary); excluded counts reported by kind; the closed loop measures whether the unordered replenishment order matters",

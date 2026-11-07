@@ -17,6 +17,8 @@ REPO = Path(__file__).resolve().parents[2]
 MODELS = REPO / "experiments/EXP-0100-m6-imitation-v2/artifacts/fit/models.pt"
 TRAINING = REPO / "experiments/EXP-0058-es-gradient-probe/bar"
 ATLAS_V2 = REPO / "experiments/EXP-0052-headroom-atlas-confirm/reclassified/atlas_v2.json"
+IT40 = REPO / "experiments/EXP-0114-m6-pilot-continued/artifacts/candidate_it40.pt"
+START = REPO / "experiments/EXP-0110-m6-stage0/artifacts/start_models.pt"
 
 
 def _lfs(p: Path) -> bool:
@@ -43,11 +45,12 @@ def _rec(rng: np.random.Generator, kind: str) -> dict:
             "acc": (rng.random(nb) < 0.7).astype(np.float32), "y_bid": ranks[nr:], "y_claim": ranks[:nr]}
 
 
-@pytest.mark.parametrize("layers,bounded", [(0, False), (2, True)])
-def test_batched_head_equals_per_turn_head(layers: int, bounded: bool) -> None:
+@pytest.mark.parametrize("layers,bounded,train", [(0, False, False), (2, True, False), (2, True, True)])
+def test_batched_head_equals_per_turn_head(layers: int, bounded: bool, train: bool) -> None:
+    """Also in train mode (the fit's mode: the transformer's slow path, no dropout)."""
     rng = np.random.default_rng(0)
     torch.manual_seed(0)
-    heads = g.TurnHeads(set_layers=layers, bounded=bounded).eval()
+    heads = g.TurnHeads(set_layers=layers, bounded=bounded).train(train)
     recs = [_rec(rng, "fund") for _ in range(5)] + [_rec(rng, "accept") for _ in range(5)]
 
     def trunk(r: dict) -> tuple[dict, torch.Tensor]:
@@ -166,6 +169,41 @@ def test_closed_loop_reading_rule() -> None:
         producer_read.pilot_reading = orig
 
 
+@pytest.mark.skipif(not (_lfs(IT40) and _lfs(START) and _lfs(MODELS)), reason="records absent")
+def test_real_runs_pin_the_f40_start(tmp_path: Path) -> None:
+    import json
+
+    real = REPO / "experiments/EXP-0119-m6-f40-confirm/artifacts/reading.json"
+    it30 = REPO / "experiments/EXP-0114-m6-pilot-continued/artifacts/candidate_it30.pt"
+    ok = ti.choose_start(str(real), str(MODELS), str(IT40), str(START))
+    assert ok["start"] == "F40" and ti.start_problems(ok) == []
+    assert ti.start_problems(ti.choose_start(str(real), str(MODELS), str(it30), str(START)))
+    assert ti.start_problems(ti.choose_start(str(real), str(MODELS), str(IT40), str(MODELS)))
+    fake = tmp_path / "r.json"
+    fake.write_text(json.dumps({**json.loads(real.read_text()), "dry_run": True}))
+    assert ti.start_problems(ti.choose_start(str(fake), str(MODELS), str(IT40), str(START)))
+
+
+def test_pre_tanh_penalty_and_ties() -> None:
+    """The fit collects the pre-tanh values and penalises them; equal bounded scores count as ties."""
+    rng = np.random.default_rng(4)
+    torch.manual_seed(0)
+    heads = g.TurnHeads(set_layers=2, bounded=True)
+    recs = [_rec(rng, "fund") for _ in range(3)] + [_rec(rng, "accept") for _ in range(3)]
+    tg = ti.turn_targets(recs, None, None)
+    base = ti.CFG["z_l2"]
+    try:
+        ti.CFG["z_l2"] = 0.0
+        l0, _ = ti._losses(heads, tg)
+        ti.CFG["z_l2"] = 1.0
+        l1, _ = ti._losses(heads, tg)
+    finally:
+        ti.CFG["z_l2"] = base
+    assert float(l1) > float(l0) and heads.pre_bound is None
+    big = torch.tensor([95.0, 120.0])
+    assert torch.equal(heads._bound(big)[0], heads._bound(big)[1])  # float32 saturation: a real tie
+
+
 def test_prereg_v14_matches_the_code_when_pinned() -> None:
     if ti.PREREG_V14_SHA256 is None:
         assert ti.prereg_problems()
@@ -173,8 +211,6 @@ def test_prereg_v14_matches_the_code_when_pinned() -> None:
         assert ti.prereg_problems() == []
 
 
-IT40 = REPO / "experiments/EXP-0114-m6-pilot-continued/artifacts/candidate_it40.pt"
-START = REPO / "experiments/EXP-0110-m6-stage0/artifacts/start_models.pt"
 
 
 @pytest.mark.skipif(not (_lfs(MODELS) and _lfs(ATLAS_V2) and _lfs(IT40) and _lfs(START)
@@ -191,6 +227,10 @@ def test_true_smoke(tmp_path: Path, f40: bool) -> None:
     tmp_path = tmp_path / "out"
     d = json.loads((tmp_path / "reading.json").read_text())
     assert d["start"]["start"] == ("F40" if f40 else "EXP-0100")
+    assert d["start"]["replenish"] == (str(START) if f40 else None)
+    rows = [json.loads(x) for x in (tmp_path / "gate_rows.jsonl").read_text().splitlines()]
+    assert rows and all(r["replenish"] == (str(START) if f40 else "") for r in rows)
+    assert {"fund", "accept"} == set(d["offline"]["heldout"]["tied_pairs"])
     assert set(d["offline"]["heldout"]["accept_errors"]) == {"declined_no_fit", "declined_displaced", "accepted"}
     assert d["collect"]["train_turns"] > 0 and d["offline"]["heldout"]["turns"] > 0
     assert d["closed_loop"]["monitor_12"]["candidate"]["rows"] == 2

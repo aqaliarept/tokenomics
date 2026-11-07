@@ -48,9 +48,9 @@ PREREG_V13_SHA256 = "97474c2290f687b7320257b2f62b64c1c84cf5c12300a60541b0efd8ab3
 # v14 (supervisor 2026-11-07, DIAGNOSTICS 38): learned set context (self-attention over a turn's items) and
 # bounded scores; the start chosen by EXP-0119's reading (F40 on `gain`, else EXP-0100).
 PREREG_V14_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v14.json"
-PREREG_V14_SHA256: str | None = "bb4a18b503c677caa07925a2a4083aa698d6442fc8694422df3c16feb9b25f1d"  # frozen before EXP-0120 data (re-frozen if the review changes the code)
+PREREG_V14_SHA256: str | None = "21b60013ae5eb20084bb9789c73ae68a7dce5ffb408a702c30b0e6de343f30bf"  # frozen before EXP-0120 data (re-frozen if the review changes the code)
 CFG = {"horizon": 100, "replicates": [0, 1], "epochs": 20, "lr": 1e-3, "batch_turns": 512,
-       "max_pairs_per_turn": 400, "score_l2": 0.0, "set_layers": 2, "bounded": True, "seed": 0, "gate": {"accept": 0.99, "rank_accept": 0.99,
+       "max_pairs_per_turn": 400, "score_l2": 0.0, "z_l2": 1e-4, "set_layers": 2, "bounded": True, "seed": 0, "gate": {"accept": 0.99, "rank_accept": 0.99,
                                                       "rank_fund": 0.99},
        "r42": {"worlds": 8, "episodes": 1, "stage": "m6-turn-imit-42"}}
 START = "EXP-0100 artifacts/fit/models.pt (im.EXP0100_MODELS_SHA)"
@@ -65,7 +65,9 @@ def registered_prereg_v14() -> dict:
         "set_context": f"{CFG['set_layers']} self-attention layers (4 heads, pre-norm, no positional encoding, "
                        "padding masked) over each turn's items after their per-item encoding: the fund requests; "
                        "the bids and claims together. No hand-built set feature.",
-        "bounded": "priorities and fund scores are 10·tanh(·/10) (never at the ±10 clip); no score penalty",
+        "bounded": "priorities and fund scores are 10·tanh(z/10); float32 rounds to exactly ±10 once |z| > ~90, "
+                   f"so a penalty {CFG['z_l2']}·mean(z²) on the pre-tanh z keeps them apart; tied learnable "
+                   "pairs reported; the metric stays on the bounded scores",
         "start": "chosen by EXP-0119's reading, recorded before data: deciding `gain` → F40 (EXP-0114 "
                  "candidate_it40's trunk and investment gates, the EXP-0110 start's replenish; the turn heads "
                  "read F40's trunk); otherwise EXP-0100's stack",
@@ -216,6 +218,7 @@ def gate_job(job: dict) -> dict[str, str]:
     row = row_to_dict(row_from_stats(job["world"], job["size"], job["regime"], job["episode"],
                                      f"{job['arm']}@h{job['horizon']}", job["replicate"], st))
     row.update({"arm": job["arm"], "set": job["set"], "units": repr(float(st["consumer_completed_units"])),
+                "replenish": job.get("replenish") or "",
                 "beyond_k": str(env.turn_beyond_k)})
     return row
 
@@ -334,6 +337,19 @@ def turn_targets(recs: Sequence[dict], rng: np.random.Generator | None, cap: int
 
 def _losses(heads: g.TurnHeads, tg: Mapping[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
     loss, out = torch.zeros(()), {}
+    heads.pre_bound = []
+    try:
+        loss, out = _losses_inner(heads, tg, loss, out)
+        z = [x for x in heads.pre_bound if x.numel()]
+        if CFG["z_l2"] and heads.bounded and z:
+            loss = loss + CFG["z_l2"] * (torch.cat(z) ** 2).mean()
+    finally:
+        heads.pre_bound = None
+    return loss, out
+
+
+def _losses_inner(heads: g.TurnHeads, tg: Mapping[str, Any], loss: torch.Tensor, out: dict[str, Any]
+                  ) -> tuple[torch.Tensor, dict[str, Any]]:
     if tg["fund"]:
         s = batch_fund(heads, _cat(tg["fund"], "fund"))
         out["fund"] = s
@@ -413,6 +429,7 @@ def agreement(pm: g.ProducerGNN, recs: Sequence[dict], batch: int = 2048, whole:
     sat = {"fund": [0, 0], "priority": [0, 0], "accept_logit": [0, 0]}
     ident = [0, 0]
     split = {c: [0, 0] for c in ("declined_no_fit", "declined_displaced", "accepted")}  # [wrong, n]
+    ties = {"fund": 0, "accept": 0}  # learnable pairs whose bounded scores are equal
     with torch.no_grad():
         for k in range(0, len(recs), batch):
             part = list(recs[k:k + batch])
@@ -429,6 +446,7 @@ def agreement(pm: g.ProducerGNN, recs: Sequence[dict], batch: int = 2048, whole:
                 i, j = torch.tensor(tg["fund_pairs"]).T
                 fp_ok += int((f[i] > f[j]).sum())
                 fp_n += len(tg["fund_pairs"])
+                ties["fund"] += int((f[i] == f[j]).sum())
             if tg["accept"]:
                 pred = out["acc"] > 0
                 lab = tg["bits"] > 0
@@ -444,6 +462,7 @@ def agreement(pm: g.ProducerGNN, recs: Sequence[dict], batch: int = 2048, whole:
                     i, j = torch.tensor(tg["acc_pairs"]).T
                     ap_ok += int((pri[i] > pri[j]).sum())
                     ap_n += len(tg["acc_pairs"])
+                    ties["accept"] += int((pri[i] == pri[j]).sum())
                 for r in tg["accept"]:
                     n_, d_ = identical_bid_pairs(r)
                     ident[0], ident[1] = ident[0] + n_, ident[1] + d_
@@ -469,7 +488,8 @@ def agreement(pm: g.ProducerGNN, recs: Sequence[dict], batch: int = 2048, whole:
             "whole_schedule": rate(whole_ok, whole_n) if whole else None, "turns": len(recs),
             "pairs": counts, "saturation": {k: rate(*v) for k, v in sat.items()},
             "identical_bid_pairs": ident[0], "identical_bid_pairs_bits_differ": ident[1],
-            "accept_errors": {c: {"wrong": w, "n": n, "rate": rate(w, n)} for c, (w, n) in split.items()}}
+            "accept_errors": {c: {"wrong": w, "n": n, "rate": rate(w, n)} for c, (w, n) in split.items()},
+            "tied_pairs": ties}
 
 
 # --- persisted records (npz; v13) ---
@@ -589,7 +609,10 @@ def _jobs_42(atlas: Mapping, models: str, horizon: int, max_worlds: int) -> tupl
     return jobs, cells
 
 
-F40_START_SHA = "697d94c08321"  # prefix of the EXP-0110 start (start_models.pt), EXP-0114's KL anchor
+# Real-run pins of v14's F40 start (review 2026-11-07): EXP-0119's reading itself, its candidate and start.
+EXP0119_READING_SHA = "246a94a7ff4b853402b6101ad7818108127a9e5d5bfe52f0194042798d5a9bd9"
+F40_MODELS_SHA = "ace0fabf585e5b3fec5ca2d003a8305cb2e3f6aaf76eb3ad5927543971b8b57e"  # EXP-0114 candidate_it40.pt
+F40_START_SHA = "697d94c08321fffe08cb6a44bfeaba14988da21821cbed502ec78d54fb528d2c"  # EXP-0110 start_models.pt
 
 
 def choose_start(exp0119_reading: str | None, models: str, f40_models: str | None,
@@ -603,10 +626,29 @@ def choose_start(exp0119_reading: str | None, models: str, f40_models: str | Non
     if f40 and not (f40_models and f40_replenish):
         raise ValueError("EXP-0119 reads gain: --f40-models and --f40-replenish are needed")
     return {"exp0119_reading": deciding, "exp0119_sha256": sha256_file(exp0119_reading) if rd else None,
+            "exp0119_dry_run": rd.get("dry_run") if rd else None,
+            "exp0119_candidate_sha256": rd.get("candidate_sha256") if rd else None,
+            "exp0119_start_sha256": rd.get("start_sha256") if rd else None,
             "start": "F40" if f40 else "EXP-0100", "models": f40_models if f40 else models,
             "replenish": f40_replenish if f40 else None,
             "models_sha256": sha256_file(f40_models if f40 else models),
             "replenish_sha256": sha256_file(f40_replenish) if f40 else None}
+
+
+def start_problems(start: Mapping[str, Any]) -> list[str]:
+    """A real run's start must be the registered one: EXP-0119's real reading (pinned SHA, not a dry run)
+    and, on F40, exactly its candidate and start."""
+    out = []
+    if start["exp0119_sha256"] != EXP0119_READING_SHA:
+        out.append("--exp0119-reading is not EXP-0119's registered reading")
+    if start["exp0119_dry_run"] is not False:
+        out.append("--exp0119-reading is a dry run's")
+    if start["start"] == "F40":
+        if not (start["models_sha256"] == start["exp0119_candidate_sha256"] == F40_MODELS_SHA):
+            out.append("--f40-models is not EXP-0119's candidate (EXP-0114 candidate_it40.pt)")
+        if not (start["replenish_sha256"] == start["exp0119_start_sha256"] == F40_START_SHA):
+            out.append("--f40-replenish is not EXP-0119's start (EXP-0110 start_models.pt)")
+    return out
 
 
 def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: int, dry_run: bool,
@@ -621,8 +663,7 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
         im._refuse(prereg_problems()
                    + ([] if sha256_file(models) == im.EXP0100_MODELS_SHA else ["--models is not EXP-0100's"])
                    + ([] if exp0119_reading else ["a real run needs --exp0119-reading (the start's choice)"])
-                   + ([] if start["replenish"] is None or start["replenish_sha256"].startswith(F40_START_SHA)
-                      else ["--f40-replenish is not the EXP-0110 start"])
+                   + start_problems(start)
                    + ([] if len(im.SOURCE_COMMIT) == 40 else ["a real run needs a 40-hex --source-commit"]))
     print(f"[turn_imit] start {start['start']} (EXP-0119 {start['exp0119_reading']})", flush=True)
     models, rep_from = start["models"], start["replenish"]
