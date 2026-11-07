@@ -43,16 +43,47 @@ def _rec(rng: np.random.Generator, kind: str) -> dict:
             "acc": (rng.random(nb) < 0.7).astype(np.float32), "y_bid": ranks[nr:], "y_claim": ranks[:nr]}
 
 
-def test_batched_head_equals_per_turn_head() -> None:
+@pytest.mark.parametrize("layers,bounded", [(0, False), (2, True)])
+def test_batched_head_equals_per_turn_head(layers: int, bounded: bool) -> None:
     rng = np.random.default_rng(0)
-    heads = g.TurnHeads()
+    torch.manual_seed(0)
+    heads = g.TurnHeads(set_layers=layers, bounded=bounded).eval()
     recs = [_rec(rng, "fund") for _ in range(5)] + [_rec(rng, "accept") for _ in range(5)]
-    for kind, sel in (("fund", recs[:5]), ("bid", recs[5:]), ("claim", recs[5:])):
-        batched = ti.batch_out(heads, kind, ti._cat(sel, kind))
-        per = torch.cat([heads.node_out(kind, r, {"capacity": torch.from_numpy(r["h_cap"]),
-                                                  "input": torch.from_numpy(r["h_in"])},
-                                        torch.from_numpy(r["pooled"])) for r in sel])
-        assert torch.allclose(batched, per, atol=1e-6), kind
+
+    def trunk(r: dict) -> tuple[dict, torch.Tensor]:
+        return {"capacity": torch.from_numpy(r["h_cap"]), "input": torch.from_numpy(r["h_in"])}, \
+            torch.from_numpy(r["pooled"])
+
+    with torch.no_grad():
+        bf = ti.batch_fund(heads, ti._cat(recs[:5], "fund"))
+        pf = torch.cat([heads.turn_fund(r, *trunk(r)) for r in recs[:5]])
+        assert torch.allclose(bf, pf, atol=1e-5)
+        ba = ti.batch_accept(heads, ti._cat(recs[5:], "bid"), ti._cat(recs[5:], "claim"))
+        per = [heads.turn_accept(r, *trunk(r)) for r in recs[5:]]
+        for k in range(3):
+            assert torch.allclose(ba[k], torch.cat([p[k] for p in per]), atol=1e-5), k
+
+
+@pytest.mark.parametrize("layers", [0, 2])
+def test_set_layers_let_a_bid_see_the_other_bids(layers: int) -> None:
+    """v14 (DIAGNOSTICS 38): with set layers a bid's outputs move when another bid of its turn changes;
+    without them they cannot. Bounded scores stay strictly inside the clip."""
+    rng = np.random.default_rng(3)
+    torch.manual_seed(1)
+    heads = g.TurnHeads(set_layers=layers, bounded=True).eval()
+    r = _rec(rng, "accept")
+    r["bid"] = rng.normal(size=(3, g.BID_DIM)).astype(np.float32) * 30
+    r["bid_cap"] = [(0, 0), (1, 0), (2, 0)]
+    h = {"capacity": torch.from_numpy(r["h_cap"]), "input": torch.from_numpy(r["h_in"])}
+    pooled = torch.from_numpy(r["pooled"])
+    with torch.no_grad():
+        a0, p0, c0 = heads.turn_accept(r, h, pooled)
+        r2 = {**r, "bid": r["bid"].copy()}
+        r2["bid"][2] += 5.0
+        a1, p1, _ = heads.turn_accept(r2, h, pooled)
+    moved = not torch.allclose(a0[0], a1[0]) or not torch.allclose(p0[0], p1[0])
+    assert moved == (layers > 0)
+    assert bool((p0.abs() < g.ACTION_LOGIT_BOUND).all()) and bool((c0.abs() < g.ACTION_LOGIT_BOUND).all())
 
 
 @pytest.mark.skipif(not _lfs(MODELS), reason="records absent")
@@ -135,21 +166,32 @@ def test_closed_loop_reading_rule() -> None:
         producer_read.pilot_reading = orig
 
 
-def test_prereg_v13_matches_the_code_when_pinned() -> None:
-    if ti.PREREG_V13_SHA256 is None:
+def test_prereg_v14_matches_the_code_when_pinned() -> None:
+    if ti.PREREG_V14_SHA256 is None:
         assert ti.prereg_problems()
     else:
         assert ti.prereg_problems() == []
 
 
-@pytest.mark.skipif(not (_lfs(MODELS) and _lfs(ATLAS_V2) and (TRAINING / "training_worlds.json").exists()),
-                    reason="records absent")
-def test_true_smoke(tmp_path: Path) -> None:
+IT40 = REPO / "experiments/EXP-0114-m6-pilot-continued/artifacts/candidate_it40.pt"
+START = REPO / "experiments/EXP-0110-m6-stage0/artifacts/start_models.pt"
+
+
+@pytest.mark.skipif(not (_lfs(MODELS) and _lfs(ATLAS_V2) and _lfs(IT40) and _lfs(START)
+                         and (TRAINING / "training_worlds.json").exists()), reason="records absent")
+@pytest.mark.parametrize("f40", [False, True])
+def test_true_smoke(tmp_path: Path, f40: bool) -> None:
     import json
 
+    rd = tmp_path / "exp0119.json"
+    rd.write_text(json.dumps({"reading": {"deciding": {"reading": "gain" if f40 else "hold"}}}))
     assert ti.main(["--mode", "run", "--training-dir", str(TRAINING), "--atlas", str(ATLAS_V2),
-                    "--models", str(MODELS), "--out-dir", str(tmp_path), "--dry-run"]) == 0
+                    "--models", str(MODELS), "--exp0119-reading", str(rd), "--f40-models", str(IT40),
+                    "--f40-replenish", str(START), "--out-dir", str(tmp_path / "out"), "--dry-run"]) == 0
+    tmp_path = tmp_path / "out"
     d = json.loads((tmp_path / "reading.json").read_text())
+    assert d["start"]["start"] == ("F40" if f40 else "EXP-0100")
+    assert set(d["offline"]["heldout"]["accept_errors"]) == {"declined_no_fit", "declined_displaced", "accepted"}
     assert d["collect"]["train_turns"] > 0 and d["offline"]["heldout"]["turns"] > 0
     assert d["closed_loop"]["monitor_12"]["candidate"]["rows"] == 2
     assert d["closed_loop"]["reported_42"]["reference"]["rows"] == 2

@@ -350,9 +350,9 @@ class ProducerGNN(nn.Module):
         self.replenish = nn.Linear(5 * hidden, 1)
         self.turn: TurnHeads | None = None  # ADR-0062 (`add_turn_heads`)
 
-    def add_turn_heads(self) -> None:
+    def add_turn_heads(self, set_layers: int = 0, bounded: bool = False) -> None:
         """Attach fresh fund / accept turn heads (the trunk and investment heads untouched)."""
-        self.turn = TurnHeads(self.hidden)
+        self.turn = TurnHeads(self.hidden, set_layers, bounded)
 
     def fund_scores(self, f: dict[str, Any], t: dict[str, Any], trunk: Trunk | None = None
                     ) -> torch.Tensor:
@@ -360,16 +360,14 @@ class ProducerGNN(nn.Module):
         `_trunk(f)` (the fund and accept turns of one producer-cycle share it, `TurnCache`)."""
         assert self.turn is not None
         h, pooled = trunk if trunk is not None else self._trunk(f)
-        return self.turn.node_out("fund", t, h, pooled).squeeze(-1)
+        return self.turn.turn_fund(t, h, pooled)
 
     def accept_outputs(self, f: dict[str, Any], t: dict[str, Any], trunk: Trunk | None = None
                        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """(accept logit per bid, priority per bid, priority per claim) for `accept_features`."""
         assert self.turn is not None
         h, pooled = trunk if trunk is not None else self._trunk(f)
-        b = self.turn.node_out("bid", t, h, pooled)
-        c = self.turn.node_out("claim", t, h, pooled).squeeze(-1)
-        return b[:, 0], b[:, 1], c
+        return self.turn.turn_accept(t, h, pooled)
 
     def forward(self, f: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor]:
         """(3 toggle logits, a replenish fraction in (0, 1) per input row)."""
@@ -425,29 +423,103 @@ Trunk = tuple[dict[str, torch.Tensor], torch.Tensor]
 
 class TurnHeads(nn.Module):
     """ADR-0062 heads over request / bid / claim nodes: each node's encoding, the mean of its
-    linked capacity and input rows' trunk embeddings, and the pooled view embedding."""
+    linked capacity and input rows' trunk embeddings, and the pooled view embedding.
 
-    def __init__(self, hidden: int = HIDDEN) -> None:
+    v14 (`set_layers` > 0, DIAGNOSTICS 38): self-attention layers over the turn's items (the fund
+    requests; the bids and claims together) after that encoding, so an item's output can depend on
+    the other items of its turn (the auction's cumulative rule is not hand-built; masking pads the
+    batched sets). `bounded`: priorities and fund scores are B·tanh(·/B), so they never reach the
+    action clip. `set_layers` = 0 and `bounded` = False is the original head, unchanged."""
+
+    def __init__(self, hidden: int = HIDDEN, set_layers: int = 0, bounded: bool = False) -> None:
         super().__init__()
-        self.hidden = hidden
+        self.hidden, self.set_layers, self.bounded = hidden, set_layers, bounded
         self.enc = nn.ModuleDict({"fund": _mlp(FUND_DIM, hidden), "bid": _mlp(BID_DIM, hidden),
                                   "claim": _mlp(CLAIM_DIM, hidden)})
         self.norm = FeatureNorm({"fund": FUND_DIM, "bid": BID_DIM, "claim": CLAIM_DIM}, {})
         self.mix = nn.ModuleDict({k: _mlp(7 * hidden, hidden) for k in ("fund", "bid", "claim")})
         self.out = nn.ModuleDict({"fund": nn.Linear(hidden, 1), "bid": nn.Linear(hidden, 2),
                                   "claim": nn.Linear(hidden, 1)})
+        if set_layers:
+            def enc() -> nn.TransformerEncoder:
+                layer = nn.TransformerEncoderLayer(hidden, 4, 2 * hidden, dropout=0.0,
+                                                   batch_first=True, norm_first=True)
+                return nn.TransformerEncoder(layer, set_layers, enable_nested_tensor=False)
+            self.att = nn.ModuleDict({"fund": enc(), "accept": enc()})
+
+    def config(self) -> dict[str, Any]:
+        return {"set_layers": self.set_layers, "bounded": self.bounded}
+
+    def node_embed(self, kind: str, x: np.ndarray, ec: Sequence[tuple[int, int]],
+                   ei: Sequence[tuple[int, int]], h_cap: torch.Tensor, h_in: torch.Tensor,
+                   pooled_per_node: torch.Tensor) -> torch.Tensor:
+        """The per-item embedding before the set layers (rows of `x`; edges into h_cap / h_in)."""
+        e = self.enc[kind](self.norm(kind, x))
+        n = e.shape[0]
+        cc = _mean_ctx(ec, n, h_cap, True)
+        ci = _mean_ctx(ei, n, h_in, True)
+        return torch.relu(self.mix[kind](torch.cat([e, cc, ci, pooled_per_node], 1)))
+
+    def attend(self, group: str, emb: torch.Tensor, turn: torch.Tensor) -> torch.Tensor:
+        """Self-attention within each turn's items (`turn` = each row's turn id); identity without
+        set layers. Rows are padded per turn and masked; no positional encoding (a set)."""
+        if not self.set_layers or not emb.shape[0]:
+            return emb
+        ids, compact = torch.unique(turn, return_inverse=True)
+        n_t = ids.shape[0]
+        counts = torch.bincount(compact, minlength=n_t)
+        order = torch.argsort(compact, stable=True)
+        start = torch.cumsum(counts, 0) - counts
+        pos = torch.arange(emb.shape[0]) - start[compact[order]]
+        pad = torch.zeros((n_t, int(counts.max()), emb.shape[1]))
+        pad[compact[order], pos] = emb[order]
+        mask = torch.arange(pad.shape[1]).unsqueeze(0) >= counts.unsqueeze(1)
+        att = self.att[group](pad, src_key_padding_mask=mask)
+        out = torch.empty_like(emb)
+        out[order] = att[compact[order], pos]
+        return out
+
+    def _bound(self, x: torch.Tensor) -> torch.Tensor:
+        return ACTION_LOGIT_BOUND * torch.tanh(x / ACTION_LOGIT_BOUND) if self.bounded else x
+
+    def fund_out(self, emb: torch.Tensor, turn: torch.Tensor) -> torch.Tensor:
+        """One score per request (embeddings from `node_embed("fund", ...)`)."""
+        return self._bound(self.out["fund"](self.attend("fund", emb, turn)).squeeze(-1))
+
+    def accept_out(self, eb: torch.Tensor, tb: torch.Tensor, ec: torch.Tensor, tc: torch.Tensor
+                   ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """(accept logit per bid, priority per bid, priority per claim); bids and claims of a turn
+        attend to each other."""
+        a = self.attend("accept", torch.cat([eb, ec]), torch.cat([tb, tc]))
+        b, c = self.out["bid"](a[:eb.shape[0]]), self.out["claim"](a[eb.shape[0]:]).squeeze(-1)
+        return b[:, 0], self._bound(b[:, 1]), self._bound(c)
+
+    def _embed_turn(self, kind: str, f: dict[str, Any], h: dict[str, torch.Tensor],
+                    pooled: torch.Tensor) -> torch.Tensor:
+        x = f[kind]
+        if not x.shape[0]:
+            return torch.zeros((0, self.hidden))
+        return self.node_embed(kind, x, f[f"{kind}_cap"], f[f"{kind}_in"], h["capacity"],
+                               h["input"], pooled.unsqueeze(0).expand(x.shape[0], -1))
+
+    def turn_fund(self, f: dict[str, Any], h: dict[str, torch.Tensor], pooled: torch.Tensor
+                  ) -> torch.Tensor:
+        e = self._embed_turn("fund", f, h, pooled)
+        return self.fund_out(e, torch.zeros(e.shape[0], dtype=torch.long))
+
+    def turn_accept(self, f: dict[str, Any], h: dict[str, torch.Tensor], pooled: torch.Tensor
+                    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        eb, ec = self._embed_turn("bid", f, h, pooled), self._embed_turn("claim", f, h, pooled)
+        z = lambda e: torch.zeros(e.shape[0], dtype=torch.long)  # noqa: E731
+        return self.accept_out(eb, z(eb), ec, z(ec))
 
     def node_out(self, kind: str, f: dict[str, Any], h: dict[str, torch.Tensor],
                  pooled: torch.Tensor) -> torch.Tensor:
+        """The original per-node output (no set layers, unbounded); kept for v12 / v13 readers."""
         x = f[kind]
         if not x.shape[0]:
             return torch.zeros((0, self.out[kind].out_features))
-        e = self.enc[kind](self.norm(kind, x))
-        n = e.shape[0]
-        cc = _mean_ctx(f[f"{kind}_cap"], n, h["capacity"], True)
-        ci = _mean_ctx(f[f"{kind}_in"], n, h["input"], True)
-        z = torch.cat([e, cc, ci, pooled.unsqueeze(0).expand(n, -1)], 1)
-        return self.out[kind](torch.relu(self.mix[kind](z)))
+        return self.out[kind](self._embed_turn(kind, f, h, pooled))
 
 
 class OrdererGNN(nn.Module):

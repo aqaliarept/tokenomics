@@ -44,20 +44,33 @@ from . import m6_imitation as im
 # 3.5% of accept-turn pairs are feature-identical with position-based ranks; 48% of fund pairs are replenishment vs
 # replenishment in creation order, which no feature carries). v13 drops those pairs.
 PREREG_V12_SHA256 = "3c0714f7d7c5e3bd80db8870025e732a2de5dc5de54d5f46858b571ed303d67d"
-PREREG_V13_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v13.json"
-PREREG_V13_SHA256: str | None = "97474c2290f687b7320257b2f62b64c1c84cf5c12300a60541b0efd8ab37c186"  # frozen before EXP-0118 data
+PREREG_V13_SHA256 = "97474c2290f687b7320257b2f62b64c1c84cf5c12300a60541b0efd8ab37c186"  # EXP-0118, offline_fail
+# v14 (supervisor 2026-11-07, DIAGNOSTICS 38): learned set context (self-attention over a turn's items) and
+# bounded scores; the start chosen by EXP-0119's reading (F40 on `gain`, else EXP-0100).
+PREREG_V14_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v14.json"
+PREREG_V14_SHA256: str | None = "bb4a18b503c677caa07925a2a4083aa698d6442fc8694422df3c16feb9b25f1d"  # frozen before EXP-0120 data (re-frozen if the review changes the code)
 CFG = {"horizon": 100, "replicates": [0, 1], "epochs": 20, "lr": 1e-3, "batch_turns": 512,
-       "max_pairs_per_turn": 400, "score_l2": 1e-3, "seed": 0, "gate": {"accept": 0.99, "rank_accept": 0.99,
+       "max_pairs_per_turn": 400, "score_l2": 0.0, "set_layers": 2, "bounded": True, "seed": 0, "gate": {"accept": 0.99, "rank_accept": 0.99,
                                                       "rank_fund": 0.99},
        "r42": {"worlds": 8, "episodes": 1, "stage": "m6-turn-imit-42"}}
 START = "EXP-0100 artifacts/fit/models.pt (im.EXP0100_MODELS_SHA)"
 
 
-def registered_prereg_v13() -> dict:
+def registered_prereg_v14() -> dict:
     return {
-        "format": "m6-prereg-v13", "change": "add-m6-joint-mpg-gnn", "task": "4.3",
-        "stage": "EXP-0118: turn-head imitation of the default acceptance, fund order and claim scheduling",
-        "supersedes": f"m6_prereg_v12 ({PREREG_V12_SHA256[:8]}…, EXP-0117 stopped before its reading)",
+        "format": "m6-prereg-v14", "change": "add-m6-joint-mpg-gnn", "task": "4.3",
+        "stage": "EXP-0120: turn-head imitation with learned set context (v13 + DIAGNOSTICS 38's fix)",
+        "supersedes": f"m6_prereg_v13 ({PREREG_V13_SHA256[:8]}…, EXP-0118 offline_fail: a per-bid head cannot "
+                      "imitate the cumulative auction)",
+        "set_context": f"{CFG['set_layers']} self-attention layers (4 heads, pre-norm, no positional encoding, "
+                       "padding masked) over each turn's items after their per-item encoding: the fund requests; "
+                       "the bids and claims together. No hand-built set feature.",
+        "bounded": "priorities and fund scores are 10·tanh(·/10) (never at the ±10 clip); no score penalty",
+        "start": "chosen by EXP-0119's reading, recorded before data: deciding `gain` → F40 (EXP-0114 "
+                 "candidate_it40's trunk and investment gates, the EXP-0110 start's replenish; the turn heads "
+                 "read F40's trunk); otherwise EXP-0100's stack",
+        "accept_errors": "reported split as DIAGNOSTICS 38: declined no_fit, declined displaced (fits alone), "
+                         "accepted",
         "excluded_pairs": "pairs whose order the head's inputs cannot determine are left out of the loss and the "
                           "metric: feature-identical pairs (same row features and the same linked capacity / input "
                           "rows; the domain's tie-break keeps the default order) and, in the fund turn, "
@@ -89,19 +102,19 @@ def registered_prereg_v13() -> dict:
 def freeze() -> str:
     from ..eval.provenance import sha256_file
 
-    PREREG_V13_PATH.write_text(json.dumps(registered_prereg_v13(), indent=1, sort_keys=True) + "\n")
-    return sha256_file(str(PREREG_V13_PATH))
+    PREREG_V14_PATH.write_text(json.dumps(registered_prereg_v14(), indent=1, sort_keys=True) + "\n")
+    return sha256_file(str(PREREG_V14_PATH))
 
 
 def prereg_problems() -> list[str]:
     from ..eval.provenance import sha256_file
 
-    if PREREG_V13_SHA256 is None:
-        return ["no pinned m6_prereg_v13.json (`--mode freeze`)"]
-    if not PREREG_V13_PATH.exists() or sha256_file(str(PREREG_V13_PATH)) != PREREG_V13_SHA256:
-        return ["m6_prereg_v13.json does not match its pinned SHA-256"]
-    if json.loads(PREREG_V13_PATH.read_text()) != registered_prereg_v13():
-        return ["the v13 pre-registration differs from the code"]
+    if PREREG_V14_SHA256 is None:
+        return ["no pinned m6_prereg_v14.json (`--mode freeze`)"]
+    if not PREREG_V14_PATH.exists() or sha256_file(str(PREREG_V14_PATH)) != PREREG_V14_SHA256:
+        return ["m6_prereg_v14.json does not match its pinned SHA-256"]
+    if json.loads(PREREG_V14_PATH.read_text()) != registered_prereg_v14():
+        return ["the v14 pre-registration differs from the code"]
     return []
 
 
@@ -116,6 +129,18 @@ def _turn_env(job: dict) -> Any:
     env = joint_stack_env(job_config(job), job["horizon"], producer_turns=True)
     set_draw_key(env, DrawKey(str(job["world"]), int(job["episode"]), int(job["replicate"])))
     return env
+
+
+def _producer_policy(job: dict, pm: g.ProducerGNN) -> Any:
+    """The start stack's producing policy: the model's greedy gates and own replenish, or (F40) its
+    greedy gates with the replenish of `job["replenish"]` (EXP-0116's `start_rep`)."""
+    if not job.get("replenish"):
+        return g.gnn_producing_policy(pm)
+    from .m6_gap_probe import _policy
+
+    pm.eval()
+    pm0, _ = im.load_models(job["replenish"])
+    return _policy("start_rep", pm, pm0, np.random.default_rng(0))
 
 
 def _np(x: torch.Tensor) -> np.ndarray:
@@ -168,7 +193,7 @@ def record_job(job: dict) -> dict:
                          "y_claim": np.asarray(d.reservation_priority + d.pending_priority, np.float32)})
         return encode_accept_action(d)
 
-    s = run_episode(env, g.gnn_producing_policy(pm), g.gnn_ordering_policy(om), seed=job["episode"],
+    s = run_episode(env, _producer_policy(job, pm), g.gnn_ordering_policy(om), seed=job["episode"],
                     action_seed=None, fund_policy=fund, accept_policy=accept)
     return {"job": job["job_id"], "records": recs, "units": float(s["consumer_completed_units"]),
             "dead": bool(s["dead"])}
@@ -186,7 +211,7 @@ def gate_job(job: dict) -> dict[str, str]:
     if job["arm"] == "candidate":
         fp, ap = g.gnn_turn_policies(pm)
         kw = {"fund_policy": fp, "accept_policy": ap}
-    st = run_episode(env, g.gnn_producing_policy(pm), g.gnn_ordering_policy(om), seed=job["episode"],
+    st = run_episode(env, _producer_policy(job, pm), g.gnn_ordering_policy(om), seed=job["episode"],
                      action_seed=None, **kw)
     row = row_to_dict(row_from_stats(job["world"], job["size"], job["regime"], job["episode"],
                                      f"{job['arm']}@h{job['horizon']}", job["replicate"], st))
@@ -220,20 +245,26 @@ def _cat(recs: Sequence[dict], kind: str) -> dict[str, Any]:
             "pooled": torch.from_numpy(np.stack(pooled, 0)) if pooled else torch.zeros((0, 4 * hid))}
 
 
-def batch_out(heads: g.TurnHeads, kind: str, b: Mapping[str, Any]) -> torch.Tensor:
-    """`TurnHeads.node_out` over a concatenated batch (identical per node; tested)."""
-    x = b["x"]
-    if not x.shape[0]:
-        return torch.zeros((0, heads.out[kind].out_features))
-    e = heads.enc[kind](heads.norm(kind, x))
-    n = e.shape[0]
-    cc = g._mean_ctx(b["ec"], n, b["h_cap"], True)
-    ci = g._mean_ctx(b["ei"], n, b["h_in"], True)
-    z = torch.cat([e, cc, ci, b["pooled"][b["turn"]]], 1)
-    return heads.out[kind](torch.relu(heads.mix[kind](z)))
+def _embed(heads: g.TurnHeads, kind: str, b: Mapping[str, Any]) -> torch.Tensor:
+    if not b["x"].shape[0]:
+        return torch.zeros((0, heads.hidden))
+    return heads.node_embed(kind, b["x"], b["ec"], b["ei"], b["h_cap"], b["h_in"], b["pooled"][b["turn"]])
+
+
+def batch_fund(heads: g.TurnHeads, b: Mapping[str, Any]) -> torch.Tensor:
+    """`TurnHeads.turn_fund` over a concatenated batch of fund turns (equal per turn; tested)."""
+    return heads.fund_out(_embed(heads, "fund", b), b["turn"])
+
+
+def batch_accept(heads: g.TurnHeads, bb: Mapping[str, Any], bc: Mapping[str, Any]
+                 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """`TurnHeads.turn_accept` over a concatenated batch of accept turns (`bb` bids, `bc` claims, the
+    same turn order); bids and claims of a turn attend to each other."""
+    return heads.accept_out(_embed(heads, "bid", bb), bb["turn"], _embed(heads, "claim", bc), bc["turn"])
 
 
 REPLENISH_COL = 1  # the fund row's "replenishment" kind one-hot column (g.FUND_KINDS index 1)
+FITS_COL = 6  # the bid row's "fits the producer's free capacity alone" column (g.accept_features)
 
 
 def node_keys(r: Mapping[str, Any], kind: str) -> list[tuple]:
@@ -304,22 +335,22 @@ def turn_targets(recs: Sequence[dict], rng: np.random.Generator | None, cap: int
 def _losses(heads: g.TurnHeads, tg: Mapping[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:
     loss, out = torch.zeros(()), {}
     if tg["fund"]:
-        s = batch_out(heads, "fund", _cat(tg["fund"], "fund")).squeeze(-1)
+        s = batch_fund(heads, _cat(tg["fund"], "fund"))
         out["fund"] = s
         if tg["fund_pairs"]:
             i, j = torch.tensor(tg["fund_pairs"]).T
             loss = loss + torch.nn.functional.softplus(-(s[i] - s[j])).mean()
-        loss = loss + CFG["score_l2"] * (s ** 2).mean()  # keep scores inside the ±10 clip (v13)
+        if CFG["score_l2"]:
+            loss = loss + CFG["score_l2"] * (s ** 2).mean()
     if tg["accept"]:
-        b = batch_out(heads, "bid", _cat(tg["accept"], "bid"))
-        c = batch_out(heads, "claim", _cat(tg["accept"], "claim")).squeeze(-1)
-        out["acc"], out["pri"] = b[:, 0], torch.cat([b[:, 1], c])
-        if b.shape[0]:
-            loss = loss + torch.nn.functional.binary_cross_entropy_with_logits(b[:, 0], tg["bits"])
+        a, bp, c = batch_accept(heads, _cat(tg["accept"], "bid"), _cat(tg["accept"], "claim"))
+        out["acc"], out["pri"] = a, torch.cat([bp, c])
+        if a.shape[0]:
+            loss = loss + torch.nn.functional.binary_cross_entropy_with_logits(a, tg["bits"])
         if tg["acc_pairs"]:
             i, j = torch.tensor(tg["acc_pairs"]).T
             loss = loss + torch.nn.functional.softplus(-(out["pri"][i] - out["pri"][j])).mean()
-        if out["pri"].numel():
+        if CFG["score_l2"] and out["pri"].numel():
             loss = loss + CFG["score_l2"] * (out["pri"] ** 2).mean()
     return loss, out
 
@@ -327,7 +358,7 @@ def _losses(heads: g.TurnHeads, tg: Mapping[str, Any]) -> tuple[torch.Tensor, di
 def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch: int, cap: int,
         seed: int, log: Any = print) -> dict[str, Any]:
     torch.manual_seed(seed)
-    pm.add_turn_heads()
+    pm.add_turn_heads(CFG["set_layers"], CFG["bounded"])
     heads = pm.turn
     assert heads is not None
     blank = {"fund": np.zeros((0, g.FUND_DIM), np.float32), "bid": np.zeros((0, g.BID_DIM), np.float32),
@@ -381,6 +412,7 @@ def agreement(pm: g.ProducerGNN, recs: Sequence[dict], batch: int = 2048, whole:
     counts: dict[str, int] = {}
     sat = {"fund": [0, 0], "priority": [0, 0], "accept_logit": [0, 0]}
     ident = [0, 0]
+    split = {c: [0, 0] for c in ("declined_no_fit", "declined_displaced", "accepted")}  # [wrong, n]
     with torch.no_grad():
         for k in range(0, len(recs), batch):
             part = list(recs[k:k + batch])
@@ -399,8 +431,14 @@ def agreement(pm: g.ProducerGNN, recs: Sequence[dict], batch: int = 2048, whole:
                 fp_n += len(tg["fund_pairs"])
             if tg["accept"]:
                 pred = out["acc"] > 0
-                acc_ok += int((pred == (tg["bits"] > 0)).sum())
+                lab = tg["bits"] > 0
+                acc_ok += int((pred == lab).sum())
                 acc_n += len(tg["bits"])
+                fits = torch.from_numpy(np.concatenate([r["bid"][:, FITS_COL] for r in tg["accept"]]) > 0)
+                for c, m in (("declined_no_fit", ~lab & ~fits), ("declined_displaced", ~lab & fits),
+                             ("accepted", lab)):
+                    split[c][0] += int((pred[m] != lab[m]).sum())
+                    split[c][1] += int(m.sum())
                 if tg["acc_pairs"]:
                     pri = _clip(out["pri"])
                     i, j = torch.tensor(tg["acc_pairs"]).T
@@ -430,7 +468,8 @@ def agreement(pm: g.ProducerGNN, recs: Sequence[dict], batch: int = 2048, whole:
             "rank_accept_pairs": ap_n, "rank_fund": rate(fp_ok, fp_n), "rank_fund_pairs": fp_n,
             "whole_schedule": rate(whole_ok, whole_n) if whole else None, "turns": len(recs),
             "pairs": counts, "saturation": {k: rate(*v) for k, v in sat.items()},
-            "identical_bid_pairs": ident[0], "identical_bid_pairs_bits_differ": ident[1]}
+            "identical_bid_pairs": ident[0], "identical_bid_pairs_bits_differ": ident[1],
+            "accept_errors": {c: {"wrong": w, "n": n, "rate": rate(w, n)} for c, (w, n) in split.items()}}
 
 
 # --- persisted records (npz; v13) ---
@@ -550,16 +589,43 @@ def _jobs_42(atlas: Mapping, models: str, horizon: int, max_worlds: int) -> tupl
     return jobs, cells
 
 
-def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: int, dry_run: bool
-        ) -> int:
+F40_START_SHA = "697d94c08321"  # prefix of the EXP-0110 start (start_models.pt), EXP-0114's KL anchor
+
+
+def choose_start(exp0119_reading: str | None, models: str, f40_models: str | None,
+                 f40_replenish: str | None) -> dict[str, Any]:
+    """v14's start: F40 when EXP-0119's deciding reading is `gain`, else EXP-0100's stack."""
+    from ..eval.provenance import sha256_file
+
+    rd = json.loads(Path(exp0119_reading).read_text()) if exp0119_reading else None
+    deciding = rd["reading"]["deciding"]["reading"] if rd else None
+    f40 = deciding == "gain"
+    if f40 and not (f40_models and f40_replenish):
+        raise ValueError("EXP-0119 reads gain: --f40-models and --f40-replenish are needed")
+    return {"exp0119_reading": deciding, "exp0119_sha256": sha256_file(exp0119_reading) if rd else None,
+            "start": "F40" if f40 else "EXP-0100", "models": f40_models if f40 else models,
+            "replenish": f40_replenish if f40 else None,
+            "models_sha256": sha256_file(f40_models if f40 else models),
+            "replenish_sha256": sha256_file(f40_replenish) if f40 else None}
+
+
+def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: int, dry_run: bool,
+        exp0119_reading: str | None = None, f40_models: str | None = None,
+        f40_replenish: str | None = None) -> int:
     from ..eval.provenance import sha256_file
     from ..eval.teacher_audit import load_atlas
     from .order_es_validate import monitor_cells
 
+    start = choose_start(exp0119_reading, models, f40_models, f40_replenish)
     if not dry_run:
         im._refuse(prereg_problems()
                    + ([] if sha256_file(models) == im.EXP0100_MODELS_SHA else ["--models is not EXP-0100's"])
+                   + ([] if exp0119_reading else ["a real run needs --exp0119-reading (the start's choice)"])
+                   + ([] if start["replenish"] is None or start["replenish_sha256"].startswith(F40_START_SHA)
+                      else ["--f40-replenish is not the EXP-0110 start"])
                    + ([] if len(im.SOURCE_COMMIT) == 40 else ["a real run needs a 40-hex --source-commit"]))
+    print(f"[turn_imit] start {start['start']} (EXP-0119 {start['exp0119_reading']})", flush=True)
+    models, rep_from = start["models"], start["replenish"]
     atlas = load_atlas(atlas_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -568,8 +634,10 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
     if dry_run:  # a true smoke: 1 + 1 world-episodes, horizon 6, 2 epochs, 1 world at 42
         train, mon, horizon, epochs, n42 = train[:1], mon[:1], 6, 2, 1
     t0 = time.perf_counter()
-    rec_train = im._pool(record_job, _jobs(ts, train, "turn_train", models, horizon), workers)
-    rec_mon = im._pool(record_job, _jobs(ts, mon, "turn_monitor", models, horizon), workers)
+    rec_train = im._pool(record_job, [{**j, "replenish": rep_from}
+                                      for j in _jobs(ts, train, "turn_train", models, horizon)], workers)
+    rec_mon = im._pool(record_job, [{**j, "replenish": rep_from}
+                                    for j in _jobs(ts, mon, "turn_monitor", models, horizon)], workers)
     tr = [r for x in rec_train for r in x["records"]]
     ho = [r for x in rec_mon for r in x["records"]]
     collect = {"train_turns": len(tr), "heldout_turns": len(ho),
@@ -587,16 +655,16 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
     offline = {"train": agreement(pm, tr, whole=False), "heldout": agreement(pm, ho)}
     offline["pass"] = offline_pass(offline["heldout"])
     print(f"[turn_imit] offline {offline['heldout']} pass {offline['pass']}", flush=True)
-    doc: dict[str, Any] = {"prereg": PREREG_V13_SHA256, "source_commit": im.SOURCE_COMMIT, "dry_run": dry_run,
+    doc: dict[str, Any] = {"prereg": PREREG_V14_SHA256, "start": start, "source_commit": im.SOURCE_COMMIT, "dry_run": dry_run,
                            "start_sha256": sha256_file(models), "candidate_sha256": sha256_file(str(cand)),
                            "collect": collect, "fit": rep, "offline": offline, "reading": None}
     if offline["pass"] or dry_run:  # a smoke exercises the closed loop whatever its offline result
-        jobs = [{**j, "arm": a, "set": "monitor", "models": m} for a, m in (("candidate", str(cand)),
-                                                                            ("reference", models))
+        jobs = [{**j, "arm": a, "set": "monitor", "models": m, "replenish": rep_from}
+                for a, m in (("candidate", str(cand)), ("reference", models))
                 for j in _jobs(ts, mon, "turn_gate", models, horizon)]
         j42, cells42 = _jobs_42(atlas, models, horizon, n42)
-        jobs += [{**j, "arm": a, "set": "r42", "models": m} for a, m in (("candidate", str(cand)),
-                                                                         ("reference", models)) for j in j42]
+        jobs += [{**j, "arm": a, "set": "r42", "models": m, "replenish": rep_from}
+                 for a, m in (("candidate", str(cand)), ("reference", models)) for j in j42]
         jobs.sort(key=lambda j: j["size"] != 42)  # the 42-producer episodes first (longest)
         rows = im._pool(gate_job, jobs, workers)
         with (out / "gate_rows.jsonl").open("w") as fh:
@@ -618,7 +686,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--mode", choices=("freeze", "run"), required=True)
     ap.add_argument("--training-dir")
     ap.add_argument("--atlas")
-    ap.add_argument("--models", help="EXP-0100's models.pt (the start)")
+    ap.add_argument("--models", help="EXP-0100's models.pt")
+    ap.add_argument("--exp0119-reading", help="EXP-0119's reading.json (chooses the start)")
+    ap.add_argument("--f40-models", help="EXP-0114 candidate_it40.pt")
+    ap.add_argument("--f40-replenish", help="EXP-0110 start_models.pt (F40's replenish)")
     ap.add_argument("--out-dir")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--source-commit", default="")
@@ -628,7 +699,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(freeze())
         return 0
     im.SOURCE_COMMIT = a.source_commit
-    return run(a.training_dir, a.atlas, a.models, a.out_dir, a.workers, a.dry_run)
+    return run(a.training_dir, a.atlas, a.models, a.out_dir, a.workers, a.dry_run, a.exp0119_reading,
+               a.f40_models, a.f40_replenish)
 
 
 if __name__ == "__main__":

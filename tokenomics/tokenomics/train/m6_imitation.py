@@ -1000,7 +1000,7 @@ def save_models(pm: g.ProducerGNN, om: g.OrdererGNN, path: Path) -> None:
     torch.save({"producer": pm.state_dict(), "orderer": om.state_dict(),
                 "hidden": g.HIDDEN, "rounds": g.ROUNDS, "norm_format": g.NORM_FORMAT,
                 "producer_features": pm.features, "capacity_extra": pm.capacity_extra,
-                **({"turn_heads": True} if pm.turn is not None else {})}, path)
+                **({"turn_heads": pm.turn.config()} if pm.turn is not None else {})}, path)
 
 
 def load_models(path: str | Path) -> tuple[g.ProducerGNN, g.OrdererGNN]:
@@ -1008,8 +1008,9 @@ def load_models(path: str | Path) -> tuple[g.ProducerGNN, g.OrdererGNN]:
     # a checkpoint without `producer_features` predates v3 (EXP-0099 / EXP-0100): v2 features
     pm = g.ProducerGNN(d["hidden"], d["rounds"], d.get("producer_features", g.FEATURES_V2),
                        int(d.get("capacity_extra", 0)))
-    if d.get("turn_heads"):  # ADR-0062 heads; a checkpoint without them loads as before
-        pm.add_turn_heads()
+    th = d.get("turn_heads")  # ADR-0062 heads; a checkpoint without them loads as before
+    if th:  # True = the original head (v12 / v13 checkpoints); a dict = its config (v14)
+        pm.add_turn_heads(**(th if isinstance(th, dict) else {}))
     om = g.OrdererGNN(d["hidden"], d["rounds"])
     # a pre-normaliser checkpoint (EXP-0099) loads with the identity normaliser
     strict = d.get("norm_format") == g.NORM_FORMAT
