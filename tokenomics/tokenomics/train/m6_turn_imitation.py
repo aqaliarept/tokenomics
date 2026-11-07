@@ -591,6 +591,24 @@ def closed_loop_reading(rows: Sequence[Mapping[str, str]], cells: Mapping, sset:
 # --- the run ---
 
 
+def heldout_set(ts: Any, mon: Sequence, atlas: Mapping) -> tuple[list[tuple[str, int]], dict]:
+    """The offline gate's and closed loop's world-episodes and their floor cells. v15 (CFG `heldout`): the
+    monitor worlds with fresh episodes (never played: EXP-0121 tuned on EXP-0120's monitor episodes);
+    before v15: the monitor world-episodes."""
+    from ..eval.world_space import episode_seeds
+    from .m6_f40_confirm import _cell
+    from .order_es_validate import monitor_cells
+
+    ho = CFG.get("heldout")
+    if not ho:
+        return list(mon), monitor_cells(ts.training, atlas["spreads"])
+    records = {w["world"]: w["record"] for w in ts.training["worlds"]}
+    wes = [(w, int(ep)) for w in sorted({w for w, _ in mon})
+           for ep in episode_seeds(w, ho["episodes_per_world"], ho["stage"])]
+    assert not set(wes) & set(mon), "a fresh held-out episode collides with a monitor episode"
+    return wes, {f"{w}#{ep}": _cell(records[w], f"{w}#{ep}", atlas["spreads"]) for w, ep in wes}
+
+
 def _jobs(ts: Any, wes: Sequence, kind: str, models: str, horizon: int) -> list[dict]:
     return [{**j, "job_id": f"{kind}|{j['world']}|{j['episode']}|{j['replicate']}"}
             for j in im._jobs(ts, wes, kind, CFG["replicates"], horizon, models)]
@@ -670,7 +688,6 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
         f40_replenish: str | None = None) -> int:
     from ..eval.provenance import sha256_file
     from ..eval.teacher_audit import load_atlas
-    from .order_es_validate import monitor_cells
 
     start = choose_start(exp0119_reading, models, f40_models, f40_replenish)
     if not dry_run:
@@ -685,6 +702,7 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ts, train, mon = im._training(training_dir)
+    mon, mon_cells = heldout_set(ts, mon, atlas)
     horizon, epochs, n42 = CFG["horizon"], CFG["epochs"], CFG["r42"]["worlds"]
     if dry_run:  # a true smoke: 1 + 1 world-episodes, horizon 6, 2 epochs, 1 world at 42
         train, mon, horizon, epochs, n42 = train[:1], mon[:1], 6, 2, 1
@@ -710,7 +728,8 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
     offline = {"train": agreement(pm, tr, whole=False), "heldout": agreement(pm, ho)}
     offline["pass"] = offline_pass(offline["heldout"])
     print(f"[turn_imit] offline {offline['heldout']} pass {offline['pass']}", flush=True)
-    doc: dict[str, Any] = {"prereg": PREREG_V14_SHA256, "start": start, "source_commit": im.SOURCE_COMMIT, "dry_run": dry_run,
+    doc: dict[str, Any] = {"prereg": PREREG_V14_SHA256, "start": start,
+                           "heldout": {"set": CFG.get("heldout") or "monitor", "world_episodes": len(mon)}, "source_commit": im.SOURCE_COMMIT, "dry_run": dry_run,
                            "start_sha256": sha256_file(models), "candidate_sha256": sha256_file(str(cand)),
                            "collect": collect, "fit": rep, "offline": offline, "reading": None}
     if offline["pass"] or dry_run:  # a smoke exercises the closed loop whatever its offline result
@@ -725,8 +744,7 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
         with (out / "gate_rows.jsonl").open("w") as fh:
             for r in rows:
                 fh.write(json.dumps(r) + "\n")
-        cells = monitor_cells(ts.training, atlas["spreads"])
-        doc["closed_loop"] = {"monitor_12": closed_loop_reading(rows, cells, "monitor"),
+        doc["closed_loop"] = {"monitor_12": closed_loop_reading(rows, mon_cells, "monitor"),
                               "reported_42": closed_loop_reading(rows, cells42, "r42")}
         doc["reading"] = doc["closed_loop"]["monitor_12"]["reading"]
     else:

@@ -1637,3 +1637,11 @@ Also measure the head's output drift against the start on recorded states (cheap
 - Displaced declines 9.3% wrong (from 34%), accepted 2.6%; accept agreement 0.962, rank 0.986.
 - Train ≈ held-out (0.965 / 0.962), the loss still falling, and 200 turns overfit to 100%. The residual is
   underfitting (width / depth / epochs), not missing context.
+
+**Precision at the boundary (EXP-0121):**
+- Bigger heads memorise (train 0.997) but held-out stays at 0.94–0.95. The information is complete: the greedy
+  auction replayed on the bid rows reproduces 100% of the labels.
+- The errors concentrate where slack is within half a bid's capacity: 23% / 15% wrong, against 0.1% beyond 2
+  capacities.
+- Check: bin the errors by slack. A boundary peak means the head is not computing the sum precisely on its
+  (log-scaled) inputs. Give linear, scale-free quantities, or far more data.
