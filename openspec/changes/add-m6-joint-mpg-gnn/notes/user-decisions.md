@@ -65,3 +65,15 @@
   also become learned producer decisions** (tasks §4b, 4.6 / 4.7, committed e8c2f71; audit notes/hardcoded-audit.md,
   2703876). Both fold into the 4.2 producer turn and its single review round: an ADR, defaults byte-identical, priority
   heads per funding request and per reservation / claim. The 4.3–4.5 ladder covers them.
+- 2026-11-07 (user, via the supervisor; after EXP-0116 `replenish_drift`):
+  1. **Confirm F40, then use it.** F40 = EXP-0114's iteration-40 investment gates + the frozen start's replenish.
+     - A pre-registered confirmation read: F40 against the EXP-0100 stack on fresh seeds (the monitor worlds' new
+       episodes and the atlas validation worlds), with v11's metric and floors, ≈ 3–5 vCPU-h on M6-A.
+     - On `gain`, 4.3 and 4.5 start from F40, and the turn heads are re-fit on F40's trunk (v13 unchanged except
+       for the start, ≈ 5 vCPU-h).
+     - EXP-0118 continues as the method check on EXP-0100's trunk.
+  2. **4.5 trains every head on-policy:** investment, replenish, fund and accept, each played in training exactly
+     as deployed. The joint start is F40 as one model. Option (c): the replenish head trains too, starting from the
+     start's replenish (settled in the 4.5 design).
+  3. **4.5's reward is re-weighted toward consumer units,** with a smaller run-down term kept as a guard. The
+     weights are pre-registered before 4.5.
