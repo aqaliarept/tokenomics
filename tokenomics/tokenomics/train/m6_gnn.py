@@ -557,7 +557,8 @@ class TurnHeads(nn.Module):
         """One score per request (embeddings from `node_embed("fund", ...)`)."""
         return self._bound(self.out["fund"](self.attend("fund", emb, turn)).squeeze(-1))
 
-    def accept_out(self, eb: torch.Tensor, tb: torch.Tensor, ec: torch.Tensor, tc: torch.Tensor
+    def accept_out(self, eb: torch.Tensor, tb: torch.Tensor, ec: torch.Tensor, tc: torch.Tensor,
+                   pass_priority: torch.Tensor | None = None
                    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """(accept logit per bid, priority per bid, priority per claim); bids and claims of a turn
         attend to each other."""
@@ -569,7 +570,10 @@ class TurnHeads(nn.Module):
         # input order [claims (reservations, then pending), bids]: the stable sort then breaks priority ties as
         # the domain does, (-priority, kind: held < pending < new, -price) (the lists are price-descending)
         nb = eb.shape[0]
-        h = self.ordered_pass(torch.cat([a[nb:], a[:nb]]), torch.cat([tc, tb]), torch.cat([cp, bp]).detach())
+        # `pass_priority` (on-policy exploration, m6_onpolicy): the order the pass visits, aligned to
+        # [claims, bids]; default = the heads' own priorities (the greedy, deployed order)
+        order = torch.cat([cp, bp]).detach() if pass_priority is None else pass_priority
+        h = self.ordered_pass(torch.cat([a[nb:], a[:nb]]), torch.cat([tc, tb]), order)
         return self.seq_out(h[h.shape[0] - nb:]).squeeze(-1), bp, cp
 
     def ordered_pass(self, emb: torch.Tensor, turn: torch.Tensor, priority: torch.Tensor) -> torch.Tensor:
@@ -615,11 +619,12 @@ class TurnHeads(nn.Module):
         e = self._embed_turn("fund", f, h, pooled)
         return self.fund_out(e, torch.zeros(e.shape[0], dtype=torch.long))
 
-    def turn_accept(self, f: dict[str, Any], h: dict[str, torch.Tensor], pooled: torch.Tensor
+    def turn_accept(self, f: dict[str, Any], h: dict[str, torch.Tensor], pooled: torch.Tensor,
+                    pass_priority: torch.Tensor | None = None
                     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         eb, ec = self._embed_turn("bid", f, h, pooled), self._embed_turn("claim", f, h, pooled)
         z = lambda e: torch.zeros(e.shape[0], dtype=torch.long)  # noqa: E731
-        return self.accept_out(eb, z(eb), ec, z(ec))
+        return self.accept_out(eb, z(eb), ec, z(ec), pass_priority)
 
     def node_out(self, kind: str, f: dict[str, Any], h: dict[str, torch.Tensor],
                  pooled: torch.Tensor) -> torch.Tensor:

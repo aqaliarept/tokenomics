@@ -1,0 +1,14 @@
+{
+ "change": "add-m6-joint-mpg-gnn",
+ "consequence": "`signal` licenses 4.5. If replenish's share of the squared score exceeds 0.5 it swamps the signal: 4.5 then plays replenish greedily (still in the model, trained only through the KL anchor) and that is reported (supervisor 2026-11-07); the reading recomputed without replenish's score is reported as the counterfactual for that choice, and licenses 4.5 in that case",
+ "exploration": "gates Bernoulli(\u03c3(logit / TEMPS)); replenish \u03c3(z + \u03c3_r \u03b5); fund and accept-turn orders Plackett\u2013Luce at \u03c4_f / \u03c4_p; accept bits Bernoulli(\u03c3(a / T_a)) with a from the pass in the sampled order; targets: replenish mean |\u0394frac| 0.02, adjacent-pair swaps 5%, bit flips 5%; calibrated at the start of the run on recorded start decisions (fixed draws)",
+ "format": "m6-prereg-v16",
+ "gradient": "\u00b1\u03b5 along K = 4 random directions of the trainable producer parameters, \u03b5 at a per-direction mean KL of 0.01 on 600 recorded start decisions",
+ "reading": "signal iff at 12 producers some estimator (E1, E2, E3, E4) has a producer split-half cosine above its permutation null's 95th percentile AND its n80 at the measured |grad J| (point estimate, paired +-eps perturbations at a per-direction mean KL 0.01) is <= 96 seeds per half; else absent, with the mechanism (per-gate flip rates, score shares, E4's held-out explained variance). 42: D0.5 cost and the gradient, reported only (12 producers only; the orderer is frozen in 4.5 and reported)",
+ "reported": "each head family's share of the squared projected score (gates / replenish / fund order / accept order / accept bits), flip and swap rates, deaths, seconds per episode",
+ "reward": "\u03a6 with EXP-0110's 12-producer calibration and \u03bb \u00d7 0.25 (4.5's re-weighting)",
+ "seeds": "m6_stage0's 24 12-producer seeds \u00d7 G = 4 siblings, horizon 100",
+ "stage": "EXP-0127: power check for on-policy RL of every producer head (F40 + v15)",
+ "start": "the F40 + v15 composite: EXP-0126 models.pt (F40 trunk, gates, v15 turn heads) + the EXP-0110 start's replenish head on its own frozen trunk (only the replenish head trains); orderer frozen",
+ "task": "4.4"
+}
