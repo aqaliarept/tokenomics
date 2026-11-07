@@ -77,3 +77,14 @@
      start's replenish (settled in the 4.5 design).
   3. **4.5's reward is re-weighted toward consumer units,** with a smaller run-down term kept as a guard. The
      weights are pre-registered before 4.5.
+- 2026-11-07 (user, via the supervisor; 4.3 blocked after EXP-0121 / EXP-0122, no probe setting reaches 0.99):
+  **closed-loop diagnostic first.**
+  - EXP-0120's heads on F40 against the default turns, on fresh monitor episodes (never played), paired, with v11's
+    metric and floors and side effects (deaths included). Also reported: the closed-loop accept-bit agreement, the
+    boundary split of the differing decisions, and how often a disagreement becomes a late pending claim
+    (DIAGNOSTICS 36).
+  - Pre-registered reading: `no_cost` (|g| within the floor, side effects no worse) / `cost` (g < −floor or worse
+    side effects) / `gain` (g > floor).
+  - The 4.3 offline gate is unchanged and still reads `offline_fail`. ≤ 3 vCPU-h on M6-A, its own EXP;
+    `test_m6_pilot.py` runs on the same pod.
+  - Whether 4.5 starts from these heads goes back to the user.
