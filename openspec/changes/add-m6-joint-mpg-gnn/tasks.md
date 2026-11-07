@@ -135,5 +135,24 @@ only as diagnostics, never as candidates (user rule 2026-11-06).
   (a second comparison on that set, noted). ≈ 35 + 8 vCPU-h.
 - Budget: ≈ 60 vCPU-h in total. M6 has ≈ 21 left after EXP-0114, so this needs a new tranche (user).
 
+### 4b. Also learned: fund spend order and reservation scheduling (user 2026-11-07, from notes/hardcoded-audit.md)
+Both decisions sit at the same producer decision point as acceptance, so they join the 4.2 turn and the 4.3–4.5
+ladder. Today's rules stay the defaults and must be byte-identical (goldens plus the EXP-0088 replay).
+- [ ] 4.6 [code][local] ADR: fund stage 2 (the spend order inside a producer) and reservation scheduling become
+  producer policy; the domain keeps feasibility and token accounting.
+  - **Fund spend:** the producer orders its own funding requests: restoration, each input purchase, upgrade,
+    expansion. Today's default is restoration → replenishment (by product id) → upgrade → expansion, each filled
+    to its target, with the boundary order partly funded (`system.py:221-225, 290-300`).
+  - **Scheduling:** the producer sets the priority of its carried reservations and pending claims, both for
+    receiving stock and for being kept when capacity degrades. Today: carried first, price-descending, cheapest
+    dropped first (`producing_agent.py:549-564, 591-594, 604-608`).
+  - Fund stage 1 (the split across producers by cut-off) stays physics.
+- [ ] 4.7 [code][local] Heads in the 4.2 GNN turn: a priority score per funding request and per reservation /
+  claim node; the domain applies them in score order. Imitation labels come from the defaults (4.3 fits all
+  new heads together; offline gate ≥ 99% rank agreement). Power check (4.4) and training (4.5) cover the new
+  heads too. One review round, together with 4.2.
+- Budget: the extra code is local; the ladder grows by about 10–15 vCPU-h. Re-sized after the 4.2 timing; if
+  M6-A (70) won't cover it, the user decides.
+
 ## 5. Records
 - [ ] 5.1 HISTORY / README / ledger; ADRs for the graph view and the acceptance turn.
