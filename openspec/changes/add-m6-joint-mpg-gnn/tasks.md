@@ -93,6 +93,8 @@ rule).
   exploration, the gates explore about 1%, the orderer moves no return; about 700 seeds per half needed; ≈ 2.1 vCPU-h. Options to the user.
 - [x] 2.18 [experiment][remote:cpu16] EXP-0112: Stage 0 with reshaped exploration (prereg v9): **`absent` under the rule**, but a real producer
   gradient at 12 (CI > 0), E3 n80 = 48 seeds per half; E4 no help; orderer and 42 no gradient; ≈ 7.7 vCPU-h. Decision to the supervisor / user.
+- [x] 2.19 [experiment][remote:cpu16] EXP-0113: capped Stage 1 pilot (prereg v10): **`hold`, rising** (greedy +95 → +107 vs the EXP-0100 stack,
+  floor ≈ 150; side effects better; training return −38.8 → −20.1); ≈ 11.2 vCPU-h. Continuation is the user's call.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

@@ -18,3 +18,4 @@
 | EXP-0110 Stage 0 (commit 4b3ecb0) | 2026-11-06 | wacrn1uzipxeww, 16 vCPU / 32 GB + 20 GB volume, EUR-IS-1, 18:40–18:51 | 2.9 (stop 8) | 72.0 |
 | EXP-0111 power calibration (attempt 1 refused at start ≈ 0.6; attempt 2 9gce2b3c9penyp 20:33–20:44 ≈ 1.5) | 2026-11-06 | 8 vCPU / 16 GB + 20 GB volume, EUR-IS-1 | 2.1 (stop 3) | 74.1 |
 | EXP-0112 Stage 0b (commit 096be8c) | 2026-11-06 | svyc2sej5ixz0c, 16 vCPU / 32 GB + 20 GB volume, EUR-IS-1, 20:59–21:28 | 7.7 (stop 10) | 81.8 |
+| EXP-0113 Stage 1 pilot (commit d1d8f54) | 2026-11-06/07 | cctsg5g6uuw1j6, 16 vCPU / 32 GB + 20 GB volume, EUR-IS-1, 23:34–00:16 | 11.2 (stop 22) | 93.0 |
