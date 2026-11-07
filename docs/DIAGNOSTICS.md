@@ -1632,3 +1632,8 @@ Also measure the head's output drift against the start on recorded states (cheap
 **Outcome (EXP-0118, 2026-11-07): missing set context, plus saturation.**
 - Accept wrong: 0 / 870 `no_fit`, 1,323 / 3,893 `displaced` (34%), 762 / 13,809 accepted.
 - Ranks: bid–bid 97.3% unclipped / 95.6% clipped, claim–claim 98.1% / 92.9%; 7% of priorities at the bound.
+
+**After the fix (EXP-0120, v14: 2 self-attention layers over each turn's items):**
+- Displaced declines 9.3% wrong (from 34%), accepted 2.6%; accept agreement 0.962, rank 0.986.
+- Train ≈ held-out (0.965 / 0.962), the loss still falling, and 200 turns overfit to 100%. The residual is
+  underfitting (width / depth / epochs), not missing context.
