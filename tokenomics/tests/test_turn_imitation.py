@@ -45,12 +45,15 @@ def _rec(rng: np.random.Generator, kind: str) -> dict:
             "acc": (rng.random(nb) < 0.7).astype(np.float32), "y_bid": ranks[nr:], "y_claim": ranks[:nr]}
 
 
-@pytest.mark.parametrize("layers,bounded,train", [(0, False, False), (2, True, False), (2, True, True)])
-def test_batched_head_equals_per_turn_head(layers: int, bounded: bool, train: bool) -> None:
-    """Also in train mode (the fit's mode: the transformer's slow path, no dropout)."""
+@pytest.mark.parametrize("layers,bounded,train,ordered", [(0, False, False, False), (2, True, False, False),
+                                                          (2, True, True, False), (2, True, False, True),
+                                                          (2, True, True, True), (0, True, True, True)])
+def test_batched_head_equals_per_turn_head(layers: int, bounded: bool, train: bool, ordered: bool) -> None:
+    """Also in train mode (the fit's mode: the transformer's slow path, no dropout) and with the ordered pass
+    (padding of unequal turns leaves each turn's running state untouched)."""
     rng = np.random.default_rng(0)
     torch.manual_seed(0)
-    heads = g.TurnHeads(set_layers=layers, bounded=bounded).train(train)
+    heads = g.TurnHeads(set_layers=layers, bounded=bounded, ordered=ordered).train(train)
     recs = [_rec(rng, "fund") for _ in range(5)] + [_rec(rng, "accept") for _ in range(5)]
 
     def trunk(r: dict) -> tuple[dict, torch.Tensor]:
@@ -276,3 +279,87 @@ def test_live_linear_features_match_the_auction_quantities() -> None:
     base = g.BID_DIM
     assert t["bid"].shape[1] == base + 3
     assert np.allclose(t["bid"][:, base], [8 / 20, 5 / 20]) and np.allclose(t["bid"][:, base + 2], [1.0, 0.5])
+
+
+def _ordered_turn(rng: np.random.Generator, nb: int = 5, nr: int = 2) -> dict:
+    r = _rec(rng, "accept")
+    r["bid"] = rng.normal(size=(nb, g.BID_DIM)).astype(np.float32) * 3
+    r["bid_cap"] = [(k, 0) for k in range(nb)]
+    r["claim"] = rng.normal(size=(nr, g.CLAIM_DIM)).astype(np.float32) * 3
+    r["claim_cap"] = [(k, 0) for k in range(nr)]
+    r["n_res"], r["acc"] = nr, np.ones(nb, np.float32)
+    r["y_bid"], r["y_claim"] = np.arange(nb, 0, -1).astype(np.float32), np.arange(nr, 0, -1).astype(np.float32) + nb
+    return r
+
+
+def _trunk_of(r: dict) -> tuple[dict, torch.Tensor]:
+    return {"capacity": torch.from_numpy(r["h_cap"]), "input": torch.from_numpy(r["h_in"])}, \
+        torch.from_numpy(r["pooled"])
+
+
+@pytest.mark.parametrize("layers", [0, 2])
+def test_ordered_pass_is_permutation_invariant_but_for_the_learned_order(layers: int) -> None:
+    """Shuffling the bids of a turn permutes the outputs the same way: an item's output depends on the
+    others only through the head's own priority order, never through the input order."""
+    rng = np.random.default_rng(5)
+    torch.manual_seed(2)
+    heads = g.TurnHeads(set_layers=layers, bounded=True, ordered=True).eval()
+    r = _ordered_turn(rng)
+    perm = rng.permutation(len(r["acc"]))
+    q = {**r, "bid": r["bid"][perm], "acc": r["acc"][perm], "y_bid": r["y_bid"][perm]}
+    with torch.no_grad():
+        a0, p0, c0 = heads.turn_accept(r, *_trunk_of(r))
+        a1, p1, c1 = heads.turn_accept(q, *_trunk_of(q))
+    assert torch.allclose(a0[perm], a1, atol=1e-5) and torch.allclose(p0[perm], p1, atol=1e-5)
+    assert torch.allclose(c0, c1, atol=1e-5)
+
+
+def test_ordered_pass_reads_only_the_items_ranked_above() -> None:
+    """Causality of the learned order (no set layers, so nothing else mixes the items): changing the item the
+    head ranks last moves no other item's accept logit, while changing the top item moves the ones below."""
+    rng = np.random.default_rng(6)
+    torch.manual_seed(3)
+    heads = g.TurnHeads(set_layers=0, bounded=True, ordered=True).eval()
+    r = _ordered_turn(rng, nb=5, nr=0)
+    with torch.no_grad():
+        a0, p0, _ = heads.turn_accept(r, *_trunk_of(r))
+    order = torch.argsort(-p0).tolist()
+    last, top = order[-1], order[0]
+    q = {**r, "bid": r["bid"].copy()}
+    q["bid"][last] *= 0.5
+    with torch.no_grad():
+        a1, p1, _ = heads.turn_accept(q, *_trunk_of(q))
+    if torch.argsort(-p1).tolist()[:-1] == order[:-1]:  # the change kept it last
+        others = [k for k in range(5) if k != last]
+        assert torch.allclose(a0[others], a1[others], atol=1e-6)
+    q2 = {**r, "bid": r["bid"].copy()}
+    q2["bid"][top] += 2.0
+    with torch.no_grad():
+        a2, p2, _ = heads.turn_accept(q2, *_trunk_of(q2))
+    below = [k for k in order[1:]]
+    assert not torch.allclose(a0[below], a2[below], atol=1e-6)
+
+
+@pytest.mark.skipif(not _lfs(MODELS), reason="records absent")
+def test_ordered_heads_survive_save_load(tmp_path: Path) -> None:
+    from tokenomics.train import m6_imitation as im
+
+    pm, om = im.load_models(MODELS)
+    torch.manual_seed(0)
+    pm.add_turn_heads(set_layers=2, bounded=True, ordered=True)
+    im.save_models(pm, om, tmp_path / "m.pt")
+    pm2, _ = im.load_models(tmp_path / "m.pt")
+    assert pm2.turn.ordered and all(torch.equal(v, pm2.state_dict()[k]) for k, v in pm.state_dict().items())
+
+
+@pytest.mark.skipif(not _lfs(MODELS), reason="records absent")
+def test_a_tiny_fit_with_the_ordered_pass_reaches_full_agreement() -> None:
+    from tokenomics.train import m6_imitation as im
+
+    rng = np.random.default_rng(1)
+    recs = [_rec(rng, k) for k in ("fund", "accept") * 6]
+    pm, _ = im.load_models(MODELS)
+    ti.fit(pm, recs, epochs=300, lr=1e-2, batch=12, cap=None, seed=0, log=lambda *a: None,
+           heads_cfg={"set_layers": 2, "bounded": True, "ordered": True})
+    a = ti.agreement(pm, recs)
+    assert a["accept"] == 1.0 and a["rank_accept"] == 1.0

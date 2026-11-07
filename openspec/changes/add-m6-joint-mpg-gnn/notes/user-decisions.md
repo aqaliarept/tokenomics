@@ -88,3 +88,12 @@
   - The 4.3 offline gate is unchanged and still reads `offline_fail`. ≤ 3 vCPU-h on M6-A, its own EXP;
     `test_m6_pilot.py` runs on the same pod.
   - Whether 4.5 starts from these heads goes back to the user.
+- 2026-11-07 (user, via the supervisor; after EXP-0123 `cost`): **an order-aware network for the accept turn.**
+  - Each item's accept decision follows the items its own learned priority ranks above it: a causal mask by
+    learned score, or a small recurrent pass in learned order (the simpler that can represent an exact running
+    sum).
+  - No hand-written rule: the order comes from the head's own priority output, and there are no cumulative hand
+    features.
+  - The deployed path must equal the trained path where it matters (DIAGNOSTICS 37).
+  - Order of work: code with tests, one review round, a probe on EXP-0121's halves (≤ 3 vCPU-h, pre-registered);
+    on 0.99, v15 with the fresh held-out set and 4.3 on F40, then the closed-loop check; otherwise report.

@@ -123,12 +123,13 @@ def probe_one(job: dict) -> dict[str, Any]:
     t0 = time.perf_counter()
     rep = ti.fit(pm, train, job["epochs"], LR, BATCH, CAP, SEED, log=lambda *a: None,
                  heads_cfg={"set_layers": job["set_layers"], "bounded": True, "width": job["width"],
-                            "linear": job.get("linear", False)},
+                            "linear": job.get("linear", False), "ordered": job.get("ordered", False)},
                  schedule="cosine")
     fit_s = time.perf_counter() - t0
     heads = pm.turn
     assert heads is not None
     return {**{k: job[k] for k in ("width", "set_layers", "epochs")}, "linear": job.get("linear", False),
+            "ordered": job.get("ordered", False),
             "slack": slack_split(pm, test),
             "params": sum(p.numel() for p in heads.parameters()),
             "seconds_per_epoch": fit_s / job["epochs"], "train_turns": len(train), "test_turns": len(test),
@@ -153,6 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--recollect", action="store_true", help="EXP-0122: replay with the linear fractions")
     ap.add_argument("--training-dir")
     ap.add_argument("--replenish", help="F40's replenish (EXP-0110 start_models.pt), for --recollect")
+    ap.add_argument("--ordered", action="store_true", help="EXP-0124: the order-aware accept pass")
     ap.add_argument("--models", required=True, help="the F40 candidate (heads only need its hidden size)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out-dir", required=True)
@@ -172,7 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         records = str(rp)
     jobs = [{**g, "records": records, "models": a.models, "limit": 400 if a.dry_run else None,
-             "linear": a.recollect}
+             "linear": a.recollect, "ordered": a.ordered}
             for g in sorted(grid, key=lambda g: -g["width"] * g["set_layers"] * g["epochs"])]
     t0 = time.perf_counter()
     if a.workers <= 1:

@@ -383,9 +383,9 @@ class ProducerGNN(nn.Module):
         self.turn: TurnHeads | None = None  # ADR-0062 (`add_turn_heads`)
 
     def add_turn_heads(self, set_layers: int = 0, bounded: bool = False, width: int | None = None,
-                       linear: bool = False) -> None:
+                       linear: bool = False, ordered: bool = False) -> None:
         """Attach fresh fund / accept turn heads (the trunk and investment heads untouched)."""
-        self.turn = TurnHeads(self.hidden, set_layers, bounded, width, linear)
+        self.turn = TurnHeads(self.hidden, set_layers, bounded, width, linear, ordered)
 
     def fund_scores(self, f: dict[str, Any], t: dict[str, Any], trunk: Trunk | None = None
                     ) -> torch.Tensor:
@@ -465,7 +465,7 @@ class TurnHeads(nn.Module):
     action clip. `set_layers` = 0 and `bounded` = False is the original head, unchanged."""
 
     def __init__(self, hidden: int = HIDDEN, set_layers: int = 0, bounded: bool = False,
-                 width: int | None = None, linear: bool = False) -> None:
+                 width: int | None = None, linear: bool = False, ordered: bool = False) -> None:
         """`hidden` = the trunk's embedding size (its rows and pooled view); `width` = the heads' own
         size (default `hidden`; v15's capacity probe)."""
         super().__init__()
@@ -479,6 +479,16 @@ class TurnHeads(nn.Module):
         self.mix = nn.ModuleDict({k: _mlp(w + 6 * hidden, w) for k in ("fund", "bid", "claim")})
         self.out = nn.ModuleDict({"fund": nn.Linear(w, 1), "bid": nn.Linear(w, 2),
                                   "claim": nn.Linear(w, 1)})
+        # Order-aware accept (user decision 2026-11-07, DIAGNOSTICS 38): an additive recurrent pass over the
+        # turn's bids and claims in the order of the head's own (bounded, detached) priority. The state is a
+        # running sum, s <- s + U h(item, s), which can represent the auction's cumulative capacity exactly;
+        # the accept logit of a bid is read from h. No gradient flows through the sort: the same student order
+        # is used in training and at deploy (DIAGNOSTICS 37: the deployed path is the trained path).
+        self.ordered = ordered
+        if ordered:
+            self.seq = _mlp(2 * w, w)
+            self.inc = nn.Linear(w, w)
+            self.seq_out = nn.Linear(w, 1)
         if set_layers:
             def enc() -> nn.TransformerEncoder:
                 layer = nn.TransformerEncoderLayer(w, 4, 2 * w, dropout=0.0,
@@ -489,7 +499,8 @@ class TurnHeads(nn.Module):
     def config(self) -> dict[str, Any]:
         return {"set_layers": self.set_layers, "bounded": self.bounded,
                 **({"width": self.width} if self.width != self.hidden else {}),
-                **({"linear": True} if self.linear else {})}
+                **({"linear": True} if self.linear else {}),
+                **({"ordered": True} if self.ordered else {})}
 
     def node_embed(self, kind: str, x: np.ndarray, ec: Sequence[tuple[int, int]],
                    ei: Sequence[tuple[int, int]], h_cap: torch.Tensor, h_in: torch.Tensor,
@@ -538,7 +549,38 @@ class TurnHeads(nn.Module):
         attend to each other."""
         a = self.attend("accept", torch.cat([eb, ec]), torch.cat([tb, tc]))
         b, c = self.out["bid"](a[:eb.shape[0]]), self.out["claim"](a[eb.shape[0]:]).squeeze(-1)
-        return b[:, 0], self._bound(b[:, 1]), self._bound(c)
+        bp, cp = self._bound(b[:, 1]), self._bound(c)
+        if not self.ordered:
+            return b[:, 0], bp, cp
+        h = self.ordered_pass(a, torch.cat([tb, tc]), torch.cat([bp, cp]).detach())
+        return self.seq_out(h[:eb.shape[0]]).squeeze(-1), bp, cp
+
+    def ordered_pass(self, emb: torch.Tensor, turn: torch.Tensor, priority: torch.Tensor) -> torch.Tensor:
+        """Per item, h from (its embedding, the running state of the items ranked above it in its turn);
+        items visited in descending `priority` within each turn (ties: input order). Padded steps leave the
+        state unchanged."""
+        if not emb.shape[0]:
+            return torch.zeros((0, self.width))
+        o1 = torch.argsort(-priority, stable=True)
+        order = o1[torch.argsort(turn[o1], stable=True)]  # turn-major, priority-descending
+        ids, compact = torch.unique(turn, return_inverse=True)
+        counts = torch.bincount(compact, minlength=ids.shape[0])
+        start = torch.cumsum(counts, 0) - counts
+        pos = torch.arange(emb.shape[0]) - start[compact[order]]
+        n_t, length = ids.shape[0], int(counts.max())
+        pad = torch.zeros((n_t, length, emb.shape[1]))
+        pad[compact[order], pos] = emb[order]
+        live = (torch.arange(length).unsqueeze(0) < counts.unsqueeze(1)).float().unsqueeze(-1)
+        state = torch.zeros((n_t, self.width))
+        hs = []
+        for k in range(length):
+            hk = torch.relu(self.seq(torch.cat([pad[:, k], state], 1)))
+            state = state + live[:, k] * self.inc(hk)
+            hs.append(hk)
+        hpad = torch.stack(hs, 1)
+        out = torch.empty((emb.shape[0], self.width))
+        out[order] = hpad[compact[order], pos]
+        return out
 
     def _embed_turn(self, kind: str, f: dict[str, Any], h: dict[str, torch.Tensor],
                     pooled: torch.Tensor) -> torch.Tensor:

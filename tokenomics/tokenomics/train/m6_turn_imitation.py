@@ -380,7 +380,8 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
     "cosine" decays the learning rate to 0 over the epochs (default CFG's, none in v14)."""
     torch.manual_seed(seed)
     hc = heads_cfg if heads_cfg is not None else {"set_layers": CFG["set_layers"], "bounded": CFG["bounded"],
-                                                  "width": CFG.get("width"), "linear": CFG.get("linear", False)}
+                                                  "width": CFG.get("width"), "linear": CFG.get("linear", False),
+                                                  "ordered": CFG.get("ordered", False)}
     pm.add_turn_heads(**hc)
     schedule = schedule if schedule is not None else CFG.get("schedule")
     heads = pm.turn
