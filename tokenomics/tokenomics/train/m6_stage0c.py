@@ -307,11 +307,21 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
         for sign in (1, -1):
             perturb_job({**base_jobs[0], "type": "perturb", "role": "producer", "k": 0, "sign": sign, "eps": 1e-3})
         t_pert = time.perf_counter() - t1
+        # the serial parts the EXP-0128 sizing missed: loading the score npz for the analysis, one ε search
+        t2 = time.perf_counter()
+        sb._load(rows)
+        t_load = (time.perf_counter() - t2) / len(rows)
+        decs = start_decisions(turn_models, replenish_models, base_jobs[:1], temps, KL_DECISIONS)
+        t3 = time.perf_counter()
+        eps_for(m, 0, decs, temps)
+        t_eps = time.perf_counter() - t3
         doc = {"time_only": True, "scored_sibling_seconds": t_roll / s0.G_SIBLINGS,
-               "perturb_episode_seconds": t_pert / 2, "decisions": rows[0]["decisions"], "calibration": calib}
+               "perturb_episode_seconds": t_pert / 2, "npz_load_seconds_per_episode": t_load,
+               "eps_search_seconds": t_eps, "decisions": rows[0]["decisions"], "calibration": calib,
+               "cell": {"lambda_scale": lam_s, "heads": heads}}
         (out / "timing.json").write_text(json.dumps(doc, indent=1, default=float) + "\n")
-        print(f"[stage0c] timing {doc['scored_sibling_seconds']:.1f} s per scored sibling, "
-              f"{doc['perturb_episode_seconds']:.1f} s per perturbed episode", flush=True)
+        print(f"[stage0c] timing {json.dumps({k: v for k, v in doc.items() if k.endswith('seconds') or 'seconds' in k})}",
+              flush=True)
         return 0
     decs = start_decisions(turn_models, replenish_models, base_jobs[:2], temps, KL_DECISIONS)
     # the "replenish greedy" counterfactual: directions without the replenish slice, ε recalibrated, the
@@ -384,13 +394,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--out-dir")
     ap.add_argument("--source-commit", default="")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--heads", choices=("all", "gates"), default="all")
+    ap.add_argument("--lambda-scale", type=float, default=None)
     a = ap.parse_args(argv)
     if a.mode == "freeze":
         print(freeze())
         return 0
     im.SOURCE_COMMIT = a.source_commit
     return run(a.training_dir, a.atlas, a.turn_models, a.replenish_models, a.exp0110, a.monitor_pkl,
-               a.turn_records, a.out_dir, a.workers, a.dry_run, time_only=a.mode == "time")
+               a.turn_records, a.out_dir, a.workers, a.dry_run, time_only=a.mode == "time",
+               lambda_scale=a.lambda_scale, heads=a.heads)
 
 
 if __name__ == "__main__":

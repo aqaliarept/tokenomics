@@ -1,0 +1,11 @@
+{
+ "change": "add-m6-joint-mpg-gnn",
+ "design": "m6_stage0c with heads = gates (the investment gates only; replenish and the turns greedy and frozen), \u03bb full (EXP-0110's calibration), v16's 24 seeds \u00d7 4 siblings and \u00b1\u03b5 along 4 directions at KL 0.01; start = EXP-0110 start_models.pt for both the trunk / gates and the replenish head; no turn heads, so the turns play the default auction",
+ "format": "m6-prereg-v18",
+ "operations": "one seed timed first; stop = 1.5 \u00d7 that timing; each job's row and npz written as it finishes; a watchdog pulls the run directory before any stop (CPU pods have no volume)",
+ "reading": "signal_present if the producer |\u2207J|\u00b2 95% CI lower bound > 0 and E3 n80 \u2264 96 seeds per half (F40's start is flatter: a DIAGNOSTICS entry); else absent (the new code path differs from EXP-0112's: diff estimator, perturbation, \u03b5 and reward before anything else)",
+ "reference": "EXP-0112 (same parameter set, full \u03bb): {'grad_norm_sq_ci95': [56983.6, 865678.1], 'n80_E3': 48, 'params': 27524}",
+ "reported": "v9's rule reading, every estimator's n80 and cosine, |\u2207J|\u00b2 with CI, flip rates, deaths",
+ "stage": "EXP-0129: EXP-0128's cell B from EXP-0100's start (EXP-0112 replicated on the new code)",
+ "task": "4.4 diagnostic"
+}

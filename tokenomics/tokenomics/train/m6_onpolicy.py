@@ -80,7 +80,7 @@ class F40Model(nn.Module):
     def gates_only(self) -> "F40Model":
         """EXP-0112's parameter set (EXP-0128): the turn heads and the replenish head frozen too, so only F40's trunk
         and investment gates train (the frozen heads play greedily)."""
-        for p in [*self.pm.turn.parameters(), *self.rep.replenish.parameters()]:
+        for p in [*(self.pm.turn.parameters() if self.pm.turn is not None else []), *self.rep.replenish.parameters()]:
             p.requires_grad_(False)
         return self
 
@@ -402,6 +402,9 @@ class OnPolicy:
 
         pid = env._role[agent][1]
         if not self.temps.explore_turns:
+            if self.pm.turn is None:  # a start without turn heads (EXP-0100): the default turns (today's order)
+                from ..env.producer_turns import default_fund_policy
+                return default_fund_policy(env, agent)
             return g.fund_action(self.pm, env, pid)
         s = env.system
         reqs = s.funding_requests(pid)
@@ -427,6 +430,9 @@ class OnPolicy:
 
         pid = env._role[agent][1]
         if not self.temps.explore_turns:
+            if self.pm.turn is None:  # the default turns = today's auction (ADR-0062: byte-identical)
+                from ..env.producer_turns import default_accept_policy
+                return default_accept_policy(env, agent)
             return g.accept_action(self.pm, env, pid)
         p = env.system.producing_agents[pid]
         lists = p.turn_lists()
@@ -494,7 +500,10 @@ def calibrate(pm: Any, prod_feats: Sequence[dict], turn_recs: Sequence[dict], se
     sigma_r = _bisect(frac, target_frac, 1e-4, 50.0)
 
     heads = pm.turn
-    assert heads is not None
+    if heads is None:  # a start without turn heads plays the default turns: only σ_r is calibrated
+        t = Temps(replenish_sigma=sigma_r, explore_turns=False)
+        return {"temps": asdict(t), "achieved": {"replenish_mean_abs_dfrac": frac(sigma_r)},
+                "n": {"replenish_rows": int(len(zs))}}
     fund_s, acc = [], []
     with torch.no_grad():
         for r in turn_recs:
