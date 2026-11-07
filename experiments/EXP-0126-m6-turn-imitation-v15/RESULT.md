@@ -63,3 +63,11 @@ The pass rule needs g ≥ −F *and* run-down / starvation shares no worse. The 
 - On the second fresh set (64 rows) the run-down share goes the other way (0.344 vs 0.375), with all clauses no
   worse. The share clause has no noise floor, so 3 rows of 32 is within what two fresh sets disagree on.
 - **The reading stands as pre-registered.** Whether 4.4 / 4.5 start from these heads is the user's decision.
+
+## User decision (2026-11-07): accepted as the 4.4 / 4.5 start, on combined evidence
+- The pre-registered closed-loop gate stays **`fail`**, on the run-down clause alone.
+- Pooled over the 96 pairs (gate set 32 + diagnostic set 64), the run-down share was 34 vs 33 rows.
+- Units were within noise in both sets, closed-loop agreement 99.8%, and the late-pending work is gone (334 vs
+  13,360 claims).
+- Task 4.3 is done.
+

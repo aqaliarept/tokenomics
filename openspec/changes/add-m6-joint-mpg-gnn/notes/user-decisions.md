@@ -104,3 +104,9 @@
     pre-registered before data.
   - If the offline gate passes, the closed-loop check (EXP-0123's design, fresh episodes) runs in the same or a
     follow-up pod.
+- 2026-11-07 (user, via the supervisor): **v15's heads (EXP-0126) are accepted as the 4.4 / 4.5 start**, on combined
+  evidence.
+  - The pre-registered closed-loop gate stays `fail`, on the run-down clause alone.
+  - Pooled over the 96 pairs (gate + diagnostic sets), run-down was 34 vs 33 rows.
+  - Units were within noise, closed-loop agreement 99.8%, and the late-pending work is gone.
+  - 4.3 is done.

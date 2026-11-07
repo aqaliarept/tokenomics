@@ -103,3 +103,30 @@ The user's goal (2026-11-06): no hand-written rule decides inside the trained te
 - **New code paths** in the domain (scored stage 2, scheduled production) are entered only through the turns.
   The default path (no flag) is untouched.
 - **The fund-gaming risk of ADR-0061 stands** (the cut-off is the lowest accepted price), and it is reported.
+
+## Addendum (2026-11-07): the accept turn's network is order-aware
+Task 4.3 (EXP-0118 → EXP-0126; DIAGNOSTICS 38; design `notes/4.3-ordered.md`).
+
+**Why it is needed.** A per-item head, even with set context, could not imitate the auction's cumulative rule (accept
+while the running sum of capacity, in priority order, still fits).
+- Its near-threshold errors cost units in closed loop: EXP-0123 lost −56.7 per episode to late pending claims
+  (DIAGNOSTICS 36).
+
+**The accept turn's heads now run four stages:**
+1. A set encoder (3 self-attention layers) over the turn's items.
+2. Bounded priorities, 10·tanh(z/10) with a pre-tanh penalty, so they never reach the action clip.
+3. A gated additive recurrent pass over [reservations, pending, bids] in the heads' **own** detached priority order:
+   s ← s + σ(a)·U·h. Ties follow input order, which is the domain's kind order.
+4. A bid's accept logit read from the pass.
+
+**Inputs:** v14's own-state rows, linear scale-free fractions (capacity / free capacity, capacity / current
+capacity, price / the turn's top price) and each item's **arrival position** in the producer's own lists (the order
+the domain's stable tie-break uses).
+
+**What is not hand-written.** Nothing cumulative is handed to the heads. The order is the student's own learned
+priority, and training and deployment use the same order (DIAGNOSTICS 37).
+
+**Result (EXP-0126, F40 trunk):**
+- Fresh held-out accept agreement 0.9983, accept-turn rank 0.9995, fund rank 1.000.
+- Closed-loop agreement 0.998, with the pending claims back near zero.
+- Accepted by the user as the 4.4 / 4.5 start.
