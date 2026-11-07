@@ -1671,3 +1671,12 @@ Also measure the head's output drift against the start on recorded states (cheap
     heads; 64% right);
   - genuine misses on determinable bits (0.985 at the cheapest setting).
 - Check: replay the auction with ties reversed to find tie-dependent labels, then split the agreement.
+
+**Resolved (EXP-0125):**
+- Adding each bid's / claim's arrival position (own state, the domain's tie-break order) to the ordered heads makes
+  the tie-dependent labels learnable: 0.66 → 0.97.
+- Overall accept 0.9924, accept-turn rank 0.9963: the gate is met.
+- The full fix for a per-item head imitating a cumulative allocation took three parts:
+  - an ordered, gated accumulator in the head's own priority order;
+  - linear scale-free quantities;
+  - the tie-break information the teacher uses.

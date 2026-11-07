@@ -38,3 +38,4 @@
 | EXP-0123 closed-loop diagnostic of EXP-0120's heads (commit 96f393d; reading `cost`; + test_m6_pilot.py) | 2026-11-07 | 65bih6r0l19dzj, 8 vCPU + 20 GB volume, EUR-IS-1, 15:56–16:03 | ≈ 1.0 (stop 3) | ≈ 24.7 |
 | EXP-0124 ordered-pass probe (commit 264c857): hard-stopped before the slowest settings finished; results written only at the end, nothing pulled (sizing error) | 2026-11-07 | 8tcohug99rbfsy, 8 vCPU, EUR-IS-1, 16:35–16:58 | ≈ 3.1 (stop 3) | ≈ 27.8 |
 | EXP-0124 attempt 2 (commit df880e1, per-setting saves, stop raised to 5 by the supervisor; no winner) + a mis-pathed launch removed within ≈ 1 min (≈ 0.1) | 2026-11-07 | nv3l2cockbiz53 (+ xpeoeosi2jh7fk), 8 vCPU, EUR-IS-1, 17:00–17:23 | ≈ 3.2 (stop 5) | ≈ 31.0 |
+| EXP-0125 arrival-position probe (commit a9cd94e; winner w32 L3 e90 + arrival) | 2026-11-07 | j8n79qomsxkbrt, 4 vCPU + 20 GB volume, EUR-IS-1, 17:35–17:59 | ≈ 1.6 (stop 2.7) | ≈ 32.6 |
