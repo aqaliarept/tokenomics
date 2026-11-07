@@ -407,3 +407,48 @@ def test_turn_heads_leave_the_investment_heads_and_survive_save_load(tmp_path: P
     assert acc.shape == (2,) and bp.shape == (2,) and cp.shape == (1,)
     assert pm3.fund_scores(f, {"fund": np.ones((3, g.FUND_DIM), np.float32), "fund_cap": [],
                                "fund_in": []}).shape == (3,)
+
+
+@needs
+@pytest.mark.skipif(not _lfs(MODELS), reason="records absent")
+def test_fund_and_accept_turns_share_one_trunk_input_and_the_cache_is_exact() -> None:
+    """`TurnCache`: at a producer's fund turn and its accept turn the trunk input is identical (nothing the
+    entity view reads changes in between), and cached turn policies play the episode the uncached ones play."""
+    torch = pytest.importorskip("torch")
+    from tokenomics.eval.runner import run_episode
+    from tokenomics.train import m6_gnn as g
+    from tokenomics.train import m6_imitation as im
+
+    pm, om = im.load_models(MODELS)
+    torch.manual_seed(0)
+    pm.add_turn_heads()
+    env = _drive_to("fund", 2)
+    seen: dict = {}
+    for _ in range(4 * len(env.possible_agents)):
+        a = env.agent_selection
+        role, pid = env._role[a]
+        if role in ("fund", "acc"):
+            f = g.producer_features(g._turn_view(env, pid), g.producer_context(env, pid), pm.features)
+            if role == "fund":
+                seen[pid] = f
+            elif pid in seen:
+                b = seen.pop(pid)
+                assert all(np.array_equal(f[k], b[k]) for k in ("global", "capacity", "product", "input"))
+                assert (f["prod_cap"], f["prod_in"], f["inputs"]) == (b["prod_cap"], b["prod_in"], b["inputs"])
+                if not seen:
+                    break
+        env.step(env.action_space(a).sample() * 0 if role == "order" else
+                 pt.default_fund_policy(env, a) if role == "fund" else
+                 pt.default_accept_policy(env, a) if role == "acc" else g.producer_action(pm, env, pid))
+
+    stats, caches = [], []
+    for cached in (False, True):
+        e = _drive_to("prod", 0)
+        c = g.TurnCache()
+        fp, ap = (g.gnn_turn_policies(pm, c) if cached else
+                  (lambda en, ag: g.fund_action(pm, en, en._role[ag][1]),
+                   lambda en, ag: g.accept_action(pm, en, en._role[ag][1])))
+        caches.append(c)
+        stats.append(run_episode(e, g.gnn_producing_policy(pm), g.gnn_ordering_policy(om), seed=0,
+                                 action_seed=0, fund_policy=fp, accept_policy=ap, max_iter=6 * len(e.possible_agents)))
+    assert stats[0] == stats[1] and caches[1].passes > 0

@@ -354,17 +354,19 @@ class ProducerGNN(nn.Module):
         """Attach fresh fund / accept turn heads (the trunk and investment heads untouched)."""
         self.turn = TurnHeads(self.hidden)
 
-    def fund_scores(self, f: dict[str, Any], t: dict[str, Any]) -> torch.Tensor:
-        """One score per funding request row of `t = fund_features(...)`."""
+    def fund_scores(self, f: dict[str, Any], t: dict[str, Any], trunk: Trunk | None = None
+                    ) -> torch.Tensor:
+        """One score per funding request row of `t = fund_features(...)`; `trunk` = a cached
+        `_trunk(f)` (the fund and accept turns of one producer-cycle share it, `TurnCache`)."""
         assert self.turn is not None
-        h, pooled = self._trunk(f)
+        h, pooled = trunk if trunk is not None else self._trunk(f)
         return self.turn.node_out("fund", t, h, pooled).squeeze(-1)
 
-    def accept_outputs(self, f: dict[str, Any], t: dict[str, Any]
+    def accept_outputs(self, f: dict[str, Any], t: dict[str, Any], trunk: Trunk | None = None
                        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """(accept logit per bid, priority per bid, priority per claim) for `accept_features`."""
         assert self.turn is not None
-        h, pooled = self._trunk(f)
+        h, pooled = trunk if trunk is not None else self._trunk(f)
         b = self.turn.node_out("bid", t, h, pooled)
         c = self.turn.node_out("claim", t, h, pooled).squeeze(-1)
         return b[:, 0], b[:, 1], c
@@ -416,6 +418,9 @@ class ProducerGNN(nn.Module):
         pooled = torch.cat([h["global"][0], *[_mean(h[k], self.hidden)
                                                for k in ("capacity", "product", "input")]])
         return h, pooled
+
+
+Trunk = tuple[dict[str, torch.Tensor], torch.Tensor]
 
 
 class TurnHeads(nn.Module):
@@ -533,24 +538,53 @@ def _turn_view(env: "TokenomicsAECEnv", pid: str) -> ProducerEntityView:
                                       s.orders)
 
 
-def fund_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str) -> np.ndarray:
+class TurnCache:
+    """One trunk pass per producer-cycle for the fund and accept turns. Between a producer's fund
+    turn and its accept turn nothing its entity view reads changes: funding and routing touch orders
+    and bids, which the view does not read (measured equal in 180 / 180 producer-cycles, 2026-11-07;
+    `tests/test_producer_turns.py` pins it). The investment turn's view differs: the producer's own
+    action raises its inbound, sets its active investments and lowers its headroom, so it gets its own
+    pass. Computed lazily, at the first of the two turns that has something to score."""
+
+    def __init__(self) -> None:
+        self.cycle: tuple[int, int] | None = None  # (env, cycle) the entries belong to
+        self.entries: dict[str, tuple[ProducerEntityView, dict[str, Any], Trunk]] = {}
+        self.passes = 0
+
+    def get(self, model: ProducerGNN, env: "TokenomicsAECEnv", pid: str
+            ) -> tuple[ProducerEntityView, dict[str, Any], Trunk]:
+        cyc = (id(env), int(env.system.cycle_counter))
+        if cyc != self.cycle:
+            self.cycle, self.entries = cyc, {}
+        if pid not in self.entries:
+            view = _turn_view(env, pid)
+            f = producer_features(view, producer_context(env, pid), model.features)
+            with torch.no_grad():
+                self.entries[pid] = (view, f, model._trunk(f))
+            self.passes += 1
+        return self.entries[pid]
+
+
+def fund_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str,
+                cache: TurnCache | None = None) -> np.ndarray:
     from ..env.producer_turns import fund_slots
 
     s = env.system
-    p = s.producing_agents[pid]
     reqs = s.funding_requests(pid)
-    view = _turn_view(env, pid)
-    f = producer_features(view, producer_context(env, pid), model.features)
-    t = fund_features(p, reqs, s.funding_budget(pid), view)
-    with torch.no_grad():
-        sc = model.fund_scores(f, t).numpy() if reqs else np.zeros(0)
     out = np.full(fund_slots(env.spec_), -ACTION_LOGIT_BOUND, np.float32)
+    if not reqs:
+        return out
+    view, f, trunk = (cache or TurnCache()).get(model, env, pid)
+    t = fund_features(s.producing_agents[pid], reqs, s.funding_budget(pid), view)
+    with torch.no_grad():
+        sc = model.fund_scores(f, t, trunk).numpy()
     n = min(len(sc), out.shape[0])
     out[:n] = np.clip(sc[:n], -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND)
     return out
 
 
-def accept_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str) -> np.ndarray:
+def accept_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str,
+                  cache: TurnCache | None = None) -> np.ndarray:
     """Greedy: accept iff the logit > 0; priorities as scored (clipped to the action bound)."""
     from ..domain.producing_agent import TurnDecision
     from ..env.producer_turns import encode_accept_action
@@ -558,22 +592,26 @@ def accept_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str) -> np.n
     s = env.system
     p = s.producing_agents[pid]
     lists = s.producer_turn_lists(pid)
-    view = _turn_view(env, pid)
-    f = producer_features(view, producer_context(env, pid), model.features)
+    if not (lists.bids or lists.reservations or lists.pending):
+        return encode_accept_action(TurnDecision((), (), (), ()))
+    view, f, trunk = (cache or TurnCache()).get(model, env, pid)
     t = accept_features(p, lists, view)
     with torch.no_grad():
-        acc, bp, cp = (x.numpy() for x in model.accept_outputs(f, t))
+        acc, bp, cp = (x.numpy() for x in model.accept_outputs(f, t, trunk))
     clip = lambda v: tuple(float(x) for x in np.clip(v, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND))
     nr = t["n_res"]
     return encode_accept_action(TurnDecision(tuple(bool(x > 0) for x in acc), clip(bp),
                                              clip(cp[:nr]), clip(cp[nr:])))
 
 
-def gnn_turn_policies(model: ProducerGNN) -> tuple[Policy, Policy]:
-    """(fund policy, accept policy) of a producer GNN with turn heads (ADR-0062)."""
+def gnn_turn_policies(model: ProducerGNN, cache: TurnCache | None = None
+                      ) -> tuple[Policy, Policy]:
+    """(fund policy, accept policy) of a producer GNN with turn heads (ADR-0062), sharing one trunk
+    pass per producer-cycle (`TurnCache`)."""
     model.eval()
-    return (lambda env, agent: fund_action(model, env, env._role[agent][1]),
-            lambda env, agent: accept_action(model, env, env._role[agent][1]))
+    c = cache if cache is not None else TurnCache()
+    return (lambda env, agent: fund_action(model, env, env._role[agent][1], c),
+            lambda env, agent: accept_action(model, env, env._role[agent][1], c))
 
 
 def gnn_producing_policy(model: ProducerGNN) -> Policy:
