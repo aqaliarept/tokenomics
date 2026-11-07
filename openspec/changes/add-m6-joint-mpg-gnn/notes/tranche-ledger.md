@@ -40,3 +40,5 @@
 | EXP-0124 attempt 2 (commit df880e1, per-setting saves, stop raised to 5 by the supervisor; no winner) + a mis-pathed launch removed within ≈ 1 min (≈ 0.1) | 2026-11-07 | nv3l2cockbiz53 (+ xpeoeosi2jh7fk), 8 vCPU, EUR-IS-1, 17:00–17:23 | ≈ 3.2 (stop 5) | ≈ 31.0 |
 | EXP-0125 arrival-position probe (commit a9cd94e; winner w32 L3 e90 + arrival) | 2026-11-07 | j8n79qomsxkbrt, 4 vCPU + 20 GB volume, EUR-IS-1, 17:35–17:59 | ≈ 1.6 (stop 2.7) | ≈ 32.6 |
 | EXP-0126 turn-head imitation v15 + closed-loop diagnostic (commit 8a3af7e; offline pass, closed-loop gate fail on run-down, diagnostic no_cost) | 2026-11-07 | 30fw6eam8ac7ls, 4 vCPU + 20 GB volume, EUR-IS-1, 18:05–18:52 | ≈ 3.1 (stop 11) | ≈ 35.7 |
+| EXP-0127 timing pod (commit fb9ed80; 4.4 seed timed, 4.5 timing failed: file descriptors) | 2026-11-07 | lpjx5nv04kvnxp, 8 vCPU, EUR-IS-1, 21:07–21:12 | ≈ 0.6 (stop 5.3) | ≈ 36.3 |
+| EXP-0127 4.4 power check + 4.5 iteration timing (commit cb2fe36; reading `absent`) | 2026-11-07 | kkvree7wl1fo6a, 16 vCPU + 20 GB volume, EUR-IS-1, 21:36–21:58 | ≈ 5.9 (stop 8.8) | ≈ 42.2 |
