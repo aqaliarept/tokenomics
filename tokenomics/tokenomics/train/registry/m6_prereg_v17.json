@@ -1,0 +1,17 @@
+{
+ "cell_signal": "v9's rule at 12 producers on the cell's primary reading; an all-heads cell also counts its replenish-greedy counterfactual (what 4.5 plays when replenish swamps)",
+ "change": "add-m6-joint-mpg-gnn",
+ "design": "2 \u00d7 2 on m6_stage0c (v16's machinery, seeds, calibration, \u03b5 rule): \u03bb \u2208 {full 0.736, \u03bb/4 0.184} \u00d7 heads \u2208 {all, gates only (EXP-0112's set: turn heads and replenish greedy and frozen)}; cells A = (full, all), B = (full, gates), C = (\u03bb/4, gates) run in one pod; D = (\u03bb/4, all) = EXP-0127, re-used (identical design and seeds)",
+ "format": "m6-prereg-v17",
+ "reading": {
+  "A, B signal, C absent": "lambda_cut",
+  "A, B, C signal": "either_suffices (each change alone restores it)",
+  "B only": "both (full \u03bb and gates only are both needed)",
+  "B, C signal, A absent": "parameter_spread",
+  "any other pattern": "other (reported as observed)",
+  "none": "neither (something else; reported, not guessed)"
+ },
+ "reported": "per cell: the reading, n80 per estimator, |\u2207J|\u00b2 with CI, per-head score shares, flip / swap rates",
+ "stage": "EXP-0128: why the on-policy power check read absent (\u03bb re-weighting vs parameter spread)",
+ "task": "4.4 diagnostic"
+}

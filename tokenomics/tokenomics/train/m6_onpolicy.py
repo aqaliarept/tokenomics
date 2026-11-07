@@ -50,6 +50,9 @@ class Temps:
     fund_tau: float = 1.0
     order_tau: float = 1.0
     accept_t: float = 1.0
+    # False (EXP-0128's gates-only cells): the fund and accept turns play the deployed greedy heads and record no
+    # decision (no exploration, no score, no PPO term)
+    explore_turns: bool = True
 
 
 # --- the joint start as one model ---
@@ -73,6 +76,13 @@ class F40Model(nn.Module):
 
     def trainable(self) -> list[torch.Tensor]:
         return [p for p in self.parameters() if p.requires_grad]
+
+    def gates_only(self) -> "F40Model":
+        """EXP-0112's parameter set (EXP-0128): the turn heads and the replenish head frozen too, so only F40's trunk
+        and investment gates train (the frozen heads play greedily)."""
+        for p in [*self.pm.turn.parameters(), *self.rep.replenish.parameters()]:
+            p.requires_grad_(False)
+        return self
 
     def heads(self, f: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor]:
         """(the gate logits of `pm`, the replenish pre-sigmoid logits of `rep`)."""
@@ -391,6 +401,8 @@ class OnPolicy:
         from ..env.producer_turns import fund_slots
 
         pid = env._role[agent][1]
+        if not self.temps.explore_turns:
+            return g.fund_action(self.pm, env, pid)
         s = env.system
         reqs = s.funding_requests(pid)
         out = np.full(fund_slots(env.spec_), -B, np.float32)
@@ -414,6 +426,8 @@ class OnPolicy:
         from ..env.producer_turns import encode_accept_action
 
         pid = env._role[agent][1]
+        if not self.temps.explore_turns:
+            return g.accept_action(self.pm, env, pid)
         p = env.system.producing_agents[pid]
         lists = p.turn_lists()
         nb, nr, npd = len(lists.bids), len(lists.reservations), len(lists.pending)
@@ -534,7 +548,8 @@ def calibrate(pm: Any, prod_feats: Sequence[dict], turn_recs: Sequence[dict], se
 
 def temps_from(doc: Mapping[str, Any]) -> Temps:
     t = doc["temps"]
-    return Temps(tuple(t["gates"]), t["replenish_sigma"], t["fund_tau"], t["order_tau"], t["accept_t"])
+    return Temps(tuple(t["gates"]), t["replenish_sigma"], t["fund_tau"], t["order_tau"], t["accept_t"],
+                 bool(t.get("explore_turns", True)))
 
 
 # --- one PPO iteration (4.5) ---

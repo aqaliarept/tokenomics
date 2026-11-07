@@ -136,10 +136,13 @@ _MODELS: dict[tuple, Any] = {}
 
 
 def _models(job: dict) -> tuple:
-    key = (job["turn_models"], job["replenish_models"])
+    heads = job.get("heads", "all")
+    key = (job["turn_models"], job["replenish_models"], heads)
     if key not in _MODELS:
-        m, om = op.load_start(*key)
-        m0, _ = op.load_start(*key)
+        m, om = op.load_start(*key[:2])
+        m0, _ = op.load_start(*key[:2])
+        if heads == "gates":
+            m.gates_only()
         _MODELS[key] = (m, m0, om)
     return _MODELS[key]
 
@@ -248,7 +251,10 @@ def eps_job(job: dict) -> dict:
 
 def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: str, exp0110: str,
         monitor_pkl: str, turn_records: str, out_dir: str, workers: int, dry_run: bool = False,
-        time_only: bool = False) -> int:
+        time_only: bool = False, lambda_scale: float | None = None, heads: str = "all",
+        prereg_check: Any = None) -> int:
+    """v16's power check; EXP-0128's cells set `lambda_scale` (default 4.5's λ / 4) and `heads` ("all", or "gates":
+    EXP-0112's parameter set, the turn heads and replenish played greedily and frozen)."""
     import pickle
 
     from ..eval.provenance import sha256_file
@@ -257,7 +263,7 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
 
     atlas = load_atlas(atlas_path)
     if not (dry_run or time_only):
-        im._refuse(prereg_problems()
+        im._refuse((prereg_check or prereg_problems)()
                    + ([] if atlas.get("content_hash") == im.REGISTERED_ATLAS_HASH else ["not the registered atlas v2"]))
     out = Path(out_dir)
     (out / "npz").mkdir(parents=True, exist_ok=True)
@@ -269,6 +275,8 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
         seeds, kdirs = [{**x, "horizon": 6} for x in seeds[:2]], 1
     # temperatures (offline, recorded)
     m, _om = op.load_start(turn_models, replenish_models)
+    if heads == "gates":
+        m.gates_only()
     with open(monitor_pkl, "rb") as fh:
         mo = pickle.load(fh)
     prod_feats = [f if f["capacity"].shape[1] == g.CAPACITY_DIM[g.FEATURES_V4] else g.v3_to_v4(f)
@@ -276,17 +284,20 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
     del mo
     recs = ti.load_records(Path(turn_records), 600 if dry_run else 6000)
     calib = op.calibrate(m, prod_feats, recs)
+    if heads == "gates":  # gates only: replenish and the turns played greedily
+        calib = {**calib, "temps": {**calib["temps"], "replenish_sigma": 0.0, "explore_turns": False}}
     temps = op.temps_from(calib)
     (out / "calibration.json").write_text(json.dumps(calib, indent=1) + "\n")
     print(f"[stage0c] temps {calib['temps']} achieved {calib['achieved']}", flush=True)
     c = cal["per_size"]["12"]
-    weights = {"lam": c["lambda"] * op.CFG["lambda_scale"], "mu": c["mu"], "x": cal["x"], "y": cal["y"]}
+    lam_s = op.CFG["lambda_scale"] if lambda_scale is None else lambda_scale
+    weights = {"lam": c["lambda"] * lam_s, "mu": c["mu"], "x": cal["x"], "y": cal["y"]}
     base_jobs = []
     for j in seeds:
         scale = j["horizon"] / cal["bar"][f"{j['world']}|{j['episode']}"]
         base_jobs.append({**j, "replicate": s0.STAGE0_REPLICATE_BASE, "turn_models": turn_models,
                           "replenish_models": replenish_models, "weights": {**weights, "nu": float(j["horizon"])},
-                          "unit_scale": scale, "temps": calib})
+                          "unit_scale": scale, "temps": calib, "heads": heads})
     if time_only:  # one real seed: G scored siblings + one ± perturbation pair, timed (the 4.4 sizing)
         t0 = time.perf_counter()
         rows = [rollout_job({**base_jobs[0], "replicate": s0.STAGE0_REPLICATE_BASE + i, "sibling": i,
@@ -306,8 +317,9 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
     # the "replenish greedy" counterfactual: directions without the replenish slice, ε recalibrated, the
     # perturbed episodes played (and their KL measured) at σ_r = 0
     calib0 = {**calib, "temps": {**calib["temps"], "replenish_sigma": 0.0}}
-    ejobs = [{"turn_models": turn_models, "replenish_models": replenish_models, "k": k, "norep": nr,
-              "decs": decs, "temps": calib0 if nr else calib} for k in range(kdirs) for nr in (False, True)]
+    variants = (False, True) if heads == "all" else (False,)  # gates only: replenish is greedy already
+    ejobs = [{"turn_models": turn_models, "replenish_models": replenish_models, "k": k, "norep": nr, "heads": heads,
+              "decs": decs, "temps": calib0 if nr else calib} for k in range(kdirs) for nr in variants]
     found = pw._pool(eps_job, ejobs, workers, out / "eps_rows.jsonl")
     eps = {str(e["k"]): e for e in found if not e["norep"]}
     eps0 = {str(e["k"]): e for e in found if e["norep"]}
@@ -322,8 +334,9 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
             for sign in (1, -1):
                 jobs.append({**b, "type": "perturb", "role": "producer", "k": k, "sign": sign,
                              "eps": eps[str(k)]["eps"]})
-                jobs.append({**b, "type": "perturb", "role": "producer", "k": k, "sign": sign, "norep": True,
-                             "eps": eps0[str(k)]["eps"], "temps": calib0})
+                if heads == "all":
+                    jobs.append({**b, "type": "perturb", "role": "producer", "k": k, "sign": sign, "norep": True,
+                                 "eps": eps0[str(k)]["eps"], "temps": calib0})
     jobs.sort(key=lambda j: j["type"] != "rollout")
     rows = pw._pool(any_job, jobs, workers, out / "episode_rows.jsonl")
     meta = [r for r in rows if r.get("type") != "perturb"]
@@ -332,6 +345,8 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
     n_params = {"producer": sum(p.numel() for p in m.trainable()),
                 "orderer": sum(p.numel() for p in _om.parameters())}
     n_params0 = {**n_params, "producer": n_params["producer"] - int(replenish_mask(m).sum())}
+    if heads == "gates":
+        prows0 = prows
     doc = sb.analyse(meta, prows, n_params)
     fam_tot = {k: sum(r["family_sq"][k] for r in meta) for k in op.FAMILIES}
     s = sum(fam_tot.values()) or 1.0
@@ -345,6 +360,7 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
     doc.update({"family_score_share": {k: v / s for k, v in fam_tot.items()},
                 "rates": {k: (v[0] / v[1] if v[1] else None) for k, v in counts.items()},
                 "calibration": calib, "eps": eps, "eps_norep": eps0, "dry_run": dry_run, "prereg": PREREG_V16_SHA256,
+                "cell": {"lambda_scale": lam_s, "heads": heads, "trainable": n_params["producer"]},
                 "source_commit": im.SOURCE_COMMIT, "turn_models_sha256": sha256_file(turn_models),
                 "replenish_models_sha256": sha256_file(replenish_models), "jobs": len(jobs), "rows": len(rows),
                 "seconds_per_scored_episode": fmean(r["seconds"] for r in meta) if meta else None})
