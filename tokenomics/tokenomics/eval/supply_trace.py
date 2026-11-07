@@ -909,7 +909,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--arms", help=f"sweep dry run: arms out of {','.join(SWEEP_ARMS)}")
     p.add_argument("--producer", default=PRODUCER, choices=(PRODUCER, *EXTRA_PRODUCING),
                    help="sweep: the producer of every arm (task 7.18)")
-    p.add_argument("--acceptance", choices=("auction", "ttl_feasible", "ttl_inputs"),
+    p.add_argument("--acceptance", choices=("auction", "ttl_feasible", "ttl_inputs", "ttl_feasible_life",
+                            "ttl_feasible_new_first"),
                    help="sweep: the producers' acceptance policy (ADR-0061); absent = the domain's "
                         "own auction, unchanged")
     p.add_argument("--exp0073-episodes",

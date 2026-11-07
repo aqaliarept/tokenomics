@@ -110,6 +110,48 @@ def test_ttl_feasible_accepts_what_fits_next_cycle_and_declines_the_rest() -> No
     assert [x.order_id for x in r.rejected] == ["c"]
 
 
+def _bid_life(c: int, tokens: int, oid: str, life: int | None) -> Bid:
+    return Bid(capacities={"c": c}, tokens=tokens, order_id=oid, remaining_ttl=life)
+
+
+def test_a1_life_accepts_later_only_when_the_order_has_a_later_cycle() -> None:
+    """EXP-0115 A1-life: as A1, but a bid on its order's last cycle (remaining_ttl 0) is declined
+    instead of accepted for later; None (not set) behaves as A1."""
+    for rule, want in ((acc.acceptance_ttl_feasible, ["a", "b", "n"]),
+                       (acc.acceptance_ttl_feasible_life, ["a", "n"])):
+        p = producer(10)
+        p.acceptance = rule
+        p.place_bids([_bid_life(8, 80, "a", 1), _bid_life(5, 40, "b", 0),
+                      _bid_life(4, 16, "n", None)])
+        r = p.produce()
+        assert [x.order_id for x in r.accepted] == want, rule
+
+
+def test_new_first_runs_this_cycles_bids_before_pending_claims() -> None:
+    """EXP-0115 A1-new-first: the same decisions as A1; the carried claim waits behind the new,
+    pricier bid instead of taking the capacity first. Pending-first counts the displacement."""
+    def play(rule):
+        p = producer(10)
+        p.acceptance = rule
+        p.place_bids([bid(8, 80, "a"), bid(8, 16, "old")])  # old waits as a pending claim
+        p.produce()
+        p.place_bids([bid(8, 160, "new")])
+        return p, p.produce()
+
+    p1, r1 = play(acc.acceptance_ttl_feasible)
+    assert [b.order_id for b in r1.completed] == ["old"]  # 3b: the carried claim runs first
+    assert [x.bid.order_id for x in p1.pending] == ["new"]
+    st = p1.acceptance_stats
+    assert st["displaced_waiting"] == 1 and st["displaced_pricier"] == 1
+    assert st["pending_ran_units"] == 8 and st["displaced_units"] == 8
+    p2, r2 = play(acc.acceptance_ttl_feasible_new_first)
+    assert [b.order_id for b in r2.completed] == ["new"]
+    assert [x.bid.order_id for x in p2.pending] == ["old"]
+    assert "displaced_waiting" not in p2.acceptance_stats
+    assert st["cutoff_cycles"] == 2 and p1.acceptance_stats["cutoff_sum"] == pytest.approx(
+        bid(8, 16, "x").capacity_unit_price() + bid(8, 160, "x").capacity_unit_price())
+
+
 def _rows(acceptance: str | None, world: str, n: int = 2) -> list[dict]:
     from tokenomics.eval import supply_trace as st
     from tokenomics.eval.decoder_check import MWWK, decoder_arm, select_views, world_entry

@@ -104,7 +104,7 @@ rule).
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop
   branches → DIAGNOSTICS + the user.
 
-## 4. Gated: learned acceptance (plan, supervisor 2026-11-07; tranche pending user approval)
+## 4. Gated: learned acceptance (plan, supervisor 2026-11-07; tranche M6-A = 70 vCPU-h, user 2026-11-07)
 Goal: the acceptance decision (ADR-0061) becomes part of the learned producer, so no hand-written rule runs
 inside the trained team. Each step is gated by the previous reading. Hand-written acceptance variants appear
 only as diagnostics, never as candidates (user rule 2026-11-06).

@@ -12,6 +12,13 @@ the domain's own auction path (ADR-0025), byte-identical.
   accepted-later ones); a producer cannot see the order's age, so one future cycle is assumed.
 - `ttl_inputs` (A2): A1, and decline a composite whose inputs are neither in stock nor in flight
   beyond what carried claims need (the orderer's makeable check, duplicated on the producer side).
+
+EXP-0115's discriminating arms for A1's harm (diagnostics only, never candidates; user rule
+2026-11-06):
+- `ttl_feasible_life` (A1-life): A1, but a bid is accepted for later only when its order still has a
+  later cycle (`Bid.remaining_ttl` >= 1; the order's real remaining lifetime, not one assumed cycle).
+- `ttl_feasible_new_first` (A1-new-first): A1's decisions, with this cycle's accepted bids running
+  before the carried pending claims (the rule's `pending_first = False`; ADR-0061 runs pending first).
 """
 
 from __future__ import annotations
@@ -57,7 +64,8 @@ def _inputs_reachable(view: AcceptanceView, committed: dict[Product, int], bid: 
     return True
 
 
-def _ttl_rule(check_inputs: bool) -> Callable[[AcceptanceView], list[AcceptanceDecision]]:
+def _ttl_rule(check_inputs: bool, use_life: bool = False
+              ) -> Callable[[AcceptanceView], list[AcceptanceDecision]]:
     def rule(view: AcceptanceView) -> list[AcceptanceDecision]:
         now, start = dict(view.available), dict(view.available)
         later = {t: c * FUTURE_CYCLES for t, c in view.capacities.items()}
@@ -74,7 +82,8 @@ def _ttl_rule(check_inputs: bool) -> Callable[[AcceptanceView], list[AcceptanceD
                 continue
             if _fits(now, bid.capacities):
                 _take(now, bid.capacities)
-            elif _fits(later, bid.capacities):
+            elif (not use_life or bid.remaining_ttl is None or bid.remaining_ttl >= 1) and _fits(
+                    later, bid.capacities):
                 _take(later, bid.capacities)
             else:
                 out.append(AcceptanceDecision(
@@ -90,9 +99,19 @@ def _ttl_rule(check_inputs: bool) -> Callable[[AcceptanceView], list[AcceptanceD
 
 acceptance_ttl_feasible = _ttl_rule(False)
 acceptance_ttl_inputs = _ttl_rule(True)
+acceptance_ttl_feasible_life = _ttl_rule(False, use_life=True)
+
+
+def acceptance_ttl_feasible_new_first(view: AcceptanceView) -> list[AcceptanceDecision]:
+    return acceptance_ttl_feasible(view)
+
+
+acceptance_ttl_feasible_new_first.pending_first = False  # type: ignore[attr-defined]
 
 ACCEPTANCE_POLICIES: dict[str, Callable[[AcceptanceView], Sequence[AcceptanceDecision]]] = {
     "auction": acceptance_auction,
     "ttl_feasible": acceptance_ttl_feasible,
     "ttl_inputs": acceptance_ttl_inputs,
+    "ttl_feasible_life": acceptance_ttl_feasible_life,
+    "ttl_feasible_new_first": acceptance_ttl_feasible_new_first,
 }

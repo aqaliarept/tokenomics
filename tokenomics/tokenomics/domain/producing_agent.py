@@ -228,7 +228,7 @@ class ProducingAgent:
         self.pending: list[_Reservation] = []
         self.acceptance: AcceptanceRule | None = None
         # diagnostic counters of the acceptance path (reported, never observed)
-        self.acceptance_stats: dict[str, int] = {}
+        self.acceptance_stats: dict[str, float] = {}
         # units ordered via replenishment but not yet delivered — claim inventory
         # headroom so the env's joint headroom H stays accurate (ADR-0025).
         self.outstanding_inbound: dict[Product, int] = {}
@@ -440,8 +440,13 @@ class ProducingAgent:
         priority order as the budget allows, the rest wait as pending claims. Tokens burn at
         acceptance; the cut-off is the lowest accepted price this cycle, carried otherwise."""
         stats = self.acceptance_stats
+        # the rule may ask for this cycle's accepted bids to run before carried pending claims
+        # (a diagnostic step order, EXP-0115 A1-new-first); ADR-0061's order is pending first
+        pending_first = bool(getattr(self.acceptance, "pending_first", True))
+        pre = dict(available)  # the budget before carried pending claims run (diagnostic)
+        ran_pending: list[Bid] = []
 
-        def bump(key: str, n: int = 1) -> None:
+        def bump(key: str, n: float = 1) -> None:
             stats[key] = stats.get(key, 0) + n
 
         def execute(claims: list[_Reservation], keep: list[_Reservation], ran: str) -> None:
@@ -451,6 +456,8 @@ class ProducingAgent:
                 if not outage and self._fits(available, r.bid.capacities):
                     self._subtract(available, r.bid.capacities)
                     bump(ran)
+                    if ran == "pending_ran_later":
+                        ran_pending.append(r.bid)
                     if r.bid.is_composite() and not self._has_inputs(r.bid):
                         still.append(r)
                     else:
@@ -460,18 +467,24 @@ class ProducingAgent:
                 else:
                     keep.append(r)
 
-        # 3b. claims accepted in earlier cycles (no capacity held yet)
-        waiting: list[_Reservation] = []
-        execute(self.pending, waiting, "pending_ran_later")
-        pending: list[_Reservation] = []
-        for r in waiting:
-            r.cycles_waited += 1
-            if r.cycles_waited >= self.reservation_ttl:
-                failed.append(r.bid)
-                failure_reasons.append(FAIL_TTL)
-                bump("pending_failed_ttl")
-            else:
-                pending.append(r)
+        def run_carried() -> list[_Reservation]:
+            """3b. claims accepted in earlier cycles (no capacity held yet) run, or age and fail
+            at TTL; returns the ones still waiting."""
+            waiting: list[_Reservation] = []
+            execute(self.pending, waiting, "pending_ran_later")
+            keep: list[_Reservation] = []
+            for r in waiting:
+                r.cycles_waited += 1
+                if r.cycles_waited >= self.reservation_ttl:
+                    failed.append(r.bid)
+                    failure_reasons.append(FAIL_TTL)
+                    bump("pending_failed_ttl")
+                else:
+                    keep.append(r)
+            return keep
+
+        pending: list[_Reservation] = run_carried() if pending_first else []
+        carried = tuple(r.bid for r in (pending if pending_first else self.pending))
 
         # 4. the acceptance decision over this cycle's bids (price-descending)
         requested: Capacity = 0
@@ -483,7 +496,7 @@ class ProducingAgent:
                 requested_by_type[t] = requested_by_type.get(t, 0) + c
         decisions = list(self.acceptance(AcceptanceView(
             self.id, tuple(self.bids), dict(available), dict(self.capacities),
-            tuple(r.bid for r in still), tuple(r.bid for r in pending), dict(self.inventory),
+            tuple(r.bid for r in still), carried, dict(self.inventory),
             dict(self.outstanding_inbound), self.reservation_ttl, self.cut_off_price)))
         if len(decisions) != len(self.bids):
             raise ValueError(f"acceptance returned {len(decisions)} decisions for "
@@ -513,6 +526,14 @@ class ProducingAgent:
         before = len(pending)
         execute(new, pending, "ran_same_cycle")
         bump("accepted_pending", len(pending) - before)
+        if not pending_first:
+            pending = pending + run_carried()
+        else:
+            self._displacement_stats(bump, pre, ran_pending, new,
+                                     {id(r) for r in pending[before:]}, declined, outage)
+        if lowest is not None:
+            bump("cutoff_cycles")
+            bump("cutoff_sum", lowest)
 
         # 5. commit next state, as the auction path
         for t in self.capacities:
@@ -529,6 +550,35 @@ class ProducingAgent:
             accepted, completed, failed, rejected,
             rejection_reasons=rejection_reasons, failure_reasons=failure_reasons,
         )
+
+    def _displacement_stats(self, bump: Callable[[str, float], None],
+                            pre: dict[CapacityType, Capacity], ran_pending: list[Bid],
+                            new: list[_Reservation], waiting_new: set[int], declined: list[Bid],
+                            outage: bool) -> None:
+        """Diagnostic only (EXP-0115): this cycle's bids that did not run because carried pending
+        claims took the capacity first. A new bid displaced = accepted but left waiting, or
+        declined, yet it runs when this cycle's bids (accepted ones in execution order, then
+        the declined ones by price) take the budget before the carried claims did."""
+        if outage or not ran_pending:
+            return
+        bump("pending_ran_units", sum(b.total_capacity() for b in ran_pending))
+        bump("pending_ran_price_sum", sum(b.capacity_unit_price() for b in ran_pending))
+        cheapest = min(b.capacity_unit_price() for b in ran_pending)
+        budget = dict(pre)
+        order = [(r.bid, id(r) in waiting_new, "displaced_waiting")
+                 for r in sorted(new, key=lambda r: (-r.priority, -r.bid.capacity_unit_price()))]
+        order += [(b, True, "displaced_declined") for b in declined]
+        for bid, lost, key in order:
+            if not self._fits(budget, bid.capacities):
+                continue
+            self._subtract(budget, bid.capacities)
+            if not lost:
+                continue
+            bump(key)
+            bump("displaced_units", bid.total_capacity())
+            bump("displaced_price_sum", bid.capacity_unit_price())
+            if bid.capacity_unit_price() > cheapest:
+                bump("displaced_pricier")
 
     def _has_inputs(self, bid: Bid) -> bool:
         return all(self.inventory.get(p, 0) >= q for p, q in bid.inputs.items())

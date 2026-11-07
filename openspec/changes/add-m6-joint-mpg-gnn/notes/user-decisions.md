@@ -58,3 +58,6 @@
   - **Reported:** the curve, KL (plateau or not), clip fraction, flip rates, training deaths.
   - **Budget:** stop ≤ 40 vCPU-h (≈ 36 expected), M6 → ≈ 129 of 150, leaving room for validation and a held-out read.
   - **On `gain`:** validation on the unseen L5 worlds next (set up by the supervisor after).
+- 2026-11-07 (user, via the supervisor): **a new tranche M6-A = 70 vCPU-h for learned acceptance** (tasks §4, plan
+  committed 89d9381); the supervisor decides within it. Its own ledger section; EXP-0114 stays on M6's main tranche.
+  Hand-written acceptance variants (A1, A1-life, A1-new-first) are diagnostics only, never candidates.
