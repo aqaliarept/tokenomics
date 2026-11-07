@@ -34,3 +34,4 @@
 | EXP-0119 F40 confirmation (commit f678f06; reading `gain`) | 2026-11-07 | m5c0ixjx8x8oz8, 16 vCPU + 20 GB volume, EUR-IS-1, 12:27–12:34 | ≈ 1.7 (stop 6) | ≈ 14.1 |
 | EXP-0120 turn-head imitation v14 (commit c13bd0a; F40 start; reading `offline_fail`, underfit) | 2026-11-07 | wnes87bgzymub3, 16 vCPU + 20 GB volume, EUR-IS-1, 14:05–14:22 | ≈ 4.7 (stop 12) | ≈ 18.8 |
 | EXP-0121 turn-head capacity probe (commit 83de1fd; no winner) | 2026-11-07 | s26tp6kup137bk, 8 vCPU + 20 GB volume, EUR-IS-1, 14:38–14:55 | ≈ 2.3 (stop 5) | ≈ 21.1 |
+| EXP-0122 turn-head probe with linear fractions (commit 8189555; no winner) | 2026-11-07 | wn3a4ttnj5oey1, 8 vCPU + 20 GB volume, EUR-IS-1, 15:19–15:38 | ≈ 2.6 (stop 3) | ≈ 23.7 |

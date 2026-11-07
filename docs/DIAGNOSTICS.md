@@ -1645,3 +1645,14 @@ Also measure the head's output drift against the start on recorded states (cheap
   capacities.
 - Check: bin the errors by slack. A boundary peak means the head is not computing the sum precisely on its
   (log-scaled) inputs. Give linear, scale-free quantities, or far more data.
+
+**Input scaling refuted (EXP-0122):**
+- With linear, scale-free own-state fractions added, held-out accept stays at 0.942–0.950. The boundary errors are
+  unchanged (slack within ½ capacity: 20–28% wrong).
+- Big heads still memorise (0.997).
+- The limit is learning an ordered running-sum rule from ≈ 31k turns with a shallow set encoder. It is neither
+  missing information, input scale nor capacity.
+- **Branches:**
+  - far more data;
+  - an inductive bias for ordered accumulation, learned from the head's own priority, not hand-written;
+  - judge the imitation closed-loop rather than by bit agreement (a gate decision for the user).
