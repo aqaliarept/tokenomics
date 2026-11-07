@@ -1,0 +1,11 @@
+{
+ "change": "add-m6-joint-mpg-gnn",
+ "design": "m6_stage0c with heads = gates (the investment gates only; replenish and the turns greedy and frozen), \u03bb full (EXP-0110's calibration), v16's 24 seeds \u00d7 4 siblings and \u00b1\u03b5 along 4 directions at KL 0.01; start = the F40 + v15 composite (EXP-0126 models.pt: F40's trunk, gates, v15 turn heads; the EXP-0110 start's replenish head), the turn heads and replenish greedy and frozen",
+ "format": "m6-prereg-v19",
+ "operations": "one seed timed first; stop = 1.5 \u00d7 that timing; each job's row and npz written as it finishes; a watchdog pulls the run directory before any stop (CPU pods have no volume)",
+ "reading": "v18's exact criterion: signal_present if the producer |\u2207J|\u00b2 95% CI lower bound > 0 and E3 n80 \u2264 96 seeds per half; else absent. With EXP-0129 signal_present: absent here = F40's start is flatter (a DIAGNOSTICS entry); signal_present here = not flatter on this criterion, so the turn heads or \u03bb / 4 carry 4.4's absent (EXP-0127)",
+ "reference": "EXP-0129 (same configuration, EXP-0100's start): |\u2207J|\u00b2 CI [4.9e4, 5.8e5], E3 n80 96; EXP-0112: {'grad_norm_sq_ci95': [56983.6, 865678.1], 'n80_E3': 48, 'params': 27524}",
+ "reported": "v9's rule reading, every estimator's n80 and cosine, |\u2207J|\u00b2 with CI, flip rates, deaths",
+ "stage": "EXP-0130: EXP-0128's cell B from F40 (the same configuration as EXP-0129, F40's start)",
+ "task": "4.4 diagnostic"
+}
