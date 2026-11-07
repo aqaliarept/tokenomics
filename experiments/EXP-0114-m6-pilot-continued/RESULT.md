@@ -59,3 +59,8 @@ At iteration 20, g was above F, but stop-only gates are not read.
 - **For the ladder (tasks §4):** 4.0's start is EXP-0114's candidate only on `gain`, so 4.3 starts from
   EXP-0100's producer.
 - **M6 tranche:** 93.0 + 51.9 = 144.9 of 150 vCPU-h. About 5 are left.
+
+**Addendum (EXP-0116, 2026-11-07):** the gap is diagnosed. The gate scored the candidate with its own replenish head,
+which followed the RL-moved trunk. Training used the start's replenish. The trained policy (greedy gates + the start's
+replenish) is +230.1 units per episode at iteration 40 (F 136.4), and the drift cost about 150 (DIAGNOSTICS 37). The
+pre-registered reading stays `hold`.

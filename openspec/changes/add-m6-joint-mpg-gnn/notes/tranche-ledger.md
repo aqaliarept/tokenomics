@@ -28,3 +28,4 @@
 |---|---|---|---|---|
 | EXP-0115 attempt 1 (commit 5d6187b): all 4 arms ran, but the pull failed (local disk full) and the pod had no volume, so stopping it lost the rows | 2026-11-07 | u97t6mh3oxrmbv, 8 vCPU, EUR-IS-1, 07:16–07:28 + 08:17–08:19 restart | ≈ 1.9 (stop 6) | ≈ 1.9 |
 | EXP-0115 attempt 2 (same commit, 20 GB volume, pulled into the main repo) | 2026-11-07 | hk7lwtdbnyr7qg, 8 vCPU, EUR-IS-1, 08:19–08:29 | ≈ 1.5 (stop ≤ 4.1) | ≈ 3.4 |
+| EXP-0116 EXP-0114 gap diagnosis (commit 364b070; reading `replenish_drift`) | 2026-11-07 | obj0bkagr1msh0, 16 vCPU + 20 GB volume, EUR-IS-1, 11:16–11:27 | ≈ 3.1 (stop 8) | ≈ 6.5 |

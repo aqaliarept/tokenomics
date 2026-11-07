@@ -1465,3 +1465,26 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - L6 (held-out) is not licensed.
   - The next arc is open with the user.
 - **Cost.** M5-P ≈ 65.2 of 80 vCPU-h.
+
+## 16. M6: joint MPG + GNN (in progress)
+
+### Does critic-free RL improve the imitated producer? (Stage 1 pilot: EXP-0113, EXP-0114, EXP-0116)
+- **Setup.** The producer only, at 12 producers:
+  - PPO-clip on tempered investment gates, 96 seeds × 4 siblings per iteration, KL-anchored to the start
+    (EXP-0100's producer);
+  - replenish and the orderer frozen.
+- **Pre-registered readings: `hold` twice.**
+  - EXP-0113 (iteration 10): +107 units per episode against a floor of 154.
+  - EXP-0114 (iteration 40): +78 against 117.
+  - Meanwhile the training return kept rising (−39 → −6).
+- **Diagnosed (EXP-0116, DIAGNOSTICS 37): the gate scored a policy that was never trained.**
+  - Training played the start's replenish. The gated candidate used its own replenish head, which followed the
+    RL-moved trunk (33–36% drift).
+  - The trained policy (greedy gates + the start's replenish) rises at every look: +116, +173, +207, +230 units per
+    episode at iterations 10, 20, 30, 40 (F 136 at 40). No deaths, and lower run-down (0.28 vs 0.56) and
+    starvation.
+  - Tempered and greedy play agree.
+  - 72% of the training-return gain is run-down relief, not units.
+- **Consequence.** RL does improve the producer (≈ +5.7% units at 12). Every trunk-reading head must be deployed the
+  way training played it. This design point gates 4.5's RL of the learned producer turns.
+- **Cost.** EXP-0113 11.2 + EXP-0114 51.9 vCPU-h (M6); EXP-0116 3.1 vCPU-h (M6-A).

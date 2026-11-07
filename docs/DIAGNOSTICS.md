@@ -1576,3 +1576,32 @@ _Status: open (2026-11-06, EXP-0110); the two branches are not yet separated._
 - `c_displaced` −37.2k and `b2_lost_displaced` −31.9k, against `b2_lost_ttl` +49.3k and `b2_late` +18.6k.
 - The replenishment lag rises from 2.69 to 2.89 cycles.
 - The same at 42 and with RR.
+
+## 37. RL improves the training return but the deployed policy does not improve: a head that reads the trained trunk is not the head that was played
+
+**Problem in plain English.**
+- A shared network (trunk) feeds several output heads. RL trains some heads, while another head is either frozen
+  or replaced by a fixed copy during training rollouts (here the producer's input-buying head: training used
+  the frozen start model's output).
+- Its weights don't change, but its input does: the trunk moves under RL. At deployment the model's own copy of
+  that head reads the moved trunk and outputs something no training rollout ever played.
+- The training curve rises, the deployed policy does not.
+
+**Discriminating check** (EXP-0116 style), on the same keyed episodes:
+- the candidate as deployed (`G`);
+- the candidate with the frozen head's training-time source (`F`: the policy as trained, made deterministic);
+- the training policy itself (`T`).
+
+Also measure the head's output drift against the start on recorded states (cheap, local).
+
+**Outcome branches:**
+- **F − G beyond the floor:** the mismatch is the cause. Deploy the head the way training played it, or train it
+  on-policy.
+- **F ≈ G, but T ahead of F:** greedy play loses the gain (DIAGNOSTICS 35's temperature side).
+- **F ≈ G ≈ T at the gate, but F ahead on the training set:** gate resolution.
+
+**Outcome (EXP-0116, 2026-11-07): the mismatch.**
+- EXP-0114's iteration-40 candidate: F +230.1 vs G +77.7 units per episode over the EXP-0100 stack (F 136 / 117).
+- Δ(F − G) +152 ± 46 on the monitor, +118 ± 14 on the training set.
+- Replenish drift |Δ fraction| 33–36% relative.
+- T ≈ F (+242).
