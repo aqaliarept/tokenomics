@@ -1,6 +1,7 @@
-"""EXP-0113: the capped critic-free Stage 1 training pilot (pre-registration v10).
+"""EXP-0113: the capped critic-free Stage 1 training pilot (pre-registration v10), and EXP-0114: its
+continuation to iteration 40 (pre-registration v11).
 
-`python -m tokenomics.train.m6_pilot --mode {freeze,run} ...`
+`python -m tokenomics.train.m6_pilot --mode {freeze,run} [--prereg v11 --resume-from <EXP-0113 dir>] ...`
 
 User decision 2026-11-06 (after EXP-0112: n80 = 48 seeds per half for E3 at 12, inside v9's 96; D0.3 at 12 per half
 was underpowered by construction):
@@ -25,6 +26,13 @@ was underpowered by construction):
   - **Early stop at 5:** g < −F, more deaths, or a higher run-down share.
   - **Reading at 10:** `gain` (g > F, no side effect worse), `hold` (|g| ≤ F), `worse` (otherwise).
 - **Checkpoint:** every iteration (resumable on the same out dir).
+
+**v11 (EXP-0114; user decision 2026-11-07, after EXP-0113's `hold` with a rising curve):**
+- Resumes from EXP-0113's iteration-10 checkpoint (producer weights + Adam state, pinned by SHA-256) and runs
+  iterations 11-40. Every v10 setting is unchanged; seeds, siblings' keys and minibatch orders are keyed by the
+  iteration, so the continuation is the run v10 would have made had it not stopped at 10.
+- **Gates at 15, 20, 30 and 40:** the same monitor gate. 15 / 20 / 30 are stop-only (v10's early-stop rule); the
+  deciding reading is at 40 only (v10's gain / hold / worse), so the best of four looks is never picked.
 """
 
 from __future__ import annotations
@@ -53,6 +61,21 @@ PREREG_V10_SHA256: str | None = "0123274c423807c57ef79f05edcdbb2830c3c76e116ad96
 CFG = {"iterations": 10, "seeds_per_iter": 96, "siblings": 4, "gamma": 0.99, "clip": 0.2,
        "kl_coef": 0.04, "lr": 3e-4, "grad_clip": 1.0, "steps": 100, "batch": 256, "horizon": 100,
        "gate_iterations": [5, 10], "replicate_base": 1000, "seed": 0}
+PREREG_V11_PATH = PREREG_V10_PATH.with_name("m6_prereg_v11.json")
+PREREG_V11_SHA256: str | None = "f55aea40d3cd4c7e0cf709e484816d14cd6ca48b8a88b4a4f43ae61ea3a283a8"  # frozen before EXP-0114 data
+CFG_V11 = {**CFG, "iterations": 40, "gate_iterations": [15, 20, 30, 40]}
+RESUME_ITERATION = 10
+EXP0113_CHECKPOINT_SHA = "e346b76959d359f072a4a61f6fe55e2e51c2ff31483c7041fbd7ade608c75d1d"
+EXP0113_CANDIDATE_IT10_SHA = "c13d3d6c4212278887c49c693253ef78eace2888569428268c6515a4eca504d9"
+EXP0113_REF_ROWS_SHA = "c3f3208cd24fe52dac378ecd7630348aca42a2ac00d9cbf100e7ffdb7acd1219"
+CONTINUATION_RULE = (
+    "resume from EXP-0113's iteration-10 checkpoint, every v10 setting unchanged; gates at iterations 15, 20, "
+    "30 and 40: greedy (deployed) candidate vs the EXP-0100 stack on the 16 monitor world-episodes x replicates "
+    "0 / 1, M5's floors rule (g, F). 15 / 20 / 30 are stop-only: stop if g < -F, more deaths, or a higher "
+    "run-down share. The deciding reading is at 40 only: gain if g > F and deaths, run-down and starvation "
+    "shares no worse; hold if |g| <= F; worse otherwise. The monitor set is the same at every gate, so the "
+    "looks are not independent; none but 40 is read. Reported only: the training-return curve, KL to the start "
+    "(plateau), clip fraction, gate flip rates, training deaths")
 PILOT_RULE = (
     "gate at iterations 5 and 10: greedy (deployed) candidate vs the EXP-0100 stack on the 12 monitor "
     "world-episodes x replicates 0 / 1, M5's floors rule (g, F); early stop at 5 if g < -F, more deaths, or a "
@@ -374,10 +397,48 @@ def registered_prereg_v10() -> dict:
         "continuation": "only on gain (or hold with a rising curve, the user's call), a later decision"}
 
 
-def freeze(path: Path = PREREG_V10_PATH) -> tuple[str, str]:
+def registered_prereg_v11() -> dict:
+    return {
+        "format": "m6-prereg-v11", "change": "add-m6-joint-mpg-gnn",
+        "stage": "EXP-0114: the Stage 1 pilot continued to iteration 40 (producer only, 12 producers)",
+        "status": "frozen before EXP-0114's data; the real run refuses any other file",
+        "keeps": {"m6_prereg_v10.json": PREREG_V10_SHA256, "note": "v1..v10 stay frozen"},
+        "decision": "user 2026-11-07 (via the supervisor), after EXP-0113's hold with a rising curve "
+                    "(training return -38.8 -> -20.1; iteration-10 gate +107.1 vs floor 154.1): continue 30 "
+                    "more iterations, to iteration 40",
+        "resume": {"from": "EXP-0113 artifacts/checkpoint.pt (producer weights + Stepper / Adam state)",
+                   "iteration": RESUME_ITERATION, "checkpoint_sha256": EXP0113_CHECKPOINT_SHA,
+                   "candidate_it10_sha256": EXP0113_CANDIDATE_IT10_SHA,
+                   "ref_rows_sha256": EXP0113_REF_ROWS_SHA,
+                   "checks": "the checkpoint is at iteration 10 with EXP-0113's hold; its producer equals "
+                             "candidate_it10.pt's (the gated policy); EXP-0113's reading.json carries v10's "
+                             "SHA, v10's config and the start model's SHA; the reference rows recomputed at "
+                             "the first gate are compared with EXP-0113's (reported)"},
+        "unchanged_from_v10": "start / KL anchor model, reference models, temps, estimator E3, seeds, sibling "
+                              "keys, PPO-clip, kl_coef, lr, grad_clip, steps, batch, horizon, frozen orderer and "
+                              "input buying, the gate set and floors",
+        "start": {"models": "EXP-0110 start_models.pt (the KL anchor, as in v10)",
+                  "reference_models_sha256": im.EXP0100_MODELS_SHA},
+        "temps": sb.TEMPS, "config": CFG_V11,
+        "config_diff_from_v10": {"iterations": [CFG["iterations"], CFG_V11["iterations"]],
+                                 "gate_iterations": [CFG["gate_iterations"],
+                                                     CFG_V11["gate_iterations"]]},
+        "gate": {"rule": CONTINUATION_RULE, "iterations": CFG_V11["gate_iterations"],
+                 "stop_only": CFG_V11["gate_iterations"][:-1],
+                 "deciding": CFG_V11["gate_iterations"][-1],
+                 "set": "the 16 monitor world-episodes x replicates 0 / 1, horizon 100, greedy decode; the "
+                        "same set at every gate (and at EXP-0113's), so the looks are not independent",
+                 "floor": "M5's floors rule (producer_read.pilot_reading)",
+                 "side_effects": "deaths; run-down share (r_end < X r_start); starvation share (fill < Y)"},
+        "reported": "training-return curve, KL to the start (plateau or not), clip fraction, flip rates, "
+                    "training deaths",
+        "next": "on gain: validation on the unseen L5 worlds (a later set-up); otherwise a later decision"}
+
+
+def freeze(path: Path = PREREG_V10_PATH, doc: dict | None = None) -> tuple[str, str]:
     from ..eval.provenance import sha256_file
 
-    doc = registered_prereg_v10()
+    doc = registered_prereg_v10() if doc is None else doc
     if not path.exists():
         path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
         return "FROZEN", sha256_file(str(path))
@@ -396,21 +457,74 @@ def prereg_problems() -> list[str]:
     return []
 
 
+def prereg_v11_problems() -> list[str]:
+    from ..eval.provenance import sha256_file
+
+    if PREREG_V11_SHA256 is None:
+        return ["no pinned m6_prereg_v11.json (`--mode freeze --prereg v11`)"]
+    if not PREREG_V11_PATH.exists() or sha256_file(str(PREREG_V11_PATH)) != PREREG_V11_SHA256:
+        return ["m6_prereg_v11.json does not match its pinned SHA-256"]
+    if json.loads(PREREG_V11_PATH.read_text()) != registered_prereg_v11():
+        return ["the v11 pre-registration differs from the code"]
+    return []
+
+
+def resume_problems(resume_dir: Path, start: str, real: bool) -> list[str]:
+    """v11's resume pins: the EXP-0113 checkpoint is the gated iteration-10 policy of the v10 run."""
+    from ..eval.provenance import sha256_file
+
+    ck = resume_dir / "checkpoint.pt"
+    if not ck.exists():
+        return [f"no checkpoint.pt in {resume_dir}"]
+    d = torch.load(ck, weights_only=False)
+    it = int(d["iteration"])
+    cand = resume_dir / f"candidate_it{it:02d}.pt"
+    out = []
+    if real:
+        for path, sha in ((ck, EXP0113_CHECKPOINT_SHA), (cand, EXP0113_CANDIDATE_IT10_SHA)):
+            if not path.exists() or sha256_file(str(path)) != sha:
+                out.append(f"{path.name} is not EXP-0113's (SHA-256)")
+        if it != RESUME_ITERATION:
+            out.append(f"the checkpoint is at iteration {it}, not {RESUME_ITERATION}")
+        if d["gates"].get(str(it), {}).get("reading") != "hold":
+            out.append("the checkpoint's last gate is not EXP-0113's hold")
+    if not cand.exists():
+        return out + [f"no {cand.name} beside the checkpoint"]
+    pc, _ = im.load_models(cand)
+    sd = pc.state_dict()
+    if set(sd) != set(d["producer"]) or not all(torch.equal(sd[k], d["producer"][k]) for k in sd):
+        out.append("the checkpoint's producer differs from the gated candidate's")
+    rj = resume_dir / "reading.json"
+    if not rj.exists():
+        return out + ["no reading.json beside the checkpoint"]
+    doc = json.loads(rj.read_text())
+    if real and (doc.get("prereg") != PREREG_V10_SHA256 or doc.get("config") != CFG
+                 or doc.get("dry_run")):
+        out.append("EXP-0113's reading.json is not a real v10 run with v10's config")
+    if doc.get("start_sha256") != sha256_file(start):
+        out.append("the start (KL anchor) model is not the resumed run's")
+    return out
+
+
 # --- the run ---
 
 
 def run(training_dir: str, atlas_path: str, exp0110: str, ref_models: str, out_dir: str,
-        workers: int, dry_run: bool = False) -> int:
+        workers: int, dry_run: bool = False, prereg: str = "v10",
+        resume_from: str | None = None) -> int:
+    if (prereg == "v11") != (resume_from is not None):
+        raise ValueError("--prereg v11 needs --resume-from (EXP-0113's artifacts), v10 refuses it")
     saved = dict(CFG)
     try:
-        return _run(training_dir, atlas_path, exp0110, ref_models, out_dir, workers, dry_run)
+        return _run(training_dir, atlas_path, exp0110, ref_models, out_dir, workers, dry_run,
+                    prereg, resume_from)
     finally:
         CFG.clear()
         CFG.update(saved)  # a dry run shrinks steps / batch; the registered CFG is restored
 
 
 def _run(training_dir: str, atlas_path: str, exp0110: str, ref_models: str, out_dir: str,
-         workers: int, dry_run: bool) -> int:
+         workers: int, dry_run: bool, prereg: str, resume_from: str | None) -> int:
     from ..eval.provenance import sha256_file
     from ..eval.teacher_audit import load_atlas
 
@@ -418,8 +532,12 @@ def _run(training_dir: str, atlas_path: str, exp0110: str, ref_models: str, out_
     e10 = Path(exp0110)
     start = str(e10 / "start_models.pt")
     cal = json.loads((e10 / "calibration.json").read_text())
+    v11 = prereg == "v11"
+    rdir = Path(resume_from) if v11 else None
+    if v11:
+        im._refuse(resume_problems(rdir, start, real=not dry_run))
     if not dry_run:
-        im._refuse(prereg_problems()
+        im._refuse((prereg_v11_problems() if v11 else prereg_problems())
                    + ([] if sha256_file(ref_models) == im.EXP0100_MODELS_SHA else
                       ["--ref-models is not EXP-0100's"])
                    + ([] if atlas.get("content_hash") == im.REGISTERED_ATLAS_HASH else
@@ -427,10 +545,12 @@ def _run(training_dir: str, atlas_path: str, exp0110: str, ref_models: str, out_
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ts, train, mon = im._training(training_dir)
-    cfg = dict(CFG)
-    if dry_run:  # a true smoke: 2 iterations of 2 seeds, horizon 4, 3 steps, a 1-world gate at 1 and 2
-        cfg.update({"iterations": 2, "seeds_per_iter": 2, "horizon": 4, "steps": 3, "batch": 8,
-                    "gate_iterations": [1, 2]})
+    cfg = dict(CFG_V11 if v11 else CFG)
+    rck = torch.load(rdir / "checkpoint.pt", weights_only=False) if v11 else None
+    r_it = int(rck["iteration"]) if v11 else 0
+    if dry_run:  # a true smoke: 2 iterations of 2 seeds, horizon 4, 3 steps, a 1-world gate at each
+        cfg.update({"iterations": r_it + 2, "seeds_per_iter": 2, "horizon": 4, "steps": 3, "batch": 8,
+                    "gate_iterations": [r_it + 1, r_it + 2]})
         mon = mon[:1]
         CFG.update({k: cfg[k] for k in ("steps", "batch")})
     c12 = cal["per_size"]["12"]
@@ -441,8 +561,15 @@ def _run(training_dir: str, atlas_path: str, exp0110: str, ref_models: str, out_
                          out / "steps.jsonl")
     ck = out / "checkpoint.pt"
     curve_path = out / "curve.jsonl"
-    first, gates = 1, {}
-    if ck.exists():  # resume
+    first, gates, resumed = 1, {}, None
+    if v11:  # v11's start: EXP-0113's iteration-10 state (pins checked above)
+        pm.load_state_dict(rck["producer"])
+        stepper.load_state_dict(rck["stepper"])
+        first = r_it + 1
+        resumed = {"dir": str(rdir), "iteration": r_it,
+                   "checkpoint_sha256": sha256_file(str(rdir / "checkpoint.pt")),
+                   "gates": rck["gates"]}
+    if ck.exists():  # resume (this run's own checkpoint)
         d = torch.load(ck, weights_only=False)
         pm.load_state_dict(d["producer"])
         stepper.load_state_dict(d["stepper"])
@@ -482,9 +609,15 @@ def _run(training_dir: str, atlas_path: str, exp0110: str, ref_models: str, out_
             reading = rec["gate"]["reading"] if rec["gate"]["reading"] != "stop" else "stopped_early"
             break
     stepper.close()
-    doc = {"rule": PILOT_RULE, "reading": reading, "gates": gates, "config": cfg,
-           "prereg": PREREG_V10_SHA256, "dry_run": dry_run, "source_commit": im.SOURCE_COMMIT,
-           "start_sha256": sha256_file(start)}
+    if v11:  # EXP-0100's rows recomputed at this run's first gate vs EXP-0113's (deterministic: MATCH)
+        prev, cur = rdir / "ref_rows.json", out / "ref_rows.json"
+        resumed["ref_reproduction"] = (
+            "absent" if not (prev.exists() and cur.exists()) else
+            "MATCH" if json.loads(prev.read_text()) == json.loads(cur.read_text()) else "MISMATCH")
+    doc = {"rule": CONTINUATION_RULE if v11 else PILOT_RULE, "reading": reading, "gates": gates,
+           "config": cfg, "prereg": PREREG_V11_SHA256 if v11 else PREREG_V10_SHA256,
+           "prereg_version": prereg, "dry_run": dry_run, "source_commit": im.SOURCE_COMMIT,
+           "start_sha256": sha256_file(start), **({"resumed_from": resumed} if v11 else {})}
     (out / "reading.json").write_text(json.dumps(doc, indent=1, default=float) + "\n")
     print(f"[m6_pilot] reading {reading}", flush=True)
     return 0
@@ -504,12 +637,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--out-dir")
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--prereg", choices=("v10", "v11"), default="v10")
+    p.add_argument("--resume-from", help="v11: EXP-0113's artifacts dir (checkpoint.pt, candidate_it10.pt, "
+                                         "reading.json, ref_rows.json)")
     p.add_argument("--source-commit", default="")
     a = p.parse_args(argv)
     im.SOURCE_COMMIT = a.source_commit
     if a.mode == "freeze":
-        status, sha = freeze()
-        print(f"[m6_pilot] pre-registration v10 {status} {sha}")
+        status, sha = (freeze(PREREG_V11_PATH, registered_prereg_v11()) if a.prereg == "v11"
+                       else freeze())
+        print(f"[m6_pilot] pre-registration {a.prereg} {status} {sha}")
         return 0 if status in ("FROZEN", "MATCH") else 2
     if a.mode == "gate":  # the run's own subprocess (gate_subprocess); not a reading on its own
         torch.set_num_threads(1)
@@ -518,7 +655,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not a.dry_run and len(a.source_commit) != 40:
         p.error("a real run needs a 40-hex --source-commit")
     torch.set_num_threads(1)
-    return run(a.training_dir, a.atlas, a.exp0110, a.ref_models, a.out_dir, a.workers, a.dry_run)
+    return run(a.training_dir, a.atlas, a.exp0110, a.ref_models, a.out_dir, a.workers, a.dry_run,
+               a.prereg, a.resume_from)
 
 
 if __name__ == "__main__":

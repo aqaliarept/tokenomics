@@ -92,3 +92,50 @@ def test_pilot_dry_run(tmp_path: Path) -> None:
 
 def test_v10_is_frozen_and_pinned() -> None:
     assert pl.prereg_problems() == [] and pl.freeze()[0] == "MATCH"
+
+
+def test_v11_changes_only_the_length_and_the_gates() -> None:
+    diff = {k for k in pl.CFG if pl.CFG[k] != pl.CFG_V11[k]}
+    assert diff == {"iterations", "gate_iterations"} and set(pl.CFG) == set(pl.CFG_V11)
+    assert pl.CFG_V11["iterations"] == 40 and pl.CFG_V11["gate_iterations"] == [15, 20, 30, 40]
+    doc = pl.registered_prereg_v11()
+    assert doc["keeps"]["m6_prereg_v10.json"] == pl.PREREG_V10_SHA256
+    assert doc["gate"]["stop_only"] == [15, 20, 30] and doc["gate"]["deciding"] == 40
+
+
+def test_v11_is_frozen_and_pinned() -> None:
+    assert pl.prereg_v11_problems() == []
+    assert pl.freeze(pl.PREREG_V11_PATH, pl.registered_prereg_v11())[0] == "MATCH"
+
+
+def test_v11_needs_its_resume_dir(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="resume-from"):
+        pl.run("t", "a", "e", "r", str(tmp_path), 1, dry_run=True, prereg="v11")
+    with pytest.raises(ValueError, match="resume-from"):
+        pl.run("t", "a", "e", "r", str(tmp_path), 1, dry_run=True, resume_from=str(tmp_path))
+
+
+@needs
+def test_continuation_dry_run_resumes_the_pilot(tmp_path: Path) -> None:
+    """A v10 smoke (iterations 1-2), then the v11 smoke resumed from its checkpoint (iterations 3-4):
+    the resume pins hold, a tampered checkpoint is refused, the curve starts after the resumed
+    iteration, and EXP-0100's reference rows reproduce."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    assert pl.run(str(TRAINING), str(ATLAS_V2), str(E10), str(PREV), str(a), 1, dry_run=True) == 0
+    start = str(E10 / "start_models.pt")
+    assert pl.resume_problems(a, start, real=False) == []
+    assert any("EXP-0113" in x for x in pl.resume_problems(a, start, real=True))
+    assert pl.run(str(TRAINING), str(ATLAS_V2), str(E10), str(PREV), str(b), 1, dry_run=True,
+                  prereg="v11", resume_from=str(a)) == 0
+    doc = json.loads((b / "reading.json").read_text())
+    assert doc["prereg_version"] == "v11" and doc["resumed_from"]["iteration"] == 2
+    assert doc["resumed_from"]["ref_reproduction"] == "MATCH"
+    curve = [json.loads(x) for x in (b / "curve.jsonl").read_text().splitlines()]
+    assert curve[0]["iteration"] == 3 and "gate" in curve[0]
+    d = torch.load(a / "checkpoint.pt", weights_only=False)
+    k = next(iter(d["producer"]))
+    d["producer"][k] = d["producer"][k] + 1.0
+    torch.save(d, a / "checkpoint.pt")
+    assert any("differs from the gated candidate" in x
+               for x in pl.resume_problems(a, start, real=False))
+    assert pl.prereg_problems() == [] and pl.prereg_v11_problems() == []

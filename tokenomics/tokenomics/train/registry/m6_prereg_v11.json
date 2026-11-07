@@ -1,0 +1,88 @@
+{
+ "change": "add-m6-joint-mpg-gnn",
+ "config": {
+  "batch": 256,
+  "clip": 0.2,
+  "gamma": 0.99,
+  "gate_iterations": [
+   15,
+   20,
+   30,
+   40
+  ],
+  "grad_clip": 1.0,
+  "horizon": 100,
+  "iterations": 40,
+  "kl_coef": 0.04,
+  "lr": 0.0003,
+  "replicate_base": 1000,
+  "seed": 0,
+  "seeds_per_iter": 96,
+  "siblings": 4,
+  "steps": 100
+ },
+ "config_diff_from_v10": {
+  "gate_iterations": [
+   [
+    5,
+    10
+   ],
+   [
+    15,
+    20,
+    30,
+    40
+   ]
+  ],
+  "iterations": [
+   10,
+   40
+  ]
+ },
+ "decision": "user 2026-11-07 (via the supervisor), after EXP-0113's hold with a rising curve (training return -38.8 -> -20.1; iteration-10 gate +107.1 vs floor 154.1): continue 30 more iterations, to iteration 40",
+ "format": "m6-prereg-v11",
+ "gate": {
+  "deciding": 40,
+  "floor": "M5's floors rule (producer_read.pilot_reading)",
+  "iterations": [
+   15,
+   20,
+   30,
+   40
+  ],
+  "rule": "resume from EXP-0113's iteration-10 checkpoint, every v10 setting unchanged; gates at iterations 15, 20, 30 and 40: greedy (deployed) candidate vs the EXP-0100 stack on the 16 monitor world-episodes x replicates 0 / 1, M5's floors rule (g, F). 15 / 20 / 30 are stop-only: stop if g < -F, more deaths, or a higher run-down share. The deciding reading is at 40 only: gain if g > F and deaths, run-down and starvation shares no worse; hold if |g| <= F; worse otherwise. The monitor set is the same at every gate, so the looks are not independent; none but 40 is read. Reported only: the training-return curve, KL to the start (plateau), clip fraction, gate flip rates, training deaths",
+  "set": "the 16 monitor world-episodes x replicates 0 / 1, horizon 100, greedy decode; the same set at every gate (and at EXP-0113's), so the looks are not independent",
+  "side_effects": "deaths; run-down share (r_end < X r_start); starvation share (fill < Y)",
+  "stop_only": [
+   15,
+   20,
+   30
+  ]
+ },
+ "keeps": {
+  "m6_prereg_v10.json": "0123274c423807c57ef79f05edcdbb2830c3c76e116ad964fe349dfc2a7218db",
+  "note": "v1..v10 stay frozen"
+ },
+ "next": "on gain: validation on the unseen L5 worlds (a later set-up); otherwise a later decision",
+ "reported": "training-return curve, KL to the start (plateau or not), clip fraction, flip rates, training deaths",
+ "resume": {
+  "candidate_it10_sha256": "c13d3d6c4212278887c49c693253ef78eace2888569428268c6515a4eca504d9",
+  "checkpoint_sha256": "e346b76959d359f072a4a61f6fe55e2e51c2ff31483c7041fbd7ade608c75d1d",
+  "checks": "the checkpoint is at iteration 10 with EXP-0113's hold; its producer equals candidate_it10.pt's (the gated policy); EXP-0113's reading.json carries v10's SHA, v10's config and the start model's SHA; the reference rows recomputed at the first gate are compared with EXP-0113's (reported)",
+  "from": "EXP-0113 artifacts/checkpoint.pt (producer weights + Stepper / Adam state)",
+  "iteration": 10,
+  "ref_rows_sha256": "c3f3208cd24fe52dac378ecd7630348aca42a2ac00d9cbf100e7ffdb7acd1219"
+ },
+ "stage": "EXP-0114: the Stage 1 pilot continued to iteration 40 (producer only, 12 producers)",
+ "start": {
+  "models": "EXP-0110 start_models.pt (the KL anchor, as in v10)",
+  "reference_models_sha256": "5acf8b82df4686dd14a1da3a441a390f87fe32bf3c177e16ddd63fe417f43126"
+ },
+ "status": "frozen before EXP-0114's data; the real run refuses any other file",
+ "temps": {
+  "expand": 2.4004,
+  "restore": 3.4522,
+  "upgrade": 2.5629
+ },
+ "unchanged_from_v10": "start / KL anchor model, reference models, temps, estimator E3, seeds, sibling keys, PPO-clip, kl_coef, lr, grad_clip, steps, batch, horizon, frozen orderer and input buying, the gate set and floors"
+}

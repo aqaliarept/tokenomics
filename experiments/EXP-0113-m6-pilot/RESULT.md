@@ -9,7 +9,8 @@ volume, EUR-IS-1), 23:34–00:16 UTC ≈ **11.2 vCPU-h** (stop 22).
 - **Iterations:** about 4 min each (rollouts 115–156 s). No stall on the pod; the local stall was memory pressure.
 
 ## Result: **`hold`, with a rising curve**
-**Greedy-policy gate** vs the EXP-0100 stack (12 monitor world-episodes × r0 / r1, paired keys, M5's floors):
+**Greedy-policy gate** vs the EXP-0100 stack (16 monitor world-episodes × r0 / r1 = 32 rows, paired keys, M5's floors;
+v10's rule text says 12, its `set` field and the rows say 16):
 
 | gate | candidate units | EXP-0100 stack | g | floor | deaths | run-down share | starvation share |
 |---|---|---|---|---|---|---|---|

@@ -95,6 +95,10 @@ rule).
   gradient at 12 (CI > 0), E3 n80 = 48 seeds per half; E4 no help; orderer and 42 no gradient; ≈ 7.7 vCPU-h. Decision to the supervisor / user.
 - [x] 2.19 [experiment][remote:cpu16] EXP-0113: capped Stage 1 pilot (prereg v10): **`hold`, rising** (greedy +95 → +107 vs the EXP-0100 stack,
   floor ≈ 150; side effects better; training return −38.8 → −20.1); ≈ 11.2 vCPU-h. Continuation is the user's call.
+- [x] 2.20 [code][local:light] Pilot continuation (prereg v11 `f55aea40…`): `m6_pilot --prereg v11 --resume-from <EXP-0113 artifacts>`
+  resumes the SHA-pinned iteration-10 checkpoint (producer + Adam), runs 11-40, stop-only gates at 15 / 20 / 30,
+  the deciding reading at 40; resume pins and EXP-0100 reference-row reproduction checked.
+- [ ] 2.21 [experiment][remote:cpu16] EXP-0114: the pilot continued to iteration 40 (prereg v11); stop ≤ 40 vCPU-h.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop

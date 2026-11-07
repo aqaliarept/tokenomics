@@ -48,3 +48,13 @@
     - 10 iterations, a greedy gate at 5 and 10 against the EXP-0100 stack on the monitor set;
     - early stop on a loss, death or worse run-down at 5; reading `gain` / `hold` / `worse` at 10.
   - **Continuation** only on `gain` (or `hold` with a rising curve, the user's call), as a later decision.
+- 2026-11-07 (user, via the supervisor), after EXP-0113 `hold` with a rising curve: **continue the pilot 30 more iterations,
+  to iteration 40** (EXP-0114, pinned m6_prereg_v11 `f55aea40…`; v10 stays).
+  - **Setup:** resume from EXP-0113's iteration-10 checkpoint (SHA-pinned), every v10 setting unchanged; the resume
+    pins are checked.
+  - **Gates at 15, 20, 30 and 40:** the same monitor gate against EXP-0100. 15 / 20 / 30 stop the run on g < −F,
+    more deaths or a higher run-down share. The deciding reading is at 40 only (gain / hold / worse as v10), so the
+    best of four looks is never picked. The monitor set is the same at every gate.
+  - **Reported:** the curve, KL (plateau or not), clip fraction, flip rates, training deaths.
+  - **Budget:** stop ≤ 40 vCPU-h (≈ 36 expected), M6 → ≈ 129 of 150, leaving room for validation and a held-out read.
+  - **On `gain`:** validation on the unseen L5 worlds next (set up by the supervisor after).
