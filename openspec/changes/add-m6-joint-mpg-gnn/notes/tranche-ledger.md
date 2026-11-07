@@ -42,3 +42,4 @@
 | EXP-0126 turn-head imitation v15 + closed-loop diagnostic (commit 8a3af7e; offline pass, closed-loop gate fail on run-down, diagnostic no_cost) | 2026-11-07 | 30fw6eam8ac7ls, 4 vCPU + 20 GB volume, EUR-IS-1, 18:05–18:52 | ≈ 3.1 (stop 11) | ≈ 35.7 |
 | EXP-0127 timing pod (commit fb9ed80; 4.4 seed timed, 4.5 timing failed: file descriptors) | 2026-11-07 | lpjx5nv04kvnxp, 8 vCPU, EUR-IS-1, 21:07–21:12 | ≈ 0.6 (stop 5.3) | ≈ 36.3 |
 | EXP-0127 4.4 power check + 4.5 iteration timing (commit cb2fe36; reading `absent`) | 2026-11-07 | kkvree7wl1fo6a, 16 vCPU + 20 GB volume, EUR-IS-1, 21:36–21:58 | ≈ 5.9 (stop 8.8) | ≈ 42.2 |
+| EXP-0128 λ × heads diagnosis (commit 3b2052e): hard-stopped in cell C, results lost (no persistent volume on created CPU pods; pull only at the end) | 2026-11-07 | 3gkwpfexljrk5s, 16 vCPU, EUR-IS-1, 22:25–23:13 + restart 23:14–23:16 | ≈ 13.2 (stop 12.5) | ≈ 55.4 |
