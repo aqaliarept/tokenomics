@@ -43,3 +43,4 @@
 | EXP-0127 timing pod (commit fb9ed80; 4.4 seed timed, 4.5 timing failed: file descriptors) | 2026-11-07 | lpjx5nv04kvnxp, 8 vCPU, EUR-IS-1, 21:07–21:12 | ≈ 0.6 (stop 5.3) | ≈ 36.3 |
 | EXP-0127 4.4 power check + 4.5 iteration timing (commit cb2fe36; reading `absent`) | 2026-11-07 | kkvree7wl1fo6a, 16 vCPU + 20 GB volume, EUR-IS-1, 21:36–21:58 | ≈ 5.9 (stop 8.8) | ≈ 42.2 |
 | EXP-0128 λ × heads diagnosis (commit 3b2052e): hard-stopped in cell C, results lost (no persistent volume on created CPU pods; pull only at the end) | 2026-11-07 | 3gkwpfexljrk5s, 16 vCPU, EUR-IS-1, 22:25–23:13 + restart 23:14–23:16 | ≈ 13.2 (stop 12.5) | ≈ 55.4 |
+| EXP-0129 timing seed + main run (commit 15465ff; reading `signal_present`) | 2026-11-07 | 4rh3vwugm0kz67 (4 vCPU, 23:20–23:22) + w8pj2hdapthw29 (8 vCPU, 23:23–23:33), EUR-IS-1 | ≈ 1.5 (stops 1.7 / 2.0) | ≈ 56.9 |
