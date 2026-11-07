@@ -350,9 +350,10 @@ class ProducerGNN(nn.Module):
         self.replenish = nn.Linear(5 * hidden, 1)
         self.turn: TurnHeads | None = None  # ADR-0062 (`add_turn_heads`)
 
-    def add_turn_heads(self, set_layers: int = 0, bounded: bool = False) -> None:
+    def add_turn_heads(self, set_layers: int = 0, bounded: bool = False, width: int | None = None
+                       ) -> None:
         """Attach fresh fund / accept turn heads (the trunk and investment heads untouched)."""
-        self.turn = TurnHeads(self.hidden, set_layers, bounded)
+        self.turn = TurnHeads(self.hidden, set_layers, bounded, width)
 
     def fund_scores(self, f: dict[str, Any], t: dict[str, Any], trunk: Trunk | None = None
                     ) -> torch.Tensor:
@@ -431,25 +432,30 @@ class TurnHeads(nn.Module):
     batched sets). `bounded`: priorities and fund scores are B·tanh(·/B), so they never reach the
     action clip. `set_layers` = 0 and `bounded` = False is the original head, unchanged."""
 
-    def __init__(self, hidden: int = HIDDEN, set_layers: int = 0, bounded: bool = False) -> None:
+    def __init__(self, hidden: int = HIDDEN, set_layers: int = 0, bounded: bool = False,
+                 width: int | None = None) -> None:
+        """`hidden` = the trunk's embedding size (its rows and pooled view); `width` = the heads' own
+        size (default `hidden`; v15's capacity probe)."""
         super().__init__()
-        self.hidden, self.set_layers, self.bounded = hidden, set_layers, bounded
+        w = hidden if width is None else width
+        self.hidden, self.width, self.set_layers, self.bounded = hidden, w, set_layers, bounded
         self.pre_bound: list[torch.Tensor] | None = None
-        self.enc = nn.ModuleDict({"fund": _mlp(FUND_DIM, hidden), "bid": _mlp(BID_DIM, hidden),
-                                  "claim": _mlp(CLAIM_DIM, hidden)})
+        self.enc = nn.ModuleDict({"fund": _mlp(FUND_DIM, w), "bid": _mlp(BID_DIM, w),
+                                  "claim": _mlp(CLAIM_DIM, w)})
         self.norm = FeatureNorm({"fund": FUND_DIM, "bid": BID_DIM, "claim": CLAIM_DIM}, {})
-        self.mix = nn.ModuleDict({k: _mlp(7 * hidden, hidden) for k in ("fund", "bid", "claim")})
-        self.out = nn.ModuleDict({"fund": nn.Linear(hidden, 1), "bid": nn.Linear(hidden, 2),
-                                  "claim": nn.Linear(hidden, 1)})
+        self.mix = nn.ModuleDict({k: _mlp(w + 6 * hidden, w) for k in ("fund", "bid", "claim")})
+        self.out = nn.ModuleDict({"fund": nn.Linear(w, 1), "bid": nn.Linear(w, 2),
+                                  "claim": nn.Linear(w, 1)})
         if set_layers:
             def enc() -> nn.TransformerEncoder:
-                layer = nn.TransformerEncoderLayer(hidden, 4, 2 * hidden, dropout=0.0,
+                layer = nn.TransformerEncoderLayer(w, 4, 2 * w, dropout=0.0,
                                                    batch_first=True, norm_first=True)
                 return nn.TransformerEncoder(layer, set_layers, enable_nested_tensor=False)
             self.att = nn.ModuleDict({"fund": enc(), "accept": enc()})
 
     def config(self) -> dict[str, Any]:
-        return {"set_layers": self.set_layers, "bounded": self.bounded}
+        return {"set_layers": self.set_layers, "bounded": self.bounded,
+                **({"width": self.width} if self.width != self.hidden else {})}
 
     def node_embed(self, kind: str, x: np.ndarray, ec: Sequence[tuple[int, int]],
                    ei: Sequence[tuple[int, int]], h_cap: torch.Tensor, h_in: torch.Tensor,
@@ -504,7 +510,7 @@ class TurnHeads(nn.Module):
                     pooled: torch.Tensor) -> torch.Tensor:
         x = f[kind]
         if not x.shape[0]:
-            return torch.zeros((0, self.hidden))
+            return torch.zeros((0, self.width))
         return self.node_embed(kind, x, f[f"{kind}_cap"], f[f"{kind}_in"], h["capacity"],
                                h["input"], pooled.unsqueeze(0).expand(x.shape[0], -1))
 

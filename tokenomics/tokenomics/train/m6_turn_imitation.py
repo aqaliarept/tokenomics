@@ -250,7 +250,7 @@ def _cat(recs: Sequence[dict], kind: str) -> dict[str, Any]:
 
 def _embed(heads: g.TurnHeads, kind: str, b: Mapping[str, Any]) -> torch.Tensor:
     if not b["x"].shape[0]:
-        return torch.zeros((0, heads.hidden))
+        return torch.zeros((0, heads.width))
     return heads.node_embed(kind, b["x"], b["ec"], b["ei"], b["h_cap"], b["h_in"], b["pooled"][b["turn"]])
 
 
@@ -372,9 +372,15 @@ def _losses_inner(heads: g.TurnHeads, tg: Mapping[str, Any], loss: torch.Tensor,
 
 
 def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch: int, cap: int,
-        seed: int, log: Any = print) -> dict[str, Any]:
+        seed: int, log: Any = print, heads_cfg: Mapping[str, Any] | None = None,
+        schedule: str | None = None) -> dict[str, Any]:
+    """`heads_cfg` = TurnHeads config (default CFG's set_layers / bounded / width); `schedule`
+    "cosine" decays the learning rate to 0 over the epochs (default CFG's, none in v14)."""
     torch.manual_seed(seed)
-    pm.add_turn_heads(CFG["set_layers"], CFG["bounded"])
+    hc = heads_cfg if heads_cfg is not None else {"set_layers": CFG["set_layers"], "bounded": CFG["bounded"],
+                                                  "width": CFG.get("width")}
+    pm.add_turn_heads(**hc)
+    schedule = schedule if schedule is not None else CFG.get("schedule")
     heads = pm.turn
     assert heads is not None
     blank = {"fund": np.zeros((0, g.FUND_DIM), np.float32), "bid": np.zeros((0, g.BID_DIM), np.float32),
@@ -382,6 +388,8 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
     norm = heads.norm.fit([{**blank, **{k: r[k] for k in ("fund", "bid", "claim") if k in r}}
                            for r in train])
     opt = torch.optim.Adam(heads.parameters(), lr=lr)
+    sched = (torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs * max(1, math.ceil(len(train) / batch)))
+             if schedule == "cosine" else None)
     rng = np.random.default_rng([seed, 117])
     hist = []
     for ep in range(epochs):
@@ -393,6 +401,8 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
             opt.zero_grad()
             loss.backward()
             opt.step()
+            if sched is not None:
+                sched.step()
             tot, nb = tot + float(loss.detach()), nb + 1
         hist.append({"epoch": ep + 1, "loss": tot / max(1, nb), "seconds": round(time.perf_counter() - t0, 1)})
         log(f"[turn_imit] epoch {ep + 1}: loss {hist[-1]['loss']:.5f} ({hist[-1]['seconds']} s)")
@@ -521,17 +531,21 @@ def save_records(path: Path, recs: Sequence[Mapping[str, Any]]) -> None:
     np.savez_compressed(path, **out)
 
 
-def load_records(path: Path) -> list[dict[str, Any]]:
+def load_records(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
+    """The records of `save_records`, in order (the first `limit` only, if given)."""
     d = np.load(path)
+    arrays = {f: (d[f], d[f"off_{f}"]) for f in _ARRAYS}  # decompress each array once
+    kinds, n_res = d["kind"], d["n_res"]
     recs = []
-    for k in range(len(d["kind"])):
-        r: dict[str, Any] = {"kind": "accept" if d["kind"][k] else "fund"}
+    for k in range(len(kinds) if limit is None else min(limit, len(kinds))):
+        r: dict[str, Any] = {"kind": "accept" if kinds[k] else "fund"}
         for f in _ARRAYS:
-            a, b = d[f"off_{f}"][k], d[f"off_{f}"][k + 1]
+            arr, off = arrays[f]
+            a, b = off[k], off[k + 1]
             fund_field = f in ("fund", "fund_cap", "fund_in", "y")
             if (r["kind"] == "fund") != fund_field and f not in ("h_cap", "h_in", "pooled"):
                 continue
-            v = d[f][a:b]
+            v = arr[a:b]
             if f.endswith(("_cap", "_in")) and f not in ("h_cap", "h_in"):
                 r[f] = [(int(x), int(y)) for x, y in v.reshape(-1, 2)]
             elif f == "pooled":
@@ -539,7 +553,7 @@ def load_records(path: Path) -> list[dict[str, Any]]:
             else:
                 r[f] = v
         if r["kind"] == "accept":
-            r["n_res"] = int(d["n_res"][k])
+            r["n_res"] = int(n_res[k])
         recs.append(r)
     return recs
 
