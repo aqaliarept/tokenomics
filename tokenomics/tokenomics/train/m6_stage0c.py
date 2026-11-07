@@ -238,6 +238,14 @@ def eps_for(model: op.F40Model, k: int, decs: Sequence[dict], temps: op.Temps, n
     return {"k": k, "eps": e, "kl": mean_kl(model, k, e, decs, temps, norep), "at_bound": hi >= 1e3}
 
 
+def eps_job(job: dict) -> dict:
+    """One direction's ε search in a pool worker (the parent's serial search left 15 of 16 cores idle)."""
+    torch.set_num_threads(1)
+    m, _m0, _om = _models(job)
+    out = eps_for(m, job["k"], job["decs"], op.temps_from(job["temps"]), job["norep"])
+    return {**out, "norep": job["norep"]}
+
+
 def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: str, exp0110: str,
         monitor_pkl: str, turn_records: str, out_dir: str, workers: int, dry_run: bool = False,
         time_only: bool = False) -> int:
@@ -295,12 +303,14 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
               f"{doc['perturb_episode_seconds']:.1f} s per perturbed episode", flush=True)
         return 0
     decs = start_decisions(turn_models, replenish_models, base_jobs[:2], temps, KL_DECISIONS)
-    eps = {str(k): eps_for(m, k, decs, temps) for k in range(kdirs)}
     # the "replenish greedy" counterfactual: directions without the replenish slice, ε recalibrated, the
     # perturbed episodes played (and their KL measured) at σ_r = 0
-    temps0 = op.Temps(temps.gates, 0.0, temps.fund_tau, temps.order_tau, temps.accept_t)
     calib0 = {**calib, "temps": {**calib["temps"], "replenish_sigma": 0.0}}
-    eps0 = {str(k): eps_for(m, k, decs, temps0, norep=True) for k in range(kdirs)}
+    ejobs = [{"turn_models": turn_models, "replenish_models": replenish_models, "k": k, "norep": nr,
+              "decs": decs, "temps": calib0 if nr else calib} for k in range(kdirs) for nr in (False, True)]
+    found = pw._pool(eps_job, ejobs, workers, out / "eps_rows.jsonl")
+    eps = {str(e["k"]): e for e in found if not e["norep"]}
+    eps0 = {str(e["k"]): e for e in found if e["norep"]}
     print(f"[stage0c] eps {json.dumps({k: round(v['eps'], 5) for k, v in eps.items()})} "
           f"norep {json.dumps({k: round(v['eps'], 5) for k, v in eps0.items()})}", flush=True)
     jobs = []

@@ -610,8 +610,9 @@ def time_iteration(pm: F40Model, pm0: F40Model, om: g.OrdererGNN, jobs: Sequence
     if workers <= 1:
         res = [play_seed(j, pm, pm0, om, temps) for j in jobs]
     else:
+        im.set_sharing()  # tensors through /dev/shm files, not descriptors (EXP-0105: "Too many open files")
         state = {k: v.detach().clone() for k, v in pm.state_dict().items()}
-        with ProcessPoolExecutor(workers, mp_context=get_context("fork")) as ex:
+        with ProcessPoolExecutor(workers, mp_context=get_context("fork"), initializer=im.set_sharing) as ex:
             res = list(ex.map(_play_job, [(j, temps, state) for j in jobs]))
     t_roll = time.perf_counter() - t0
     decs = [d for r in res for d in r["decisions"]]
