@@ -19,7 +19,7 @@ import json
 import sys
 import time
 from collections.abc import Sequence
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import get_context
 from pathlib import Path
 from typing import Any
@@ -178,11 +178,20 @@ def main(argv: Sequence[str] | None = None) -> int:
              "linear": a.recollect or a.linear, "ordered": a.ordered}
             for g in sorted(grid, key=lambda g: -g["width"] * g["set_layers"] * g["epochs"])]
     t0 = time.perf_counter()
+    # each setting's result is appended as soon as it finishes, so a hard stop keeps the finished ones
+    partial = out / "probe_partial.jsonl"
+    results = []
     if a.workers <= 1:
-        results = [probe_one(j) for j in jobs]
+        for j in jobs:
+            results.append(probe_one(j))
+            with partial.open("a") as fh:
+                fh.write(json.dumps(results[-1], default=float) + "\n")
     else:
         with ProcessPoolExecutor(min(a.workers, len(jobs)), mp_context=get_context("spawn")) as ex:
-            results = list(ex.map(probe_one, jobs))
+            for fut in as_completed([ex.submit(probe_one, j) for j in jobs]):
+                results.append(fut.result())
+                with partial.open("a") as fh:
+                    fh.write(json.dumps(results[-1], default=float) + "\n")
     w = winner(results)
     doc = {"recollect": check, "winner": None if w is None else {k: w[k] for k in ("width", "set_layers", "epochs")},
            "winner_seconds_per_epoch": None if w is None else w["seconds_per_epoch"],
