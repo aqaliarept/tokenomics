@@ -99,7 +99,8 @@ def test_a_tiny_fit_reaches_full_agreement() -> None:
     rng = np.random.default_rng(1)
     recs = [_rec(rng, k) for k in ("fund", "accept") * 6]
     pm, _ = im.load_models(MODELS)
-    ti.fit(pm, recs, epochs=300, lr=1e-2, batch=12, cap=None, seed=0, log=lambda *a: None)
+    ti.fit(pm, recs, epochs=300, lr=1e-2, batch=12, cap=None, seed=0, log=lambda *a: None,
+           heads_cfg={"set_layers": 2, "bounded": True}, schedule="none")
     a = ti.agreement(pm, recs)
     assert a["accept"] == 1.0 and a["rank_accept"] == 1.0 and a["rank_fund"] == 1.0
     assert a["whole_schedule"] == 1.0 and ti.offline_pass(a)
@@ -207,8 +208,8 @@ def test_pre_tanh_penalty_and_ties() -> None:
     assert torch.equal(heads._bound(big)[0], heads._bound(big)[1])  # float32 saturation: a real tie
 
 
-def test_prereg_v14_matches_the_code_when_pinned() -> None:
-    if ti.PREREG_V14_SHA256 is None:
+def test_prereg_v15_matches_the_code_when_pinned() -> None:
+    if ti.PREREG_V15_SHA256 is None:
         assert ti.prereg_problems()
     else:
         assert ti.prereg_problems() == []
@@ -406,3 +407,43 @@ def test_a_tiny_fit_with_the_ordered_pass_reaches_full_agreement() -> None:
            heads_cfg={"set_layers": 2, "bounded": True, "ordered": True})
     a = ti.agreement(pm, recs)
     assert a["accept"] == 1.0 and a["rank_accept"] == 1.0
+
+
+def test_fit_resumes_from_its_epoch_checkpoint_exactly(tmp_path: Path) -> None:
+    """v15's crash safety: a fit stopped after epoch 2 and resumed from its checkpoint ends in the same heads as
+    an uninterrupted fit (same order draws, optimiser, schedule)."""
+    rng = np.random.default_rng(7)
+    recs = [_rec(rng, k) for k in ("fund", "accept") * 8]
+    cfg = {"set_layers": 2, "bounded": True, "ordered": True}
+
+    def run(epochs: int, ckpt: Path | None) -> dict:
+        pm = g.ProducerGNN()
+        ti.fit(pm, recs, epochs, 3e-3, 4, None, 0, log=lambda *a: None, heads_cfg=cfg, schedule="cosine",
+               warmup=1, ckpt=ckpt)
+        return pm.turn.state_dict()
+
+    whole = run(4, None)
+    ck = tmp_path / "ck.pt"
+    pm = g.ProducerGNN()
+    ti.fit(pm, recs, 4, 3e-3, 4, None, 0, log=lambda *a: None, heads_cfg=cfg, schedule="cosine", warmup=1, ckpt=ck)
+    state = torch.load(ck, weights_only=False)
+    assert state["epoch"] == 4
+    # rewind the checkpoint to epoch 2 by re-running 2 epochs of a 4-epoch schedule, then resume
+    ck2 = tmp_path / "ck2.pt"
+
+    class _Stop(Exception):
+        pass
+
+    def stop_after_2(msg: str) -> None:
+        if "epoch 2:" in msg:
+            raise _Stop
+
+    pm2 = g.ProducerGNN()
+    try:
+        ti.fit(pm2, recs, 4, 3e-3, 4, None, 0, log=stop_after_2, heads_cfg=cfg, schedule="cosine", warmup=1,
+               ckpt=ck2)
+    except _Stop:
+        pass
+    assert torch.load(ck2, weights_only=False)["epoch"] in (1, 2)
+    resumed = run(4, ck2)
+    assert all(torch.allclose(v, resumed[k]) for k, v in whole.items())

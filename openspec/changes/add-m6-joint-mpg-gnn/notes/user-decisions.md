@@ -97,3 +97,10 @@
   - The deployed path must equal the trained path where it matters (DIAGNOSTICS 37).
   - Order of work: code with tests, one review round, a probe on EXP-0121's halves (≤ 3 vCPU-h, pre-registered);
     on 0.99, v15 with the fresh held-out set and 4.3 on F40, then the closed-loop check; otherwise report.
+- 2026-11-07 (supervisor, after EXP-0125's winner): **v15's fit budget is 30 epochs on the full 427k training
+  turns** (≈ 4.5× the probe's steps, for margin over 0.9924), cosine over the full run. The gate reads the final
+  model only (no early stopping, no best-epoch pick). A checkpoint is saved each epoch for crash safety only.
+  - v15 = ordered pass + linear fractions + arrival position, w32 / 3 layers, on F40, the fresh held-out set,
+    pre-registered before data.
+  - If the offline gate passes, the closed-loop check (EXP-0123's design, fresh episodes) runs in the same or a
+    follow-up pod.

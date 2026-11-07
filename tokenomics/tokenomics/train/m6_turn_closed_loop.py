@@ -134,13 +134,13 @@ def _track_pending(env: Any, stats: Counter) -> None:
 
 
 def build_jobs(ts: Any, mon: Sequence, cand: str, ref_models: str, replenish: str, horizon: int,
-               episodes: int, max_worlds: int | None) -> tuple[list[dict], dict]:
+               episodes: int, max_worlds: int | None, stage: str = STAGE) -> tuple[list[dict], dict]:
     from ..eval.world_space import episode_seeds
     from .m6_f40_confirm import _cell
 
     records = {w["world"]: w["record"] for w in ts.training["worlds"]}
     worlds = sorted({w for w, _ in mon})[:max_worlds]
-    wes = [(w, int(ep)) for w in worlds for ep in episode_seeds(w, episodes, STAGE)]
+    wes = [(w, int(ep)) for w in worlds for ep in episode_seeds(w, episodes, stage)]
     assert not set(wes) & set(mon)
     cells = {f"{w}#{ep}": _cell(records[w], f"{w}#{ep}", {}) for w, ep in wes}
     jobs = []
@@ -187,13 +187,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--source-commit", default="")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--stage", default=STAGE, help="the fresh episode set's seed stage")
     a = ap.parse_args(argv)
     if not a.dry_run and len(a.source_commit) != 40:
         im._refuse(["a real run needs a 40-hex --source-commit"])
     ts, _train, mon = im._training(a.training_dir)
     atlas = load_atlas(a.atlas)
     horizon, episodes, mw = (6, 1, 1) if a.dry_run else (100, EPISODES, None)
-    jobs, cells = build_jobs(ts, mon, a.candidate, a.reference, a.replenish, horizon, episodes, mw)
+    jobs, cells = build_jobs(ts, mon, a.candidate, a.reference, a.replenish, horizon, episodes, mw, a.stage)
     # floors need the atlas spreads: rebuild the cells with them
     from .m6_f40_confirm import _cell
     records = {w["world"]: w["record"] for w in ts.training["worlds"]}
@@ -208,7 +209,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     rd = reading(rows, cells, [x["stats"] for x in res if x["row"]["arm"] == "candidate"])
     doc = {"reading": rd, "dry_run": a.dry_run, "source_commit": a.source_commit, "jobs": len(jobs),
            "candidate_sha256": sha256_file(a.candidate), "reference_sha256": sha256_file(a.reference),
-           "replenish_sha256": sha256_file(a.replenish), "stage": STAGE, "episodes": episodes}
+           "replenish_sha256": sha256_file(a.replenish), "stage": a.stage, "episodes": episodes}
     (out / "reading.json").write_text(json.dumps(doc, indent=1, default=float) + "\n")
     print(f"[turn_closed_loop] {rd['reading']} g {rd['g']} F {rd['F']} agreement "
           f"{rd['closed_loop_accept_agreement']} decisions {rd['decisions']}", flush=True)

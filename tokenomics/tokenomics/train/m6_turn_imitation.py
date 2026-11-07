@@ -49,56 +49,51 @@ PREREG_V12_SHA256 = "3c0714f7d7c5e3bd80db8870025e732a2de5dc5de54d5f46858b571ed30
 PREREG_V13_SHA256 = "97474c2290f687b7320257b2f62b64c1c84cf5c12300a60541b0efd8ab37c186"  # EXP-0118, offline_fail
 # v14 (supervisor 2026-11-07, DIAGNOSTICS 38): learned set context (self-attention over a turn's items) and
 # bounded scores; the start chosen by EXP-0119's reading (F40 on `gain`, else EXP-0100).
-PREREG_V14_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v14.json"
-PREREG_V14_SHA256: str | None = "21b60013ae5eb20084bb9789c73ae68a7dce5ffb408a702c30b0e6de343f30bf"  # frozen before EXP-0120 data (re-frozen if the review changes the code)
-CFG = {"horizon": 100, "replicates": [0, 1], "epochs": 20, "lr": 1e-3, "batch_turns": 512,
-       "max_pairs_per_turn": 400, "score_l2": 0.0, "z_l2": 1e-4, "set_layers": 2, "bounded": True, "seed": 0, "gate": {"accept": 0.99, "rank_accept": 0.99,
-                                                      "rank_fund": 0.99},
+PREREG_V14_SHA256 = "21b60013ae5eb20084bb9789c73ae68a7dce5ffb408a702c30b0e6de343f30bf"  # EXP-0120, offline_fail
+# v15 (EXP-0121–0125; user / supervisor decisions 2026-11-07): the ordered accept pass, v15's linear fractions and
+# the arrival position, w32 / 3 layers, 30 epochs on F40's full training turns, the fresh held-out set.
+PREREG_V15_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v15.json"
+PREREG_V15_SHA256: str | None = "15b7c7980a76c834166eb44a5e5088b3929eba358e62febb98f18fca77f57ff8"  # frozen before EXP-0126 data
+# v15 (EXP-0125's winner; supervisor 2026-11-07: 30 epochs on the full training turns, cosine over the run, the
+# final model read; the fresh held-out set). v14's values: epochs 20, lr 1e-3, set_layers 2, no schedule.
+CFG = {"horizon": 100, "replicates": [0, 1], "epochs": 30, "lr": 3e-3, "schedule": "cosine", "batch_turns": 512,
+       "max_pairs_per_turn": 400, "score_l2": 0.0, "z_l2": 1e-4, "set_layers": 3, "bounded": True,
+       "linear": True, "ordered": True, "arrival": True, "rank_warmup": 3, "seed": 0,
+       "heldout": {"stage": "m6-turn-imit-v15-heldout", "episodes_per_world": 1},
+       "gate": {"accept": 0.99, "rank_accept": 0.99, "rank_fund": 0.99},
        "r42": {"worlds": 8, "episodes": 1, "stage": "m6-turn-imit-42"}}
 START = "EXP-0100 artifacts/fit/models.pt (im.EXP0100_MODELS_SHA)"
 
 
-def registered_prereg_v14() -> dict:
+def registered_prereg_v15() -> dict:
     return {
-        "format": "m6-prereg-v14", "change": "add-m6-joint-mpg-gnn", "task": "4.3",
-        "stage": "EXP-0120: turn-head imitation with learned set context (v13 + DIAGNOSTICS 38's fix)",
-        "supersedes": f"m6_prereg_v13 ({PREREG_V13_SHA256[:8]}…, EXP-0118 offline_fail: a per-bid head cannot "
-                      "imitate the cumulative auction)",
-        "set_context": f"{CFG['set_layers']} self-attention layers (4 heads, pre-norm, no positional encoding, "
-                       "padding masked) over each turn's items after their per-item encoding: the fund requests; "
-                       "the bids and claims together. No hand-built set feature.",
-        "bounded": "priorities and fund scores are 10·tanh(z/10); float32 rounds to exactly ±10 once |z| > ~90, "
-                   f"so a penalty {CFG['z_l2']}·mean(z²) on the pre-tanh z keeps them apart; tied learnable "
-                   "pairs reported; the metric stays on the bounded scores",
-        "start": "chosen by EXP-0119's reading, recorded before data: deciding `gain` → F40 (EXP-0114 "
-                 "candidate_it40's trunk and investment gates, the EXP-0110 start's replenish; the turn heads "
-                 "read F40's trunk); otherwise EXP-0100's stack",
-        "accept_errors": "reported split as DIAGNOSTICS 38: declined no_fit, declined displaced (fits alone), "
-                         "accepted",
-        "excluded_pairs": "pairs whose order the head's inputs cannot determine are left out of the loss and the "
-                          "metric: feature-identical pairs (same row features and the same linked capacity / input "
-                          "rows; the domain's tie-break keeps the default order) and, in the fund turn, "
-                          "replenishment vs replenishment (creation order, arbitrary); excluded counts reported "
-                          "by kind; the closed loop measures whether the unordered replenishment order matters",
-        "metric_scores": "the offline metric scores the clipped (±10) outputs the closed loop acts on; saturation "
-                         "(share of outputs at the bound) reported; an L2 penalty (score_l2) on fund scores and "
-                         "priorities keeps the pairwise loss's growing margins inside the clip",
-        "reported": "identical-bid pairs with different default accept bits (in the closed loop both bids get "
-                    "the same bit, DIAGNOSTICS 36); held-out records and per-kind pair counts persisted (npz)",
-        "start": START, "fitted": "TurnHeads only (fresh seeded init); trunk, investment heads, orderer frozen",
-        "labels": "default_turn_decision (accept bits; one priority order over reservations, pending claims "
-                  "and accepted bids) and default_fund_scores (fund order)",
-        "loss": "BCE on accept bits + pairwise logistic on every ordered pair within a turn "
-                f"(≤ {CFG['max_pairs_per_turn']} sampled pairs per turn in training)",
-        "data": "start stack + default turns: 112 M4 training world-episodes × r0/r1 (fit), 16 monitor "
-                "world-episodes × r0/r1 (held out), horizon 100, 12 producers",
-        "offline_gate": "held-out turns: accept agreement ≥ 0.99, pairwise rank agreement ≥ 0.99 for the "
-                        "accept-turn order and for the fund order; reported: share of turns whose whole "
-                        "schedule (accept set and order) equals the default's; failing → no closed loop",
-        "closed_loop": "candidate (greedy GNN turn heads, TurnCache) vs reference (default turns), same start "
-                       "stack, 16 monitor world-episodes × r0/r1, M5's floors (g, F); pass iff g ≥ −F, deaths, "
-                       "run-down and starvation shares no worse; 42 reported (atlas v2 train-split 42 worlds, "
-                       f"{CFG['r42']['worlds']} worlds × {CFG['r42']['episodes']} fresh episode × r0/r1)",
+        "format": "m6-prereg-v15", "change": "add-m6-joint-mpg-gnn", "task": "4.3",
+        "stage": "EXP-0126: turn-head imitation with the ordered accept pass, linear fractions and arrival position",
+        "supersedes": f"m6_prereg_v14 ({PREREG_V14_SHA256[:8]}…, EXP-0120 offline_fail; DIAGNOSTICS 38: probes "
+                      "EXP-0121 / 0122 / 0124 no winner, EXP-0125 winner w32 L3 e90 + arrival)",
+        "start": "F40 (pinned as v14: EXP-0119's real reading 246a94a7…, candidate_it40 ace0fabf…, the EXP-0110 "
+                 "start's replenish 697d94c0…); the turn heads read F40's trunk",
+        "heads": "3 pre-norm self-attention layers (4 heads, width 32) over each turn's items, then for "
+                 "the accept turn a gated additive recurrent pass over [reservations, pending, bids] in the heads' "
+                 "own bounded, detached priority order (ties: input order = the domain's kind order); bounded "
+                 "10·tanh scores with a 1e-4 pre-tanh penalty",
+        "features": "v14's log rows + v15's linear own-state fractions (fund +1, bid / claim +3) + the arrival "
+                    "position of each bid / claim (own state, the domain's tie-break order); no cumulative feature",
+        "fit": "30 epochs over the full training turns, cosine LR from 3e-3 over the whole run, batch 512, ≤ 400 "
+               "pairs per turn, seed 0, the ranking loss alone for the first 3 epochs, declined bids ranked, the "
+               "student's own order; the final model is read (no early stopping, no best epoch); a checkpoint "
+               "each epoch for crash safety only (resume continues the same run)",
+        "data": "F40 + default turns: 112 M4 training world-episodes × r0/r1 (fit); held out: the 16 monitor "
+                "worlds × 1 fresh episode (stage m6-turn-imit-v15-heldout, never played) × r0/r1",
+        "offline_gate": "fresh held-out turns, bounded / clipped scores: accept agreement ≥ 0.99, accept-turn "
+                        "rank (claims + accepted bids, v13's exclusions) ≥ 0.99, fund rank ≥ 0.99; reported: the "
+                        "tie-dependent / determinable split, the slack split, ties, saturation",
+        "closed_loop": "only if the offline gate passes: candidate (F40 + the fitted heads, greedy) vs reference "
+                       "(F40 + default turns) on the fresh held-out world-episodes, M5's floors; pass iff g ≥ −F and "
+                       "deaths, run-down and starvation shares no worse (EXP-0123's reading: gain g > F, cost g < −F "
+                       "or worse side effects, else no_cost); 42 reported; then EXP-0123's diagnostic (accept "
+                       "agreement in closed loop, differing bits, pending fates) on a second fresh episode set "
+                       "(stage m6-turn-imit-v15-closed-loop)",
         "config": CFG,
     }
 
@@ -106,19 +101,19 @@ def registered_prereg_v14() -> dict:
 def freeze() -> str:
     from ..eval.provenance import sha256_file
 
-    PREREG_V14_PATH.write_text(json.dumps(registered_prereg_v14(), indent=1, sort_keys=True) + "\n")
-    return sha256_file(str(PREREG_V14_PATH))
+    PREREG_V15_PATH.write_text(json.dumps(registered_prereg_v15(), indent=1, sort_keys=True) + "\n")
+    return sha256_file(str(PREREG_V15_PATH))
 
 
 def prereg_problems() -> list[str]:
     from ..eval.provenance import sha256_file
 
-    if PREREG_V14_SHA256 is None:
-        return ["no pinned m6_prereg_v14.json (`--mode freeze`)"]
-    if not PREREG_V14_PATH.exists() or sha256_file(str(PREREG_V14_PATH)) != PREREG_V14_SHA256:
-        return ["m6_prereg_v14.json does not match its pinned SHA-256"]
-    if json.loads(PREREG_V14_PATH.read_text()) != registered_prereg_v14():
-        return ["the v14 pre-registration differs from the code"]
+    if PREREG_V15_SHA256 is None:
+        return ["no pinned m6_prereg_v15.json (`--mode freeze`)"]
+    if not PREREG_V15_PATH.exists() or sha256_file(str(PREREG_V15_PATH)) != PREREG_V15_SHA256:
+        return ["m6_prereg_v15.json does not match its pinned SHA-256"]
+    if json.loads(PREREG_V15_PATH.read_text()) != registered_prereg_v15():
+        return ["the v15 pre-registration differs from the code"]
     return []
 
 
@@ -381,13 +376,14 @@ def _losses_inner(heads: g.TurnHeads, tg: Mapping[str, Any], loss: torch.Tensor,
 
 def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch: int, cap: int,
         seed: int, log: Any = print, heads_cfg: Mapping[str, Any] | None = None,
-        schedule: str | None = None, warmup: int | None = None) -> dict[str, Any]:
+        schedule: str | None = None, warmup: int | None = None, ckpt: Path | None = None) -> dict[str, Any]:
     """`heads_cfg` = TurnHeads config (default CFG's set_layers / bounded / width); `schedule`
     "cosine" decays the learning rate to 0 over the epochs (default CFG's, none in v14)."""
     torch.manual_seed(seed)
     hc = heads_cfg if heads_cfg is not None else {"set_layers": CFG["set_layers"], "bounded": CFG["bounded"],
                                                   "width": CFG.get("width"), "linear": CFG.get("linear", False),
-                                                  "ordered": CFG.get("ordered", False)}
+                                                  "ordered": CFG.get("ordered", False),
+                                                  "arrival": CFG.get("arrival", False)}
     pm.add_turn_heads(**hc)
     schedule = schedule if schedule is not None else CFG.get("schedule")
     heads = pm.turn
@@ -402,8 +398,17 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
     sched = (torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs * max(1, math.ceil(len(train) / batch)))
              if schedule == "cosine" else None)
     rng = np.random.default_rng([seed, 117])
-    hist = []
-    for ep in range(epochs):
+    hist, first = [], 0
+    if ckpt is not None and Path(ckpt).exists():  # crash safety: continue the same run (v15)
+        st = torch.load(ckpt, weights_only=False)
+        heads.load_state_dict(st["heads"])
+        opt.load_state_dict(st["opt"])
+        if sched is not None:
+            sched.load_state_dict(st["sched"])
+        rng.bit_generator.state = st["rng"]
+        hist, first = st["history"], st["epoch"]
+        log(f"[turn_imit] resumed after epoch {first}")
+    for ep in range(first, epochs):
         order = rng.permutation(len(train))
         tot, nb, t0 = 0.0, 0, time.perf_counter()
         for k in range(0, len(order), batch):
@@ -417,6 +422,10 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
             tot, nb = tot + float(loss.detach()), nb + 1
         hist.append({"epoch": ep + 1, "loss": tot / max(1, nb), "seconds": round(time.perf_counter() - t0, 1)})
         log(f"[turn_imit] epoch {ep + 1}: loss {hist[-1]['loss']:.5f} ({hist[-1]['seconds']} s)")
+        if ckpt is not None:
+            torch.save({"heads": heads.state_dict(), "opt": opt.state_dict(), "epoch": ep + 1, "history": hist,
+                        "sched": sched.state_dict() if sched is not None else None,
+                        "rng": rng.bit_generator.state}, ckpt)
     return {"norm": norm, "history": hist}
 
 
@@ -731,7 +740,8 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
     print(f"[turn_imit] collected {collect}", flush=True)
     pm, om = im.load_models(models)
     t1 = time.perf_counter()
-    rep = fit(pm, tr, epochs, CFG["lr"], CFG["batch_turns"], CFG["max_pairs_per_turn"], CFG["seed"])
+    rep = fit(pm, tr, epochs, CFG["lr"], CFG["batch_turns"], CFG["max_pairs_per_turn"], CFG["seed"],
+              ckpt=out / "fit_checkpoint.pt")
     rep["seconds"] = round(time.perf_counter() - t1, 1)
     cand = out / "models.pt"
     im.save_models(pm, om, cand)
@@ -739,7 +749,7 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
     offline = {"train": agreement(pm, tr, whole=False), "heldout": agreement(pm, ho)}
     offline["pass"] = offline_pass(offline["heldout"])
     print(f"[turn_imit] offline {offline['heldout']} pass {offline['pass']}", flush=True)
-    doc: dict[str, Any] = {"prereg": PREREG_V14_SHA256, "start": start,
+    doc: dict[str, Any] = {"prereg": PREREG_V15_SHA256, "start": start,
                            "heldout": {"set": CFG.get("heldout") or "monitor", "world_episodes": len(mon)}, "source_commit": im.SOURCE_COMMIT, "dry_run": dry_run,
                            "start_sha256": sha256_file(models), "candidate_sha256": sha256_file(str(cand)),
                            "collect": collect, "fit": rep, "offline": offline, "reading": None}

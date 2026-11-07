@@ -1,0 +1,49 @@
+{
+ "change": "add-m6-joint-mpg-gnn",
+ "closed_loop": "only if the offline gate passes: candidate (F40 + the fitted heads, greedy) vs reference (F40 + default turns) on the fresh held-out world-episodes, M5's floors; pass iff g \u2265 \u2212F and deaths, run-down and starvation shares no worse (EXP-0123's reading: gain g > F, cost g < \u2212F or worse side effects, else no_cost); 42 reported; then EXP-0123's diagnostic (accept agreement in closed loop, differing bits, pending fates) on a second fresh episode set (stage m6-turn-imit-v15-closed-loop)",
+ "config": {
+  "arrival": true,
+  "batch_turns": 512,
+  "bounded": true,
+  "epochs": 30,
+  "gate": {
+   "accept": 0.99,
+   "rank_accept": 0.99,
+   "rank_fund": 0.99
+  },
+  "heldout": {
+   "episodes_per_world": 1,
+   "stage": "m6-turn-imit-v15-heldout"
+  },
+  "horizon": 100,
+  "linear": true,
+  "lr": 0.003,
+  "max_pairs_per_turn": 400,
+  "ordered": true,
+  "r42": {
+   "episodes": 1,
+   "stage": "m6-turn-imit-42",
+   "worlds": 8
+  },
+  "rank_warmup": 3,
+  "replicates": [
+   0,
+   1
+  ],
+  "schedule": "cosine",
+  "score_l2": 0.0,
+  "seed": 0,
+  "set_layers": 3,
+  "z_l2": 0.0001
+ },
+ "data": "F40 + default turns: 112 M4 training world-episodes \u00d7 r0/r1 (fit); held out: the 16 monitor worlds \u00d7 1 fresh episode (stage m6-turn-imit-v15-heldout, never played) \u00d7 r0/r1",
+ "features": "v14's log rows + v15's linear own-state fractions (fund +1, bid / claim +3) + the arrival position of each bid / claim (own state, the domain's tie-break order); no cumulative feature",
+ "fit": "30 epochs over the full training turns, cosine LR from 3e-3 over the whole run, batch 512, \u2264 400 pairs per turn, seed 0, the ranking loss alone for the first 3 epochs, declined bids ranked, the student's own order; the final model is read (no early stopping, no best epoch); a checkpoint each epoch for crash safety only (resume continues the same run)",
+ "format": "m6-prereg-v15",
+ "heads": "3 pre-norm self-attention layers (4 heads, width 32) over each turn's items, then for the accept turn a gated additive recurrent pass over [reservations, pending, bids] in the heads' own bounded, detached priority order (ties: input order = the domain's kind order); bounded 10\u00b7tanh scores with a 1e-4 pre-tanh penalty",
+ "offline_gate": "fresh held-out turns, bounded / clipped scores: accept agreement \u2265 0.99, accept-turn rank (claims + accepted bids, v13's exclusions) \u2265 0.99, fund rank \u2265 0.99; reported: the tie-dependent / determinable split, the slack split, ties, saturation",
+ "stage": "EXP-0126: turn-head imitation with the ordered accept pass, linear fractions and arrival position",
+ "start": "F40 (pinned as v14: EXP-0119's real reading 246a94a7\u2026, candidate_it40 ace0fabf\u2026, the EXP-0110 start's replenish 697d94c0\u2026); the turn heads read F40's trunk",
+ "supersedes": "m6_prereg_v14 (21b60013\u2026, EXP-0120 offline_fail; DIAGNOSTICS 38: probes EXP-0121 / 0122 / 0124 no winner, EXP-0125 winner w32 L3 e90 + arrival)",
+ "task": "4.3"
+}
