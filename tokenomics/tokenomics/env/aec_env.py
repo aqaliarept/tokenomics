@@ -452,8 +452,9 @@ class TokenomicsAECEnv(AECEnv):
             if agent == self._last_before_ordering:
                 self.system.start_ordering()
         elif role == "fund":
-            from .producer_turns import decode_fund
+            from .producer_turns import decode_fund, fund_slots
             n = len(self.system.funding_requests(did))
+            self.turn_beyond_k += max(0, n - fund_slots(self.spec_))  # past the slots: default order
             self.system.set_funding_priorities(did, decode_fund(np.asarray(action), n))
             if agent == self._last_before_ordering:
                 self.system.start_ordering()

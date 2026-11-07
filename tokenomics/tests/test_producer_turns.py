@@ -23,7 +23,7 @@ import numpy as np
 import pytest
 
 from tokenomics.domain.config import ProducingAgentConfig, Restoration, Upgrade
-from tokenomics.domain.producing_agent import (FAIL_DROPPED, K_BID, REJECT_DECLINED,
+from tokenomics.domain.producing_agent import (FAIL_DROPPED, K_BID, K_RES, REJECT_DECLINED,
                                                REJECT_DISPLACED, REJECT_NO_FIT, Bid,
                                                ProducingAgent, TurnDecision, _Reservation)
 from tokenomics.env import producer_turns as pt
@@ -120,6 +120,68 @@ def test_bids_beyond_the_slots_are_declined_and_counted() -> None:
     assert beyond == 3 and sum(d.accept) == K_BID and not any(d.accept[K_BID:])
 
 
+def _result(r) -> tuple:
+    return tuple([x.order_id for x in getattr(r, f)] for f in ("accepted", "completed", "failed",
+                                                                 "rejected")) + (
+        tuple(r.failure_reasons), tuple(r.rejection_reasons))
+
+
+def _many_reservations(cap: int) -> ProducingAgent:
+    """K_RES + 1 carried composite reservations (4 capacity each, waited 1 cycle, so a reservation
+    without stock fails at TTL this cycle), stock for K_RES of them, one new bid of 8."""
+    p = producer(cap=cap, ttl=2)
+    p.reservations = [_Reservation(bid(4, 400 - i, f"r{i}", {7: 1}), 1) for i in range(K_RES + 1)]
+    p.inventory = {7: K_RES}
+    p.place_bids([bid(8, 8, "new")])
+    return p
+
+
+@pytest.mark.parametrize("cap", [200, 190])
+def test_reservations_beyond_the_slots_keep_carried_first(cap: int) -> None:
+    """Review repro (e6cacf0): the 49th reservation (beyond K_RES, the cheapest) fails at TTL and
+    frees the capacity the new bid needs, so the bid completes, not pends. cap 190: re-validation
+    must drop the cheapest first, as today. The default decision through the action = the auction."""
+    plain, turned = _many_reservations(cap), _many_reservations(cap)
+    ref = plain.produce()
+    d, beyond = pt.decode_accept(pt.encode_accept_action(turned.default_turn_decision()),
+                                 turned.turn_lists())
+    turned.set_turn(d)
+    got = turned.produce()
+    assert beyond == 1 and _result(got) == _result(ref) and not turned.pending
+    assert [r.bid.order_id for r in turned.reservations] == [r.bid.order_id for r in plain.reservations]
+    if cap == 200:
+        assert "new" in _result(got)[1]
+
+
+def test_outage_ignores_the_decision() -> None:
+    """Under an outage re-validation and every claim run in today's order, whatever the scores."""
+    def play(flip: bool) -> tuple:
+        p = producer(10)
+        p.reservations = [_Reservation(bid(6, 60, "rich", {7: 1})), _Reservation(bid(6, 12, "poor", {7: 1}))]
+        p.place_bids([bid(2, 20, "b")])
+        d = p.default_turn_decision()
+        if flip:
+            d = TurnDecision((True,), (9.0,), (-5.0, 5.0), ())
+        p.set_turn(d)
+        return _result(p.produce(outage=True)), [r.bid.order_id for r in p.reservations]
+
+    assert play(True) == play(False)
+
+
+def test_fund_requests_beyond_the_slots_are_counted() -> None:
+    env = _phase1_env(True, 4)
+    env.reset(seed=0)
+    n = pt.fund_slots(env.spec_)
+    pid = env.spec_.producer_ids[0]
+    reqs = [object()] * (n + 2)
+    env.system.funding_requests = lambda _pid: reqs  # type: ignore[method-assign]
+    env.system.set_funding_priorities = lambda _pid, scores: None  # type: ignore[method-assign]
+    env.agent_selection = f"fund_{pid}"
+    env.step(np.zeros(n, np.float32))
+    assert env.turn_beyond_k == 2
+    assert len(pt.decode_fund(np.zeros(n), n + 2)) == n + 2
+
+
 def test_fund_scores_order_stage_two() -> None:
     from tokenomics.domain.system import distribute_investment_fund
 
@@ -205,14 +267,15 @@ def _supply_rows(world: str, turns: bool, n: int, horizon: int) -> list[dict]:
 
 @needs
 @pytest.mark.skipif(not _lfs(EXP0088), reason="records absent")
-def test_default_turns_replay_exp0088_rows() -> None:
+@pytest.mark.parametrize("world", ["ws-atlas-v1-12-0391", "ws-atlas-v1-12-0060"])
+def test_default_turns_replay_exp0088_rows(world: str) -> None:
     """The EXP-0088 k5_rf5 replay (ADR-0062 D4): default turns reproduce the recorded rows, cell
-    for cell (columns added since must read zero)."""
+    for cell (columns added since must read zero); 12-0060 is shocked (capacity hits, outages)."""
     csv.field_size_limit(1 << 30)
     with EXP0088.open() as fh:
         ref = {(r["world"], r["episode"], r["subject"], r["replicate"]): r
-               for r in csv.DictReader(fh) if r["world"] == "ws-atlas-v1-12-0391"}
-    rows = _supply_rows("ws-atlas-v1-12-0391", True, 2, 100)
+               for r in csv.DictReader(fh) if r["world"] == world}
+    rows = _supply_rows(world, True, 2, 100)
     for r in rows:
         k = (r["world"], r["episode"], r["subject"], r["replicate"])
         b = ref[k]
@@ -224,11 +287,9 @@ def test_default_turns_replay_exp0088_rows() -> None:
 # --- information set ---
 
 
-@needs
-def test_turn_features_read_only_the_producers_own_state() -> None:
-    """At an accept turn, producer A's turn observation and GNN turn features do not change when
-    another producer's bids and capacity change."""
-    pytest.importorskip("torch")
+def _drive_to(role: str, cycle: int):
+    """The k5_rf5 + MWWk stack on 12-0391 with default turns, stopped at the first `role` turn of
+    `cycle` (not yet acted)."""
     from tokenomics.eval.decoder_check import (MWWK, decoder_arm, decoder_policies, job_draw_key,
                                                select_views, world_entry)
     from tokenomics.eval.routing_diagnostics import set_draw_key
@@ -247,14 +308,25 @@ def test_turn_features_read_only_the_producers_own_state() -> None:
     set_draw_key(env, job_draw_key(job))
     prod, order, _ = decoder_policies(job)
     env.reset(seed=job["episode"])
-    for _ in range(3 * len(env.possible_agents)):  # into cycle 3's accept turns
+    for _ in range((cycle + 1) * len(env.possible_agents)):
         a = env.agent_selection
-        role = env._role[a][0]
-        if role == "acc" and env.system.cycle_counter >= 3:
-            break
-        act = (prod(env, a) if role == "prod" else order(env, a) if role == "order" else
-               pt.default_fund_policy(env, a) if role == "fund" else pt.default_accept_policy(env, a))
+        r = env._role[a][0]
+        if r == role and env.system.cycle_counter >= cycle:
+            return env
+        act = (prod(env, a) if r == "prod" else order(env, a) if r == "order" else
+               pt.default_fund_policy(env, a) if r == "fund" else pt.default_accept_policy(env, a))
         env.step(act)
+    raise AssertionError(f"no {role} turn by cycle {cycle}")
+
+
+@needs
+def test_turn_features_read_only_the_producers_own_state() -> None:
+    """At an accept turn, producer A's turn observation and GNN turn features do not change when
+    another producer's bids and capacity change."""
+    pytest.importorskip("torch")
+    from tokenomics.train import m6_gnn as g
+
+    env = _drive_to("acc", 3)
     me = env._role[env.agent_selection][1]
     other = next(p for p in env.system.producing_agents if p != me)
     p = env.system.producing_agents[me]
@@ -270,6 +342,41 @@ def test_turn_features_read_only_the_producers_own_state() -> None:
     for t in q.capacities:
         q.capacities[t] = max(0, q.capacities[t] - 1)
     assert snapshot() == before
+
+
+@needs
+def test_fund_turn_reads_no_other_producers_scores() -> None:
+    """ADR-0062 §6: at a fund turn, producer A's observation and GNN fund features (its requests and
+    its stage-1 budget) do not change when another producer's fund scores change; the request sets
+    are fixed (every investment action precedes the fund turns)."""
+    pytest.importorskip("torch")
+    from tokenomics.domain.system import funding_groups
+    from tokenomics.train import m6_gnn as g
+
+    env = _drive_to("fund", 3)
+    s = env.system
+    groups = funding_groups(s.orders)
+    while env._role[env.agent_selection][1] not in groups:  # the first fund turn with requests
+        assert env._role[env.agent_selection][0] == "fund"
+        env.step(pt.default_fund_policy(env, env.agent_selection))
+    me = env._role[env.agent_selection][1]
+    others = [pid for pid in groups if pid != me]
+    assert others and me in groups, "the probe needs requests from A and from another producer"
+
+    def snapshot() -> tuple:
+        p = s.producing_agents[me]
+        t = g.fund_features(p, s.funding_requests(me), s.funding_budget(me), g._turn_view(env, me))
+        return (env.observe(env.agent_selection).tobytes(), t["fund"].tobytes(),
+                s.funding_budget(me), [o.id for o in s.funding_requests(me)])
+
+    before = snapshot()
+    rng = np.random.default_rng(0)
+    for pid in others:
+        n = len(s.funding_requests(pid))
+        s.set_funding_priorities(pid, list(rng.uniform(-10, 10, n)))
+        assert snapshot() == before
+        s.set_funding_priorities(pid, list(-np.arange(n, dtype=float)))
+        assert snapshot() == before
 
 
 # --- GNN heads ---

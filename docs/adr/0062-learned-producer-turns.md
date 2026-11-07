@@ -47,7 +47,8 @@ The user's goal (2026-11-06): no hand-written rule decides inside the trained te
      - **Declines:** a declined bid burns nothing. Its recorded reason is `no_fit` when it does not fit the
        capacity the producer had for new work, `displaced` when it would have fit after the higher-priced
        accepted bids, and `declined` otherwise.
-   - Outage: decisions are ignored (no bid accepted, no assembly), as ADR-0055.
+   - Outage: decisions are ignored (no bid accepted, no assembly), as ADR-0055. Re-validation and the claim
+     order then follow today's order (carried first, price-descending), whatever the scores.
 4. **Defaults reproduce today byte for byte.** `env.producer_turns.default_fund_policy` and
    `default_accept_policy` emit:
    - the ADR-0025 funding ranks;
@@ -58,8 +59,16 @@ The user's goal (2026-11-06): no hand-written rule decides inside the trained te
 5. **Slots.**
    - Fund slots: 3 investment kinds + the producer's input products, exact per config.
    - Accept turn: K_BID = 64 bids, K_RES = 48 reservations, K_PEND = 48 pending claims.
-   - Bids beyond K are declined (ADR-0061 D4), and claims beyond K are processed after the listed ones, in
-     default order. Both are counted (`beyond_k`).
+   - Bids beyond K_BID are declined (ADR-0061 D4).
+   - Reservations beyond K_RES keep today's carried-first rule (review of e6cacf0). In default order, they
+     rank just below the lowest listed reservation when that one outranks every bid and pending claim (always
+     so under the default policy). Otherwise they rank just above the highest bid or pending claim. So the
+     default decision stays exact: a reservation that fails at TTL frees its capacity before the new bids
+     run, and re-validation still drops the cheapest first.
+   - Pending claims beyond K_PEND run after everything else, in default order. The default policy never
+     leaves a pending claim.
+   - Everything past a slot count is counted in `turn_beyond_k`: bids, reservations, pending claims, and
+     funding requests past the fund slots (funded after the listed ones, in today's order).
    - The largest counts seen at 12 producers are 26 bids and 21 reservations per producer-cycle (EXP-0115 build
      check).
 6. **Information set (ADR-0058).** A turn's observation and the GNN's turn features read only the producer's own
@@ -70,7 +79,14 @@ The user's goal (2026-11-06): no hand-written rule decides inside the trained te
    - its reservations, pending claims, capacity, inventory and inbound;
    - its own funding requests, and its budget, the stage-1 result.
 
-   Turns never read another producer's bids or decisions of the same cycle. Each producer's stage 2 and
+   **The one cross-producer signal: the fund-turn budget.** Stage 1 splits the fund across the producers that
+   requested funding this cycle, by their cut-offs, so a producer's budget depends on whether others requested.
+   It is allowed:
+   - It is a physics output and the producer's own allocation.
+   - It is fixed before any fund turn, because every investment action precedes the fund turns.
+   - Other producers' fund scores cannot move it (stage 2 runs at `start_ordering`). A leak test pins this.
+
+   Otherwise turns never read another producer's bids or decisions of the same cycle. Each producer's stage 2 and
    production are independent of the others', so AEC order cannot matter. Leak tests pin it.
 
 ## Considered options

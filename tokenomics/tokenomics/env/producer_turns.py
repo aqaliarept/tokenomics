@@ -70,6 +70,8 @@ def fund_kind(o: Order) -> str:
 
 
 def encode_fund(spec: EnvSpec, p: ProducingAgent, reqs: list[Order], budget: int) -> np.ndarray:
+    """Requests past `fund_slots` are not encoded; the env counts them in `turn_beyond_k` and they
+    are funded after the listed ones, in today's order (`decode_fund`)."""
     n = fund_slots(spec)
     slots = np.zeros((n, FUND_SLOT_DIM), np.float32)
     for i, o in enumerate(reqs[:n]):
@@ -151,7 +153,10 @@ def encode_accept(spec: EnvSpec, p: ProducingAgent, lists: TurnLists) -> np.ndar
 
 def decode_accept(action: np.ndarray, lists: TurnLists) -> tuple[TurnDecision, int]:
     """(the decision, how many bids / claims fell beyond the slots). Bids beyond K_BID are
-    declined (ADR-0061 D4); claims beyond the slots run after the listed ones in default order."""
+    declined (ADR-0061 D4). Reservations beyond K_RES keep today's carried-first rule (ADR-0062
+    §5): in default order, just below the lowest listed reservation and above every bid and pending
+    claim (so the default decision stays exact, also at re-validation, where today drops the
+    cheapest first). Pending claims beyond K_PEND run last, in default order."""
     a = np.asarray(action, dtype=np.float64).reshape(-1)
     acc, bp = a[:K_BID], a[K_BID:2 * K_BID]
     rp, pp = a[2 * K_BID:2 * K_BID + K_RES], a[2 * K_BID + K_RES:]
@@ -162,9 +167,21 @@ def decode_accept(action: np.ndarray, lists: TurnLists) -> tuple[TurnDecision, i
     def pri(vals: np.ndarray, n: int, k: int) -> tuple[float, ...]:
         return tuple(float(vals[i]) if i < k else -B - 1.0 - (i - k) * 1e-3 for i in range(n))
 
+    def res_pri(n: int) -> tuple[float, ...]:
+        listed = [float(rp[i]) for i in range(min(n, K_RES))]
+        if n <= K_RES:
+            return tuple(listed)
+        others = [float(bp[i]) for i in range(min(nb, K_BID))] + [
+            float(pp[i]) for i in range(min(len(lists.pending), K_PEND))]
+        # below the lowest listed reservation when it outranks every other claim (the default);
+        # else just above the highest other claim. Steps of 1e-6 keep default order among them.
+        hi = max(others, default=-B - 1.0)
+        top = min(listed) if min(listed) > hi + 1e-3 else hi + 1e-3
+        return tuple(listed) + tuple(top - (j + 1) * 1e-6 for j in range(n - K_RES))
+
     beyond = (max(0, nb - K_BID) + max(0, len(lists.reservations) - K_RES)
               + max(0, len(lists.pending) - K_PEND))
-    return TurnDecision(accept, bid_pri, pri(rp, len(lists.reservations), K_RES),
+    return TurnDecision(accept, bid_pri, res_pri(len(lists.reservations)),
                         pri(pp, len(lists.pending), K_PEND)), beyond
 
 

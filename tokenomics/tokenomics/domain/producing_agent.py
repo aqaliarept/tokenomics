@@ -546,6 +546,8 @@ class ProducingAgent:
         start = self._new_work_budget(lists)  # diagnostic decline reasons (as the auction's)
 
         def key(kind: int, r: _Reservation) -> tuple[float, int, float]:
+            if outage:  # decisions ignored (ADR-0062 §3): today's order, carried first, by price
+                return (0.0, kind, -r.bid.capacity_unit_price())
             return (-r.priority, kind, -r.bid.capacity_unit_price())
 
         # 1. re-validation by priority (the lowest dropped first)
