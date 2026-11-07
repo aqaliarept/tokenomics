@@ -98,7 +98,7 @@ rule).
 - [x] 2.20 [code][local:light] Pilot continuation (prereg v11 `f55aea40…`): `m6_pilot --prereg v11 --resume-from <EXP-0113 artifacts>`
   resumes the SHA-pinned iteration-10 checkpoint (producer + Adam), runs 11-40, stop-only gates at 15 / 20 / 30,
   the deciding reading at 40; resume pins and EXP-0100 reference-row reproduction checked.
-- [ ] 2.21 [experiment][remote:cpu16] EXP-0114: the pilot continued to iteration 40 (prereg v11); stop ≤ 40 vCPU-h.
+- [x] 2.21 [experiment][remote:cpu16] EXP-0114: the pilot continued to iteration 40 (prereg v11); stop ≤ 40 vCPU-h per run (split into two runs, ≈ 51.9 vCPU-h). **`hold`** (g +77.7 vs F 116.6); 4.3 starts from EXP-0100's producer.
 
 ## 3. Ladder (experiments, remote)
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop
@@ -133,7 +133,7 @@ only as diagnostics, never as candidates (user rule 2026-11-06).
 - [ ] 4.5 [experiment][remote:cpu16] Training: E3 PPO on investment + acceptance together (orderer and buying
   frozen), gates as v10 / v11, then validation (L5 worlds, 12 deciding, 42 reported) and the held-out read
   (a second comparison on that set, noted). ≈ 35 + 8 vCPU-h.
-- Budget: ≈ 60 vCPU-h in total. M6 has ≈ 21 left after EXP-0114, so this needs a new tranche (user).
+- Budget: ≈ 60 vCPU-h in total. M6 has ≈ 5 left after EXP-0114 (144.9 / 150), so this needs a new tranche (user).
 
 ### 4b. Also learned: fund spend order and reservation scheduling (user 2026-11-07, from notes/hardcoded-audit.md)
 Both decisions sit at the same producer decision point as acceptance, so they join the 4.2 turn and the 4.3–4.5
