@@ -1,7 +1,11 @@
-"""EXP-0121: capacity / fit-budget probe for the v14 turn heads (supervisor 2026-11-07, after EXP-0120's underfit;
+"""EXP-0121 / EXP-0122: capacity / fit-budget probe for the v14 turn heads (supervisor 2026-11-07, after EXP-0120's underfit;
 pre-registration note `notes/exp0121-prereg.md`). No rollouts: EXP-0120's persisted held-out records (F40 trunk
 embeddings, default labels) are split in two contiguous halves (the records are in job order, so at most one
 world-episode straddles); each grid setting fits on the first half and is read on the second.
+
+EXP-0122 (`--recollect`, v15 option (a)): the same 32 held-out jobs are replayed (deterministic keyed episodes)
+with the linear own-state fractions appended; every existing column must equal EXP-0120's records, so the halves
+are the same turns. The same grid and winner rule, with the boundary-slack error split (DIAGNOSTICS 38).
 
 Grid: head width {32, 64} × set layers {2, 3} × epochs {30, 90}, cosine learning-rate schedule from 3e-3, batch
 512, ≤ 400 pairs per turn, seed 0 (everything else v14). Winner: the first setting in (width, layers, epochs)
@@ -20,6 +24,7 @@ from multiprocessing import get_context
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
 from . import m6_imitation as im
@@ -35,18 +40,96 @@ def _split(records: str, limit: int | None) -> tuple[list[dict], list[dict]]:
     return recs[:h], recs[h:]
 
 
+SLACK_BINS = ("<-2", "[-2,-0.5)", "[-0.5,0)", "[0,0.5)", "[0.5,2)", ">=2")
+
+
+def slack_split(pm: Any, recs: list[dict]) -> dict[str, dict[str, Any]]:
+    """Accept-bit errors of bids that fit alone, by slack = capacity left after the higher-priced bids
+    minus own capacity, in units of own capacity (the greedy auction replayed on the log1p-inverted bid
+    rows: price col 0, capacity col 2, the new-work budget col 7; one capacity type per producer)."""
+    bins = {b: [0, 0] for b in SLACK_BINS}
+    acc = [r for r in recs if r["kind"] == "accept" and len(r["bid"])]
+    with torch.no_grad():
+        for k in range(0, len(acc), 2000):
+            part = acc[k:k + 2000]
+            tg = ti.turn_targets(part, None, None)
+            _, out = ti._losses(pm.turn, tg)
+            pred = (out["acc"] > 0).numpy()
+            off = 0
+            for r in part:
+                x, n = r["bid"], len(r["bid"])
+                price, cap, budget = np.expm1(x[:, 0]), np.rint(np.expm1(x[:, 2])), np.rint(np.expm1(x[:, 7]))
+                rem, sl = budget[0], {}
+                for i in np.argsort(-price, kind="stable"):
+                    sl[i] = rem - cap[i]
+                    if cap[i] <= rem + 1e-6:
+                        rem -= cap[i]
+                for i in range(n):
+                    if x[i, ti.FITS_COL] > 0:
+                        v = sl[i] / max(cap[i], 1)
+                        b = ("<-2" if v < -2 else "[-2,-0.5)" if v < -0.5 else "[-0.5,0)" if v < 0 else
+                             "[0,0.5)" if v < 0.5 else "[0.5,2)" if v < 2 else ">=2")
+                        bins[b][0] += int(pred[off + i] != bool(r["acc"][i]))
+                        bins[b][1] += 1
+                off += n
+    return {b: {"wrong": w, "n": n, "rate": w / n if n else None} for b, (w, n) in bins.items()}
+
+
+def recollect(training_dir: str, models: str, replenish: str, reference: str, out: Path, workers: int,
+              dry_run: bool) -> tuple[Path, dict[str, Any]]:
+    """Replay EXP-0120's held-out jobs with the linear fractions; check every existing column equals the
+    reference records (same turns, same order); write the new records."""
+    ts, _train, mon = im._training(training_dir)
+    jobs = [{**j, "replenish": replenish, "linear": True}
+            for j in ti._jobs(ts, mon[:1] if dry_run else mon, "turn_monitor", models, 6 if dry_run else 100)]
+    played = im._pool(ti.record_job, jobs, workers)
+    recs = [r for x in played for r in x["records"]]
+    # a dry run (horizon 6) can only match the reference's first job prefix: compare that job's turns
+    n_cmp = len(played[0]["records"]) if dry_run else None
+    ref = ti.load_records(Path(reference), n_cmp)
+    base = {"fund": ti.g.FUND_DIM, "bid": ti.g.BID_DIM, "claim": ti.g.CLAIM_DIM}
+    problems = [] if dry_run or len(ref) == len(recs) else [f"{len(recs)} turns vs {len(ref)} recorded"]
+    emb_diff = 0.0
+    for k, (a, b) in enumerate(zip(recs[:n_cmp] if dry_run else recs, ref)):
+        if a["kind"] != b["kind"]:
+            problems.append(f"turn {k}: kind differs")
+            break
+        for f, v in a.items():
+            if f in base:
+                same = np.array_equal(v[:, :base[f]], b[f])
+            elif f in ("h_cap", "h_in", "pooled"):
+                emb_diff = max(emb_diff, float(np.abs(v - b[f]).max()) if v.size else 0.0)
+                same = True
+            elif isinstance(v, np.ndarray):
+                same = np.array_equal(v, b[f])
+            else:
+                same = v == b[f]
+            if not same:
+                problems.append(f"turn {k}: {f} differs")
+        if len(problems) > 5:
+            break
+    if emb_diff > 1e-5:
+        problems.append(f"trunk embeddings differ by {emb_diff:.2e}")
+    path = out / "heldout_records_linear.npz"
+    ti.save_records(path, recs)
+    return path, {"turns": len(recs), "reference_turns": len(ref), "max_embedding_diff": emb_diff,
+                  "problems": problems, "match": not problems}
+
+
 def probe_one(job: dict) -> dict[str, Any]:
     torch.set_num_threads(1)
     train, test = _split(job["records"], job.get("limit"))
     pm, _ = im.load_models(job["models"])
     t0 = time.perf_counter()
     rep = ti.fit(pm, train, job["epochs"], LR, BATCH, CAP, SEED, log=lambda *a: None,
-                 heads_cfg={"set_layers": job["set_layers"], "bounded": True, "width": job["width"]},
+                 heads_cfg={"set_layers": job["set_layers"], "bounded": True, "width": job["width"],
+                            "linear": job.get("linear", False)},
                  schedule="cosine")
     fit_s = time.perf_counter() - t0
     heads = pm.turn
     assert heads is not None
-    return {**{k: job[k] for k in ("width", "set_layers", "epochs")},
+    return {**{k: job[k] for k in ("width", "set_layers", "epochs")}, "linear": job.get("linear", False),
+            "slack": slack_split(pm, test),
             "params": sum(p.numel() for p in heads.parameters()),
             "seconds_per_epoch": fit_s / job["epochs"], "train_turns": len(train), "test_turns": len(test),
             "seconds_per_1k_turn_epoch": 1000 * fit_s / job["epochs"] / max(1, len(train)),
@@ -67,6 +150,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--records", required=True, help="EXP-0120 heldout_records.npz")
+    ap.add_argument("--recollect", action="store_true", help="EXP-0122: replay with the linear fractions")
+    ap.add_argument("--training-dir")
+    ap.add_argument("--replenish", help="F40's replenish (EXP-0110 start_models.pt), for --recollect")
     ap.add_argument("--models", required=True, help="the F40 candidate (heads only need its hidden size)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out-dir", required=True)
@@ -75,7 +161,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     a = ap.parse_args(argv)
     grid = ([{"width": 32, "set_layers": 2, "epochs": 2}, {"width": 64, "set_layers": 3, "epochs": 2}]
             if a.dry_run else GRID)
-    jobs = [{**g, "records": a.records, "models": a.models, "limit": 400 if a.dry_run else None}
+    out = Path(a.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    records, check = a.records, None
+    if a.recollect:
+        rp, check = recollect(a.training_dir, a.models, a.replenish, a.records, out, a.workers, a.dry_run)
+        print(f"[turn_probe] recollect {check}", flush=True)
+        if not check["match"]:
+            (out / "probe.json").write_text(json.dumps({"recollect": check}, indent=1) + "\n")
+            return 2
+        records = str(rp)
+    jobs = [{**g, "records": records, "models": a.models, "limit": 400 if a.dry_run else None,
+             "linear": a.recollect}
             for g in sorted(grid, key=lambda g: -g["width"] * g["set_layers"] * g["epochs"])]
     t0 = time.perf_counter()
     if a.workers <= 1:
@@ -84,11 +181,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         with ProcessPoolExecutor(min(a.workers, len(jobs)), mp_context=get_context("spawn")) as ex:
             results = list(ex.map(probe_one, jobs))
     w = winner(results)
-    out = Path(a.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    doc = {"winner": None if w is None else {k: w[k] for k in ("width", "set_layers", "epochs")},
+    doc = {"recollect": check, "winner": None if w is None else {k: w[k] for k in ("width", "set_layers", "epochs")},
            "winner_seconds_per_epoch": None if w is None else w["seconds_per_epoch"],
-           "results": results, "records_sha256": sha256_file(a.records), "models_sha256": sha256_file(a.models),
+           "results": results, "records_sha256": sha256_file(records), "models_sha256": sha256_file(a.models),
            "source_commit": a.source_commit, "dry_run": a.dry_run, "seconds": round(time.perf_counter() - t0, 1),
            "lr": LR, "schedule": "cosine", "batch": BATCH, "cap": CAP, "seed": SEED, "gate": GATE}
     (out / "probe.json").write_text(json.dumps(doc, indent=1, default=float) + "\n")

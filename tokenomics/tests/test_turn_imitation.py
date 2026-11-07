@@ -238,3 +238,41 @@ def test_true_smoke(tmp_path: Path, f40: bool) -> None:
     assert (tmp_path / "models.pt").exists() and (tmp_path / "heldout_records.npz").exists()
     assert set(d["offline"]["heldout"]["pairs"]) == {"fund_kept", "fund_rep_rep", "fund_identical", "accept_kept",
                                                      "accept_identical"}
+
+
+def test_linear_fractions_and_dims() -> None:
+    """v15 option (a): linear own-state fractions appended after the log features; heads sized to match."""
+    assert g.turn_dims(False) == {"fund": g.FUND_DIM, "bid": g.BID_DIM, "claim": g.CLAIM_DIM}
+    assert g.turn_dims(True) == {"fund": g.FUND_DIM + 1, "bid": g.BID_DIM + 3, "claim": g.CLAIM_DIM + 3}
+    assert g._binding({"c": 6}, {"c": 12}) == 0.5 and g._binding({"c": 6, "d": 3}, {"c": 12, "d": 2}) == 1.5
+    assert g._frac(5, 0) == g.FRAC_CLIP and g._frac(0, 0) == 0.0 and g._frac(1e9, 1) == g.FRAC_CLIP
+    h = g.TurnHeads(set_layers=2, bounded=True, linear=True)
+    assert h.config()["linear"] is True and h.enc["bid"][0].in_features == g.BID_DIM + 3
+
+
+@pytest.mark.skipif(not _lfs(IT40), reason="records absent")
+def test_live_linear_features_match_the_auction_quantities() -> None:
+    """On a live accept turn the bid fraction is the bid's capacity over the producer's free new-work
+    capacity, and the price fraction is over the turn's highest item price."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_producer_turns import bid, producer
+
+    p = producer(cap=20)
+    p.place_bids([bid(8, 80, "a"), bid(5, 25, "b")])
+    lists = p.turn_lists()
+    from tokenomics.domain.producer_view import build_producer_entity_view
+
+    class _T:  # the view builder needs a telemetry and order map; this producer has none
+        def __getattr__(self, name: str):
+            return lambda *a, **k: 0.0
+
+    try:
+        view = build_producer_entity_view(p, _T(), {}, {})
+    except Exception:
+        pytest.skip("entity view needs a full system")
+    t = g.accept_features(p, lists, view, linear=True)
+    base = g.BID_DIM
+    assert t["bid"].shape[1] == base + 3
+    assert np.allclose(t["bid"][:, base], [8 / 20, 5 / 20]) and np.allclose(t["bid"][:, base + 2], [1.0, 0.5])

@@ -235,6 +235,26 @@ class FeatureNorm(nn.Module):
 
 FUND_KINDS = ("restoration", "replenishment", "upgrade", "inventory_expansion")
 FUND_DIM, BID_DIM, CLAIM_DIM = 9, 12, 11
+# v15 (supervisor 2026-11-07, DIAGNOSTICS 38 / EXP-0121): linear, scale-free copies of each item's own-state
+# quantities, appended after the log features: fund +1 (target / budget); bid and claim +3 (capacity / the
+# producer's free new-work budget and / its current capacity, at the item's binding type; price / the turn's
+# highest item price). No cumulative quantity: the heads still learn the running sum.
+LINEAR_EXTRA = {"fund": 1, "bid": 3, "claim": 3}
+FRAC_CLIP = 10.0
+
+
+def turn_dims(linear: bool = False) -> dict[str, int]:
+    base = {"fund": FUND_DIM, "bid": BID_DIM, "claim": CLAIM_DIM}
+    return {k: v + (LINEAR_EXTRA[k] if linear else 0) for k, v in base.items()}
+
+
+def _frac(num: float, den: float) -> float:
+    return min(FRAC_CLIP, num / den) if den > 0 else (FRAC_CLIP if num > 0 else 0.0)
+
+
+def _binding(caps: Mapping[Any, float], pool: Mapping[Any, float]) -> float:
+    """max over the item's capacity types of need / pool (the binding type; one type in every current world)."""
+    return max((_frac(float(c), float(pool.get(t, 0))) for t, c in caps.items()), default=0.0)
 
 
 def _row_index(view: ProducerEntityView) -> tuple[dict[Any, int], dict[Any, int]]:
@@ -250,8 +270,8 @@ def _links(n: int, items: Sequence[tuple[Sequence[Any], Sequence[Any]]], cap: di
     return ec, ei
 
 
-def fund_features(p: Any, reqs: Sequence[Any], budget: float, view: ProducerEntityView
-                  ) -> dict[str, Any]:
+def fund_features(p: Any, reqs: Sequence[Any], budget: float, view: ProducerEntityView,
+                  linear: bool = False) -> dict[str, Any]:
     """One row per funding request (the fund turn's slots, today's order): kind, target, quantity,
     the product's stock and inbound (replenishment), the producer's budget; linked to the capacity
     row it restores / upgrades or the input row it buys."""
@@ -266,27 +286,38 @@ def fund_features(p: Any, reqs: Sequence[Any], budget: float, view: ProducerEnti
         rows.append([float(kind == k) for k in FUND_KINDS] + [
             _q(budget if target is None else target), _q(o.quantity),
             _q(p.inventory.get(o.product, 0) if rep_ else 0),
-            _q(p.outstanding_inbound.get(o.product, 0) if rep_ else 0), _q(budget)])
+            _q(p.outstanding_inbound.get(o.product, 0) if rep_ else 0), _q(budget)]
+            + ([1.0 if target is None else _frac(float(target), float(budget))] if linear else []))
         types = ([p.restoration.type] if kind == "restoration" else
                  [p.upgrade.type] if kind == "upgrade" else [])
         items.append((types, [o.product] if rep_ else []))
     ec, ei = _links(len(rows), items, cap, inp)
-    return {"fund": _arr(rows, FUND_DIM), "fund_cap": ec, "fund_in": ei}
+    return {"fund": _arr(rows, turn_dims(linear)["fund"]), "fund_cap": ec, "fund_in": ei}
 
 
-def accept_features(p: Any, lists: Any, view: ProducerEntityView) -> dict[str, Any]:
+def accept_features(p: Any, lists: Any, view: ProducerEntityView, linear: bool = False
+                    ) -> dict[str, Any]:
     """Bid rows (this cycle's routed bids, price-descending) and claim rows (carried reservations,
     then pending claims, in default order); each linked to the capacity and input rows it uses."""
     from ..env.producer_turns import _cover, kind_onehot
 
     cap, inp = _row_index(view)
     budget = p._new_work_budget(lists)
+    items_all = [b for b in lists.bids] + [r.bid for r in (*lists.reservations, *lists.pending)]
+    top = max((x.capacity_unit_price() for x in items_all), default=0.0)
+
+    def lin(b: Any) -> list[float]:
+        if not linear:
+            return []
+        return [_binding(b.capacities, budget), _binding(b.capacities, p.capacities),
+                _frac(float(b.capacity_unit_price()), float(top))]
+
     bids, bitems = [], []
     for b in lists.bids:
         bids.append([_q(b.capacity_unit_price()), _q(b.quantity), _q(b.total_capacity()),
                      -1.0 if b.remaining_ttl is None else float(b.remaining_ttl),
                      float(b.is_composite()), _cover(p, b), float(p._fits(budget, b.capacities)),
-                     _q(sum(budget.values())), _q(b.tokens), *kind_onehot(b)])
+                     _q(sum(budget.values())), _q(b.tokens), *kind_onehot(b), *lin(b)])
         bitems.append((list(b.capacities), list(b.inputs)))
     claims, citems = [], []
     for held, rs in ((1.0, lists.reservations), (0.0, lists.pending)):
@@ -294,12 +325,13 @@ def accept_features(p: Any, lists: Any, view: ProducerEntityView) -> dict[str, A
             claims.append([held, 1.0 - held, _q(r.bid.capacity_unit_price()), _q(r.bid.quantity),
                            _q(r.bid.total_capacity()), float(r.cycles_waited),
                            float(p._has_inputs(r.bid)), float(p.reservation_ttl - r.cycles_waited),
-                           *kind_onehot(r.bid)])
+                           *kind_onehot(r.bid), *lin(r.bid)])
             citems.append((list(r.bid.capacities), list(r.bid.inputs)))
     bc, bi = _links(len(bids), bitems, cap, inp)
     cc, ci = _links(len(claims), citems, cap, inp)
-    return {"bid": _arr(bids, BID_DIM), "bid_cap": bc, "bid_in": bi,
-            "claim": _arr(claims, CLAIM_DIM), "claim_cap": cc, "claim_in": ci,
+    d = turn_dims(linear)
+    return {"bid": _arr(bids, d["bid"]), "bid_cap": bc, "bid_in": bi,
+            "claim": _arr(claims, d["claim"]), "claim_cap": cc, "claim_in": ci,
             "n_res": len(lists.reservations)}
 
 
@@ -350,10 +382,10 @@ class ProducerGNN(nn.Module):
         self.replenish = nn.Linear(5 * hidden, 1)
         self.turn: TurnHeads | None = None  # ADR-0062 (`add_turn_heads`)
 
-    def add_turn_heads(self, set_layers: int = 0, bounded: bool = False, width: int | None = None
-                       ) -> None:
+    def add_turn_heads(self, set_layers: int = 0, bounded: bool = False, width: int | None = None,
+                       linear: bool = False) -> None:
         """Attach fresh fund / accept turn heads (the trunk and investment heads untouched)."""
-        self.turn = TurnHeads(self.hidden, set_layers, bounded, width)
+        self.turn = TurnHeads(self.hidden, set_layers, bounded, width, linear)
 
     def fund_scores(self, f: dict[str, Any], t: dict[str, Any], trunk: Trunk | None = None
                     ) -> torch.Tensor:
@@ -433,16 +465,17 @@ class TurnHeads(nn.Module):
     action clip. `set_layers` = 0 and `bounded` = False is the original head, unchanged."""
 
     def __init__(self, hidden: int = HIDDEN, set_layers: int = 0, bounded: bool = False,
-                 width: int | None = None) -> None:
+                 width: int | None = None, linear: bool = False) -> None:
         """`hidden` = the trunk's embedding size (its rows and pooled view); `width` = the heads' own
         size (default `hidden`; v15's capacity probe)."""
         super().__init__()
         w = hidden if width is None else width
         self.hidden, self.width, self.set_layers, self.bounded = hidden, w, set_layers, bounded
         self.pre_bound: list[torch.Tensor] | None = None
-        self.enc = nn.ModuleDict({"fund": _mlp(FUND_DIM, w), "bid": _mlp(BID_DIM, w),
-                                  "claim": _mlp(CLAIM_DIM, w)})
-        self.norm = FeatureNorm({"fund": FUND_DIM, "bid": BID_DIM, "claim": CLAIM_DIM}, {})
+        self.linear = linear
+        self.dims = turn_dims(linear)
+        self.enc = nn.ModuleDict({k: _mlp(v, w) for k, v in self.dims.items()})
+        self.norm = FeatureNorm(dict(self.dims), {})
         self.mix = nn.ModuleDict({k: _mlp(w + 6 * hidden, w) for k in ("fund", "bid", "claim")})
         self.out = nn.ModuleDict({"fund": nn.Linear(w, 1), "bid": nn.Linear(w, 2),
                                   "claim": nn.Linear(w, 1)})
@@ -455,7 +488,8 @@ class TurnHeads(nn.Module):
 
     def config(self) -> dict[str, Any]:
         return {"set_layers": self.set_layers, "bounded": self.bounded,
-                **({"width": self.width} if self.width != self.hidden else {})}
+                **({"width": self.width} if self.width != self.hidden else {}),
+                **({"linear": True} if self.linear else {})}
 
     def node_embed(self, kind: str, x: np.ndarray, ec: Sequence[tuple[int, int]],
                    ei: Sequence[tuple[int, int]], h_cap: torch.Tensor, h_in: torch.Tensor,
@@ -659,7 +693,7 @@ def fund_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str,
     if not reqs:
         return out
     view, f, trunk = (cache or TurnCache()).get(model, env, pid)
-    t = fund_features(s.producing_agents[pid], reqs, s.funding_budget(pid), view)
+    t = fund_features(s.producing_agents[pid], reqs, s.funding_budget(pid), view, model.turn.linear)
     with torch.no_grad():
         sc = model.fund_scores(f, t, trunk).numpy()
     n = min(len(sc), out.shape[0])
@@ -679,7 +713,7 @@ def accept_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str,
     if not (lists.bids or lists.reservations or lists.pending):
         return encode_accept_action(TurnDecision((), (), (), ()))
     view, f, trunk = (cache or TurnCache()).get(model, env, pid)
-    t = accept_features(p, lists, view)
+    t = accept_features(p, lists, view, model.turn.linear)
     with torch.no_grad():
         acc, bp, cp = (x.numpy() for x in model.accept_outputs(f, t, trunk))
     clip = lambda v: tuple(float(x) for x in np.clip(v, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND))

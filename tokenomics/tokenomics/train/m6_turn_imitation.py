@@ -162,6 +162,7 @@ def record_job(job: dict) -> dict:
     pm.eval()
     cache = g.TurnCache()
     recs: list[dict] = []
+    linear = bool(job.get("linear", CFG.get("linear", False)))  # v15's linear fractions
 
     def emb(pid: str) -> tuple[Any, dict]:
         view, _f, (h, pooled) = cache.get(pm, env, pid)
@@ -174,7 +175,8 @@ def record_job(job: dict) -> dict:
         reqs = e.system.funding_requests(pid)
         if reqs:
             view, x = emb(pid)
-            t = g.fund_features(e.system.producing_agents[pid], reqs, e.system.funding_budget(pid), view)
+            t = g.fund_features(e.system.producing_agents[pid], reqs, e.system.funding_budget(pid), view,
+                                linear)
             recs.append({"kind": "fund", **x, "fund": t["fund"], "fund_cap": t["fund_cap"],
                          "fund_in": t["fund_in"], "y": np.asarray(default_fund_scores(len(reqs)),
                                                                    np.float32)})
@@ -187,7 +189,7 @@ def record_job(job: dict) -> dict:
         lists = p.turn_lists()
         if lists.bids or lists.reservations or lists.pending:
             view, x = emb(pid)
-            t = g.accept_features(p, lists, view)
+            t = g.accept_features(p, lists, view, linear)
             recs.append({"kind": "accept", **x, **{k: t[k] for k in ("bid", "bid_cap", "bid_in", "claim",
                                                                      "claim_cap", "claim_in", "n_res")},
                          "acc": np.asarray(d.accept, np.float32),
@@ -378,13 +380,12 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
     "cosine" decays the learning rate to 0 over the epochs (default CFG's, none in v14)."""
     torch.manual_seed(seed)
     hc = heads_cfg if heads_cfg is not None else {"set_layers": CFG["set_layers"], "bounded": CFG["bounded"],
-                                                  "width": CFG.get("width")}
+                                                  "width": CFG.get("width"), "linear": CFG.get("linear", False)}
     pm.add_turn_heads(**hc)
     schedule = schedule if schedule is not None else CFG.get("schedule")
     heads = pm.turn
     assert heads is not None
-    blank = {"fund": np.zeros((0, g.FUND_DIM), np.float32), "bid": np.zeros((0, g.BID_DIM), np.float32),
-             "claim": np.zeros((0, g.CLAIM_DIM), np.float32)}
+    blank = {k: np.zeros((0, v), np.float32) for k, v in heads.dims.items()}
     norm = heads.norm.fit([{**blank, **{k: r[k] for k in ("fund", "bid", "claim") if k in r}}
                            for r in train])
     opt = torch.optim.Adam(heads.parameters(), lr=lr)
