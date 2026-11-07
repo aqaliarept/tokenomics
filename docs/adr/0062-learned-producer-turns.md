@@ -130,3 +130,12 @@ priority, and training and deployment use the same order (DIAGNOSTICS 37).
 - Fresh held-out accept agreement 0.9983, accept-turn rank 0.9995, fund rank 1.000.
 - Closed-loop agreement 0.998, with the pending claims back near zero.
 - Accepted by the user as the 4.4 / 4.5 start.
+
+**RL start (4.4 / 4.5, 2026-11-07).** The learned producer trains as one composite model:
+- F40's trunk, gates and these turn heads;
+- the EXP-0110 start's replenish head on its own frozen trunk, the only replenish weights that train (exactly frozen
+  if 4.5 plays replenish at σ_r = 0).
+
+All heads train on-policy, as deployed: the turn heads sample their orders by Plackett–Luce and their accept bits
+tempered, with the ordered pass run in the sampled order. Deployment plays every head greedily (`notes/4.4-4.5-draft.md`).
+

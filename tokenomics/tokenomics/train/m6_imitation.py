@@ -1005,6 +1005,8 @@ def save_models(pm: g.ProducerGNN, om: g.OrdererGNN, path: Path) -> None:
 
 def load_models(path: str | Path) -> tuple[g.ProducerGNN, g.OrdererGNN]:
     d = torch.load(path, weights_only=True)
+    if str(d.get("format", "")).startswith("m6-onpolicy"):  # the F40 composite: m6_onpolicy.load_model only
+        raise ValueError(f"{path} is an {d['format']} checkpoint; load it with m6_onpolicy.load_model")
     # a checkpoint without `producer_features` predates v3 (EXP-0099 / EXP-0100): v2 features
     pm = g.ProducerGNN(d["hidden"], d["rounds"], d.get("producer_features", g.FEATURES_V2),
                        int(d.get("capacity_extra", 0)))

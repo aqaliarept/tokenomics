@@ -100,8 +100,14 @@ def load_start(turn_models: str, replenish_models: str) -> tuple[F40Model, g.Ord
     return F40Model(pm, rep), om
 
 
+FORMAT = "m6-onpolicy-f40-v1"
+
+
 def save_model(model: F40Model, om: g.OrdererGNN, path: Any) -> None:
-    torch.save({"format": "m6-onpolicy-f40-v1", "producer": model.pm.state_dict(),
+    """The composite checkpoint. `pm`'s unused replenish head is not saved (a sentinel at load), and the format
+    tag makes `m6_imitation.load_models` refuse it: deploy only through `load_model` + `deployed_policies`."""
+    prod = {k: v for k, v in model.pm.state_dict().items() if not k.startswith("replenish.")}
+    torch.save({"format": FORMAT, "norm_format": g.NORM_FORMAT, "producer": prod,
                 "replenish_model": model.rep.state_dict(), "orderer": om.state_dict(),
                 "turn_heads": model.pm.turn.config(), "producer_features": model.pm.features,
                 "capacity_extra": model.pm.capacity_extra, "rep_capacity_extra": model.rep.capacity_extra,
@@ -110,16 +116,31 @@ def save_model(model: F40Model, om: g.OrdererGNN, path: Any) -> None:
 
 def load_model(path: Any) -> tuple[F40Model, g.OrdererGNN]:
     d = torch.load(path, weights_only=True)
+    if d.get("format") != FORMAT or d.get("norm_format") != g.NORM_FORMAT:
+        raise ValueError(f"{path}: not an {FORMAT} checkpoint with normaliser {g.NORM_FORMAT}")
     pm = g.ProducerGNN(d["hidden"], d["rounds"], d["producer_features"], int(d["capacity_extra"]))
     pm.add_turn_heads(**d["turn_heads"])
     rep = g.ProducerGNN(d["hidden"], d["rounds"], d["producer_features"], int(d["rep_capacity_extra"]))
     om = g.OrdererGNN(d["hidden"], d["rounds"])
-    pm.load_state_dict(d["producer"])
+    missing, unexpected = pm.load_state_dict(d["producer"], strict=False)
+    if unexpected or any(not k.startswith("replenish.") for k in missing):
+        raise ValueError(f"{path}: producer weights do not match ({missing}, {unexpected})")
+    with torch.no_grad():  # sentinel: the composite never uses pm's own replenish head
+        for p in pm.replenish.parameters():
+            p.fill_(float("nan"))
     rep.load_state_dict(d["replenish_model"])
     om.load_state_dict(d["orderer"])
     for m in (pm, rep, om):
         m.eval()
     return F40Model(pm, rep), om
+
+
+def deployed_policies(model: F40Model, om: g.OrdererGNN) -> dict[str, Any]:
+    """The deployed composite (the only deployment path for gates and validation): greedy investment action, the
+    frozen orderer's keyed draw, the turn heads' greedy fund and accept policies (one trunk pass per cycle)."""
+    fp, ap = g.gnn_turn_policies(model.pm)
+    return {"producing": greedy_producing_policy(model), "ordering": g.gnn_ordering_policy(om),
+            "fund": fp, "accept": ap}
 
 
 def greedy_producing_policy(model: F40Model) -> Any:
@@ -161,10 +182,16 @@ def pl_logp(scores: torch.Tensor, order: Sequence[int], tau: float) -> torch.Ten
     return (s - tail).sum()
 
 
+def greedy_order(scores: np.ndarray) -> list[int]:
+    """The deployed order: descending score, exact ties in input order (the domain's stable sorts: fund stage 2 keeps
+    today's order on equal scores, the accept turn's claims and bids are listed in the domain's key order)."""
+    return [int(i) for i in np.argsort(-np.asarray(scores, np.float64), kind="stable")]
+
+
 def learnable_adjacent(scores: np.ndarray, rep_: np.ndarray | None) -> list[tuple[int, int]]:
     """For each item of the greedy order, its nearest successor it has a learnable pair with (a replenishment
     request is never compared with another replenishment request: that order is arbitrary, v13)."""
-    greedy = list(np.argsort(-np.asarray(scores), kind="stable"))
+    greedy = greedy_order(scores)
     adj = {}
     for k, a in enumerate(greedy):
         for b in greedy[k + 1:]:
@@ -177,6 +204,21 @@ def learnable_adjacent(scores: np.ndarray, rep_: np.ndarray | None) -> list[tupl
 def swaps(order: Sequence[int], adj: Sequence[tuple[int, int]]) -> int:
     pos = {i: k for k, i in enumerate(order)}
     return sum(pos[a] > pos[b] for a, b in adj)
+
+
+def pl_kl(s: torch.Tensor, s0: torch.Tensor, order: Sequence[int], tau: float) -> torch.Tensor:
+    """KL(PL(s/τ) ‖ PL(s0/τ)) along the sampled order: Σ_k KL(softmax(s[o_k:]/τ) ‖ softmax(s0[o_k:]/τ)), the exact
+    categorical KL of each stage's choice given the earlier picks (≥ 0, 0 iff the stage distributions agree; its
+    gradient pulls s toward s0). Review of ebc30f5: the sampled log-ratio did not pull toward the start."""
+    if len(order) <= 1:
+        return torch.zeros(())
+    idx = torch.as_tensor(list(order))
+    a, b = s[idx] / tau, s0[idx] / tau
+    kl = torch.zeros(())
+    for k in range(len(order) - 1):
+        la, lb = torch.log_softmax(a[k:], 0), torch.log_softmax(b[k:], 0)
+        kl = kl + (la.exp() * (la - lb)).sum()
+    return kl
 
 
 def rank_scores(order: Sequence[int], n: int) -> np.ndarray:
@@ -233,10 +275,11 @@ def decision_logp(pm: Any, d: Mapping[str, Any], temps: Temps) -> tuple[torch.Te
     return sum(fam.values(), torch.zeros(())), parts
 
 
-def decision_kl(parts: Mapping[str, torch.Tensor], parts0: Mapping[str, torch.Tensor], kind: str,
+def decision_kl(parts: Mapping[str, torch.Tensor], parts0: Mapping[str, torch.Tensor], d: Mapping[str, Any],
                 temps: Temps) -> torch.Tensor:
-    """KL(π_θ ‖ π_start) of one decision: exact for the Bernoulli and Gaussian parts; the sampled log-ratio for the
-    Plackett–Luce orders (the stored sample is from the acting policy)."""
+    """KL(π_θ ‖ π_start) of one decision: exact for the Bernoulli and Gaussian parts; for the Plackett–Luce orders the
+    exact stage-wise categorical KL along the decision's sampled order (`pl_kl`)."""
+    kind = d["kind"]
     ls = torch.nn.functional.logsigmoid
 
     def bern(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
@@ -249,8 +292,8 @@ def decision_kl(parts: Mapping[str, torch.Tensor], parts0: Mapping[str, torch.Te
             kl = kl + ((parts["_z"] - parts0["_z"]) ** 2).sum() / (2 * temps.replenish_sigma ** 2)
         return kl
     if kind == "fund":
-        return parts["fund_order"] - parts0["fund_order"]
-    kl = parts["accept_order"] - parts0["accept_order"]
+        return pl_kl(parts["_s"], parts0["_s"], d["order"], temps.fund_tau)
+    kl = pl_kl(parts["_pri"], parts0["_pri"], d["order"], temps.order_tau)
     if "accept_bits" in parts:
         kl = kl + bern(parts["_a"], parts0["_a"])
     return kl
@@ -268,7 +311,8 @@ class OnPolicy:
                  temps: Temps, score: bool = False) -> None:
         self.pm, self.pm0, self.om, self.rng, self.temps, self.score = pm, pm0, om, rng, temps, score
         self.decisions: list[dict] = []
-        self.counts = {"gate_flips": [0, 0], "fund_swaps": [0, 0], "order_swaps": [0, 0], "bit_flips": [0, 0]}
+        self.counts = {"gate_flips": [0, 0], **{f"flip_{k}": [0, 0] for k in sb.GATES},
+                       "fund_swaps": [0, 0], "order_swaps": [0, 0], "bit_flips": [0, 0]}
         self.rec = {r: {"cycle": [], "agent": [], "emb": [], "score": [], "family_sq": [], "score_norep": []}
                     for r in ("producer", "orderer")}
         # the orderer's keyed softmax draw (frozen); `ExplorePolicies` only reads the orderer here
@@ -329,6 +373,9 @@ class OnPolicy:
         greedy = gates.numpy() > 0
         self.counts["gate_flips"][0] += int((bits.astype(bool) != greedy).sum())
         self.counts["gate_flips"][1] += 3
+        for i, k in enumerate(sb.GATES):
+            self.counts[f"flip_{k}"][0] += int(bool(bits[i]) != bool(greedy[i]))
+            self.counts[f"flip_{k}"][1] += 1
         zn = z.numpy()
         y = zn + self.temps.replenish_sigma * self.rng.standard_normal(zn.shape) if zn.size else zn
         self._record(env, {"kind": "prod", "f": f, "bits": bits, "y": y.astype(np.float32), "pid": pid})
@@ -545,7 +592,7 @@ def ppo_loss(pm: Any, pm0: Any, batch: Sequence[dict], temps: Temps
         ratio = torch.exp(lp - d["old_lp"])
         a = d["adv"]
         pg = pg - torch.min(ratio * a, ratio.clamp(1 - CFG["clip"], 1 + CFG["clip"]) * a)
-        kl = kl + decision_kl(parts, parts0, d["kind"], temps)
+        kl = kl + decision_kl(parts, parts0, d, temps)
         clipped += int(abs(float(ratio.detach()) - 1) > CFG["clip"])
     n = max(1, len(batch))
     return pg / n + CFG["kl_coef"] * kl / n, {"pg": float(pg.detach()) / n, "kl": float(kl.detach()) / n,
@@ -563,12 +610,14 @@ def time_iteration(pm: F40Model, pm0: F40Model, om: g.OrdererGNN, jobs: Sequence
     if workers <= 1:
         res = [play_seed(j, pm, pm0, om, temps) for j in jobs]
     else:
+        state = {k: v.detach().clone() for k, v in pm.state_dict().items()}
         with ProcessPoolExecutor(workers, mp_context=get_context("fork")) as ex:
-            res = list(ex.map(_play_job, [(j, temps) for j in jobs]))
+            res = list(ex.map(_play_job, [(j, temps, state) for j in jobs]))
     t_roll = time.perf_counter() - t0
     decs = [d for r in res for d in r["decisions"]]
     opt = torch.optim.Adam(pm.trainable(), lr=CFG["lr"])
     rng = np.random.default_rng(0)
+    check_first_step(pm, decs, temps)
     t1 = time.perf_counter()
     for _ in range(steps):
         idx = rng.choice(len(decs), min(CFG["batch"], len(decs)), replace=False)
@@ -585,11 +634,24 @@ def time_iteration(pm: F40Model, pm0: F40Model, om: g.OrdererGNN, jobs: Sequence
             "units": fmean(u for r in res for u in r["units"]) if res else None}
 
 
-_POOL_MODELS: dict[str, Any] = {}
+def check_first_step(pm: Any, decs: Sequence[dict], temps: Temps, n: int = 64) -> float:
+    """Before an iteration's first update the acting model is the updating model: every ratio must be 1 (review of
+    ebc30f5: a pool worker that kept playing the start would break this silently)."""
+    with torch.no_grad():
+        dev = max((abs(math.exp(float(decision_logp(pm, d, temps)[0]) - d["old_lp"]) - 1.0) for d in decs[:n]),
+                  default=0.0)
+    if dev > 1e-3:
+        raise RuntimeError(f"the rollouts were not played by the current model (max |ratio - 1| = {dev:.3g})")
+    return dev
 
 
-def _play_job(arg: tuple[dict, Temps]) -> dict:
-    job, temps = arg
+_POOL_MODELS: dict[tuple, Any] = {}
+
+
+def _play_job(arg: tuple[dict, Temps, Mapping[str, torch.Tensor]]) -> dict:
+    """One seed in a pool worker, played by the current model (`state`, sent every iteration); the KL anchor
+    stays the start."""
+    job, temps, state = arg
     torch.set_num_threads(1)
     key = (job["turn_models"], job["replenish_models"])
     if key not in _POOL_MODELS:
@@ -597,6 +659,7 @@ def _play_job(arg: tuple[dict, Temps]) -> dict:
         pm0, _ = load_start(*key)
         _POOL_MODELS[key] = (pm, pm0, om)
     pm, pm0, om = _POOL_MODELS[key]
+    pm.load_state_dict(state)
     return play_seed(job, pm, pm0, om, temps)
 
 

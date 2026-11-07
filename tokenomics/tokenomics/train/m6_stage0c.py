@@ -37,7 +37,7 @@ from . import m6_stage0 as s0
 from . import m6_stage0b as sb
 
 PREREG_V16_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v16.json"
-PREREG_V16_SHA256: str | None = "7a37c223df9a6ad9e1ddf2d87356ff7f4f0b4b70ffcc24f526770ee7ff47fcda"  # frozen before EXP-0127 data (re-frozen if the review changes it)
+PREREG_V16_SHA256: str | None = "6ad4e49fc3abd89501ad994ad5228be2df367068b66998dbce788e619c6a8221"  # frozen before EXP-0127 data (re-frozen if the review changes it)
 K_DIRS = 4
 KL_DECISIONS = 600
 REPLENISH_SWAMP = 0.5  # replenish's share of the squared producer score above which it "swamps" the signal
@@ -60,11 +60,14 @@ def registered_prereg_v16() -> dict:
         "reading": sb.V9_RULE + " (12 producers only; the orderer is frozen in 4.5 and reported)",
         "reported": "each head family's share of the squared projected score (gates / replenish / fund order / "
                     "accept order / accept bits), flip and swap rates, deaths, seconds per episode",
+        "counterfactual": "the 'replenish greedy' reading: the rollouts' scores without replenish's part; the "
+                          "gradient size from separate ±ε episodes along the same K directions with the replenish "
+                          "slice zeroed and renormalised, ε recalibrated at KL 0.01 with σ_r = 0, those episodes "
+                          "played at σ_r = 0; P = the trainable count without the replenish head",
         "consequence": "`signal` licenses 4.5. If replenish's share of the squared score exceeds "
-                       f"{REPLENISH_SWAMP} it swamps the signal: 4.5 then plays replenish greedily (still in the "
-                       "model, trained only through the KL anchor) and that is reported (supervisor 2026-11-07); "
-                       "the reading recomputed without replenish's score is reported as the counterfactual for that "
-                       "choice, and licenses 4.5 in that case",
+                       f"{REPLENISH_SWAMP} it swamps the signal: 4.5 then plays replenish greedily, i.e. the "
+                       "replenish head is exactly frozen at σ_r = 0 (supervisor 2026-11-07), reported; the "
+                       "counterfactual reading licenses 4.5 in that case",
     }
 
 
@@ -90,11 +93,23 @@ def prereg_problems() -> list[str]:
 # --- perturbation along the trainable parameters ---
 
 
-def perturbed(model: op.F40Model, k: int, step: float) -> op.F40Model:
+def replenish_mask(model: op.F40Model) -> torch.Tensor:
+    """1 on the trainable entries that belong to the replenish head (`rep.replenish.*`), 0 elsewhere."""
+    names = {id(p): n for n, p in model.named_parameters()}
+    return torch.cat([torch.full((p.numel(),), float(names[id(p)].startswith("rep.replenish.")))
+                      for p in model.trainable()])
+
+
+def perturbed(model: op.F40Model, k: int, step: float, norep: bool = False) -> op.F40Model:
+    """`step` · u_k on the trainable parameters; `norep` (the counterfactual of 4.5 playing replenish greedily):
+    u_k with the replenish slice zeroed and renormalised."""
     m = copy.deepcopy(model)
     ps = m.trainable()
     n = sum(p.numel() for p in ps)
     u = pw.direction(n, "producer", k)
+    if norep:
+        u = u * (1 - replenish_mask(m))
+        u = u / u.norm()
     with torch.no_grad():
         i = 0
         for p in ps:
@@ -103,14 +118,15 @@ def perturbed(model: op.F40Model, k: int, step: float) -> op.F40Model:
     return m
 
 
-def mean_kl(model: op.F40Model, k: int, eps: float, decs: Sequence[dict], temps: op.Temps) -> float:
-    m1 = perturbed(model, k, eps)
+def mean_kl(model: op.F40Model, k: int, eps: float, decs: Sequence[dict], temps: op.Temps,
+            norep: bool = False) -> float:
+    m1 = perturbed(model, k, eps, norep)
     with torch.no_grad():
         kls = []
         for d in decs:
             _l0, p0 = op.decision_logp(model, d, temps)
             _l1, p1 = op.decision_logp(m1, d, temps)
-            kls.append(float(op.decision_kl(p0, p1, d["kind"], temps)))
+            kls.append(float(op.decision_kl(p0, p1, d, temps)))
     return fmean(kls)
 
 
@@ -163,12 +179,11 @@ def rollout_job(job: dict) -> dict:
     nr = pol.rec["producer"]["score_norep"]
     path_nr = path.with_name(path.stem + "_norep.npz")
     np.savez(path_nr, **{**arrays, "producer_score": np.stack(nr) if nr else arrays["producer_score"]})
-    gf = pol.counts["gate_flips"]
     return {"seed": f"{job['world']}|{job['episode']}", "size": job["size"], "sibling": job["sibling"],
             "rewards": tr.rewards(float(job["unit_scale"])), "units": tr.totals()["units"],
             "dead": bool(env.episode_stats["dead"]), "seconds": secs, "npz": str(path), "npz_norep": str(path_nr),
             "horizon": job["horizon"],
-            "flips": {k: gf for k in sb.GATES}, "counts": pol.counts,
+            "flips": {k: pol.counts[f"flip_{k}"] for k in sb.GATES}, "counts": pol.counts,
             "family_sq": dict(zip(op.FAMILIES, fam.sum(0).tolist())),
             "decisions": {r: len(v["cycle"]) for r, v in pol.rec.items()}}
 
@@ -178,7 +193,7 @@ def perturb_job(job: dict) -> dict:
 
     torch.set_num_threads(1)
     m, m0, om = _models(job)
-    mp_ = perturbed(m, job["k"], job["sign"] * job["eps"])
+    mp_ = perturbed(m, job["k"], job["sign"] * job["eps"], bool(job.get("norep")))
     temps = op.temps_from(job["temps"])
     env, tr = _env_tracker(job)
     rng = np.random.default_rng([s0.PROJ_SEED, 44, int(job["episode"]) % (1 << 31), 0])
@@ -186,7 +201,8 @@ def perturb_job(job: dict) -> dict:
     run_episode(env, pol.producing, pol.ordering, seed=job["episode"], action_seed=None,
                 fund_policy=pol.fund, accept_policy=pol.accept)
     return {**{k: job[k] for k in ("size", "role", "k", "sign", "world", "episode", "eps")},
-            "ret": float(sum(tr.rewards(float(job["unit_scale"])))), "type": "perturb"}
+            "ret": float(sum(tr.rewards(float(job["unit_scale"])))), "type": "perturb",
+            "norep": bool(job.get("norep"))}
 
 
 def any_job(job: dict) -> dict:
@@ -210,16 +226,16 @@ def start_decisions(turn_models: str, replenish_models: str, seeds: Sequence[dic
     return decs[::step][:n]
 
 
-def eps_for(model: op.F40Model, k: int, decs: Sequence[dict], temps: op.Temps) -> dict:
+def eps_for(model: op.F40Model, k: int, decs: Sequence[dict], temps: op.Temps, norep: bool = False) -> dict:
     lo, hi = 1e-5, 1e3
     for _ in range(24):
         mid = math.sqrt(lo * hi)
-        if mean_kl(model, k, mid, decs, temps) > pw.KL_TARGET:
+        if mean_kl(model, k, mid, decs, temps, norep) > pw.KL_TARGET:
             hi = mid
         else:
             lo = mid
     e = math.sqrt(lo * hi)
-    return {"k": k, "eps": e, "kl": mean_kl(model, k, e, decs, temps), "at_bound": hi >= 1e3}
+    return {"k": k, "eps": e, "kl": mean_kl(model, k, e, decs, temps, norep), "at_bound": hi >= 1e3}
 
 
 def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: str, exp0110: str,
@@ -280,7 +296,13 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
         return 0
     decs = start_decisions(turn_models, replenish_models, base_jobs[:2], temps, KL_DECISIONS)
     eps = {str(k): eps_for(m, k, decs, temps) for k in range(kdirs)}
-    print(f"[stage0c] eps {json.dumps({k: round(v['eps'], 5) for k, v in eps.items()})}", flush=True)
+    # the "replenish greedy" counterfactual: directions without the replenish slice, ε recalibrated, the
+    # perturbed episodes played (and their KL measured) at σ_r = 0
+    temps0 = op.Temps(temps.gates, 0.0, temps.fund_tau, temps.order_tau, temps.accept_t)
+    calib0 = {**calib, "temps": {**calib["temps"], "replenish_sigma": 0.0}}
+    eps0 = {str(k): eps_for(m, k, decs, temps0, norep=True) for k in range(kdirs)}
+    print(f"[stage0c] eps {json.dumps({k: round(v['eps'], 5) for k, v in eps.items()})} "
+          f"norep {json.dumps({k: round(v['eps'], 5) for k, v in eps0.items()})}", flush=True)
     jobs = []
     for b in base_jobs:
         for i in range(s0.G_SIBLINGS):
@@ -290,25 +312,29 @@ def run(training_dir: str, atlas_path: str, turn_models: str, replenish_models: 
             for sign in (1, -1):
                 jobs.append({**b, "type": "perturb", "role": "producer", "k": k, "sign": sign,
                              "eps": eps[str(k)]["eps"]})
+                jobs.append({**b, "type": "perturb", "role": "producer", "k": k, "sign": sign, "norep": True,
+                             "eps": eps0[str(k)]["eps"], "temps": calib0})
     jobs.sort(key=lambda j: j["type"] != "rollout")
     rows = pw._pool(any_job, jobs, workers, out / "episode_rows.jsonl")
     meta = [r for r in rows if r.get("type") != "perturb"]
-    prows = [r for r in rows if r.get("type") == "perturb"]
+    prows = [r for r in rows if r.get("type") == "perturb" and not r.get("norep")]
+    prows0 = [r for r in rows if r.get("type") == "perturb" and r.get("norep")]
     n_params = {"producer": sum(p.numel() for p in m.trainable()),
                 "orderer": sum(p.numel() for p in _om.parameters())}
+    n_params0 = {**n_params, "producer": n_params["producer"] - int(replenish_mask(m).sum())}
     doc = sb.analyse(meta, prows, n_params)
     fam_tot = {k: sum(r["family_sq"][k] for r in meta) for k in op.FAMILIES}
     s = sum(fam_tot.values()) or 1.0
     # pre-registered counterfactual: the same reading with replenish's score removed (used for 4.5's choice if
     # replenish's share of the squared score exceeds REPLENISH_SWAMP)
-    nr = sb.analyse([{**r, "npz": r["npz_norep"]} for r in meta], prows, n_params)
+    nr = sb.analyse([{**r, "npz": r["npz_norep"]} for r in meta], prows0, n_params0)
     doc["without_replenish_score"] = {k: nr[k] for k in ("reading", "estimators", "seeds_needed")}
     doc["replenish_swamps"] = fam_tot["replenish"] / s > REPLENISH_SWAMP
     counts = {k: [sum(r["counts"][k][0] for r in meta), sum(r["counts"][k][1] for r in meta)]
               for k in meta[0]["counts"]} if meta else {}
     doc.update({"family_score_share": {k: v / s for k, v in fam_tot.items()},
                 "rates": {k: (v[0] / v[1] if v[1] else None) for k, v in counts.items()},
-                "calibration": calib, "eps": eps, "dry_run": dry_run, "prereg": PREREG_V16_SHA256,
+                "calibration": calib, "eps": eps, "eps_norep": eps0, "dry_run": dry_run, "prereg": PREREG_V16_SHA256,
                 "source_commit": im.SOURCE_COMMIT, "turn_models_sha256": sha256_file(turn_models),
                 "replenish_models_sha256": sha256_file(replenish_models), "jobs": len(jobs), "rows": len(rows),
                 "seconds_per_scored_episode": fmean(r["seconds"] for r in meta) if meta else None})

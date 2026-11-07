@@ -1,6 +1,7 @@
 {
  "change": "add-m6-joint-mpg-gnn",
- "consequence": "`signal` licenses 4.5. If replenish's share of the squared score exceeds 0.5 it swamps the signal: 4.5 then plays replenish greedily (still in the model, trained only through the KL anchor) and that is reported (supervisor 2026-11-07); the reading recomputed without replenish's score is reported as the counterfactual for that choice, and licenses 4.5 in that case",
+ "consequence": "`signal` licenses 4.5. If replenish's share of the squared score exceeds 0.5 it swamps the signal: 4.5 then plays replenish greedily, i.e. the replenish head is exactly frozen at \u03c3_r = 0 (supervisor 2026-11-07), reported; the counterfactual reading licenses 4.5 in that case",
+ "counterfactual": "the 'replenish greedy' reading: the rollouts' scores without replenish's part; the gradient size from separate \u00b1\u03b5 episodes along the same K directions with the replenish slice zeroed and renormalised, \u03b5 recalibrated at KL 0.01 with \u03c3_r = 0, those episodes played at \u03c3_r = 0; P = the trainable count without the replenish head",
  "exploration": "gates Bernoulli(\u03c3(logit / TEMPS)); replenish \u03c3(z + \u03c3_r \u03b5); fund and accept-turn orders Plackett\u2013Luce at \u03c4_f / \u03c4_p; accept bits Bernoulli(\u03c3(a / T_a)) with a from the pass in the sampled order; targets: replenish mean |\u0394frac| 0.02, adjacent-pair swaps 5%, bit flips 5%; calibrated at the start of the run on recorded start decisions (fixed draws)",
  "format": "m6-prereg-v16",
  "gradient": "\u00b1\u03b5 along K = 4 random directions of the trainable producer parameters, \u03b5 at a per-direction mean KL of 0.01 on 600 recorded start decisions",
