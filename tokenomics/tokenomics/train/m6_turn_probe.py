@@ -155,6 +155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--training-dir")
     ap.add_argument("--replenish", help="F40's replenish (EXP-0110 start_models.pt), for --recollect")
     ap.add_argument("--ordered", action="store_true", help="EXP-0124: the order-aware accept pass")
+    ap.add_argument("--linear", action="store_true", help="the records carry v15's linear fractions")
     ap.add_argument("--models", required=True, help="the F40 candidate (heads only need its hidden size)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out-dir", required=True)
@@ -174,7 +175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         records = str(rp)
     jobs = [{**g, "records": records, "models": a.models, "limit": 400 if a.dry_run else None,
-             "linear": a.recollect, "ordered": a.ordered}
+             "linear": a.recollect or a.linear, "ordered": a.ordered}
             for g in sorted(grid, key=lambda g: -g["width"] * g["set_layers"] * g["epochs"])]
     t0 = time.perf_counter()
     if a.workers <= 1:
