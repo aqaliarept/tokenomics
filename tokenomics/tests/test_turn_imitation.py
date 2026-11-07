@@ -68,6 +68,53 @@ def test_a_tiny_fit_reaches_full_agreement() -> None:
     assert a["whole_schedule"] == 1.0 and ti.offline_pass(a)
 
 
+def test_unlearnable_pairs_are_excluded_and_counted() -> None:
+    """v13: replenishment vs replenishment fund pairs and feature-identical pairs leave the loss and the metric."""
+    rep = np.zeros(g.FUND_DIM, np.float32); rep[ti.REPLENISH_COL] = 1.0
+    res = np.zeros(g.FUND_DIM, np.float32); res[0] = 1.0
+    fund = {"kind": "fund", "h_cap": np.zeros((1, g.HIDDEN), np.float32), "h_in": np.zeros((2, g.HIDDEN), np.float32),
+            "pooled": np.zeros(4 * g.HIDDEN, np.float32), "fund": np.stack([res, rep, rep + 0.5 * (np.arange(g.FUND_DIM) == 5)]),
+            "fund_cap": [(0, 0)], "fund_in": [(1, 0), (2, 1)], "y": np.asarray([3, 2, 1], np.float32)}
+    tg = ti.turn_targets([fund], None, None)
+    assert tg["counts"] == {"fund_kept": 2, "fund_rep_rep": 1, "fund_identical": 0, "accept_kept": 0,
+                            "accept_identical": 0}
+    bid = np.ones(g.BID_DIM, np.float32)
+    acc = {"kind": "accept", "h_cap": np.zeros((1, g.HIDDEN), np.float32), "h_in": np.zeros((0, g.HIDDEN), np.float32),
+           "pooled": np.zeros(4 * g.HIDDEN, np.float32), "bid": np.stack([bid, bid, 2 * bid]),
+           "bid_cap": [(0, 0), (1, 0), (2, 0)], "bid_in": [], "claim": np.zeros((0, g.CLAIM_DIM), np.float32),
+           "claim_cap": [], "claim_in": [], "n_res": 0, "acc": np.asarray([1, 1, 0], np.float32),
+           "y_bid": np.asarray([3, 2, 1], np.float32), "y_claim": np.zeros(0, np.float32)}
+    tg = ti.turn_targets([acc], None, None)
+    assert tg["counts"]["accept_identical"] == 1 and tg["counts"]["accept_kept"] == 0  # bid 2 declined
+    assert ti.identical_bid_pairs(acc) == (1, 0)
+    acc["acc"] = np.asarray([1, 0, 0], np.float32)
+    assert ti.identical_bid_pairs(acc) == (1, 1)
+
+
+@pytest.mark.skipif(not _lfs(MODELS), reason="records absent")
+def test_records_roundtrip_and_clipped_scoring(tmp_path: Path) -> None:
+    from tokenomics.train import m6_imitation as im
+
+    rng = np.random.default_rng(2)
+    recs = [_rec(rng, k) for k in ("fund", "accept") * 5]
+    ti.save_records(tmp_path / "r.npz", recs)
+    back = ti.load_records(tmp_path / "r.npz")
+    assert len(back) == len(recs)
+    for a, b in zip(recs, back):
+        assert a.keys() == b.keys()
+        for k in a:
+            assert (a[k] == b[k]) if isinstance(a[k], (str, int, list)) else np.array_equal(a[k], b[k]), k
+    pm, _ = im.load_models(MODELS)
+    torch.manual_seed(0)
+    pm.add_turn_heads()
+    with torch.no_grad():  # push every output past the bound: clipped scores tie, so strict order fails
+        for m in pm.turn.out.values():
+            m.weight.zero_(); m.bias.fill_(50.0)
+    ag = ti.agreement(pm, back)
+    assert ag == ti.agreement(pm, recs)
+    assert ag["saturation"]["fund"] == 1.0 and ag["rank_fund"] == 0.0
+
+
 def test_closed_loop_reading_rule() -> None:
     from tokenomics.train import producer_read
 
@@ -88,8 +135,8 @@ def test_closed_loop_reading_rule() -> None:
         producer_read.pilot_reading = orig
 
 
-def test_prereg_v12_matches_the_code_when_pinned() -> None:
-    if ti.PREREG_V12_SHA256 is None:
+def test_prereg_v13_matches_the_code_when_pinned() -> None:
+    if ti.PREREG_V13_SHA256 is None:
         assert ti.prereg_problems()
     else:
         assert ti.prereg_problems() == []
@@ -106,4 +153,6 @@ def test_true_smoke(tmp_path: Path) -> None:
     assert d["collect"]["train_turns"] > 0 and d["offline"]["heldout"]["turns"] > 0
     assert d["closed_loop"]["monitor_12"]["candidate"]["rows"] == 2
     assert d["closed_loop"]["reported_42"]["reference"]["rows"] == 2
-    assert (tmp_path / "models.pt").exists()
+    assert (tmp_path / "models.pt").exists() and (tmp_path / "heldout_records.npz").exists()
+    assert set(d["offline"]["heldout"]["pairs"]) == {"fund_kept", "fund_rep_rep", "fund_identical", "accept_kept",
+                                                     "accept_identical"}

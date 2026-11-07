@@ -36,22 +36,38 @@ from typing import Any
 import numpy as np
 import torch
 
+from ..env.spaces import ACTION_LOGIT_BOUND
 from . import m6_gnn as g
 from . import m6_imitation as im
 
-PREREG_V12_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v12.json"
-PREREG_V12_SHA256: str | None = "3c0714f7d7c5e3bd80db8870025e732a2de5dc5de54d5f46858b571ed303d67d"  # frozen before EXP-0117 data
+# v12 (3c0714f7…, EXP-0117) was stopped before its reading: its offline gate could not pass (review 2026-11-07:
+# 3.5% of accept-turn pairs are feature-identical with position-based ranks; 48% of fund pairs are replenishment vs
+# replenishment in creation order, which no feature carries). v13 drops those pairs.
+PREREG_V12_SHA256 = "3c0714f7d7c5e3bd80db8870025e732a2de5dc5de54d5f46858b571ed303d67d"
+PREREG_V13_PATH = Path(__file__).resolve().parent / "registry" / "m6_prereg_v13.json"
+PREREG_V13_SHA256: str | None = "97474c2290f687b7320257b2f62b64c1c84cf5c12300a60541b0efd8ab37c186"  # frozen before EXP-0118 data
 CFG = {"horizon": 100, "replicates": [0, 1], "epochs": 20, "lr": 1e-3, "batch_turns": 512,
-       "max_pairs_per_turn": 400, "seed": 0, "gate": {"accept": 0.99, "rank_accept": 0.99,
+       "max_pairs_per_turn": 400, "score_l2": 1e-3, "seed": 0, "gate": {"accept": 0.99, "rank_accept": 0.99,
                                                       "rank_fund": 0.99},
        "r42": {"worlds": 8, "episodes": 1, "stage": "m6-turn-imit-42"}}
 START = "EXP-0100 artifacts/fit/models.pt (im.EXP0100_MODELS_SHA)"
 
 
-def registered_prereg_v12() -> dict:
+def registered_prereg_v13() -> dict:
     return {
-        "format": "m6-prereg-v12", "change": "add-m6-joint-mpg-gnn", "task": "4.3",
-        "stage": "EXP-0117: turn-head imitation of the default acceptance, fund order and claim scheduling",
+        "format": "m6-prereg-v13", "change": "add-m6-joint-mpg-gnn", "task": "4.3",
+        "stage": "EXP-0118: turn-head imitation of the default acceptance, fund order and claim scheduling",
+        "supersedes": f"m6_prereg_v12 ({PREREG_V12_SHA256[:8]}…, EXP-0117 stopped before its reading)",
+        "excluded_pairs": "pairs whose order the head's inputs cannot determine are left out of the loss and the "
+                          "metric: feature-identical pairs (same row features and the same linked capacity / input "
+                          "rows; the domain's tie-break keeps the default order) and, in the fund turn, "
+                          "replenishment vs replenishment (creation order, arbitrary); excluded counts reported "
+                          "by kind; the closed loop measures whether the unordered replenishment order matters",
+        "metric_scores": "the offline metric scores the clipped (±10) outputs the closed loop acts on; saturation "
+                         "(share of outputs at the bound) reported; an L2 penalty (score_l2) on fund scores and "
+                         "priorities keeps the pairwise loss's growing margins inside the clip",
+        "reported": "identical-bid pairs with different default accept bits (in the closed loop both bids get "
+                    "the same bit, DIAGNOSTICS 36); held-out records and per-kind pair counts persisted (npz)",
         "start": START, "fitted": "TurnHeads only (fresh seeded init); trunk, investment heads, orderer frozen",
         "labels": "default_turn_decision (accept bits; one priority order over reservations, pending claims "
                   "and accepted bids) and default_fund_scores (fund order)",
@@ -73,19 +89,19 @@ def registered_prereg_v12() -> dict:
 def freeze() -> str:
     from ..eval.provenance import sha256_file
 
-    PREREG_V12_PATH.write_text(json.dumps(registered_prereg_v12(), indent=1, sort_keys=True) + "\n")
-    return sha256_file(str(PREREG_V12_PATH))
+    PREREG_V13_PATH.write_text(json.dumps(registered_prereg_v13(), indent=1, sort_keys=True) + "\n")
+    return sha256_file(str(PREREG_V13_PATH))
 
 
 def prereg_problems() -> list[str]:
     from ..eval.provenance import sha256_file
 
-    if PREREG_V12_SHA256 is None:
-        return ["no pinned m6_prereg_v12.json (`--mode freeze`)"]
-    if not PREREG_V12_PATH.exists() or sha256_file(str(PREREG_V12_PATH)) != PREREG_V12_SHA256:
-        return ["m6_prereg_v12.json does not match its pinned SHA-256"]
-    if json.loads(PREREG_V12_PATH.read_text()) != registered_prereg_v12():
-        return ["the v12 pre-registration differs from the code"]
+    if PREREG_V13_SHA256 is None:
+        return ["no pinned m6_prereg_v13.json (`--mode freeze`)"]
+    if not PREREG_V13_PATH.exists() or sha256_file(str(PREREG_V13_PATH)) != PREREG_V13_SHA256:
+        return ["m6_prereg_v13.json does not match its pinned SHA-256"]
+    if json.loads(PREREG_V13_PATH.read_text()) != registered_prereg_v13():
+        return ["the v13 pre-registration differs from the code"]
     return []
 
 
@@ -217,25 +233,56 @@ def batch_out(heads: g.TurnHeads, kind: str, b: Mapping[str, Any]) -> torch.Tens
     return heads.out[kind](torch.relu(heads.mix[kind](z)))
 
 
-def _pairs(y: np.ndarray, mask: np.ndarray | None, cap: int | None, rng: np.random.Generator | None
-           ) -> list[tuple[int, int]]:
-    """Ordered pairs (i above j) among the items in `mask` (all if None); `cap` sampled with `rng`."""
+REPLENISH_COL = 1  # the fund row's "replenishment" kind one-hot column (g.FUND_KINDS index 1)
+
+
+def node_keys(r: Mapping[str, Any], kind: str) -> list[tuple]:
+    """What the head reads per node besides the turn's shared trunk / pooled embedding: the row features
+    and the sets of linked capacity and input rows. Equal keys = equal head outputs."""
+    x, ec, ei = r[kind], r[f"{kind}_cap"], r[f"{kind}_in"]
+    return [(kind, *x[i].tolist(), "|", *sorted(b for a, b in ec if a == i), "|",
+             *sorted(b for a, b in ei if a == i)) for i in range(x.shape[0])]
+
+
+def _pairs(y: np.ndarray, mask: np.ndarray | None, cap: int | None, rng: np.random.Generator | None,
+           keys: Sequence[tuple] | None = None, rep_rep: np.ndarray | None = None
+           ) -> tuple[list[tuple[int, int]], dict[str, int]]:
+    """Ordered pairs (i above j) among the items in `mask` (all if None) whose order the head can learn
+    (v13): pairs with equal `keys` and, if `rep_rep` marks replenishment requests, replenishment vs
+    replenishment are left out and counted. `cap` sampled with `rng` (after the exclusion)."""
     idx = np.arange(len(y)) if mask is None else np.nonzero(mask)[0]
-    out = [(int(i), int(j)) for i in idx for j in idx if y[i] > y[j]]
+    out, ex = [], {"rep_rep": 0, "identical": 0}
+    for i in idx:
+        for j in idx:
+            if y[i] > y[j]:
+                if rep_rep is not None and rep_rep[i] and rep_rep[j]:
+                    ex["rep_rep"] += 1
+                elif keys is not None and keys[i] == keys[j]:
+                    ex["identical"] += 1
+                else:
+                    out.append((int(i), int(j)))
+    kept = len(out)
     if cap is not None and len(out) > cap and rng is not None:
         out = [out[k] for k in rng.choice(len(out), cap, replace=False)]
-    return out
+    return out, {**ex, "kept": kept}
 
 
 def turn_targets(recs: Sequence[dict], rng: np.random.Generator | None, cap: int | None
                  ) -> dict[str, Any]:
-    """Global indices of the BCE targets and the ordered pairs of a batch of turns."""
+    """Global indices of the BCE targets and the learnable ordered pairs of a batch of turns, with the
+    per-kind counts of kept and excluded pairs."""
     fund = [r for r in recs if r["kind"] == "fund"]
     acc = [r for r in recs if r["kind"] == "accept"]
+    counts = {"fund_kept": 0, "fund_rep_rep": 0, "fund_identical": 0, "accept_kept": 0,
+              "accept_identical": 0}
     fp, off = [], 0
     for r in fund:
-        fp += [(off + i, off + j) for i, j in _pairs(r["y"], None, cap, rng)]
+        pr, ex = _pairs(r["y"], None, cap, rng, node_keys(r, "fund"), r["fund"][:, REPLENISH_COL] > 0)
+        fp += [(off + i, off + j) for i, j in pr]
         off += len(r["y"])
+        counts["fund_kept"] += ex["kept"]
+        counts["fund_rep_rep"] += ex["rep_rep"]
+        counts["fund_identical"] += ex["identical"]
     ap, bits, ob, oc = [], [], 0, 0
     nb_total = sum(len(r["acc"]) for r in acc)
     for r in acc:
@@ -244,10 +291,13 @@ def turn_targets(recs: Sequence[dict], rng: np.random.Generator | None, cap: int
         mask = np.concatenate([r["acc"] > 0, np.ones(nc, bool)])
         # combined vector = [all bids of the batch, then all claims]: map local -> global
         loc = np.concatenate([ob + np.arange(nb), nb_total + oc + np.arange(nc)])
-        ap += [(int(loc[i]), int(loc[j])) for i, j in _pairs(y, mask, cap, rng)]
+        pr, ex = _pairs(y, mask, cap, rng, node_keys(r, "bid") + node_keys(r, "claim"))
+        ap += [(int(loc[i]), int(loc[j])) for i, j in pr]
+        counts["accept_kept"] += ex["kept"]
+        counts["accept_identical"] += ex["identical"]
         bits.append(r["acc"])
         ob, oc = ob + nb, oc + nc
-    return {"fund": fund, "accept": acc, "fund_pairs": fp, "acc_pairs": ap,
+    return {"fund": fund, "accept": acc, "fund_pairs": fp, "acc_pairs": ap, "counts": counts,
             "bits": torch.from_numpy(np.concatenate(bits)) if bits else torch.zeros(0)}
 
 
@@ -259,6 +309,7 @@ def _losses(heads: g.TurnHeads, tg: Mapping[str, Any]) -> tuple[torch.Tensor, di
         if tg["fund_pairs"]:
             i, j = torch.tensor(tg["fund_pairs"]).T
             loss = loss + torch.nn.functional.softplus(-(s[i] - s[j])).mean()
+        loss = loss + CFG["score_l2"] * (s ** 2).mean()  # keep scores inside the ±10 clip (v13)
     if tg["accept"]:
         b = batch_out(heads, "bid", _cat(tg["accept"], "bid"))
         c = batch_out(heads, "claim", _cat(tg["accept"], "claim")).squeeze(-1)
@@ -268,6 +319,8 @@ def _losses(heads: g.TurnHeads, tg: Mapping[str, Any]) -> tuple[torch.Tensor, di
         if tg["acc_pairs"]:
             i, j = torch.tensor(tg["acc_pairs"]).T
             loss = loss + torch.nn.functional.softplus(-(out["pri"][i] - out["pri"][j])).mean()
+        if out["pri"].numel():
+            loss = loss + CFG["score_l2"] * (out["pri"] ** 2).mean()
     return loss, out
 
 
@@ -299,49 +352,137 @@ def fit(pm: g.ProducerGNN, train: Sequence[dict], epochs: int, lr: float, batch:
     return {"norm": norm, "history": hist}
 
 
+def _clip(x: torch.Tensor) -> torch.Tensor:
+    """The scores the closed loop acts on (`fund_action` / `accept_action` clip to the action bound)."""
+    return x.clamp(-ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND)
+
+
+def identical_bid_pairs(r: Mapping[str, Any]) -> tuple[int, int]:
+    """(pairs of feature-identical bids in one accept turn, of which the default accept bits differ)."""
+    keys = node_keys(r, "bid")
+    n = d = 0
+    for a in range(len(keys)):
+        for b in range(a + 1, len(keys)):
+            if keys[a] == keys[b]:
+                n += 1
+                d += int(r["acc"][a] != r["acc"][b])
+    return n, d
+
+
 def agreement(pm: g.ProducerGNN, recs: Sequence[dict], batch: int = 2048, whole: bool = True
               ) -> dict[str, Any]:
-    """Held-out agreement: accept bits, pairwise order (accept turns: claims + accepted bids; fund turns),
-    and the share of turns whose whole schedule equals the default's."""
+    """Held-out agreement on the clipped scores (v13): accept bits, pairwise order over the learnable pairs
+    (accept turns: claims + accepted bids; fund turns), the share of turns whose whole schedule equals the
+    default's; the excluded pair counts, the saturation of each output, the identical-bid bit conflicts."""
     heads = pm.turn
     assert heads is not None
     acc_ok = acc_n = ap_ok = ap_n = fp_ok = fp_n = 0
     whole_ok = whole_n = 0
+    counts: dict[str, int] = {}
+    sat = {"fund": [0, 0], "priority": [0, 0], "accept_logit": [0, 0]}
+    ident = [0, 0]
     with torch.no_grad():
         for k in range(0, len(recs), batch):
             part = list(recs[k:k + batch])
             tg = turn_targets(part, None, None)
+            for c, v in tg["counts"].items():
+                counts[c] = counts.get(c, 0) + v
             _, out = _losses(heads, tg)
+            for name, key in (("fund", "fund"), ("priority", "pri"), ("accept_logit", "acc")):
+                if key in out:
+                    sat[name][0] += int((out[key].abs() >= ACTION_LOGIT_BOUND).sum())
+                    sat[name][1] += int(out[key].numel())
             if tg["fund_pairs"]:
+                f = _clip(out["fund"])
                 i, j = torch.tensor(tg["fund_pairs"]).T
-                fp_ok += int((out["fund"][i] > out["fund"][j]).sum())
+                fp_ok += int((f[i] > f[j]).sum())
                 fp_n += len(tg["fund_pairs"])
             if tg["accept"]:
                 pred = out["acc"] > 0
                 acc_ok += int((pred == (tg["bits"] > 0)).sum())
                 acc_n += len(tg["bits"])
                 if tg["acc_pairs"]:
+                    pri = _clip(out["pri"])
                     i, j = torch.tensor(tg["acc_pairs"]).T
-                    ap_ok += int((out["pri"][i] > out["pri"][j]).sum())
+                    ap_ok += int((pri[i] > pri[j]).sum())
                     ap_n += len(tg["acc_pairs"])
+                for r in tg["accept"]:
+                    n_, d_ = identical_bid_pairs(r)
+                    ident[0], ident[1] = ident[0] + n_, ident[1] + d_
             # whole schedule per turn (both kinds), from per-turn evaluations
             for r in part if whole else ():
                 t1 = turn_targets([r], None, None)
                 _, o = _losses(heads, t1)
                 ok = True
                 if r["kind"] == "fund" and t1["fund_pairs"]:
+                    f = _clip(o["fund"])
                     i, j = torch.tensor(t1["fund_pairs"]).T
-                    ok = bool((o["fund"][i] > o["fund"][j]).all())
+                    ok = bool((f[i] > f[j]).all())
                 if r["kind"] == "accept":
                     ok = bool(((o["acc"] > 0) == (t1["bits"] > 0)).all())
                     if ok and t1["acc_pairs"]:
+                        pri = _clip(o["pri"])
                         i, j = torch.tensor(t1["acc_pairs"]).T
-                        ok = bool((o["pri"][i] > o["pri"][j]).all())
+                        ok = bool((pri[i] > pri[j]).all())
                 whole_ok, whole_n = whole_ok + int(ok), whole_n + 1
     rate = lambda a, b: a / b if b else None  # noqa: E731
     return {"accept": rate(acc_ok, acc_n), "accept_n": acc_n, "rank_accept": rate(ap_ok, ap_n),
             "rank_accept_pairs": ap_n, "rank_fund": rate(fp_ok, fp_n), "rank_fund_pairs": fp_n,
-            "whole_schedule": rate(whole_ok, whole_n), "turns": whole_n}
+            "whole_schedule": rate(whole_ok, whole_n) if whole else None, "turns": len(recs),
+            "pairs": counts, "saturation": {k: rate(*v) for k, v in sat.items()},
+            "identical_bid_pairs": ident[0], "identical_bid_pairs_bits_differ": ident[1]}
+
+
+# --- persisted records (npz; v13) ---
+
+_ARRAYS = ("h_cap", "h_in", "pooled", "fund", "fund_cap", "fund_in", "y", "bid", "bid_cap", "bid_in", "claim",
+           "claim_cap", "claim_in", "acc", "y_bid", "y_claim")
+
+
+def save_records(path: Path, recs: Sequence[Mapping[str, Any]]) -> None:
+    """Every field concatenated over the turns with an offsets array (turn k's rows = off[k]:off[k+1]); edge
+    lists as (n, 2) int arrays; `kind` 0 = fund, 1 = accept; `n_res` per turn."""
+    out: dict[str, np.ndarray] = {"kind": np.asarray([r["kind"] == "accept" for r in recs], np.int8),
+                                  "n_res": np.asarray([int(r.get("n_res", 0)) for r in recs], np.int64)}
+    for f in _ARRAYS:
+        parts = []
+        for r in recs:
+            v = r.get(f)
+            if v is None:
+                parts.append(np.zeros((0, 2) if f.endswith(("_cap", "_in")) and f not in ("h_cap", "h_in")
+                                      else (0,), np.float32))
+            elif isinstance(v, list):
+                parts.append(np.asarray(v, np.int64).reshape(-1, 2))
+            else:
+                parts.append(np.asarray(v)[None] if f == "pooled" else np.asarray(v))
+        lens = np.asarray([p.shape[0] for p in parts], np.int64)
+        nonempty = [p for p in parts if p.shape[0]]
+        out[f"off_{f}"] = np.concatenate([[0], np.cumsum(lens)])
+        out[f] = np.concatenate(nonempty, 0) if nonempty else np.zeros((0,), np.float32)
+    np.savez_compressed(path, **out)
+
+
+def load_records(path: Path) -> list[dict[str, Any]]:
+    d = np.load(path)
+    recs = []
+    for k in range(len(d["kind"])):
+        r: dict[str, Any] = {"kind": "accept" if d["kind"][k] else "fund"}
+        for f in _ARRAYS:
+            a, b = d[f"off_{f}"][k], d[f"off_{f}"][k + 1]
+            fund_field = f in ("fund", "fund_cap", "fund_in", "y")
+            if (r["kind"] == "fund") != fund_field and f not in ("h_cap", "h_in", "pooled"):
+                continue
+            v = d[f][a:b]
+            if f.endswith(("_cap", "_in")) and f not in ("h_cap", "h_in"):
+                r[f] = [(int(x), int(y)) for x, y in v.reshape(-1, 2)]
+            elif f == "pooled":
+                r[f] = v[0]
+            else:
+                r[f] = v
+        if r["kind"] == "accept":
+            r["n_res"] = int(d["n_res"][k])
+        recs.append(r)
+    return recs
 
 
 def offline_pass(a: Mapping[str, Any]) -> bool:
@@ -442,10 +583,11 @@ def run(training_dir: str, atlas_path: str, models: str, out_dir: str, workers: 
     rep["seconds"] = round(time.perf_counter() - t1, 1)
     cand = out / "models.pt"
     im.save_models(pm, om, cand)
+    save_records(out / "heldout_records.npz", ho)
     offline = {"train": agreement(pm, tr, whole=False), "heldout": agreement(pm, ho)}
     offline["pass"] = offline_pass(offline["heldout"])
     print(f"[turn_imit] offline {offline['heldout']} pass {offline['pass']}", flush=True)
-    doc: dict[str, Any] = {"prereg": PREREG_V12_SHA256, "source_commit": im.SOURCE_COMMIT, "dry_run": dry_run,
+    doc: dict[str, Any] = {"prereg": PREREG_V13_SHA256, "source_commit": im.SOURCE_COMMIT, "dry_run": dry_run,
                            "start_sha256": sha256_file(models), "candidate_sha256": sha256_file(str(cand)),
                            "collect": collect, "fit": rep, "offline": offline, "reading": None}
     if offline["pass"] or dry_run:  # a smoke exercises the closed loop whatever its offline result
