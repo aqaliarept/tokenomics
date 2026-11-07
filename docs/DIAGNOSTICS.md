@@ -1605,3 +1605,30 @@ Also measure the head's output drift against the start on recorded states (cheap
 - Δ(F − G) +152 ± 46 on the monitor, +118 ± 14 on the training set.
 - Replenish drift |Δ fraction| 33–36% relative.
 - T ≈ F (+242).
+
+## 38. An imitated per-item head cannot reproduce a cumulative allocation rule (the label depends on the other items)
+
+**Problem in plain English.**
+- Some decisions score each item on its own. Here each routed bid gets an accept logit from its own features, its
+  linked capacity / input rows and the producer's view.
+- The teacher's rule, today's greedy auction, accepts a bid only if it still fits after the higher-priced bids took
+  their capacity. Two bids that look alike can get opposite labels because of what else is in the turn.
+- A head that sees no other item cannot represent that, however well it is fit. It hedges: it misses most
+  displaced declines and wrongly declines some accepts.
+
+**Discriminating check** (EXP-0118 style, on persisted held-out records):
+- Split the head's errors by the label's cause: `no_fit` (does not fit alone), `displaced` (fits alone, beaten by
+  others), accepted.
+- Errors concentrated in `displaced` and accepted, with none in `no_fit`, point to missing set context. Errors
+  spread evenly point to a fit or capacity problem.
+- Also split ranking errors by pair kind, clipped vs unclipped (saturation at the action bound).
+
+**Outcome branches:**
+- **Missing set context:** give the head the set (own-state features of the other items, e.g. capacity demanded
+  ahead; or a set encoder / attention over the turn's items).
+- **Spread errors:** more capacity or epochs.
+- **Clip ties:** bound the score (penalty or a tanh range).
+
+**Outcome (EXP-0118, 2026-11-07): missing set context, plus saturation.**
+- Accept wrong: 0 / 870 `no_fit`, 1,323 / 3,893 `displaced` (34%), 762 / 13,809 accepted.
+- Ranks: bid–bid 97.3% unclipped / 95.6% clipped, claim–claim 98.1% / 92.9%; 7% of priorities at the bound.

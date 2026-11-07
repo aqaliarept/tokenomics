@@ -29,3 +29,6 @@
 | EXP-0115 attempt 1 (commit 5d6187b): all 4 arms ran, but the pull failed (local disk full) and the pod had no volume, so stopping it lost the rows | 2026-11-07 | u97t6mh3oxrmbv, 8 vCPU, EUR-IS-1, 07:16–07:28 + 08:17–08:19 restart | ≈ 1.9 (stop 6) | ≈ 1.9 |
 | EXP-0115 attempt 2 (same commit, 20 GB volume, pulled into the main repo) | 2026-11-07 | hk7lwtdbnyr7qg, 8 vCPU, EUR-IS-1, 08:19–08:29 | ≈ 1.5 (stop ≤ 4.1) | ≈ 3.4 |
 | EXP-0116 EXP-0114 gap diagnosis (commit 364b070; reading `replenish_drift`) | 2026-11-07 | obj0bkagr1msh0, 16 vCPU + 20 GB volume, EUR-IS-1, 11:16–11:27 | ≈ 3.1 (stop 8) | ≈ 6.5 |
+| EXP-0117 turn-head imitation v12 (commit d7567dc): stopped by the supervisor during the fit (v12's offline gate could not pass: unlearnable label pairs); nothing pulled, pod removed | 2026-11-07 | wcr7gxfxmcqxyc, 16 vCPU + 20 GB volume, EUR-IS-1, 11:23–11:36 | ≈ 3.6 (stop 12) | ≈ 10.1 |
+| EXP-0118 turn-head imitation v13 (commit 8d140eb; reading `offline_fail`, DIAGNOSTICS 38) | 2026-11-07 | 80tp1npy7zrvam, 16 vCPU + 20 GB volume, EUR-IS-1, 11:40–11:49 | ≈ 2.3 (stop 13) | ≈ 12.4 |
+| EXP-0119 F40 confirmation (commit f678f06), in progress | 2026-11-07 | m5c0ixjx8x8oz8, 16 vCPU + 20 GB volume, EUR-IS-1, 12:27– | stop 6 | |
