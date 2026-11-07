@@ -104,9 +104,36 @@ rule).
 - [ ] 3.1 L1 → 3.2 L2 → 3.3 L3 → 3.4 L4 → 3.5 L5 → 3.6 L6, each gated by the previous reading (D6). Stop
   branches → DIAGNOSTICS + the user.
 
-## 4. Gated: learned acceptance
-- [ ] 4.1 Diagnostic first: A1's harm (design Risks), local offline replays.
-- [ ] 4.2 Only if 4.1 licenses it: the accept head as an AEC turn (ADR-0061 slot action), then L3–L5.
+## 4. Gated: learned acceptance (plan, supervisor 2026-11-07; tranche pending user approval)
+Goal: the acceptance decision (ADR-0061) becomes part of the learned producer, so no hand-written rule runs
+inside the trained team. Each step is gated by the previous reading. Hand-written acceptance variants appear
+only as diagnostics, never as candidates (user rule 2026-11-06).
+- [ ] 4.1 [experiment][remote:cpu8] EXP-0115 A1 harm diagnosis (DIAGNOSTICS: the A1 harm entry). Replay
+  EXP-0098's A1 against the default auction on its 12-producer worlds (k5_rf5 + MWWk, TTL 2), with the supply
+  observer plus a per-cycle acceptance trace. Measure: new bids declined because pending claims took the capacity
+  first (step 3b), the price of what was displaced, the cut-off / fund-share shift (63% of declines were below the
+  cut-off), and late-input losses. Discriminating arms (diagnostic only):
+  - A1-life: A1 using the order's real remaining lifetime;
+  - A1-new-first: new bids before pending claims.
+  Reading: name the cause with evidence, add a DIAGNOSTICS entry. ≈ 3 vCPU-h, stop 6.
+- [ ] 4.2 [code][local] Acceptance as an agent turn (ADR-0061 D4 slot action; replaces the env hook for learned
+  policies). After routing, each producer agent gets an accept turn with K slots and an accept logit plus a
+  priority per routed bid. Today's auction stays the default and must be byte-identical: goldens plus the
+  EXP-0088 replay. The GNN gets an accept head with bid nodes (price, quantity, capacity bundle, remaining
+  lifetime, inputs in stock or inbound) linked to the producer's capacity and input nodes. Leak tests, ADR-0058.
+  One review round.
+- [ ] 4.3 [experiment][remote:cpu16] Acceptance imitation: deterministic labels from the default auction, fit
+  only the accept head, everything else frozen at the 4.0 starting producer (EXP-0114's candidate on `gain`, else
+  EXP-0100).
+  - Offline gate: ≥ 99% agreement on recorded decisions.
+  - Closed loop: no worse than its starting stack beyond the floor.
+  ≈ 8 vCPU-h, stop 16.
+- [ ] 4.4 [experiment][remote:cpu16] Acceptance power check (EXP-0112 style): tempered accept head at ~5%
+  flips; the gradient size and n80 at 12 producers. `signal` licenses 4.5. ≈ 6 vCPU-h, stop 10.
+- [ ] 4.5 [experiment][remote:cpu16] Training: E3 PPO on investment + acceptance together (orderer and buying
+  frozen), gates as v10 / v11, then validation (L5 worlds, 12 deciding, 42 reported) and the held-out read
+  (a second comparison on that set, noted). ≈ 35 + 8 vCPU-h.
+- Budget: ≈ 60 vCPU-h in total. M6 has ≈ 21 left after EXP-0114, so this needs a new tranche (user).
 
 ## 5. Records
 - [ ] 5.1 HISTORY / README / ledger; ADRs for the graph view and the acceptance turn.
