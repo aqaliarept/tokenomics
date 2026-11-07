@@ -1662,3 +1662,12 @@ Also measure the head's output drift against the start on recorded states (cheap
   - far more data;
   - an inductive bias for ordered accumulation, learned from the head's own priority, not hand-written;
   - judge the imitation closed-loop rather than by bit agreement (a gate decision for the user).
+
+**Ordered pass + hidden ties (EXP-0124):**
+- An additive, gated recurrent pass in the heads' own priority order halves the displaced errors (held-out accept
+  0.965–0.969).
+- What remains splits into two parts:
+  - 5.9% of the default accept bits depend on the tie order of equal-priced bids (arrival order, unseen by the
+    heads; 64% right);
+  - genuine misses on determinable bits (0.985 at the cheapest setting).
+- Check: replay the auction with ties reversed to find tie-dependent labels, then split the agreement.
