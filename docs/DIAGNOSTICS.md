@@ -1577,6 +1577,12 @@ _Status: open (2026-11-06, EXP-0110); the two branches are not yet separated._
 - The replenishment lag rises from 2.69 to 2.89 cycles.
 - The same at 42 and with RR.
 
+**Seen again (EXP-0123, 2026-11-07):**
+- Learned turn heads that imitate the auction at 95.6% agreement accept 6,598 bids the auction declines, creating
+  13,360 pending claims (46% ran late, 5.5% failed at TTL).
+- That costs −56.7 units per episode (F 43.4), with more run-down. Near-threshold imitation errors reproduce the
+  accept-later harm.
+
 ## 37. RL improves the training return but the deployed policy does not improve: a head that reads the trained trunk is not the head that was played
 
 **Problem in plain English.**
