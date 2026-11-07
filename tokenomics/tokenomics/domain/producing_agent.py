@@ -62,6 +62,9 @@ class Bid:
     # the parent order's remaining lifetime when routed (SubOrder.remaining_ttl; ADR-0061):
     # cycles it survives after the routing cycle; read by no existing path
     remaining_ttl: int | None = None
+    # the parent order's kind (consumer / replenishment / investment; ADR-0062), own-order
+    # information; additive, None when not set
+    order_kind: str | None = None
 
     def is_composite(self) -> bool:
         return bool(self.inputs)
@@ -87,6 +90,7 @@ class SubOrder:
     # the parent order's remaining lifetime at routing (`OrderInfo.remaining_ttl`; ADR-0061),
     # own-order information the producer may see; additive, None when not set
     remaining_ttl: int | None = None
+    order_kind: str | None = None  # the parent order's kind (ADR-0062); additive
 
 
 @dataclass
@@ -130,6 +134,35 @@ class AcceptanceView:
 
 
 AcceptanceRule = Callable[[AcceptanceView], Sequence[AcceptanceDecision]]
+
+# ADR-0062: the accept turn's slot counts (bids beyond K_BID are declined, ADR-0061 D4; claims
+# beyond K_RES / K_PEND keep default order after the listed ones). Largest seen at 12 producers:
+# 26 bids, 21 reservations per producer-cycle.
+K_BID, K_RES, K_PEND = 64, 48, 48
+# claim kinds in the scheduled path, also the tie-break rank (carried first, as today)
+HELD, PENDING, NEW = 0, 1, 2
+
+
+@dataclass(frozen=True)
+class TurnLists:
+    """What a producer's accept turn decides over (ADR-0062), in slot order: this cycle's bids
+    price-descending (stable, as the auction sorts), its carried reservations and pending claims
+    in default order (price-descending, stable). Nothing changes them before `produce()`."""
+
+    bids: tuple[Bid, ...]
+    reservations: tuple["_Reservation", ...]
+    pending: tuple["_Reservation", ...]
+
+
+@dataclass(frozen=True)
+class TurnDecision:
+    """An accept turn's decision (ADR-0062), per slot of `TurnLists`: accept and priority per bid,
+    priority per carried reservation and pending claim (higher runs first)."""
+
+    accept: tuple[bool, ...]
+    bid_priority: tuple[float, ...]
+    reservation_priority: tuple[float, ...]
+    pending_priority: tuple[float, ...]
 
 
 @dataclass
@@ -227,6 +260,8 @@ class ProducingAgent:
         # and the acceptance rule itself (None = the ADR-0025 auction, unchanged)
         self.pending: list[_Reservation] = []
         self.acceptance: AcceptanceRule | None = None
+        # ADR-0062: this cycle's accept-turn decision (set by `set_turn`, consumed by `produce`)
+        self.turn: TurnDecision | None = None
         # diagnostic counters of the acceptance path (reported, never observed)
         self.acceptance_stats: dict[str, float] = {}
         # units ordered via replenishment but not yet delivered — claim inventory
@@ -296,6 +331,7 @@ class ProducingAgent:
             quantity=sub.quantity,
             routed_cycle=routed_cycle,
             remaining_ttl=sub.remaining_ttl,
+            order_kind=sub.order_kind,
         )
 
     def inventory_units(self) -> int:
@@ -428,6 +464,186 @@ class ProducingAgent:
             self.outstanding_inbound[request.product] = remaining
         else:
             self.outstanding_inbound.pop(request.product, None)
+
+    # --- ADR-0062: the accept turn (acceptance + claim scheduling) ---
+    @staticmethod
+    def _default_order(rs: Sequence[_Reservation]) -> list[_Reservation]:
+        return sorted(rs, key=lambda r: r.bid.capacity_unit_price(), reverse=True)
+
+    def turn_lists(self) -> TurnLists:
+        return TurnLists(tuple(sorted(self.bids, key=lambda b: b.capacity_unit_price(), reverse=True)),
+                         tuple(self._default_order(self.reservations)),
+                         tuple(self._default_order(self.pending)))
+
+    def _new_work_budget(self, lists: TurnLists) -> dict[CapacityType, Capacity]:
+        """The capacity left for this cycle's bids in the default order (today's auction budget):
+        re-validation, carried holds, carried reservations that assemble from stock or fail at TTL
+        (simulated on copies; no state changes)."""
+        budget = dict(self.capacities)
+        survivors = []
+        for r in lists.reservations:
+            if self._fits(budget, r.bid.capacities):
+                self._subtract(budget, r.bid.capacities)
+                survivors.append(r)
+        stock = dict(self.inventory)
+        for r in survivors:
+            if all(stock.get(p, 0) >= q for p, q in r.bid.inputs.items()):
+                for p, q in r.bid.inputs.items():
+                    stock[p] = stock.get(p, 0) - q
+            elif r.cycles_waited + 1 >= self.reservation_ttl:
+                for t, c in r.bid.capacities.items():
+                    budget[t] += c
+        return budget
+
+    def default_turn_decision(self) -> TurnDecision:
+        """Today's behaviour as an accept-turn decision (ADR-0062): the auction's accept bits on
+        the producer's own state, carried reservations first (price-descending), then pending
+        claims, then new bids price-descending, as descending ranks in [-10, 10]."""
+        lists = self.turn_lists()
+        budget = self._new_work_budget(lists)
+        accept = []
+        for b in lists.bids:
+            ok = self._fits(budget, b.capacities)
+            if ok:
+                self._subtract(budget, b.capacities)
+            accept.append(ok)
+        n = len(lists.reservations) + len(lists.pending) + len(lists.bids)
+        ranks = [10.0 - 20.0 * i / max(1, n) for i in range(n)]
+        nr, npd = len(lists.reservations), len(lists.pending)
+        return TurnDecision(tuple(accept), tuple(ranks[nr + npd:]), tuple(ranks[:nr]),
+                            tuple(ranks[nr:nr + npd]))
+
+    def set_turn(self, decision: TurnDecision) -> None:
+        """Record this cycle's accept-turn decision; the slots are `turn_lists()` taken now (no
+        state changes before `produce()`). Priorities land on the claims themselves."""
+        lists = self.turn_lists()
+        if len(decision.accept) != len(lists.bids) or len(decision.bid_priority) != len(lists.bids):
+            raise ValueError(f"turn decision covers {len(decision.accept)} bids, producer has "
+                             f"{len(lists.bids)}")
+        for rs, ps in ((lists.reservations, decision.reservation_priority),
+                       (lists.pending, decision.pending_priority)):
+            if len(ps) != len(rs):
+                raise ValueError("turn decision does not match the carried claims")
+            for r, p in zip(rs, ps):
+                r.priority = float(p)
+        self.turn = decision
+
+    def _produce_scheduled(self, outage: bool) -> ProductionResult:
+        """ADR-0062: production under an accept-turn decision. The domain keeps feasibility,
+        execution, TTL, degradation and tokens; the turn's scores order every claim: re-validation
+        keeps the highest, then all claims (carried reservations, pending claims, accepted bids)
+        run in one descending order (ties: carried, pending, new; then price)."""
+        decision, self.turn = self.turn, None
+        assert decision is not None
+        lists = self.turn_lists()
+        accepted: list[Bid] = []
+        completed: list[Bid] = []
+        failed: list[Bid] = []
+        rejected: list[Bid] = []
+        failure_reasons: list[str] = []
+        rejection_reasons: list[str] = []
+        cut_off_price = self.cut_off_price
+        start = self._new_work_budget(lists)  # diagnostic decline reasons (as the auction's)
+
+        def key(kind: int, r: _Reservation) -> tuple[float, int, float]:
+            return (-r.priority, kind, -r.bid.capacity_unit_price())
+
+        # 1. re-validation by priority (the lowest dropped first)
+        budget = dict(self.capacities)
+        survivors: list[_Reservation] = []
+        for r in sorted(lists.reservations, key=lambda r: key(HELD, r)):
+            if self._fits(budget, r.bid.capacities):
+                self._subtract(budget, r.bid.capacities)
+                survivors.append(r)
+            else:
+                failed.append(r.bid)
+                failure_reasons.append(FAIL_DROPPED)
+        available = dict(self.capacities)
+        for r in survivors:
+            self._subtract(available, r.bid.capacities)
+
+        # 2. the decisions over this cycle's bids
+        requested: Capacity = 0
+        requested_by_type: dict[CapacityType, Capacity] = {}
+        new: list[_Reservation] = []
+        funds: Tokens = 0
+        lowest: CapacityUnitPrice | None = None
+        reason_budget = dict(start)
+        for bid, acc, pri in zip(lists.bids, decision.accept, decision.bid_priority):
+            requested += bid.total_capacity()
+            for t, c in bid.capacities.items():
+                requested_by_type[t] = requested_by_type.get(t, 0) + c
+            if outage or not acc:
+                rejected.append(bid)
+                rejection_reasons.append(
+                    REJECT_OUTAGE if outage
+                    else REJECT_NO_FIT if not self._fits(start, bid.capacities)
+                    else REJECT_DECLINED if self._fits(reason_budget, bid.capacities)
+                    else REJECT_DISPLACED)
+                continue
+            if self._fits(reason_budget, bid.capacities):
+                self._subtract(reason_budget, bid.capacities)
+            funds += bid.tokens
+            price = bid.capacity_unit_price()
+            lowest = price if lowest is None or price < lowest else lowest
+            accepted.append(bid)
+            new.append(_Reservation(bid, 0, float(pri)))
+        if lowest is not None:
+            cut_off_price = lowest
+
+        # 3. every claim in one priority order
+        claims = sorted([(HELD, r) for r in survivors] + [(PENDING, r) for r in lists.pending]
+                        + [(NEW, r) for r in new], key=lambda kr: key(*kr))
+        still: list[_Reservation] = []
+        pending: list[_Reservation] = []
+        for kind, r in claims:
+            if kind == HELD:
+                if not outage and self._has_inputs(r.bid):
+                    self._consume_inputs(r.bid)
+                    completed.append(r.bid)
+                    continue
+                r.cycles_waited += 1
+                if r.cycles_waited >= self.reservation_ttl:
+                    for t, c in r.bid.capacities.items():
+                        available[t] += c
+                    failed.append(r.bid)
+                    failure_reasons.append(FAIL_TTL)
+                else:
+                    still.append(r)
+                continue
+            if not outage and self._fits(available, r.bid.capacities):
+                self._subtract(available, r.bid.capacities)
+                if r.bid.is_composite() and not self._has_inputs(r.bid):
+                    still.append(r)
+                else:
+                    if r.bid.is_composite():
+                        self._consume_inputs(r.bid)
+                    completed.append(r.bid)
+            elif kind == PENDING:
+                r.cycles_waited += 1
+                if r.cycles_waited >= self.reservation_ttl:
+                    failed.append(r.bid)
+                    failure_reasons.append(FAIL_TTL)
+                else:
+                    pending.append(r)
+            else:
+                pending.append(r)
+
+        # 4. commit next state, as the auction path
+        for t in self.capacities:
+            self.capacities[t] = max(0, self.capacities[t] - self.degradation_for(t))
+        self.bids = []
+        self.reservations = still
+        self.pending = pending
+        self.requested_capacity = requested
+        self.requested_capacity_by_type = requested_by_type
+        self.funds = funds
+        self.cut_off_price = cut_off_price
+        self.cmd_handled = False
+        return ProductionResult(
+            accepted, completed, failed, rejected,
+            rejection_reasons=rejection_reasons, failure_reasons=failure_reasons,
+        )
 
     # --- inventory / assembly helpers ---
     def _produce_by_policy(self, outage: bool, available: dict[CapacityType, Capacity],
@@ -626,6 +842,8 @@ class ProducingAgent:
         missing) and accepts no bid (all rejected, requested capacity still recorded,
         cut-off price kept); re-validation and degradation run as usual. Its own
         purchases and deliveries are untouched: they are resolved by the system."""
+        if self.turn is not None:  # ADR-0062: the accept turn decided this cycle
+            return self._produce_scheduled(outage)
         accepted: list[Bid] = []
         completed: list[Bid] = []
         failed: list[Bid] = []

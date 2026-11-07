@@ -110,7 +110,7 @@ class OrderingAgent:
                     )
                 routed = RoutedSubOrder(
                     order_id=order_id, product=order.product, quantity=sub.quantity, tokens=sub.tokens,
-                    remaining_ttl=order.remaining_ttl,
+                    remaining_ttl=order.remaining_ttl, order_kind=order.kind,
                 )
                 result.setdefault(sub.producer_id, []).append(routed)
         self.cmd_handled = True

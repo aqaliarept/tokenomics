@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 from fractions import Fraction
+from collections.abc import Sequence
 from typing import Protocol
 
 from .common import (
@@ -64,6 +65,8 @@ from .producing_agent import (
     ProducingAgent,
     ProducingAgentCommand,
     ProducingAgentView,
+    TurnDecision,
+    TurnLists,
     _Reservation,
 )
 
@@ -153,11 +156,7 @@ class OrderResolution:
 
 def order_kind(order: Order) -> str:
     """consumer / replenishment / investment, from the request the order carries."""
-    if order.consumer_request is not None:
-        return "consumer"
-    if order.replenishment_request is not None:
-        return "replenishment"
-    return "investment"
+    return order.kind()
 
 
 @dataclass(frozen=True)
@@ -242,12 +241,13 @@ def _order_priority(order: Order) -> int:
     return 1
 
 
-def distribute_investment_fund(orders: dict[OrderId, Order], investment_fund: Tokens) -> None:
-    """Two-stage producer-first allocation (ADR-0025). Stage 1 splits the fund
-    across *producers* proportional to each producer's scalar cut-off price (NaN
-    producers split the remainder equally) — so issuing more orders cannot raise a
-    producer's share. Stage 2 distributes a producer's whole budget across its own
-    orders in survival-first priority order."""
+def funding_groups(orders: dict[OrderId, Order]) -> dict[ProducerId, list[Order]]:
+    """Each producer's orders that need funding this cycle, in today's stage-2 order (ADR-0025:
+    survival-first priority, then creation order; the stable sort)."""
+    return {pid: sorted(os, key=_order_priority) for pid, os in _groups(orders).items()}
+
+
+def _groups(orders: dict[OrderId, Order]) -> dict[ProducerId, list[Order]]:
     groups: dict[ProducerId, list[Order]] = {}
     for order in orders.values():
         if not order.requires_funding():
@@ -255,9 +255,52 @@ def distribute_investment_fund(orders: dict[OrderId, Order], investment_fund: To
         pid = order.producer_id()
         assert pid is not None  # only producer-funded orders require funding
         groups.setdefault(pid, []).append(order)
+    return groups
+
+
+def funding_budgets(orders: dict[OrderId, Order], investment_fund: Tokens
+                    ) -> dict[ProducerId, Tokens]:
+    """Stage 1 (physics, ADR-0025): the fund split across producers by cut-off price (NaN
+    producers split the remainder equally). Pure; `distribute_investment_fund` spends it."""
+    return _stage1(_groups(orders), investment_fund)
+
+
+def distribute_investment_fund(orders: dict[OrderId, Order], investment_fund: Tokens,
+                               priority: dict[OrderId, float] | None = None) -> None:
+    """Two-stage producer-first allocation (ADR-0025). Stage 1 splits the fund
+    across *producers* proportional to each producer's scalar cut-off price (NaN
+    producers split the remainder equally) — so issuing more orders cannot raise a
+    producer's share. Stage 2 distributes a producer's whole budget across its own
+    orders in survival-first priority order, or (ADR-0062) in descending fund-turn score for a
+    producer whose orders all carry one in `priority` (ties: today's order)."""
+    groups = _groups(orders)
     if not groups:
         return
+    budgets = _stage1(groups, investment_fund)
+    # stage 2: spend each producer's budget greedily, survival-first (ADR-0027).
+    # Walk orders by fixed priority; fill each up to its funding target (cost),
+    # advancing to the next only with budget left over. The boundary order takes
+    # whatever remains (partial); lower-priority orders get nothing and expire
+    # unfunded. None target = unbounded (take the whole remaining budget).
+    for pid, os in groups.items():
+        remaining = budgets.get(pid, 0)
+        os = sorted(os, key=_order_priority)
+        if priority and all(o.id in priority for o in os):
+            os = [o for _i, o in sorted(enumerate(os), key=lambda io: (-priority[io[1].id], io[0]))]
+        for order in os:
+            if remaining <= 0:
+                break  # rest expire (rejected) this cycle
+            target = order.funding_target()
+            grant = remaining if target is None else min(target, remaining)
+            if grant <= 0:
+                continue  # zero-cost order claims nothing, never funded for free
+            order.fund(grant)
+            remaining -= grant
 
+
+def _stage1(groups: dict[ProducerId, list[Order]], investment_fund: Tokens
+            ) -> dict[ProducerId, Tokens]:
+    """Stage 1's per-producer budgets over groups in creation order (unchanged arithmetic)."""
     # producer cut-off = the (shared) cut-off its orders were issued at
     priced: dict[ProducerId, float] = {}
     nan_pids: list[ProducerId] = []
@@ -281,23 +324,7 @@ def distribute_investment_fund(orders: dict[OrderId, Order], investment_fund: To
         for pid in nan_pids:
             budgets[pid] = share
             remains -= share
-
-    # stage 2: spend each producer's budget greedily, survival-first (ADR-0027).
-    # Walk orders by fixed priority; fill each up to its funding target (cost),
-    # advancing to the next only with budget left over. The boundary order takes
-    # whatever remains (partial); lower-priority orders get nothing and expire
-    # unfunded. None target = unbounded (take the whole remaining budget).
-    for pid, os in groups.items():
-        remaining = budgets.get(pid, 0)
-        for order in sorted(os, key=_order_priority):
-            if remaining <= 0:
-                break  # rest expire (rejected) this cycle
-            target = order.funding_target()
-            grant = remaining if target is None else min(target, remaining)
-            if grant <= 0:
-                continue  # zero-cost order claims nothing, never funded for free
-            order.fund(grant)
-            remaining -= grant
+    return budgets
 
 
 def product_stream_agents(config: Configuration) -> list[tuple[str, int]]:
@@ -365,6 +392,8 @@ class System:
         self._stream_view_cache: StreamViewCache | None = None
 
         self.producer_infos: dict[ProducerId, ProducerInfo] = self._snapshot_producer_infos()
+        # ADR-0062: this cycle's fund-turn scores per order (empty = today's stage-2 order)
+        self.funding_priority: dict[OrderId, float] = {}
         # ADR-0061 D2: last cycle's sub-order outcomes per routing agent (empty before cycle 1)
         self.last_sub_order_outcomes: dict[OrderingAgentId, tuple[SubOrderOutcome, ...]] = {}
         # Injected shock schedule (ADR-0055, add-shocks-i-drift D2): the env draws it, the
@@ -478,6 +507,38 @@ class System:
             else:
                 self.orders[oid] = Order.new_investment_order(oid, ps, r, ttl=self.order_ttl)
 
+    # --- ADR-0062: the fund turn and the accept turn ---
+    def funding_requests(self, pid: ProducerId) -> list[Order]:
+        """The producer's orders needing funding this cycle, in today's stage-2 order (the fund
+        turn's slots); only before `start_ordering`."""
+        if self.state != SystemState.ORDERS_PLACEMENT:
+            raise WrongStateError()
+        return funding_groups(self.orders).get(pid, [])
+
+    def funding_budget(self, pid: ProducerId) -> Tokens:
+        """The producer's stage-1 budget this cycle (its own allocation; physics)."""
+        if self.state != SystemState.ORDERS_PLACEMENT:
+            raise WrongStateError()
+        return funding_budgets(self.orders, self.investment_fund).get(pid, 0)
+
+    def set_funding_priorities(self, pid: ProducerId, scores: Sequence[float]) -> None:
+        """One fund-turn score per `funding_requests(pid)` slot; stage 2 spends in descending score."""
+        reqs = self.funding_requests(pid)
+        if len(scores) != len(reqs):
+            raise ValueError(f"{pid}: {len(scores)} funding scores for {len(reqs)} requests")
+        for o, sc in zip(reqs, scores):
+            self.funding_priority[o.id] = float(sc)
+
+    def producer_turn_lists(self, pid: ProducerId) -> TurnLists:
+        if self.state != SystemState.ORDERING:
+            raise WrongStateError()
+        return must_get(self.producing_agents, pid).turn_lists()
+
+    def set_producer_turn(self, pid: ProducerId, decision: TurnDecision) -> None:
+        if self.state != SystemState.ORDERING:
+            raise WrongStateError()
+        must_get(self.producing_agents, pid).set_turn(decision)
+
     # --- ordering agent phase ---
     def ordering_agent_view(self, aid: OrderingAgentId) -> OrderingAgentView:
         if self.state != SystemState.ORDERING:
@@ -554,7 +615,8 @@ class System:
     def start_ordering(self) -> None:
         if self.state != SystemState.ORDERS_PLACEMENT:
             raise WrongStateError()
-        distribute_investment_fund(self.orders, self.investment_fund)
+        distribute_investment_fund(self.orders, self.investment_fund, self.funding_priority)
+        self.funding_priority = {}
         # Refresh live producer state for ordering agents (see module docstring).
         self.producer_infos = self._snapshot_producer_infos()
         for order in self.orders.values():

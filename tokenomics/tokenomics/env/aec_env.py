@@ -93,6 +93,7 @@ class TokenomicsAECEnv(AECEnv):
         corrected_stream_k: bool = False,
         entity_producer_obs: bool = False,
         ordering_decode: str = LOGITS_V1,
+        producer_turns: bool = False,
     ) -> None:
         super().__init__()
         self.config = config or load_config(DEFAULT_CONFIG)
@@ -139,7 +140,13 @@ class TokenomicsAECEnv(AECEnv):
             order_ids = [c.id for c in self.config.consumers] + list(prod_ids)
         self._prod_agents = [f"prod_{pid}" for pid in prod_ids]
         self._order_agents = [f"order_{aid}" for aid in order_ids]
-        self.possible_agents = self._prod_agents + self._order_agents
+        # ADR-0062 (opt-in): each producer's fund turn after the investment phase, and its accept
+        # turn after the last ordering agent; off = today's agents, spaces and order.
+        self.producer_turns = producer_turns
+        self._fund_agents = [f"fund_{pid}" for pid in prod_ids] if producer_turns else []
+        self._acc_agents = [f"acc_{pid}" for pid in prod_ids] if producer_turns else []
+        self.possible_agents = (self._prod_agents + self._fund_agents + self._order_agents
+                                + self._acc_agents)
 
         # env agent name -> (role, domain id)
         self._role: dict[str, tuple[str, str]] = {}
@@ -147,12 +154,25 @@ class TokenomicsAECEnv(AECEnv):
             self._role[f"prod_{pid}"] = ("prod", pid)
         for aid in order_ids:
             self._role[f"order_{aid}"] = ("order", aid)
+        for pid in prod_ids if producer_turns else ():
+            self._role[f"fund_{pid}"] = ("fund", pid)
+            self._role[f"acc_{pid}"] = ("acc", pid)
         self._last_prod_agent = self._prod_agents[-1]
+        # the agent after which routing starts (the fund turns, when on, spend the fund first)
+        self._last_before_ordering = (self._fund_agents or self._prod_agents)[-1]
+        self.turn_beyond_k = 0  # ADR-0062: bids / claims past the accept turn's slots (counted)
 
         self._prod_obs_space = self.spec_.producing_obs_space()
         self._prod_act_space = self.spec_.producing_action_space()
         self._order_obs_space = self.spec_.ordering_obs_space()
         self._order_act_space = self.spec_.ordering_action_space()
+        self._turn_spaces: dict[str, tuple[spaces.Space, spaces.Space]] = {}
+        if producer_turns:
+            from .producer_turns import (accept_action_space, accept_obs_space, fund_action_space,
+                                         fund_obs_space)
+            self._turn_spaces = {"fund": (fund_obs_space(self.spec_), fund_action_space(self.spec_)),
+                                 "acc": (accept_obs_space(self.spec_),
+                                         accept_action_space(self.spec_))}
 
         self.system = None
         self.current_cycle = 0
@@ -164,10 +184,16 @@ class TokenomicsAECEnv(AECEnv):
 
     # --- spaces ---
     def observation_space(self, agent: str) -> spaces.Space:
-        return self._prod_obs_space if self._role[agent][0] == "prod" else self._order_obs_space
+        role = self._role[agent][0]
+        if role in self._turn_spaces:
+            return self._turn_spaces[role][0]
+        return self._prod_obs_space if role == "prod" else self._order_obs_space
 
     def action_space(self, agent: str) -> spaces.Space:
-        return self._prod_act_space if self._role[agent][0] == "prod" else self._order_act_space
+        role = self._role[agent][0]
+        if role in self._turn_spaces:
+            return self._turn_spaces[role][1]
+        return self._prod_act_space if role == "prod" else self._order_act_space
 
     # --- lifecycle ---
     def _build_consumers(self, seed: int | None) -> dict[str, Consumer]:
@@ -248,6 +274,10 @@ class TokenomicsAECEnv(AECEnv):
             product_stream_ordering=self.product_stream_ordering,
             shock_schedule=self._shock_schedule,
         )
+        if self.acceptance_rule is not None and self.producer_turns:
+            raise ValueError("producer_turns and acceptance_rule are exclusive (ADR-0062: the accept "
+                             "turn is the acceptance decision)")
+        self.turn_beyond_k = 0
         if self.acceptance_rule is not None:
             for pid, p in self.system.producing_agents.items():
                 p.acceptance = (self.acceptance_rule(pid)
@@ -371,6 +401,15 @@ class TokenomicsAECEnv(AECEnv):
 
     def observe(self, agent: str) -> np.ndarray:
         role, did = self._role[agent]
+        if role in ("fund", "acc"):
+            from .producer_turns import encode_accept, encode_fund
+            from ..domain.system import funding_budgets, funding_groups
+            p = self.system.producing_agents[did]
+            if role == "fund":  # read without the phase check: `last()` also observes ended agents
+                orders = self.system.orders
+                return encode_fund(self.spec_, p, funding_groups(orders).get(did, []),
+                                   funding_budgets(orders, self.system.investment_fund).get(did, 0))
+            return encode_accept(self.spec_, p, p.turn_lists())
         cp = min(1.0, self.current_cycle / self.horizon)
         # Producer infos (one `info()` per producer) are built only for the two
         # encoders that read them, not for every observation (task 8.4).
@@ -410,8 +449,20 @@ class TokenomicsAECEnv(AECEnv):
             view = self.system.producing_agents[did].view()
             cmd = decode_producing(self.spec_, np.asarray(action), view)
             self.system.producing_agent_action(did, cmd)
-            if agent == self._last_prod_agent:
+            if agent == self._last_before_ordering:
                 self.system.start_ordering()
+        elif role == "fund":
+            from .producer_turns import decode_fund
+            n = len(self.system.funding_requests(did))
+            self.system.set_funding_priorities(did, decode_fund(np.asarray(action), n))
+            if agent == self._last_before_ordering:
+                self.system.start_ordering()
+        elif role == "acc":
+            from .producer_turns import decode_accept
+            decision, beyond = decode_accept(np.asarray(action),
+                                             self.system.producer_turn_lists(did))
+            self.turn_beyond_k += beyond
+            self.system.set_producer_turn(did, decision)
         else:
             view = self.system.ordering_agents[did].view(self.system.producer_infos)
             cmd = decode_ordering(self.spec_, np.asarray(action), view)

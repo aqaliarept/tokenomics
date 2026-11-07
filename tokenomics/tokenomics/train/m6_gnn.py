@@ -14,6 +14,10 @@ headroom, conservation).
 - **Producer head:** 3 toggle logits (restore / upgrade / expand) and a replenish fraction per input row.
 - **Orderer head:** per order slot, logits over its eligible producers; one keyed draw (MWWk's key), the order
   routed whole (ADR-0059).
+- **Producer turn heads (ADR-0062, optional `TurnHeads`):** in the fund turn a score per funding request; in the
+  accept turn an accept logit and a priority per routed bid, and a priority per carried reservation and pending
+  claim. Request, bid and claim nodes are linked to the capacity and input rows they use, and read the trunk's
+  embeddings of the producer's own view.
 """
 
 from __future__ import annotations
@@ -227,6 +231,78 @@ class FeatureNorm(nn.Module):
         return rec
 
 
+# --- ADR-0062 turn features (the producer's own requests, bids and claims) ---
+
+FUND_KINDS = ("restoration", "replenishment", "upgrade", "inventory_expansion")
+FUND_DIM, BID_DIM, CLAIM_DIM = 9, 12, 11
+
+
+def _row_index(view: ProducerEntityView) -> tuple[dict[Any, int], dict[Any, int]]:
+    return ({r.capacity_type: i for i, r in enumerate(view.capacity_rows)},
+            {r.input_product: i for i, r in enumerate(view.input_rows)})
+
+
+def _links(n: int, items: Sequence[tuple[Sequence[Any], Sequence[Any]]], cap: dict[Any, int],
+           inp: dict[Any, int]) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    """(node, capacity row) and (node, input row) edges for each node's (types, inputs)."""
+    ec = [(k, cap[t]) for k, (types, _ins) in enumerate(items) for t in types if t in cap]
+    ei = [(k, inp[g]) for k, (_types, ins) in enumerate(items) for g in ins if g in inp]
+    return ec, ei
+
+
+def fund_features(p: Any, reqs: Sequence[Any], budget: float, view: ProducerEntityView
+                  ) -> dict[str, Any]:
+    """One row per funding request (the fund turn's slots, today's order): kind, target, quantity,
+    the product's stock and inbound (replenishment), the producer's budget; linked to the capacity
+    row it restores / upgrades or the input row it buys."""
+    from ..env.producer_turns import fund_kind
+
+    cap, inp = _row_index(view)
+    rows, items = [], []
+    for o in reqs:
+        kind = fund_kind(o)
+        target = o.funding_target()
+        rep_ = kind == "replenishment"
+        rows.append([float(kind == k) for k in FUND_KINDS] + [
+            _q(budget if target is None else target), _q(o.quantity),
+            _q(p.inventory.get(o.product, 0) if rep_ else 0),
+            _q(p.outstanding_inbound.get(o.product, 0) if rep_ else 0), _q(budget)])
+        types = ([p.restoration.type] if kind == "restoration" else
+                 [p.upgrade.type] if kind == "upgrade" else [])
+        items.append((types, [o.product] if rep_ else []))
+    ec, ei = _links(len(rows), items, cap, inp)
+    return {"fund": _arr(rows, FUND_DIM), "fund_cap": ec, "fund_in": ei}
+
+
+def accept_features(p: Any, lists: Any, view: ProducerEntityView) -> dict[str, Any]:
+    """Bid rows (this cycle's routed bids, price-descending) and claim rows (carried reservations,
+    then pending claims, in default order); each linked to the capacity and input rows it uses."""
+    from ..env.producer_turns import _cover, kind_onehot
+
+    cap, inp = _row_index(view)
+    budget = p._new_work_budget(lists)
+    bids, bitems = [], []
+    for b in lists.bids:
+        bids.append([_q(b.capacity_unit_price()), _q(b.quantity), _q(b.total_capacity()),
+                     -1.0 if b.remaining_ttl is None else float(b.remaining_ttl),
+                     float(b.is_composite()), _cover(p, b), float(p._fits(budget, b.capacities)),
+                     _q(sum(budget.values())), _q(b.tokens), *kind_onehot(b)])
+        bitems.append((list(b.capacities), list(b.inputs)))
+    claims, citems = [], []
+    for held, rs in ((1.0, lists.reservations), (0.0, lists.pending)):
+        for r in rs:
+            claims.append([held, 1.0 - held, _q(r.bid.capacity_unit_price()), _q(r.bid.quantity),
+                           _q(r.bid.total_capacity()), float(r.cycles_waited),
+                           float(p._has_inputs(r.bid)), float(p.reservation_ttl - r.cycles_waited),
+                           *kind_onehot(r.bid)])
+            citems.append((list(r.bid.capacities), list(r.bid.inputs)))
+    bc, bi = _links(len(bids), bitems, cap, inp)
+    cc, ci = _links(len(claims), citems, cap, inp)
+    return {"bid": _arr(bids, BID_DIM), "bid_cap": bc, "bid_in": bi,
+            "claim": _arr(claims, CLAIM_DIM), "claim_cap": cc, "claim_in": ci,
+            "n_res": len(lists.reservations)}
+
+
 # --- models ---
 
 
@@ -272,6 +348,26 @@ class ProducerGNN(nn.Module):
             "input": _mlp(2 * hidden, hidden)}) for _ in range(rounds)])
         self.gates = nn.Linear(4 * hidden, 3)
         self.replenish = nn.Linear(5 * hidden, 1)
+        self.turn: TurnHeads | None = None  # ADR-0062 (`add_turn_heads`)
+
+    def add_turn_heads(self) -> None:
+        """Attach fresh fund / accept turn heads (the trunk and investment heads untouched)."""
+        self.turn = TurnHeads(self.hidden)
+
+    def fund_scores(self, f: dict[str, Any], t: dict[str, Any]) -> torch.Tensor:
+        """One score per funding request row of `t = fund_features(...)`."""
+        assert self.turn is not None
+        h, pooled = self._trunk(f)
+        return self.turn.node_out("fund", t, h, pooled).squeeze(-1)
+
+    def accept_outputs(self, f: dict[str, Any], t: dict[str, Any]
+                       ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """(accept logit per bid, priority per bid, priority per claim) for `accept_features`."""
+        assert self.turn is not None
+        h, pooled = self._trunk(f)
+        b = self.turn.node_out("bid", t, h, pooled)
+        c = self.turn.node_out("claim", t, h, pooled).squeeze(-1)
+        return b[:, 0], b[:, 1], c
 
     def forward(self, f: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor]:
         """(3 toggle logits, a replenish fraction in (0, 1) per input row)."""
@@ -320,6 +416,33 @@ class ProducerGNN(nn.Module):
         pooled = torch.cat([h["global"][0], *[_mean(h[k], self.hidden)
                                                for k in ("capacity", "product", "input")]])
         return h, pooled
+
+
+class TurnHeads(nn.Module):
+    """ADR-0062 heads over request / bid / claim nodes: each node's encoding, the mean of its
+    linked capacity and input rows' trunk embeddings, and the pooled view embedding."""
+
+    def __init__(self, hidden: int = HIDDEN) -> None:
+        super().__init__()
+        self.hidden = hidden
+        self.enc = nn.ModuleDict({"fund": _mlp(FUND_DIM, hidden), "bid": _mlp(BID_DIM, hidden),
+                                  "claim": _mlp(CLAIM_DIM, hidden)})
+        self.norm = FeatureNorm({"fund": FUND_DIM, "bid": BID_DIM, "claim": CLAIM_DIM}, {})
+        self.mix = nn.ModuleDict({k: _mlp(7 * hidden, hidden) for k in ("fund", "bid", "claim")})
+        self.out = nn.ModuleDict({"fund": nn.Linear(hidden, 1), "bid": nn.Linear(hidden, 2),
+                                  "claim": nn.Linear(hidden, 1)})
+
+    def node_out(self, kind: str, f: dict[str, Any], h: dict[str, torch.Tensor],
+                 pooled: torch.Tensor) -> torch.Tensor:
+        x = f[kind]
+        if not x.shape[0]:
+            return torch.zeros((0, self.out[kind].out_features))
+        e = self.enc[kind](self.norm(kind, x))
+        n = e.shape[0]
+        cc = _mean_ctx(f[f"{kind}_cap"], n, h["capacity"], True)
+        ci = _mean_ctx(f[f"{kind}_in"], n, h["input"], True)
+        z = torch.cat([e, cc, ci, pooled.unsqueeze(0).expand(n, -1)], 1)
+        return self.out[kind](torch.relu(self.mix[kind](z)))
 
 
 class OrdererGNN(nn.Module):
@@ -398,6 +521,59 @@ def producer_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str) -> np
     act[sp.num_inputs:sp.num_inputs + 3] = np.where(gates.numpy() > 0, ACTION_LOGIT_BOUND,
                                                      -ACTION_LOGIT_BOUND)
     return act
+
+
+def _turn_view(env: "TokenomicsAECEnv", pid: str) -> ProducerEntityView:
+    """The producer's entity view at a turn (built directly: the system's accessor is for the
+    investment phase only); the same own-state view, now with this cycle's commands placed."""
+    from ..domain.producer_view import build_producer_entity_view
+
+    s = env.system
+    return build_producer_entity_view(s.producing_agents[pid], s.telemetry, s.process_sheets,
+                                      s.orders)
+
+
+def fund_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str) -> np.ndarray:
+    from ..env.producer_turns import fund_slots
+
+    s = env.system
+    p = s.producing_agents[pid]
+    reqs = s.funding_requests(pid)
+    view = _turn_view(env, pid)
+    f = producer_features(view, producer_context(env, pid), model.features)
+    t = fund_features(p, reqs, s.funding_budget(pid), view)
+    with torch.no_grad():
+        sc = model.fund_scores(f, t).numpy() if reqs else np.zeros(0)
+    out = np.full(fund_slots(env.spec_), -ACTION_LOGIT_BOUND, np.float32)
+    n = min(len(sc), out.shape[0])
+    out[:n] = np.clip(sc[:n], -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND)
+    return out
+
+
+def accept_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str) -> np.ndarray:
+    """Greedy: accept iff the logit > 0; priorities as scored (clipped to the action bound)."""
+    from ..domain.producing_agent import TurnDecision
+    from ..env.producer_turns import encode_accept_action
+
+    s = env.system
+    p = s.producing_agents[pid]
+    lists = s.producer_turn_lists(pid)
+    view = _turn_view(env, pid)
+    f = producer_features(view, producer_context(env, pid), model.features)
+    t = accept_features(p, lists, view)
+    with torch.no_grad():
+        acc, bp, cp = (x.numpy() for x in model.accept_outputs(f, t))
+    clip = lambda v: tuple(float(x) for x in np.clip(v, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND))
+    nr = t["n_res"]
+    return encode_accept_action(TurnDecision(tuple(bool(x > 0) for x in acc), clip(bp),
+                                             clip(cp[:nr]), clip(cp[nr:])))
+
+
+def gnn_turn_policies(model: ProducerGNN) -> tuple[Policy, Policy]:
+    """(fund policy, accept policy) of a producer GNN with turn heads (ADR-0062)."""
+    model.eval()
+    return (lambda env, agent: fund_action(model, env, env._role[agent][1]),
+            lambda env, agent: accept_action(model, env, env._role[agent][1]))
 
 
 def gnn_producing_policy(model: ProducerGNN) -> Policy:

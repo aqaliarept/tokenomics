@@ -299,6 +299,10 @@ _Avoid_: Offer, request, order line
 The lowest bid price (tokens per total-capacity-unit) among all bids accepted by a producing agent in a cycle. Used to prioritize investment fund distribution and signals market tightness.
 _Avoid_: Market price, clearing price, minimum price
 
+**Producer Turn:**
+One of a producing agent's two extra decision points per cycle (ADR-0062, opt-in `producer_turns`). The **fund turn** (after the investment phase, before routing) scores the producer's own funding requests, and the fund's stage 2 fills them in score order. The **accept turn** (after the last ordering agent, before production) gives each routed bid an accept bit and a priority, and each carried reservation and pending claim a priority; the domain then runs every claim in one priority order. The domain keeps feasibility, TTL and token accounting. The default turn policies reproduce today's auction and funding order byte for byte.
+_Avoid_: Phase, sub-step, auction step
+
 **Auction:**
 The mechanism by which a producing agent allocates its capacity to bids. Bids are sorted by price descending and accepted greedily from the highest down. Acceptance is atomic: a bid clears only if the producer has enough remaining capacity of every type the bundle requires.
 _Avoid_: Exchange, marketplace, market

@@ -92,6 +92,9 @@ class OrderInfo:
     # cycle), own-order information (add-producer-acceptance-policy, ADR-0061); additive,
     # read by no existing policy. The orderer view's `OrderSlotStats.ttl_remaining` is the same.
     remaining_ttl: int | None = None
+    # consumer / replenishment / investment: own-order information the producer may see (ADR-0062,
+    # DIAGNOSTICS 36: whether the work is an input to someone else's composite); additive
+    kind: str | None = None
 
 
 class Order:
@@ -212,8 +215,16 @@ class Order:
         self._must_be_funded()
         return OrderInfo(
             self.id, self.available_tokens(), self.product, self.unresolved_quantity(),
-            self.remaining_ttl(),
+            self.remaining_ttl(), self.kind(),
         )
+
+    def kind(self) -> str:
+        """consumer / replenishment / investment, from the request the order carries."""
+        if self.consumer_request is not None:
+            return "consumer"
+        if self.replenishment_request is not None:
+            return "replenishment"
+        return "investment"
 
     def remaining_ttl(self) -> int:
         """Cycles this order survives after the current one: it is rejected at the end of the

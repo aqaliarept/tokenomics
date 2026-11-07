@@ -72,13 +72,16 @@ def run_episode(
     *,
     monitor: EpisodeMonitor | None = None,
     max_iter: int | None = None,
+    fund_policy: Policy | None = None,
+    accept_policy: Policy | None = None,
 ) -> dict:
     """Drive one episode. `seed` is the event seed (demand RNG at reset); `action_seed`
     seeds the action spaces `random` baselines sample from. None keeps the legacy coupling
     (action spaces seeded with `seed`, pinned by test_legacy_invariance); the gate passes
     `eval.seeding.replicate_seed(...)` so replicates vary actions over identical demand
     (design D5, add-measurement-gate-harness). `monitor` observes the loop (the gate's contract
-    checks); `max_iter` overrides the step budget (tests only)."""
+    checks); `max_iter` overrides the step budget (tests only). `fund_policy` / `accept_policy`
+    act in the ADR-0062 producer turns when the env has them (default: today's behaviour)."""
     env.reset(seed=seed)
     # seed action spaces so `random` baselines are reproducible
     for a in env.possible_agents:
@@ -93,7 +96,15 @@ def run_episode(
             env.step(None)
             continue
         role = env._role[agent][0]
-        action = prod_policy(env, agent) if role == "prod" else order_policy(env, agent)
+        if role == "prod":
+            action = prod_policy(env, agent)
+        elif role == "order":
+            action = order_policy(env, agent)
+        else:  # ADR-0062 producer turns (env.producer_turns): today's behaviour unless given
+            from ..env.producer_turns import default_accept_policy, default_fund_policy
+            pol = (fund_policy or default_fund_policy) if role == "fund" else (
+                accept_policy or default_accept_policy)
+            action = pol(env, agent)
         if monitor is not None:
             monitor.on_action(agent, action)
         env.step(action)

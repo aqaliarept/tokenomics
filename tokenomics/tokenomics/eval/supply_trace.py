@@ -486,7 +486,9 @@ def run_supply_job(job: Job) -> dict[str, str]:
 
         if job["contract"] != JOINT_STACK:
             raise ValueError(f"{job['subject']}: contract {job['contract']} (D3: joint_stack)")
-        env = joint_stack_env(job_config(job), job["horizon"])
+        # ADR-0062: the producer turns with their default policies (today's behaviour; tests)
+        env = joint_stack_env(job_config(job), job["horizon"],
+                              producer_turns=bool(job.get("producer_turns")))
         set_draw_key(env, job_draw_key(job))
         tracer = RoutingTracer()
         tracer.attach(env)

@@ -46,10 +46,12 @@ def relabel_capacity_types(config: Configuration) -> Configuration:
 
 
 def joint_stack_env(config: Configuration, horizon: int,
-                    ordering_decode: str = LOGITS_V1) -> TokenomicsAECEnv:
+                    ordering_decode: str = LOGITS_V1, producer_turns: bool = False
+                    ) -> TokenomicsAECEnv:
     """The env both portable modules need: entity producer obs + corrected v4 streams.
     `ordering_decode` (ADR-0059) defaults to the legacy decode; a driver passing `choice-v1`
-    merges `spaces.decode_pins` into its pins."""
+    merges `spaces.decode_pins` into its pins. `producer_turns` (ADR-0062) adds the fund and
+    accept turns."""
     return TokenomicsAECEnv(
         config=config,
         horizon=horizon,
@@ -57,6 +59,7 @@ def joint_stack_env(config: Configuration, horizon: int,
         product_stream_ordering=True,
         corrected_stream_k=True,
         ordering_decode=ordering_decode,
+        producer_turns=producer_turns,
     )
 
 
