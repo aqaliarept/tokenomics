@@ -19,9 +19,11 @@
 | EXP-0111 power calibration (attempt 1 refused at start ≈ 0.6; attempt 2 9gce2b3c9penyp 20:33–20:44 ≈ 1.5) | 2026-11-06 | 8 vCPU / 16 GB + 20 GB volume, EUR-IS-1 | 2.1 (stop 3) | 74.1 |
 | EXP-0112 Stage 0b (commit 096be8c) | 2026-11-06 | svyc2sej5ixz0c, 16 vCPU / 32 GB + 20 GB volume, EUR-IS-1, 20:59–21:28 | 7.7 (stop 10) | 81.8 |
 | EXP-0113 Stage 1 pilot (commit d1d8f54) | 2026-11-06/07 | cctsg5g6uuw1j6, 16 vCPU / 32 GB + 20 GB volume, EUR-IS-1, 23:34–00:16 | 11.2 (stop 22) | 93.0 |
-| EXP-0114 pilot continued to 40 (commit 1918721), in progress | 2026-11-07 | 89blmrhmt5hfmx, 16 vCPU / 32 GB + 20 GB volume, EUR-IS-1 | stop 40 | |
+| EXP-0114 run 1 (iterations 11–35; commit 1918721), in progress: ~5.7 min per iteration, so 11–40 does not fit 150 min; stopped cleanly after iteration 35's checkpoint (supervisor 2026-11-07: split, each run ≤ 40) | 2026-11-07 | 89blmrhmt5hfmx, 16 vCPU / 32 GB + 20 GB volume, EUR-IS-1, 06:48– | stop 40 | |
 
 # Tranche M6-A ledger (learned acceptance, tasks §4; 70 vCPU-h, billed; user 2026-11-07, the supervisor decides within it)
 
 | run | date | pod | billed vCPU-h | cumulative |
 |---|---|---|---|---|
+| EXP-0115 attempt 1 (commit 5d6187b): all 4 arms ran, but the pull failed (local disk full) and the pod had no volume, so stopping it lost the rows | 2026-11-07 | u97t6mh3oxrmbv, 8 vCPU, EUR-IS-1, 07:16–07:28 + 08:17–08:19 restart | ≈ 1.9 (stop 6) | ≈ 1.9 |
+| EXP-0115 attempt 2 (same commit, 20 GB volume, pulled into the main repo) | 2026-11-07 | hk7lwtdbnyr7qg, 8 vCPU, EUR-IS-1, 08:19–08:29 | ≈ 1.5 (stop ≤ 4.1) | ≈ 3.4 |

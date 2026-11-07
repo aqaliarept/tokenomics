@@ -1542,3 +1542,37 @@ _Status: open (2026-11-06, EXP-0110); the two branches are not yet separated._
 - Producer gate flips 0.047 per decision; orderer entropy 0.91 nats.
 - Sibling correlation of Φ_t ≥ 0.72 at 12.
 - D0.1 0.98 / 0.97.
+
+## 36. A producer that accepts work it cannot run now loses more units than it saves (accepted-later work is late work)
+
+**Problem in plain English.**
+- Letting a producer accept a sub-order that does not fit this cycle, to run it in a later cycle, sounds like it
+  should help: fewer orders bounce.
+- It can still cost consumer units. The accepted work stays queued on a busy producer, where the auction would
+  have declined it and the orderer would have re-routed it next cycle, often to a producer with free capacity.
+- On short-TTL supply chains, an input delivered a cycle late (or lost while queued) makes the downstream
+  composite's reservation time out.
+
+**Discriminating check** (EXP-0115 style, supply observer on):
+- Split the extra lost consumer units (variant − default) by supply-trace class.
+- Accept-later harm shows as displacement losses falling (`c_displaced`, `b2_lost_displaced`) while input-TTL
+  losses rise more (`b2_lost_ttl`, `b2_late`, `a_held`).
+- Two arms exclude the alternatives:
+  - accept-later only when the order has a later cycle (the order's age);
+  - this cycle's bids run before carried claims (the step order).
+  Each recovers less than half of the loss in this case.
+
+**Outcome branches:**
+- **The class shift holds and neither arm recovers the loss:** the cause is the lock-in delay. Acceptance must
+  weigh re-routing against queuing per order, using own-order information (remaining lifetime, whether the work
+  fits now, the order kind). A fixed rule does not.
+- **The lifetime arm recovers it:** the producer lacked the order's age. Expose it (ADR-0061 addendum).
+- **The new-first arm recovers it:** the step order displaced fresh, pricier work. Schedule claims by priority
+  (ADR-0062).
+
+**Outcome (EXP-0115, 2026-11-07): the lock-in delay.**
+- At 12 producers, MWWk: A1 −208 units per episode against a floor of 146.5.
+- Recovery: R(life) 0.05, R(new-first) 0.15.
+- `c_displaced` −37.2k and `b2_lost_displaced` −31.9k, against `b2_lost_ttl` +49.3k and `b2_late` +18.6k.
+- The replenishment lag rises from 2.69 to 2.89 cycles.
+- The same at 42 and with RR.

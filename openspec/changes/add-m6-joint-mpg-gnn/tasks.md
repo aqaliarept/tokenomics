@@ -108,7 +108,7 @@ rule).
 Goal: the acceptance decision (ADR-0061) becomes part of the learned producer, so no hand-written rule runs
 inside the trained team. Each step is gated by the previous reading. Hand-written acceptance variants appear
 only as diagnostics, never as candidates (user rule 2026-11-06).
-- [ ] 4.1 [experiment][remote:cpu8] EXP-0115 A1 harm diagnosis (DIAGNOSTICS: the A1 harm entry). Replay
+- [x] 4.1 [experiment][remote:cpu8] EXP-0115 A1 harm diagnosis (**`neither:b2_not_delivered/b2_lost_ttl`**: accepted-later work is late work, DIAGNOSTICS 36; ≈ 3.4 vCPU-h M6-A) (DIAGNOSTICS: the A1 harm entry). Replay
   EXP-0098's A1 against the default auction on its 12-producer worlds (k5_rf5 + MWWk, TTL 2), with the supply
   observer plus a per-cycle acceptance trace. Measure: new bids declined because pending claims took the capacity
   first (step 3b), the price of what was displaced, the cut-off / fund-share shift (63% of declines were below the
@@ -116,7 +116,7 @@ only as diagnostics, never as candidates (user rule 2026-11-06).
   - A1-life: A1 using the order's real remaining lifetime;
   - A1-new-first: new bids before pending claims.
   Reading: name the cause with evidence, add a DIAGNOSTICS entry. ≈ 3 vCPU-h, stop 6.
-- [ ] 4.2 [code][local] Acceptance as an agent turn (ADR-0061 D4 slot action; replaces the env hook for learned
+- [ ] 4.2 [code][local] (built 2026-11-07, in review: ADR-0062; `env/producer_turns.py`, `producer_turns=True`; GNN `TurnHeads`) Acceptance as an agent turn (ADR-0061 D4 slot action; replaces the env hook for learned
   policies). After routing, each producer agent gets an accept turn with K slots and an accept logit plus a
   priority per routed bid. Today's auction stays the default and must be byte-identical: goldens plus the
   EXP-0088 replay. The GNN gets an accept head with bid nodes (price, quantity, capacity bundle, remaining
@@ -138,7 +138,7 @@ only as diagnostics, never as candidates (user rule 2026-11-06).
 ### 4b. Also learned: fund spend order and reservation scheduling (user 2026-11-07, from notes/hardcoded-audit.md)
 Both decisions sit at the same producer decision point as acceptance, so they join the 4.2 turn and the 4.3–4.5
 ladder. Today's rules stay the defaults and must be byte-identical (goldens plus the EXP-0088 replay).
-- [ ] 4.6 [code][local] ADR: fund stage 2 (the spend order inside a producer) and reservation scheduling become
+- [ ] 4.6 [code][local] (built 2026-11-07 with 4.2, ADR-0062: the fund turn + scored stage 2, scheduled production) ADR: fund stage 2 (the spend order inside a producer) and reservation scheduling become
   producer policy; the domain keeps feasibility and token accounting.
   - **Fund spend:** the producer orders its own funding requests: restoration, each input purchase, upgrade,
     expansion. Today's default is restoration → replenishment (by product id) → upgrade → expansion, each filled
@@ -147,7 +147,7 @@ ladder. Today's rules stay the defaults and must be byte-identical (goldens plus
     receiving stock and for being kept when capacity degrades. Today: carried first, price-descending, cheapest
     dropped first (`producing_agent.py:549-564, 591-594, 604-608`).
   - Fund stage 1 (the split across producers by cut-off) stays physics.
-- [ ] 4.7 [code][local] Heads in the 4.2 GNN turn: a priority score per funding request and per reservation /
+- [ ] 4.7 [code][local] (built 2026-11-07 with 4.2: fund / bid / claim heads) Heads in the 4.2 GNN turn: a priority score per funding request and per reservation /
   claim node; the domain applies them in score order. Imitation labels come from the defaults (4.3 fits all
   new heads together; offline gate ≥ 99% rank agreement). Power check (4.4) and training (4.5) cover the new
   heads too. One review round, together with 4.2.
