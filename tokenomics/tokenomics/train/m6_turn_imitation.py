@@ -165,6 +165,7 @@ def record_job(job: dict) -> dict:
     cache = g.TurnCache()
     recs: list[dict] = []
     linear = bool(job.get("linear", CFG.get("linear", False)))  # v15's linear fractions
+    arrival = bool(job.get("arrival", CFG.get("arrival", False)))  # arrival position (own state)
 
     def emb(pid: str) -> tuple[Any, dict]:
         view, _f, (h, pooled) = cache.get(pm, env, pid)
@@ -191,7 +192,7 @@ def record_job(job: dict) -> dict:
         lists = p.turn_lists()
         if lists.bids or lists.reservations or lists.pending:
             view, x = emb(pid)
-            t = g.accept_features(p, lists, view, linear)
+            t = g.accept_features(p, lists, view, linear, arrival)
             recs.append({"kind": "accept", **x, **{k: t[k] for k in ("bid", "bid_cap", "bid_in", "claim",
                                                                      "claim_cap", "claim_in", "n_res")},
                          "acc": np.asarray(d.accept, np.float32),

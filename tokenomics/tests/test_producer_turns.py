@@ -334,7 +334,9 @@ def test_turn_features_read_only_the_producers_own_state() -> None:
     def snapshot() -> tuple:
         lists = p.turn_lists()
         t = g.accept_features(p, lists, g._turn_view(env, me))
-        return (env.observe(env.agent_selection).tobytes(), t["bid"].tobytes(), t["claim"].tobytes())
+        ta = g.accept_features(p, lists, g._turn_view(env, me), linear=True, arrival=True)  # EXP-0125 columns
+        return (env.observe(env.agent_selection).tobytes(), t["bid"].tobytes(), t["claim"].tobytes(),
+                ta["bid"].tobytes(), ta["claim"].tobytes())
 
     before = snapshot()
     q = env.system.producing_agents[other]
@@ -452,3 +454,59 @@ def test_fund_and_accept_turns_share_one_trunk_input_and_the_cache_is_exact() ->
         stats.append(run_episode(e, g.gnn_producing_policy(pm), g.gnn_ordering_policy(om), seed=0,
                                  action_seed=0, fund_policy=fp, accept_policy=ap, max_iter=6 * len(e.possible_agents)))
     assert stats[0] == stats[1] and caches[1].passes > 0
+
+
+# --- arrival position (EXP-0125) ---
+
+
+def test_arrival_position_is_the_domain_tie_break_order() -> None:
+    """Among equal-priced bids (and claims) the domain's stable sort keeps arrival order; the arrival feature
+    rises along `turn_lists()` within each equal-price group and is the item's index in the producer's own
+    arrival list."""
+    pytest.importorskip("torch")
+    from tokenomics.train import m6_gnn as g
+
+    p = producer(cap=100)
+    p.reservations = [_Reservation(bid(4, 40, "r0", {7: 1})), _Reservation(bid(4, 20, "r1", {7: 1})),
+                      _Reservation(bid(4, 40, "r2", {7: 1}))]
+    arrivals = [bid(5, 50, "a"), bid(2, 50, "b"), bid(5, 50, "c"), bid(3, 90, "d"), bid(5, 50, "e")]
+    p.place_bids(arrivals)
+    lists = p.turn_lists()
+
+    class _Rows:
+        capacity_rows, input_rows = [], []
+
+    t = g.accept_features(p, lists, _Rows(), linear=True, arrival=True)
+    pos_b = t["bid"][:, -1]
+    for b, v in zip(lists.bids, pos_b):
+        assert v == pytest.approx(next(k for k, x in enumerate(p.bids) if x is b) / (len(p.bids) - 1))
+    same_price = [i for i, b in enumerate(lists.bids) if b.capacity_unit_price() == 10.0]  # a, c, e
+    assert [lists.bids[i].order_id for i in same_price] == ["a", "c", "e"]
+    assert list(pos_b[same_price]) == sorted(pos_b[same_price])
+    held = t["claim"][: t["n_res"], -1]
+    eq = [i for i, r in enumerate(lists.reservations) if r.bid.order_id in ("r0", "r2")]
+    assert [lists.reservations[i].bid.order_id for i in eq] == ["r0", "r2"] and held[eq[0]] < held[eq[1]]
+
+
+def test_arrival_is_off_by_default_and_appends_one_column() -> None:
+    pytest.importorskip("torch")
+    from tokenomics.train import m6_gnn as g
+
+    assert g.turn_dims() == {"fund": g.FUND_DIM, "bid": g.BID_DIM, "claim": g.CLAIM_DIM}
+    assert g.turn_dims(True, True)["bid"] == g.turn_dims(True)["bid"] + 1
+    assert g.turn_dims(False, True)["fund"] == g.FUND_DIM
+    p = producer(cap=100)
+    p.place_bids([bid(5, 50, "a"), bid(2, 30, "b")])
+    p.reservations = [_Reservation(bid(4, 40, "r0", {7: 1}))]
+    lists = p.turn_lists()
+
+    class _Rows:
+        capacity_rows, input_rows = [], []
+
+    base = g.accept_features(p, lists, _Rows())
+    lin = g.accept_features(p, lists, _Rows(), linear=True)
+    arr = g.accept_features(p, lists, _Rows(), linear=True, arrival=True)
+    assert np.array_equal(base["bid"], g.accept_features(p, lists, _Rows(), linear=False, arrival=False)["bid"])
+    assert np.array_equal(arr["bid"][:, :-1], lin["bid"]) and np.array_equal(arr["claim"][:, :-1], lin["claim"])
+    h = g.TurnHeads(set_layers=2, bounded=True)
+    assert "arrival" not in h.config() and h.dims == g.turn_dims()

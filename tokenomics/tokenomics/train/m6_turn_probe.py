@@ -31,11 +31,19 @@ from . import m6_imitation as im
 from . import m6_turn_imitation as ti
 
 GRID = [{"width": w, "set_layers": layer, "epochs": e} for w in (32, 64) for layer in (2, 3) for e in (30, 90)]
+# EXP-0125: the two best EXP-0124 sizes, each with and without the arrival-position feature
+GRID_0125 = [{"width": w, "set_layers": layer, "epochs": 90, "arrival": arr}
+             for w, layer in ((32, 3), (64, 2)) for arr in (False, True)]
 LR, BATCH, CAP, SEED, GATE = 3e-3, 512, 400, 0, 0.99
 
 
-def _split(records: str, limit: int | None) -> tuple[list[dict], list[dict]]:
+def _split(records: str, limit: int | None, strip_arrival: bool = False
+           ) -> tuple[list[dict], list[dict]]:
     recs = ti.load_records(Path(records), limit)
+    if strip_arrival:  # the records carry the arrival column last; the arms without the feature drop it
+        for r in recs:
+            if r["kind"] == "accept":
+                r["bid"], r["claim"] = r["bid"][:, :-1], r["claim"][:, :-1]
     h = len(recs) // 2
     return recs[:h], recs[h:]
 
@@ -75,12 +83,53 @@ def slack_split(pm: Any, recs: list[dict]) -> dict[str, dict[str, Any]]:
     return {b: {"wrong": w, "n": n, "rate": w / n if n else None} for b, (w, n) in bins.items()}
 
 
+def tie_dependent(r: dict) -> np.ndarray:
+    """Bids whose default accept bit flips when equal-priced bids are taken in reverse order: the greedy
+    auction replayed from the log1p-inverted rows (price col 0, capacity col 2, the new-work budget col 7; one
+    capacity type per producer). These labels depend on the arrival order, which no v14 / v15 feature carries."""
+    x = r["bid"]
+    n = len(x)
+    if n == 0:
+        return np.zeros(0, bool)
+    price = np.round(np.expm1(x[:, 0]), 6)
+    cap, budget = np.rint(np.expm1(x[:, 2])), float(np.rint(np.expm1(x[0, 7])))
+
+    def auction(tiebreak: np.ndarray) -> np.ndarray:
+        rem, acc = budget, np.zeros(n, bool)
+        for i in np.lexsort((tiebreak, -price)):
+            if cap[i] <= rem + 1e-6:
+                acc[i], rem = True, rem - cap[i]
+        return acc
+
+    return auction(np.arange(n)) != auction(-np.arange(n))
+
+
+def tie_split(pm: Any, recs: list[dict]) -> dict[str, dict[str, Any]]:
+    """Accept agreement on tie-dependent bits, determinable bits and all bits (EXP-0124 / 0125)."""
+    ok = {"tie_dependent": [0, 0], "determinable": [0, 0]}
+    acc = [r for r in recs if r["kind"] == "accept"]
+    with torch.no_grad():
+        for k in range(0, len(acc), 2000):
+            part = acc[k:k + 2000]
+            tg = ti.turn_targets(part, None, None)
+            _, out = ti._losses(pm.turn, tg)
+            pred, lab = (out["acc"] > 0).numpy(), tg["bits"].numpy() > 0
+            amb = np.concatenate([tie_dependent(r) for r in part]) if part else np.zeros(0, bool)
+            for name, m in (("tie_dependent", amb), ("determinable", ~amb)):
+                ok[name][0] += int((pred[m] == lab[m]).sum())
+                ok[name][1] += int(m.sum())
+    out = {k: {"n": n, "agreement": c / n if n else None} for k, (c, n) in ok.items()}
+    n = ok["tie_dependent"][1] + ok["determinable"][1]
+    out["overall"] = {"n": n, "agreement": (ok["tie_dependent"][0] + ok["determinable"][0]) / n if n else None}
+    return out
+
+
 def recollect(training_dir: str, models: str, replenish: str, reference: str, out: Path, workers: int,
-              dry_run: bool) -> tuple[Path, dict[str, Any]]:
+              dry_run: bool, arrival: bool = False) -> tuple[Path, dict[str, Any]]:
     """Replay EXP-0120's held-out jobs with the linear fractions; check every existing column equals the
     reference records (same turns, same order); write the new records."""
     ts, _train, mon = im._training(training_dir)
-    jobs = [{**j, "replenish": replenish, "linear": True}
+    jobs = [{**j, "replenish": replenish, "linear": True, "arrival": arrival}
             for j in ti._jobs(ts, mon[:1] if dry_run else mon, "turn_monitor", models, 6 if dry_run else 100)]
     played = im._pool(ti.record_job, jobs, workers)
     recs = [r for x in played for r in x["records"]]
@@ -110,7 +159,7 @@ def recollect(training_dir: str, models: str, replenish: str, reference: str, ou
             break
     if emb_diff > 1e-5:
         problems.append(f"trunk embeddings differ by {emb_diff:.2e}")
-    path = out / "heldout_records_linear.npz"
+    path = out / ("heldout_records_linear_arrival.npz" if arrival else "heldout_records_linear.npz")
     ti.save_records(path, recs)
     return path, {"turns": len(recs), "reference_turns": len(ref), "max_embedding_diff": emb_diff,
                   "problems": problems, "match": not problems}
@@ -118,18 +167,20 @@ def recollect(training_dir: str, models: str, replenish: str, reference: str, ou
 
 def probe_one(job: dict) -> dict[str, Any]:
     torch.set_num_threads(1)
-    train, test = _split(job["records"], job.get("limit"))
+    train, test = _split(job["records"], job.get("limit"), job.get("strip_arrival", False))
     pm, _ = im.load_models(job["models"])
     t0 = time.perf_counter()
     rep = ti.fit(pm, train, job["epochs"], LR, BATCH, CAP, SEED, log=lambda *a: None,
                  heads_cfg={"set_layers": job["set_layers"], "bounded": True, "width": job["width"],
-                            "linear": job.get("linear", False), "ordered": job.get("ordered", False)},
+                            "linear": job.get("linear", False), "ordered": job.get("ordered", False),
+                            "arrival": job.get("arrival", False)},
                  schedule="cosine")
     fit_s = time.perf_counter() - t0
     heads = pm.turn
     assert heads is not None
     return {**{k: job[k] for k in ("width", "set_layers", "epochs")}, "linear": job.get("linear", False),
-            "ordered": job.get("ordered", False),
+            "ordered": job.get("ordered", False), "arrival": job.get("arrival", False),
+            "tie_split": tie_split(pm, test),
             "slack": slack_split(pm, test),
             "params": sum(p.numel() for p in heads.parameters()),
             "seconds_per_epoch": fit_s / job["epochs"], "train_turns": len(train), "test_turns": len(test),
@@ -138,8 +189,10 @@ def probe_one(job: dict) -> dict[str, Any]:
             "heldout": ti.agreement(pm, test), "train": ti.agreement(pm, train, whole=False)}
 
 
-def winner(results: Sequence[dict]) -> dict | None:
+def winner(results: Sequence[dict], need_arrival: bool = False) -> dict | None:
     for r in sorted(results, key=lambda r: (r["width"], r["set_layers"], r["epochs"])):
+        if need_arrival and not r.get("arrival"):
+            continue
         h = r["heldout"]
         if (h["accept"] or 0) >= GATE and (h["rank_accept"] or 0) >= GATE:
             return r
@@ -156,26 +209,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--replenish", help="F40's replenish (EXP-0110 start_models.pt), for --recollect")
     ap.add_argument("--ordered", action="store_true", help="EXP-0124: the order-aware accept pass")
     ap.add_argument("--linear", action="store_true", help="the records carry v15's linear fractions")
+    ap.add_argument("--grid", choices=("exp0121", "exp0125"), default="exp0121")
+    ap.add_argument("--arrival", action="store_true", help="--recollect with the arrival-position feature")
     ap.add_argument("--models", required=True, help="the F40 candidate (heads only need its hidden size)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--source-commit", default="")
     ap.add_argument("--dry-run", action="store_true", help="400 turns, 2 settings at 2 epochs")
     a = ap.parse_args(argv)
-    grid = ([{"width": 32, "set_layers": 2, "epochs": 2}, {"width": 64, "set_layers": 3, "epochs": 2}]
-            if a.dry_run else GRID)
+    full = GRID_0125 if a.grid == "exp0125" else GRID
+    grid = ([{**full[0], "epochs": 2}, {**full[-1], "epochs": 2}] if a.dry_run else full)
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     records, check = a.records, None
     if a.recollect:
-        rp, check = recollect(a.training_dir, a.models, a.replenish, a.records, out, a.workers, a.dry_run)
+        rp, check = recollect(a.training_dir, a.models, a.replenish, a.records, out, a.workers, a.dry_run,
+                              a.arrival)
         print(f"[turn_probe] recollect {check}", flush=True)
         if not check["match"]:
             (out / "probe.json").write_text(json.dumps({"recollect": check}, indent=1) + "\n")
             return 2
         records = str(rp)
     jobs = [{**g, "records": records, "models": a.models, "limit": 400 if a.dry_run else None,
-             "linear": a.recollect or a.linear, "ordered": a.ordered}
+             "linear": a.recollect or a.linear, "ordered": a.ordered,
+             "arrival": bool(g.get("arrival", False)) and a.arrival,
+             "strip_arrival": a.arrival and not g.get("arrival", False)}
             for g in sorted(grid, key=lambda g: -g["width"] * g["set_layers"] * g["epochs"])]
     t0 = time.perf_counter()
     # each setting's result is appended as soon as it finishes, so a hard stop keeps the finished ones
@@ -192,8 +250,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 results.append(fut.result())
                 with partial.open("a") as fh:
                     fh.write(json.dumps(results[-1], default=float) + "\n")
-    w = winner(results)
-    doc = {"recollect": check, "winner": None if w is None else {k: w[k] for k in ("width", "set_layers", "epochs")},
+    w = winner(results, need_arrival=a.grid == "exp0125")
+    doc = {"recollect": check, "grid": a.grid,
+           "winner": None if w is None else {k: w.get(k) for k in ("width", "set_layers", "epochs", "arrival")},
            "winner_seconds_per_epoch": None if w is None else w["seconds_per_epoch"],
            "results": results, "records_sha256": sha256_file(records), "models_sha256": sha256_file(a.models),
            "source_commit": a.source_commit, "dry_run": a.dry_run, "seconds": round(time.perf_counter() - t0, 1),
@@ -201,7 +260,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     (out / "probe.json").write_text(json.dumps(doc, indent=1, default=float) + "\n")
     for r in sorted(results, key=lambda r: (r["width"], r["set_layers"], r["epochs"])):
         h = r["heldout"]
-        print(f"[turn_probe] w{r['width']} L{r['set_layers']} e{r['epochs']}: accept {h['accept']:.4f} "
+        print(f"[turn_probe] w{r['width']} L{r['set_layers']} e{r['epochs']} arrival {r.get('arrival')}: "
+              f"ties {r['tie_split']['tie_dependent']['agreement']} determinable "
+              f"{r['tie_split']['determinable']['agreement']} accept {h['accept']:.4f} "
               f"rank_accept {h['rank_accept']:.4f} rank_fund {h['rank_fund']} displaced "
               f"{h['accept_errors']['declined_displaced']['rate']} ({r['seconds_per_epoch']:.1f} s/epoch)",
               flush=True)

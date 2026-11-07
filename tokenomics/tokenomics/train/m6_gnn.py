@@ -243,9 +243,18 @@ LINEAR_EXTRA = {"fund": 1, "bid": 3, "claim": 3}
 FRAC_CLIP = 10.0
 
 
-def turn_dims(linear: bool = False) -> dict[str, int]:
+def turn_dims(linear: bool = False, arrival: bool = False) -> dict[str, int]:
+    """Row widths; `arrival` (EXP-0124 follow-up) appends each bid's / claim's arrival position within the
+    turn (own state: the order the producer received it, which the domain's stable tie-break uses)."""
     base = {"fund": FUND_DIM, "bid": BID_DIM, "claim": CLAIM_DIM}
-    return {k: v + (LINEAR_EXTRA[k] if linear else 0) for k, v in base.items()}
+    return {k: v + (LINEAR_EXTRA[k] if linear else 0) + (1 if arrival and k != "fund" else 0)
+            for k, v in base.items()}
+
+
+def _arrival(x: Any, seq: Sequence[Any]) -> float:
+    """x's position in the producer's own arrival list, scaled to [0, 1] within the turn."""
+    i = next(k for k, y in enumerate(seq) if y is x)
+    return i / max(len(seq) - 1, 1)
 
 
 def _frac(num: float, den: float) -> float:
@@ -295,8 +304,8 @@ def fund_features(p: Any, reqs: Sequence[Any], budget: float, view: ProducerEnti
     return {"fund": _arr(rows, turn_dims(linear)["fund"]), "fund_cap": ec, "fund_in": ei}
 
 
-def accept_features(p: Any, lists: Any, view: ProducerEntityView, linear: bool = False
-                    ) -> dict[str, Any]:
+def accept_features(p: Any, lists: Any, view: ProducerEntityView, linear: bool = False,
+                    arrival: bool = False) -> dict[str, Any]:
     """Bid rows (this cycle's routed bids, price-descending) and claim rows (carried reservations,
     then pending claims, in default order); each linked to the capacity and input rows it uses."""
     from ..env.producer_turns import _cover, kind_onehot
@@ -317,19 +326,20 @@ def accept_features(p: Any, lists: Any, view: ProducerEntityView, linear: bool =
         bids.append([_q(b.capacity_unit_price()), _q(b.quantity), _q(b.total_capacity()),
                      -1.0 if b.remaining_ttl is None else float(b.remaining_ttl),
                      float(b.is_composite()), _cover(p, b), float(p._fits(budget, b.capacities)),
-                     _q(sum(budget.values())), _q(b.tokens), *kind_onehot(b), *lin(b)])
+                     _q(sum(budget.values())), _q(b.tokens), *kind_onehot(b), *lin(b),
+                     *([_arrival(b, p.bids)] if arrival else [])])
         bitems.append((list(b.capacities), list(b.inputs)))
     claims, citems = [], []
-    for held, rs in ((1.0, lists.reservations), (0.0, lists.pending)):
+    for held, rs, own in ((1.0, lists.reservations, p.reservations), (0.0, lists.pending, p.pending)):
         for r in rs:
             claims.append([held, 1.0 - held, _q(r.bid.capacity_unit_price()), _q(r.bid.quantity),
                            _q(r.bid.total_capacity()), float(r.cycles_waited),
                            float(p._has_inputs(r.bid)), float(p.reservation_ttl - r.cycles_waited),
-                           *kind_onehot(r.bid), *lin(r.bid)])
+                           *kind_onehot(r.bid), *lin(r.bid), *([_arrival(r, own)] if arrival else [])])
             citems.append((list(r.bid.capacities), list(r.bid.inputs)))
     bc, bi = _links(len(bids), bitems, cap, inp)
     cc, ci = _links(len(claims), citems, cap, inp)
-    d = turn_dims(linear)
+    d = turn_dims(linear, arrival)
     return {"bid": _arr(bids, d["bid"]), "bid_cap": bc, "bid_in": bi,
             "claim": _arr(claims, d["claim"]), "claim_cap": cc, "claim_in": ci,
             "n_res": len(lists.reservations)}
@@ -383,9 +393,9 @@ class ProducerGNN(nn.Module):
         self.turn: TurnHeads | None = None  # ADR-0062 (`add_turn_heads`)
 
     def add_turn_heads(self, set_layers: int = 0, bounded: bool = False, width: int | None = None,
-                       linear: bool = False, ordered: bool = False) -> None:
+                       linear: bool = False, ordered: bool = False, arrival: bool = False) -> None:
         """Attach fresh fund / accept turn heads (the trunk and investment heads untouched)."""
-        self.turn = TurnHeads(self.hidden, set_layers, bounded, width, linear, ordered)
+        self.turn = TurnHeads(self.hidden, set_layers, bounded, width, linear, ordered, arrival)
 
     def fund_scores(self, f: dict[str, Any], t: dict[str, Any], trunk: Trunk | None = None
                     ) -> torch.Tensor:
@@ -465,15 +475,16 @@ class TurnHeads(nn.Module):
     action clip. `set_layers` = 0 and `bounded` = False is the original head, unchanged."""
 
     def __init__(self, hidden: int = HIDDEN, set_layers: int = 0, bounded: bool = False,
-                 width: int | None = None, linear: bool = False, ordered: bool = False) -> None:
+                 width: int | None = None, linear: bool = False, ordered: bool = False,
+                 arrival: bool = False) -> None:
         """`hidden` = the trunk's embedding size (its rows and pooled view); `width` = the heads' own
         size (default `hidden`; v15's capacity probe)."""
         super().__init__()
         w = hidden if width is None else width
         self.hidden, self.width, self.set_layers, self.bounded = hidden, w, set_layers, bounded
         self.pre_bound: list[torch.Tensor] | None = None
-        self.linear = linear
-        self.dims = turn_dims(linear)
+        self.linear, self.arrival = linear, arrival
+        self.dims = turn_dims(linear, arrival)
         self.enc = nn.ModuleDict({k: _mlp(v, w) for k, v in self.dims.items()})
         self.norm = FeatureNorm(dict(self.dims), {})
         self.mix = nn.ModuleDict({k: _mlp(w + 6 * hidden, w) for k in ("fund", "bid", "claim")})
@@ -502,7 +513,8 @@ class TurnHeads(nn.Module):
         return {"set_layers": self.set_layers, "bounded": self.bounded,
                 **({"width": self.width} if self.width != self.hidden else {}),
                 **({"linear": True} if self.linear else {}),
-                **({"ordered": True} if self.ordered else {})}
+                **({"ordered": True} if self.ordered else {}),
+                **({"arrival": True} if self.arrival else {})}
 
     def node_embed(self, kind: str, x: np.ndarray, ec: Sequence[tuple[int, int]],
                    ei: Sequence[tuple[int, int]], h_cap: torch.Tensor, h_in: torch.Tensor,
@@ -763,7 +775,7 @@ def accept_action(model: ProducerGNN, env: "TokenomicsAECEnv", pid: str,
     if not (lists.bids or lists.reservations or lists.pending):
         return encode_accept_action(TurnDecision((), (), (), ()))
     view, f, trunk = (cache or TurnCache()).get(model, env, pid)
-    t = accept_features(p, lists, view, model.turn.linear)
+    t = accept_features(p, lists, view, model.turn.linear, model.turn.arrival)
     with torch.no_grad():
         acc, bp, cp = (x.numpy() for x in model.accept_outputs(f, t, trunk))
     clip = lambda v: tuple(float(x) for x in np.clip(v, -ACTION_LOGIT_BOUND, ACTION_LOGIT_BOUND))
