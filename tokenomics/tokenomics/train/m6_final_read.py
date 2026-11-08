@@ -13,6 +13,8 @@ comparison on this set, never a fresh one-shot read of unseen worlds.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import inspect
 import json
 import sys
 import time
@@ -41,6 +43,10 @@ DECIDING = "f40_v15"
 SECOND = "f40_def"
 BASE = "k5_rf5"
 ARMS = (DECIDING, SECOND, BASE)
+# the resume of attempt 1 (hard-stopped with 384 / 768 jobs; supervisor decision 2026-11-08): its rows are reused unread
+ATTEMPT1_COMMIT = "f1f850735ffe529e7af6286795c27a9e2577e995"
+ATTEMPT1_PREREG = "8fe01a0c4c958a33df6094c24193bbed168def6de04ce97a932ed3f3a80363ce"
+JOB_FINGERPRINT = "2599f3dc39d0b1b8a0d2ab516ff9f57ab31bf71c11690613b1dec8c030c109e8"  # _build_jobs + final_job + FINAL_STAGE at ATTEMPT1_COMMIT
 RULE = ("EXP-0102's rule on the loaded held-out worlds: parity if g >= -floor, no extra deaths, and run-down and "
         "starvation shares <= the base's; better if parity and g > floor; else short. Deciding: F40 + v15 heads vs "
         "k5_rf5 + MWWk at 12 producers. Reported: 42 producers and the F40 + default turns arm, on the same rule")
@@ -220,6 +226,35 @@ def final_reading(rows: Sequence[Mapping[str, str]], cells: Mapping) -> dict:
     return out
 
 
+def job_key(r: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    return str(r["world"]), str(r["episode"]), str(r["replicate"]), str(r["arm"])
+
+
+def job_fingerprint() -> str:
+    return hashlib.sha256((inspect.getsource(_build_jobs) + inspect.getsource(final_job) + FINAL_STAGE).encode()).hexdigest()
+
+
+def resume_problems(partial: Sequence[Mapping[str, Any]], jobs: Sequence[Mapping[str, Any]], attempt_log: str,
+                    horizon: int) -> list[str]:
+    """Pins of the partial rows, read from identity fields only: the read stays blind until every row is in."""
+    p = []
+    if f"--source-commit {ATTEMPT1_COMMIT}" not in attempt_log or "--mode run" not in attempt_log:
+        p.append("the attempt log does not record attempt 1's commit and a real run")
+    if PREREG_V20_SHA256 != ATTEMPT1_PREREG:
+        p.append("the pre-registration is not the one attempt 1 ran under")
+    if job_fingerprint() != JOB_FINGERPRINT:
+        p.append("job construction, the policies' wiring or the stage changed since attempt 1")
+    keys = [job_key(r) for r in partial]
+    expected = {job_key(j) for j in jobs}
+    if len(set(keys)) != len(keys):
+        p.append(f"{len(keys) - len(set(keys))} duplicate job keys in the partial rows")
+    if set(keys) - expected:
+        p.append(f"{len(set(keys) - expected)} partial rows are not jobs of this read")
+    if any(int(r["horizon"]) != horizon for r in partial):
+        p.append("a partial row has another horizon")
+    return p + digest_problems(partial)
+
+
 def _build_jobs(views: Sequence[Mapping], episodes: int, stage: str, horizon: int, turn_models: str,
                 replenish_models: str) -> list[dict]:
     from .producer_read import READ_REPLICATES, entry_for
@@ -280,7 +315,8 @@ def run_time(atlas: Mapping, turn_models: str, replenish_models: str, out: Path,
 
 def run(atlas_path: str, turn_models: str, replenish_models: str, out_dir: str, workers: int, *, ledger: str,
         dry_run: bool = False, sizes: Sequence[int] = (), max_worlds: int | None = None, episodes: int | None = None,
-        horizon: int = pe.HORIZON, time_only: bool = False) -> int:
+        horizon: int = pe.HORIZON, time_only: bool = False, resume_rows: str | None = None,
+        resume_log: str | None = None) -> int:
     from ..eval.provenance import sha256_file
     from ..eval.teacher_audit import load_atlas
     from .producer_read import READ_EPISODES, _cells
@@ -315,13 +351,31 @@ def run(atlas_path: str, turn_models: str, replenish_models: str, out_dir: str, 
         views = [v for sz in (12, 42) for v in [x for x in views if x["size"] == sz][:max_worlds]]
     cells = _cells(views, atlas)
     jobs = _build_jobs(views, eps, stage, horizon, turn_models, replenish_models)
-    rows = pw._pool(final_job, jobs, workers, out / "episode_rows.jsonl")
-    problems = digest_problems(rows) + ([f"{len(rows)} rows for {len(jobs)} jobs"] if len(rows) != len(jobs) else [])
+    partial: list[dict] = []
+    resumed = None
+    if resume_rows:
+        partial = [json.loads(line) for line in Path(resume_rows).read_text().splitlines() if line.strip()]
+        im._refuse(resume_problems(partial, jobs, Path(resume_log or "").read_text(), horizon))
+        done = {job_key(r) for r in partial}
+        jobs_left = [j for j in jobs if job_key(j) not in done]
+        resumed = {"attempt_commit": ATTEMPT1_COMMIT, "rows_reused": len(partial), "rows_sha256": sha256_file(resume_rows),
+                   "jobs_played_now": len(jobs_left), "job_fingerprint": JOB_FINGERPRINT}
+        print(f"[final_read] resume: {len(partial)} rows reused, {len(jobs_left)} jobs to play", flush=True)
+    else:
+        jobs_left = jobs
+    fresh = pw._pool(final_job, jobs_left, workers, out / ("episode_rows_resume.jsonl" if resume_rows else "episode_rows.jsonl"))
+    rows = [*partial, *fresh]
+    if resume_rows:
+        (out / "episode_rows.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    keys = [job_key(r) for r in rows]
+    problems = (digest_problems(rows) + ([f"{len(rows)} rows for {len(jobs)} jobs"] if len(rows) != len(jobs) else [])
+                + (["duplicate job keys"] if len(set(keys)) != len(keys) else [])
+                + (["the rows are not exactly the read's jobs"] if set(keys) != {job_key(j) for j in jobs} else []))
     doc = {**final_reading(rows, cells), "invalid": problems, "dry_run": dry_run, "split": "train (dry run)" if dry_run else "held-out",
            "stage": stage, "prereg": PREREG_V20_SHA256, "source_commit": im.SOURCE_COMMIT,
            "turn_models_sha256": sha256_file(turn_models), "replenish_models_sha256": sha256_file(replenish_models),
            "worlds": [v["world"] for v in views], "episodes": eps, "horizon": horizon, "rows": len(rows),
-           "jobs": len(jobs)}
+           "jobs": len(jobs), "resumed": resumed}
     if problems:
         doc["reading"] = "invalid"
     (out / "reading.json").write_text(json.dumps(doc, indent=1, sort_keys=True, default=str) + "\n")
@@ -344,6 +398,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--max-worlds", type=int, help="dry run: per size")
     ap.add_argument("--episodes", type=int, help="dry run: per world")
     ap.add_argument("--horizon", type=int, default=pe.HORIZON, help="dry run or timing smoke")
+    ap.add_argument("--resume-rows", help="run: attempt 1's episode_rows.jsonl (reused unread)")
+    ap.add_argument("--resume-log", help="run: attempt 1's launch log (its commit pin)")
     a = ap.parse_args(argv)
     if a.mode == "freeze":
         from ..eval.teacher_audit import load_atlas
@@ -353,7 +409,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     im.SOURCE_COMMIT = a.source_commit
     return run(a.atlas, a.turn_models, a.replenish_models, a.out_dir, a.workers, ledger=a.ledger, dry_run=a.dry_run,
                sizes=tuple(int(x) for x in a.sizes.split(",") if x), max_worlds=a.max_worlds, episodes=a.episodes,
-               horizon=a.horizon, time_only=a.mode == "time")
+               horizon=a.horizon, time_only=a.mode == "time", resume_rows=a.resume_rows, resume_log=a.resume_log)
 
 
 if __name__ == "__main__":

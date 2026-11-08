@@ -39,3 +39,30 @@ def test_ledger_is_one_shot(tmp_path: Path) -> None:
     assert f.ledger_problems(path) == []
     path.write_text(json.dumps({"entries": [_entry("pending"), _entry("done")]}))
     assert f.ledger_problems(path)
+
+
+def _job(arm: str, ep: int = 1) -> dict[str, object]:
+    return {"arm": arm, "world": "w", "episode": ep, "replicate": 0}
+
+
+def _partial(arm: str, ep: int = 1) -> dict[str, str]:  # no `units`: the resume check must stay blind
+    return {**_row(arm, "a"), "episode": str(ep), "horizon": "100"}
+
+
+LOG = f"--mode run --source-commit {f.ATTEMPT1_COMMIT}"
+
+
+def test_resume_accepts_matching_rows_without_reading_units() -> None:
+    assert f.resume_problems([_partial(f.DECIDING)], [_job(f.DECIDING), _job(f.BASE)], LOG, 100) == []
+
+
+def test_resume_refuses_bad_pins() -> None:
+    jobs = [_job(f.DECIDING)]
+    assert f.resume_problems([_partial(f.DECIDING)], jobs, "--mode run --source-commit deadbeef", 100)
+    assert f.resume_problems([_partial(f.DECIDING)], jobs, LOG, 200)
+    assert f.resume_problems([_partial(f.DECIDING), _partial(f.DECIDING)], jobs, LOG, 100)
+    assert f.resume_problems([_partial(f.BASE)], jobs, LOG, 100)
+
+
+def test_job_construction_is_attempt_1s() -> None:
+    assert f.job_fingerprint() == f.JOB_FINGERPRINT
