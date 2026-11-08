@@ -1466,7 +1466,7 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
   - The next arc is open with the user.
 - **Cost.** M5-P ≈ 65.2 of 80 vCPU-h.
 
-## 16. M6: joint MPG + GNN (in progress)
+## 16. M6: joint MPG + GNN (RL track closed 2026-11-08)
 
 ### Does critic-free RL improve the imitated producer? (Stage 1 pilot: EXP-0113, EXP-0114, EXP-0116)
 - **Setup.** The producer only, at 12 producers:
@@ -1491,3 +1491,17 @@ across agents (≈ 1.1 orders per agent turn), so own-turn features cannot fix i
 - **Confirmed (EXP-0119).** On fresh seeds, F40 (the trained gates + the start's replenish) is +202.0 units per episode
   over the EXP-0100 stack (F 52.7, 112 world-episodes; +5.8%). No deaths, and lower run-down. At 42 producers on
   validation worlds it is +475.9 (F 236.2), untrained at 42. F40 is the M6 start (user decision 2026-11-07).
+
+### Closing the RL track, and the final held-out read (EXP-0127 → EXP-0131)
+- **Why the RL track closed.** The 4.4 power check read `absent` (EXP-0127). EXP-0128 and EXP-0129 ruled out the code path:
+  from EXP-0100's start the new code reproduces EXP-0112's gradient. EXP-0130 then read `absent` from F40's own start
+  with gates only at full λ (|∇J|² CI [2.2e1, 2.0e5], E3 n80 384 against 96). F40's start is flatter on the
+  pre-registered criterion, and the n80 is what separates the two runs (DIAGNOSTICS 39). 4.5 was not run, by user
+  decision (2026-11-08). M6's result is F40 + v15 turn heads.
+- **Final read (EXP-0131).** Against k5_rf5 + MWWk on the held-out worlds with fresh episodes, F40 + v15 heads read
+  `better` at 12 producers: +608.4 units (+18.3%, floor 83.7), deaths 0 vs 1, run-down share 0.453 vs 0.859. 42 is
+  reported `better` (+2,101.4), but its worlds informed later producer versions. This is a second comparison on the set.
+- **What carries it.** F40's trained gates: F40 + default turns is +558.5 at 12, so the turn heads add +49.9 there. The
+  gain is concentrated (three of eight worlds carry most of it, two are level).
+- **Cost.** EXP-0127 to EXP-0131 on M6-A; the tranche stands at 64.7 of 70 vCPU-h.
+- **Not changed.** Roster, registry and champion files; those are the user's gates.
