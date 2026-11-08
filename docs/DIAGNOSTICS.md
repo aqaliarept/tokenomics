@@ -1680,3 +1680,24 @@ Also measure the head's output drift against the start on recorded states (cheap
   - an ordered, gated accumulator in the head's own priority order;
   - linear scale-free quantities;
   - the tie-break information the teacher uses.
+
+## 39. On-policy gradient reads `absent`: a broken code path, or a flat start?
+
+_Status: diagnosed for the F40 start (2026-11-08, EXP-0129 + EXP-0130), on the pre-registered criterion._
+
+**Problem (plain English):**
+- A power check says the policy gradient is too weak to detect with an affordable number of seeds.
+- Two different causes give that reading. The new estimator code may be wrong, or the start policy may really sit on a
+  flat part of the objective, near a local optimum for the parameters being trained.
+
+**Discriminating check:** run the same configuration (same parameters, λ, seeds, ε machinery) from a start known to
+have a gradient (EXP-0100's start, EXP-0112's result), then from the start in question. Compare the |∇J|² 95% CI and
+n80, the seeds per half needed for power 0.8 at the measured gradient.
+
+**Outcome branches:**
+- The known start also reads `absent`: the code path differs. Diff estimator, perturbation, ε and reward first.
+- The known start reproduces its gradient and the start in question reads `absent`: that start is flatter.
+- Both read `signal_present`: the difference lies in what differs between the failing run and this check.
+
+**Evidence:** `m6_diag_start` (gates only, full λ). EXP-0129, EXP-0100's start: CI [4.9e4, 5.8e5], E3 n80 96, reproducing
+EXP-0112. EXP-0130, F40's start: CI [2.2e1, 2.0e5], E3 n80 384, `absent`. The CIs overlap; n80 is what separates them.
