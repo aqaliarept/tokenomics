@@ -128,11 +128,13 @@ only as diagnostics, never as candidates (user rule 2026-11-06).
   - Offline gate: ≥ 99% agreement on recorded decisions.
   - Closed loop: no worse than its starting stack beyond the floor.
   ≈ 8 vCPU-h, stop 16.
-- [ ] 4.4 [experiment][remote:cpu16] Acceptance power check (EXP-0112 style): tempered accept head at ~5%
+- [x] 4.4 [experiment][remote:cpu16] Acceptance power check (EXP-0112 style): tempered accept head at ~5%
   flips; the gradient size and n80 at 12 producers. `signal` licenses 4.5. ≈ 6 vCPU-h, stop 10.
-- [ ] 4.5 [experiment][remote:cpu16] Training: E3 PPO on investment + acceptance together (orderer and buying
+  - Done 2026-11-08: **`absent`**, F40's start is flatter on the pre-registered criterion (EXP-0127–0130).
+- [x] 4.5 [experiment][remote:cpu16] Training: E3 PPO on investment + acceptance together (orderer and buying
   frozen), gates as v10 / v11, then validation (L5 worlds, 12 deciding, 42 reported) and the held-out read
   (a second comparison on that set, noted). ≈ 35 + 8 vCPU-h.
+  - **Not run, by user decision (2026-11-08): the RL track is closed.** M6's result is F40 + v15 heads; final read EXP-0131.
 - Budget: ≈ 60 vCPU-h in total. M6 has ≈ 5 left after EXP-0114 (144.9 / 150), so this needs a new tranche (user).
 
 ### 4b. Also learned: fund spend order and reservation scheduling (user 2026-11-07, from notes/hardcoded-audit.md)

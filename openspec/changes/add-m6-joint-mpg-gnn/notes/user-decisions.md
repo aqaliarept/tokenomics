@@ -110,3 +110,10 @@
   - Pooled over the 96 pairs (gate + diagnostic sets), run-down was 34 vs 33 rows.
   - Units were within noise, closed-loop agreement 99.8%, and the late-pending work is gone.
   - 4.3 is done.
+- 2026-11-08 (user, via the supervisor; after EXP-0127–0130): **close the RL track.**
+  - 4.4 reads `absent`: F40's start is flatter on the pre-registered criterion (EXP-0127–0130).
+  - 4.5 is not run, by user decision.
+  - M6's result is F40 + v15 turn heads.
+  - One final read, EXP-0131, on M6-A (≤ 8 vCPU-h): F40 + v15 heads against k5_rf5 + MWWk, with EXP-0102's rule on
+    the held-out set, 12 producers deciding and 42 reported, through `deployed_policies` only, pre-registered before
+    data. The roster, registry and champion files stay the user's gates.

@@ -12,6 +12,16 @@
    "exp": "EXP-0103",
    "closed": "2026-11-06",
    "reading": "better (12, deciding); 42 reported short (run-down clause)"
+  },
+  {
+   "key": "held-out/m6-f40-v15",
+   "status": "pending",
+   "subject": "F40 + v15 turn heads (M6's result; EXP-0126 models.pt + the EXP-0110 start's replenish), final read on the held-out worlds with fresh episodes; a second comparison on this set",
+   "turn_models_sha256": "c62a3ce88befa54754cfe7407aebd0c2b3b12209ec7208d33fa9cf2674cbb2d8",
+   "replenish_models_sha256": "697d94c08321fffe08cb6a44bfeaba14988da21821cbed502ec78d54fb528d2c",
+   "prereg": "8fe01a0c4c958a33df6094c24193bbed168def6de04ce97a932ed3f3a80363ce",
+   "opened": "2026-11-08",
+   "exp": "EXP-0131"
   }
  ]
 }

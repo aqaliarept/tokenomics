@@ -1,0 +1,91 @@
+{
+ "arms": {
+  "f40_def": "F40 + default turns: deployed_policies' producing and ordering policies, the turn env's default fund and accept policies (reported)",
+  "f40_v15": "F40 + v15 heads, deployed_policies (deciding)",
+  "k5_rf5": "k5_rf5 + MWWk (the base; EXP-0103's path)"
+ },
+ "change": "add-m6-joint-mpg-gnn",
+ "clauses": "deaths, run-down share (r_end < X r_start), starvation share (any consumer fill < Y), X / Y = side-effect params v2",
+ "decision": "user 2026-11-08 (via the supervisor): close the RL track; M6's result is F40 + v15 heads",
+ "floor": "L5 / L6's (producer_read._comparisons: order_es_validate.mean_comp, equal-weight world mean over the loaded worlds, max(atlas floor, own 3 SE), both arms with 2 replicates)",
+ "format": "m6-prereg-v20",
+ "gates": "reports only: the roster, registry and champion files are not changed by this run",
+ "held_out_reuse": {
+  "abandoned_stage": "a local dry run of this driver played 8 cycles of the first episode of stage m6-final-heldout on ws-atlas-v1-12-0016 (replicates 0 / 1) before this file was frozen. That stage is abandoned, this read uses m6-final-read, and dry runs now play train-split worlds only",
+  "checked_2026_11_08": "no EXP-0100 to EXP-0130 record names a held-out world except EXP-0103 and EXP-0104, and none of this read's 128 episode seeds appears in the text records under experiments/",
+  "design_leakage": "EXP-0104's diagnosis of held-out 42-0125 (the upgrade trap, DIAGNOSTICS 32) informed the producer's later versions, so the 42-producer read is not independent of this set; EXP-0101 found no drain at 12, and 42 is reported only",
+  "episodes_this_read": "8 episodes per world of the new stage m6-final-read, disjoint from m5-heldout (the driver refuses a collision)",
+  "played_before": {
+   "EXP-0103": "all 16 held-out worlds, 8 episodes of stage m5-heldout, replicates 0 / 1, horizon 100 (the imitated EXP-0100 stack and the base)",
+   "EXP-0104": "42-0125 only, stage m5-heldout's episodes, horizon 200, plus one-episode local checks on its first episode (the same stage)"
+  },
+  "worlds": "the atlas v2 held-out worlds are re-used: every M6 play of them is listed here, and this is a second comparison on this set, never a fresh one-shot read of unseen worlds"
+ },
+ "operations": "one job per arm and size timed first on train-split worlds (stage m6-final-timing, no held-out world touched); stop = 1.5 x that estimate from job start; abort if the job has not started 5 min after pod creation, at most one retry; each job's row written as it finishes; a watchdog pulls the run directory before any stop; <= 8 vCPU-h on M6-A",
+ "reported": [
+  "the 42-producer reading",
+  "the F40 + default turns arm",
+  "holding, investment rejection, min capacity ratio per arm",
+  "the v15 heads minus default turns difference"
+ ],
+ "rule": "EXP-0102's rule on the loaded held-out worlds: parity if g >= -floor, no extra deaths, and run-down and starvation shares <= the base's; better if parity and g > floor; else short. Deciding: F40 + v15 heads vs k5_rf5 + MWWk at 12 producers. Reported: 42 producers and the F40 + default turns arm, on the same rule",
+ "stage": "EXP-0131: M6's final held-out read",
+ "subject": {
+  "composite": "m6_onpolicy.load_start: F40's trunk, gates and v15 turn heads (EXP-0126 models.pt), the EXP-0110 start's replenish head, the frozen EXP-0100 orderer",
+  "deployment": "m6_onpolicy.deployed_policies only (DIAGNOSTICS 37), in the producer-turn env",
+  "replenish_models_sha256": "697d94c08321fffe08cb6a44bfeaba14988da21821cbed502ec78d54fb528d2c",
+  "turn_models_sha256": "c62a3ce88befa54754cfe7407aebd0c2b3b12209ec7208d33fa9cf2674cbb2d8"
+ },
+ "validity": "paired demand and shock digests across the arms on every world-episode-replicate, a contract monitor on every episode; any missing row or digest difference makes the run invalid (exit 2), never a reading from partial rows",
+ "worlds": {
+  "atlas_content_hash": "220886a7cf12aaac0cc0a48dc03c57f2dc2484bb2af6185a6160ec509c8a2a23",
+  "episodes": 8,
+  "gating": "the loaded ones (rho > 0.28, not collapse), as L5 / L6",
+  "horizon": 100,
+  "ids": {
+   "12": [
+    "ws-atlas-v1-12-0016",
+    "ws-atlas-v1-12-0033",
+    "ws-atlas-v1-12-0091",
+    "ws-atlas-v1-12-0172",
+    "ws-atlas-v1-12-0239",
+    "ws-atlas-v1-12-0273",
+    "ws-atlas-v1-12-0278",
+    "ws-atlas-v1-12-0368",
+    "ws-atlas-v1-12-0413",
+    "ws-atlas-v1-12-0459",
+    "ws-atlas-v1-12-0490",
+    "ws-atlas-v1-12-0504"
+   ],
+   "42": [
+    "ws-atlas-v1-42-0005",
+    "ws-atlas-v1-42-0007",
+    "ws-atlas-v1-42-0008",
+    "ws-atlas-v1-42-0125"
+   ]
+  },
+  "loaded_ids": {
+   "12": [
+    "ws-atlas-v1-12-0016",
+    "ws-atlas-v1-12-0033",
+    "ws-atlas-v1-12-0172",
+    "ws-atlas-v1-12-0239",
+    "ws-atlas-v1-12-0273",
+    "ws-atlas-v1-12-0278",
+    "ws-atlas-v1-12-0368",
+    "ws-atlas-v1-12-0413"
+   ],
+   "42": [
+    "ws-atlas-v1-42-0005",
+    "ws-atlas-v1-42-0125"
+   ]
+  },
+  "played": "every held-out world at 12 and 42",
+  "replicates": [
+   0,
+   1
+  ],
+  "split": "atlas v2 held-out",
+  "stage": "m6-final-read"
+ }
+}
